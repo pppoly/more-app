@@ -5,18 +5,22 @@ import type {
   CommunityPortal,
   ConsoleCommunityDetail,
   ConsoleEventDetail,
-  ConsoleEventRegistration,
+  ConsoleEventRegistrationsResponse,
   ConsoleEventSummary,
   DevLoginResponse,
   EventDetail,
   EventGalleryItem,
   EventRegistrationSummary,
+  EventRegistrationsSummary,
   EventSummary,
   GeneratedEventContent,
   GenerateEventCopyInput,
   ManagedCommunity,
   MockPaymentResponse,
   MyEventItem,
+  OrganizerApplicationStatus,
+  PricingPlan,
+  StripeCheckoutResponse,
   UserProfile,
 } from '../types/api';
 
@@ -90,6 +94,37 @@ export async function createMockPayment(registrationId: string): Promise<MockPay
   return data;
 }
 
+export async function createStripeCheckout(registrationId: string): Promise<StripeCheckoutResponse> {
+  const { data } = await apiClient.post<StripeCheckoutResponse>('/payments/stripe/checkout', {
+    registrationId,
+  });
+  return data;
+}
+
+export async function fetchPricingPlans(): Promise<PricingPlan[]> {
+  const { data } = await apiClient.get<PricingPlan[]>('/console/communities/pricing-plans');
+  return data;
+}
+
+export async function startCommunityStripeOnboarding(communityId: string): Promise<{ url: string }> {
+  const { data } = await apiClient.post<{ url: string }>(
+    `/console/communities/${communityId}/stripe/onboard`,
+    {},
+  );
+  return data;
+}
+
+export async function subscribeCommunityPlan(
+  communityId: string,
+  planId: string,
+): Promise<{ planId: string; subscriptionId: string | null }> {
+  const { data } = await apiClient.post<{ planId: string; subscriptionId: string | null }>(
+    `/console/communities/${communityId}/subscription`,
+    { planId },
+  );
+  return data;
+}
+
 export async function fetchManagedCommunities(): Promise<ManagedCommunity[]> {
   const { data } = await apiClient.get<ManagedCommunity[]>('/console/communities');
   return data;
@@ -140,13 +175,6 @@ export async function updateConsoleEvent(eventId: string, payload: any): Promise
   return data;
 }
 
-export async function fetchConsoleEventRegistrations(
-  eventId: string,
-): Promise<ConsoleEventRegistration[]> {
-  const { data } = await apiClient.get<ConsoleEventRegistration[]>(`/console/events/${eventId}/registrations`);
-  return data;
-}
-
 export async function generateEventContent(
   payload: GenerateEventCopyInput,
 ): Promise<GeneratedEventContent> {
@@ -161,4 +189,36 @@ export async function uploadEventCovers(eventId: string, files: File[]) {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data as EventGalleryItem[];
+}
+
+export async function fetchEventRegistrationsSummary(eventId: string): Promise<EventRegistrationsSummary> {
+  const { data } = await apiClient.get<EventRegistrationsSummary>(
+    `/console/events/${eventId}/registrations/summary`,
+  );
+  return data;
+}
+
+export async function fetchEventRegistrations(
+  eventId: string,
+): Promise<ConsoleEventRegistrationsResponse> {
+  const { data } = await apiClient.get<ConsoleEventRegistrationsResponse>(`/console/events/${eventId}/registrations`);
+  return data;
+}
+
+export async function exportEventRegistrationsCsv(eventId: string): Promise<Blob> {
+  const { data } = await apiClient.get(`/console/events/${eventId}/registrations/export`, {
+    params: { format: 'csv' },
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicationStatus> {
+  const { data } = await apiClient.get<OrganizerApplicationStatus>('/organizers/me/application');
+  return data;
+}
+
+export async function submitOrganizerApplication(payload: { reason: string; experience?: string }) {
+  const { data } = await apiClient.post('/organizers/apply', payload);
+  return data;
 }

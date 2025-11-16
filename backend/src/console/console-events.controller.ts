@@ -1,11 +1,14 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   Req,
+  Res,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -15,6 +18,7 @@ import { ConsoleEventsService } from './console-events.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Express } from 'express';
+import type { Response } from 'express';
 
 @Controller('console/events')
 @UseGuards(JwtAuthGuard)
@@ -26,6 +30,11 @@ export class ConsoleEventsController {
     return this.consoleEventsService.getEvent(req.user.id, eventId);
   }
 
+  @Get(':eventId/registrations/summary')
+  getRegistrationSummary(@Param('eventId') eventId: string, @Req() req: any) {
+    return this.consoleEventsService.getRegistrationsSummary(req.user.id, eventId);
+  }
+
   @Patch(':eventId')
   updateEvent(@Param('eventId') eventId: string, @Body() body: any, @Req() req: any) {
     return this.consoleEventsService.updateEvent(req.user.id, eventId, body);
@@ -33,7 +42,7 @@ export class ConsoleEventsController {
 
   @Get(':eventId/registrations')
   listRegistrations(@Param('eventId') eventId: string, @Req() req: any) {
-    return this.consoleEventsService.listRegistrations(req.user.id, eventId);
+    return this.consoleEventsService.listRegistrationsDetailed(req.user.id, eventId);
   }
 
   @Post(':eventId/close')
@@ -49,5 +58,21 @@ export class ConsoleEventsController {
     @Req() req: any,
   ) {
     return this.consoleEventsService.uploadEventCovers(req.user.id, eventId, files);
+  }
+
+  @Get(':eventId/registrations/export')
+  async exportRegistrations(
+    @Param('eventId') eventId: string,
+    @Query('format') format = 'csv',
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (format !== 'csv') {
+      throw new BadRequestException('Unsupported export format');
+    }
+    const { filename, csv } = await this.consoleEventsService.exportRegistrationsCsv(req.user.id, eventId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return csv;
   }
 }

@@ -1,18 +1,45 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
+import type { Request } from 'express';
 
 interface MockPaymentDto {
   registrationId: string;
 }
 
+interface StripeCheckoutDto {
+  registrationId: string;
+}
+
+interface StripeRefundDto {
+  reason?: string;
+}
+
 @Controller('payments')
-@UseGuards(JwtAuthGuard)
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  @Post('stripe/webhook')
+  handleStripeWebhook(@Req() req: Request) {
+    const signature = req.headers['stripe-signature'] as string | undefined;
+    return this.paymentsService.handleStripeWebhook(signature, req.body as Buffer);
+  }
+
   @Post('mock')
+  @UseGuards(JwtAuthGuard)
   createMockPayment(@Req() req: any, @Body() body: MockPaymentDto) {
     return this.paymentsService.createMockPayment(req.user.id, body.registrationId);
+  }
+
+  @Post('stripe/checkout')
+  @UseGuards(JwtAuthGuard)
+  createStripeCheckout(@Req() req: any, @Body() body: StripeCheckoutDto) {
+    return this.paymentsService.createStripeCheckout(req.user.id, body.registrationId);
+  }
+
+  @Post(':paymentId/refund')
+  @UseGuards(JwtAuthGuard)
+  refundStripePayment(@Req() req: any, @Param('paymentId') paymentId: string, @Body() body: StripeRefundDto) {
+    return this.paymentsService.refundStripePayment(req.user.id, paymentId, body.reason);
   }
 }

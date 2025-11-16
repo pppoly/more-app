@@ -9,87 +9,58 @@
     </header>
 
     <!-- AI Assistant (chat style) -->
-    <section class="ai-panel">
-      <div class="ai-panel-header">
-        <div>
-          <h3>AI 活動助手 (LINE風チャット)</h3>
-          <p>いくつか質問に答えると、AI がイベント案内文を提案します。</p>
-        </div>
-        <button type="button" class="link" @click="chatEnabled = !chatEnabled">
-          {{ chatEnabled ? 'AIを折りたたむ' : 'AIチャットを再開する' }}
+<section class="mt-4 rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col h-[420px]">
+  <header class="px-3 py-2 border-b flex items-center justify-between">
+    <div class="text-xs font-semibold text-slate-700">AI 活動アシスタント</div>
+    <div class="text-[10px] text-slate-400">企画の相談・文案作成に使えます</div>
+  </header>
+  <div class="flex-1 px-3 py-2 bg-[#F5F7F9] overflow-y-auto space-y-2">
+    <div v-for="msg in chatMessagesV2" :key="msg.id" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+      <div
+        v-if="msg.type === 'text'"
+        :class="[
+          'inline-block px-3 py-2 text-sm rounded-2xl max-w-[80%] text-left whitespace-pre-line',
+          msg.role === 'user' ? 'bg-[#00B900] text-white ml-auto' : 'bg-white text-slate-800 shadow-sm',
+        ]"
+      >
+        {{ msg.content }}
+      </div>
+      <div v-else-if="msg.type === 'proposal'" class="inline-block bg-white rounded-2xl p-3 shadow-sm max-w-[90%] text-left">
+        <h3 class="text-xs text-slate-500 mb-1">AI 提案のイベント概要</h3>
+        <p class="text-sm font-semibold mb-1">{{ msg.payload?.title }}</p>
+        <p class="text-xs text-slate-600 whitespace-pre-line mb-2">{{ msg.payload?.description }}</p>
+        <button class="w-full mt-1 py-1.5 text-xs rounded-full bg-[#00B900] text-white" @click="applyAiResultToFormFromMsg(msg)">
+          この内容をフォームに反映する
         </button>
       </div>
-      <p class="hint">
-        AIを使わずに手動で入力することもできます。その場合は下のフォームをそのままご利用ください。
-      </p>
-      <div v-if="chatEnabled" class="chat-wrapper">
-        <div class="chat-messages">
-          <div
-            v-for="(message, index) in chatMessages"
-            :key="index"
-            :class="['chat-bubble', message.role]
-          ">
-            <span>{{ message.text }}</span>
-          </div>
-          <div v-if="aiLoading" class="chat-bubble ai-loading">AIが文章を考えています...</div>
-        </div>
-        <div class="chat-actions">
-          <input
-            v-model="chatInput"
-            type="text"
-            class="chat-input"
-            placeholder="回答を入力..."
-            @keyup.enter="sendCurrentChat"
-            :disabled="aiLoading"
-          />
-          <button type="button" class="primary" @click="sendCurrentChat" :disabled="aiLoading">送信</button>
-          <button type="button" class="ghost" @click="requestGeneration" :disabled="aiLoading">
-            直接生成
-          </button>
-        </div>
-      </div>
-      <div v-else class="hint">AI はいつでも再開できます。必要であればフォームを直接ご記入ください。</div>
-
-      <div v-if="aiResult" class="ai-preview-card">
-        <header>
-          <h4>AIが提案するイベント案内</h4>
-          <div class="preview-actions">
-            <button type="button" class="primary" @click="applyAiToForm">この内容をフォームに反映する</button>
-            <button type="button" class="secondary" @click="requestGeneration" :disabled="aiLoading">再生成</button>
-          </div>
-        </header>
-        <dl>
-          <div>
-            <dt>AIの理解</dt>
-            <dd>{{ aiResult.summary }}</dd>
-          </div>
-          <div>
-            <dt>タイトル案</dt>
-            <dd>{{ extractText(aiResult.title) }}</dd>
-          </div>
-          <div>
-            <dt>イベント紹介文</dt>
-            <dd>{{ extractText(aiResult.description) }}</dd>
-          </div>
-          <div>
-            <dt>注意事項</dt>
-            <dd>{{ extractText(aiResult.notes) }}</dd>
-          </div>
-          <div>
-            <dt>リスク告知</dt>
-            <dd>{{ extractText(aiResult.riskNotice) }}</dd>
-          </div>
-          <div>
-            <dt>SNS 文案</dt>
-            <dd>
-              LINE: {{ snsCaption('line') }}<br />
-              Instagram: {{ snsCaption('instagram') }}
-            </dd>
-          </div>
-        </dl>
-      </div>
-      <p v-if="aiError" class="status error">{{ aiError }}</p>
-    </section>
+      <div class="mt-0.5 text-[10px] text-slate-400" v-if="msg.createdAt">{{ msg.createdAt }}</div>
+    </div>
+    <div v-if="aiLoading" class="text-xs text-slate-500">AIが文章を考えています...</div>
+  </div>
+  <div v-if="aiError" class="px-3 text-[11px] text-rose-500">
+    {{ aiError }}
+  </div>
+  <div class="flex items-center px-3 py-2 bg-white border-t border-slate-200">
+    <button class="w-8 h-8 flex items-center justify-center text-slate-500" @click="requestGeneration">
+      <span class="i-lucide-plus"></span>
+    </button>
+    <input
+      v-model="chatDraft"
+      type="text"
+      class="flex-1 mx-2 px-3 py-2 rounded-full bg-slate-100 text-sm outline-none"
+      placeholder="想举办什么样的活动？（例：親子BBQ・語学交換など）"
+      @keyup.enter="handleSend"
+    />
+    <button
+      class="w-8 h-8 flex items-center justify-center rounded-full"
+      :class="chatDraft ? 'bg-[#00B900] text-white' : 'bg-slate-200 text-slate-500'"
+      @click="handleSend"
+      :disabled="!chatDraft || aiLoading"
+    >
+      <span class="i-lucide-send"></span>
+    </button>
+  </div>
+</section>
 
     <!-- Cover uploader -->
     <section class="card">
@@ -142,10 +113,13 @@
           ショート説明
           <textarea v-model="form.description" rows="3"></textarea>
         </label>
-        <label>
-          会場住所 / 集合場所
-          <input v-model="form.locationText" type="text" required />
-        </label>
+        <div class="space-y-2">
+          <LocationPicker
+            v-model:address="form.locationText"
+            v-model:lat="form.locationLat"
+            v-model:lng="form.locationLng"
+          />
+        </div>
         <div class="grid-2">
           <label>
             開始日時
@@ -310,11 +284,21 @@ import {
 import type { GeneratedEventContent, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { QuillEditor } from '@vueup/vue-quill';
 import '@vueup/vue-quill/dist/vue-quill.snow.css';
+import LocationPicker from '../../components/console/LocationPicker.vue';
 
-type ChatRole = 'system' | 'user' | 'aiPreview';
+type ChatRole = 'user' | 'assistant';
+type ChatMessageType = 'text' | 'proposal';
 interface ChatMessage {
+  id: string;
   role: ChatRole;
-  text: string;
+  type: ChatMessageType;
+  content: string;
+  createdAt: string;
+  payload?: {
+    title?: string;
+    description?: string;
+    raw?: (GeneratedEventContent & { summary?: string }) | null;
+  };
 }
 interface BuilderField extends RegistrationFormField {
   uuid: string;
@@ -342,6 +326,8 @@ const form = reactive({
   description: '',
   descriptionHtml: '',
   locationText: '',
+  locationLat: null as number | null,
+  locationLng: null as number | null,
   category: '',
   startTime: '',
   endTime: '',
@@ -390,9 +376,9 @@ const questions = [
   },
 ];
 
-const chatEnabled = ref(true);
-const chatMessages = ref<ChatMessage[]>([{ role: 'system', text: questions[0].prompt }]);
-const chatInput = ref('');
+const formatTime = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+const chatMessagesV2 = ref<ChatMessage[]>([]);
+const chatDraft = ref('');
 const currentQuestionIndex = ref(0);
 const awaitingConfirmation = ref(false);
 const chatMessagesLimit = 200;
@@ -434,6 +420,8 @@ const load = async () => {
     form.descriptionHtml = event.descriptionHtml ?? '';
     form.category = event.category ?? '';
     form.locationText = event.locationText;
+    form.locationLat = event.locationLat ?? null;
+    form.locationLng = event.locationLng ?? null;
     form.startTime = toLocalInput(event.startTime);
     form.endTime = toLocalInput(event.endTime ?? event.startTime);
     form.regStartTime = toLocalInput(event.regStartTime ?? event.startTime);
@@ -556,6 +544,8 @@ const handleSubmit = async () => {
     descriptionHtml: form.descriptionHtml,
     category: form.category || null,
     locationText: form.locationText,
+    locationLat: form.locationLat,
+    locationLng: form.locationLng,
     startTime: toIso(form.startTime),
     endTime: toIso(form.endTime),
     regStartTime: toIso(form.regStartTime),
@@ -625,26 +615,35 @@ const handleCoverUpload = async (ev: Event) => {
   }
 };
 
-const sendCurrentChat = () => {
-  if (!chatInput.value.trim() || aiLoading.value) return;
-  pushMessage('user', chatInput.value.trim());
-  handleChatAnswer(chatInput.value.trim());
-  chatInput.value = '';
+const pushMessage = (role: ChatRole, type: ChatMessageType, content: string, payload?: ChatMessage['payload']) => {
+  chatMessagesV2.value.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    role,
+    type,
+    content,
+    createdAt: formatTime(),
+    payload,
+  });
+  if (chatMessagesV2.value.length > chatMessagesLimit) {
+    chatMessagesV2.value.shift();
+  }
 };
 
-const pushMessage = (role: ChatRole, text: string) => {
-  chatMessages.value.push({ role, text });
-  if (chatMessages.value.length > chatMessagesLimit) {
-    chatMessages.value.shift();
-  }
+const handleSend = () => {
+  if (!chatDraft.value.trim() || aiLoading.value) return;
+  const content = chatDraft.value.trim();
+  chatDraft.value = '';
+  pushMessage('user', 'text', content);
+  handleChatAnswer(content);
 };
 
 const handleChatAnswer = (text: string) => {
   if (awaitingConfirmation.value) {
     if (shouldGenerate(text)) {
+      pushMessage('assistant', 'text', '了解しました。少々お待ちください。');
       requestGeneration();
     } else {
-      pushMessage('system', '了解しました。準備ができたら「生成」と入力してください。');
+      pushMessage('assistant', 'text', '了解しました。準備ができたら「生成」と入力してください。');
     }
     return;
   }
@@ -656,11 +655,12 @@ const handleChatAnswer = (text: string) => {
 
   if (currentQuestionIndex.value < questions.length - 1) {
     currentQuestionIndex.value += 1;
-    pushMessage('system', questions[currentQuestionIndex.value].prompt);
+    pushMessage('assistant', 'text', questions[currentQuestionIndex.value].prompt);
   } else {
     awaitingConfirmation.value = true;
     pushMessage(
-      'system',
+      'assistant',
+      'text',
       'ありがとう！この内容をもとにAIでイベント案内文を作成しても良いですか？「生成」や「再入力」など自由に回答してください。',
     );
   }
@@ -686,11 +686,17 @@ const requestGeneration = async () => {
     const result = await generateEventContent(payload);
     const summary = buildSummary(payload);
     aiResult.value = { ...result, summary };
-    pushMessage('aiPreview', summary);
+    pushMessage('assistant', 'text', summary);
+    pushMessage('assistant', 'text', 'こちらがAI案です。内容を確認してください。');
+    pushMessage('assistant', 'proposal', '', {
+      title: extractText(result.title),
+      description: extractText(result.description),
+      raw: aiResult.value,
+    });
     awaitingConfirmation.value = false;
   } catch (err) {
     aiError.value = err instanceof Error ? err.message : 'AI生成に失敗しました';
-    pushMessage('system', aiError.value ?? 'AI生成に失敗しました。もう一度お試しください。');
+    pushMessage('assistant', 'text', aiError.value ?? 'AI生成に失敗しました。もう一度お試しください。');
   } finally {
     aiLoading.value = false;
   }
@@ -721,6 +727,28 @@ const applyAiToForm = () => {
     form.config.riskNoticeText = risk;
   }
 };
+
+const applyAiResultToFormFromMsg = (msg: ChatMessage) => {
+  if (msg.type !== 'proposal' || !msg.payload) return;
+  if (msg.payload.raw) {
+    aiResult.value = msg.payload.raw;
+    applyAiToForm();
+    return;
+  }
+  if (msg.payload.title) {
+    form.title = msg.payload.title;
+  }
+  if (msg.payload.description) {
+    form.description = msg.payload.description;
+    form.descriptionHtml = `<p>${msg.payload.description}</p>`;
+  }
+};
+
+onMounted(() => {
+  if (!chatMessagesV2.value.length) {
+    pushMessage('assistant', 'text', questions[0].prompt);
+  }
+});
 
 onMounted(() => {
   load();
@@ -881,108 +909,5 @@ select {
 .hint {
   font-size: 0.9rem;
   color: #475569;
-}
-.ai-panel {
-  margin: 1.5rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  border: 1px solid #cbd5f5;
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  background: #f8fafc;
-}
-.ai-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.link {
-  background: transparent;
-  border: none;
-  color: #2563eb;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.chat-wrapper {
-  border: 1px solid #cbd5f5;
-  border-radius: 0.75rem;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  background: #fff;
-}
-.chat-messages {
-  max-height: 260px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.chat-bubble {
-  padding: 0.6rem 0.9rem;
-  border-radius: 0.75rem;
-  max-width: 80%;
-  line-height: 1.4;
-  font-size: 0.95rem;
-}
-.chat-bubble.system {
-  background: #e2e8f0;
-  align-self: flex-start;
-}
-.chat-bubble.user {
-  background: #dbeafe;
-  align-self: flex-end;
-}
-.chat-bubble.aiPreview {
-  background: #fef9c3;
-  align-self: center;
-  border: 1px solid #fde047;
-}
-.chat-bubble.ai-loading {
-  background: #fff7ed;
-  align-self: center;
-}
-.chat-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-.chat-input {
-  flex: 1;
-  border-radius: 0.5rem;
-  border: 1px solid #cbd5f5;
-  padding: 0.5rem;
-}
-.ai-preview-card {
-  border: 1px solid #cbd5f5;
-  border-radius: 0.75rem;
-  background: white;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-.ai-preview-card header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-.ai-preview-card dl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-.ai-preview-card dt {
-  font-weight: 600;
-  color: #475569;
-}
-.ai-preview-card dd {
-  margin: 0;
-}
-.preview-actions {
-  display: flex;
-  gap: 0.5rem;
 }
 </style>

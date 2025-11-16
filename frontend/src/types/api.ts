@@ -9,6 +9,7 @@ export interface UserProfile {
   language?: string | null;
   prefecture?: string | null;
   avatarUrl?: string | null;
+  isOrganizer?: boolean;
 }
 
 export interface CommunitySummary {
@@ -26,12 +27,20 @@ export interface EventSummary {
   startTime: string;
   endTime?: string;
   locationText: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
   community: CommunitySummary;
   category?: string | null;
   priceRange?: {
     min: number;
     max: number;
   };
+  coverImageUrl?: string | null;
+  ticketTypes?: Array<{
+    id: string;
+    name: LocalizedContent;
+    price: number;
+  }>;
 }
 
 export interface RegistrationFormField {
@@ -61,6 +70,8 @@ export interface EventDetail {
   regEndTime?: string | null;
   regDeadline?: string | null;
   locationText: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
   category?: string | null;
   minParticipants?: number | null;
   maxParticipants?: number | null;
@@ -130,6 +141,22 @@ export interface MockPaymentResponse {
   amount: number;
 }
 
+export interface StripeCheckoutResponse {
+  checkoutUrl: string;
+}
+
+export interface PricingPlan {
+  id: string;
+  name: string;
+  monthlyFee: number;
+  transactionFeePercent: number;
+  transactionFeeFixed: number;
+  payoutSchedule: string;
+  features?: Record<string, any> | null;
+  stripePriceId?: string | null;
+  active: boolean;
+}
+
 export interface ManagedCommunity {
   id: string;
   name: string;
@@ -137,11 +164,18 @@ export interface ManagedCommunity {
   labels?: string[];
   visibleLevel?: string;
   createdAt?: string;
+  coverImageUrl?: string | null;
+  role?: string | null;
 }
 
 export interface ConsoleCommunityDetail extends ManagedCommunity {
   description: LocalizedContent;
   coverImageUrl?: string | null;
+  pricingPlanId?: string | null;
+  stripeAccountId?: string | null;
+  stripeAccountOnboarded?: boolean;
+  stripeSubscriptionId?: string | null;
+  stripeCustomerId?: string | null;
 }
 
 export interface ConsoleEventSummary {
@@ -161,6 +195,8 @@ export interface ConsoleEventDetail extends ConsoleEventSummary {
   regStartTime?: string | null;
   regEndTime?: string | null;
   locationText: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
   minParticipants?: number | null;
   maxParticipants?: number | null;
   requireApproval: boolean;
@@ -178,16 +214,69 @@ export interface ConsoleEventDetail extends ConsoleEventSummary {
   galleries?: EventGalleryItem[];
 }
 
-export interface ConsoleEventRegistration {
-  id: string;
+export interface EventRegistrationsSummary {
+  eventId: string;
+  title: string;
   status: string;
-  paymentStatus: string;
-  createdAt: string;
+  capacity?: number | null;
+  totalRegistrations: number;
+  paidRegistrations: number;
+  attended: number;
+  noShow: number;
+  groups: Array<{
+    label: string;
+    count: number;
+    capacity?: number | null;
+  }>;
+  avatars: Array<{
+    userId: string;
+    name?: string | null;
+    avatarUrl?: string | null;
+    status: string;
+  }>;
+}
+
+export interface ConsoleEventRegistrationItem {
+  registrationId: string;
   user: {
     id: string;
     name: string;
-    language?: string | null;
+    avatarUrl?: string | null;
   };
+  ticket: {
+    id?: string;
+    name?: string;
+    price?: number | null;
+  } | null;
+  status: string;
+  paymentStatus: string;
+  attended: boolean;
+  noShow: boolean;
+  amount?: number | null;
+  createdAt: string;
+  formAnswers?: Record<string, unknown>;
+}
+
+export interface ConsoleEventRegistrationsResponse {
+  total: number;
+  items: ConsoleEventRegistrationItem[];
+}
+
+export interface OrganizerApplicationInfo {
+  id: string;
+  status: string;
+  reason?: string | null;
+  experience?: string | null;
+  note?: string | null;
+  createdAt: string;
+  reviewedAt?: string | null;
+  reviewerId?: string | null;
+}
+
+export interface OrganizerApplicationStatus {
+  hasApplied: boolean;
+  isOrganizer: boolean;
+  application: OrganizerApplicationInfo | null;
 }
 
 export interface CommunityAnalytics {

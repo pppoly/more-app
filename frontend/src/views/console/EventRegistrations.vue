@@ -8,29 +8,128 @@
       <RouterLink :to="backLink">イベント一覧へ戻る</RouterLink>
     </header>
 
-    <p v-if="loading" class="status">参加者リスト取得中…</p>
+    <p v-if="loading" class="status">参加者データを読み込み中…</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
     <template v-else>
-      <table class="reg-table" v-if="registrations.length">
-        <thead>
-          <tr>
-            <th>参加者</th>
-            <th>Status</th>
-            <th>Payment</th>
-            <th>申込日時</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="reg in registrations" :key="reg.id">
-            <td>{{ reg.user.name }}</td>
-            <td>{{ reg.status }}</td>
-            <td>{{ reg.paymentStatus }}</td>
-            <td>{{ formatDate(reg.createdAt) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="muted">まだ参加者がありません。</p>
+      <section v-if="summary" class="summary-card">
+        <div class="summary-header">
+          <div>
+            <h3>{{ summary.title }}</h3>
+            <span :class="['badge', summary.status]">{{ statusLabel(summary.status) }}</span>
+          </div>
+          <div class="summary-actions">
+            <button type="button" class="secondary" @click="downloadCsv" :disabled="downloading">
+              {{ downloading ? '生成中…' : '名簿をエクスポート' }}
+            </button>
+            <button type="button" class="ghost" disabled>メンバー管理</button>
+          </div>
+        </div>
+        <div class="summary-stats">
+          <div class="stat">
+            <p>参加者</p>
+            <strong>
+              {{ summary.totalRegistrations }}<span v-if="summary.capacity"> / {{ summary.capacity }}</span>
+            </strong>
+          </div>
+          <div class="stat">
+            <p>支払済み</p>
+            <strong>{{ summary.paidRegistrations }}</strong>
+          </div>
+          <div class="stat">
+            <p>出席済み</p>
+            <strong>{{ summary.attended }}</strong>
+          </div>
+          <div class="stat">
+            <p>無断欠席</p>
+            <strong>{{ summary.noShow }}</strong>
+          </div>
+        </div>
+        <div class="group-progress" v-if="summary.groups.length">
+          <div v-for="group in summary.groups" :key="group.label" class="group-row">
+            <div class="group-label">
+              <span>{{ group.label }}</span>
+              <span>{{ group.count }} / {{ group.capacity ?? summary.capacity ?? group.count }}</span>
+            </div>
+            <div class="progress">
+              <div class="fill" :style="{ width: progressPercent(group) + '%' }"></div>
+            </div>
+          </div>
+        </div>
+        <div class="avatar-wall" v-if="summary.avatars.length">
+          <div v-for="avatar in summary.avatars" :key="avatar.userId" class="avatar-item">
+            <img v-if="avatar.avatarUrl" :src="avatar.avatarUrl" :alt="avatar.name || 'member'" />
+            <div v-else class="avatar-fallback">{{ avatarInitial(avatar.name) }}</div>
+            <small>{{ avatar.name || 'ゲスト' }}</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h3>参加者一覧 ({{ totalRegistrations }}件)</h3>
+        </div>
+        <table class="reg-table" v-if="registrations.length">
+          <thead>
+            <tr>
+              <th>参加者</th>
+              <th>チケット</th>
+              <th>支払い</th>
+              <th>出席</th>
+              <th>申込時間</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="reg in registrations" :key="reg.registrationId">
+              <tr>
+                <td>
+                  <div class="user-cell">
+                    <img v-if="reg.user.avatarUrl" :src="reg.user.avatarUrl" :alt="reg.user.name" />
+                    <div class="avatar-fallback" v-else>{{ avatarInitial(reg.user.name) }}</div>
+                    <div>
+                      <p>{{ reg.user.name }}</p>
+                      <small>ID: {{ reg.user.id }}</small>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="ticket">
+                    <p>{{ reg.ticket?.name || 'ー' }}</p>
+                    <small v-if="reg.ticket">¥{{ reg.ticket.price ?? 0 }}</small>
+                  </div>
+                </td>
+                <td>
+                  <span :class="['pill', reg.paymentStatus]">{{ paymentLabel(reg.paymentStatus) }}</span>
+                </td>
+                <td>
+                  <span :class="['pill', reg.attended ? 'attended' : reg.noShow ? 'noshow' : 'pending']">
+                    {{ attendanceLabel(reg) }}
+                  </span>
+                </td>
+                <td>{{ formatDate(reg.createdAt) }}</td>
+                <td class="actions-cell">
+                  <button type="button" class="ghost" @click="toggleAnswers(reg.registrationId)">
+                    {{ expandedRows[reg.registrationId] ? 'フォームを閉じる' : 'フォームを見る' }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="expandedRows[reg.registrationId]" class="answers-row">
+                <td colspan="6">
+                  <div v-if="formEntries(reg).length" class="answers">
+                    <div v-for="[key, value] in formEntries(reg)" :key="key" class="answer-row">
+                      <span class="answer-label">{{ key }}</span>
+                      <span class="answer-value">{{ formatAnswer(value) }}</span>
+                    </div>
+                  </div>
+                  <p v-else class="muted">追加情報はありません。</p>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p v-else class="muted">まだ参加者が登録されていません。</p>
+      </section>
     </template>
   </section>
 </template>
@@ -38,20 +137,32 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { fetchConsoleEvent, fetchConsoleEventRegistrations } from '../../api/client';
-import type { ConsoleEventDetail, ConsoleEventRegistration } from '../../types/api';
+import {
+  fetchConsoleEvent,
+  fetchEventRegistrationsSummary,
+  fetchEventRegistrations,
+  exportEventRegistrationsCsv,
+} from '../../api/client';
+import type {
+  ConsoleEventDetail,
+  ConsoleEventRegistrationItem,
+  EventRegistrationsSummary,
+} from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 
 const route = useRoute();
 const eventId = route.params.eventId as string;
 
 const eventDetail = ref<ConsoleEventDetail | null>(null);
-const registrations = ref<ConsoleEventRegistration[]>([]);
-const loading = ref(true);
-const error = ref<string | null>(null);
-
 const eventTitle = ref('イベント詳細');
 const backLink = ref('/console/communities');
+const summary = ref<EventRegistrationsSummary | null>(null);
+const registrations = ref<ConsoleEventRegistrationItem[]>([]);
+const totalRegistrations = ref(0);
+const expandedRows = ref<Record<string, boolean>>({});
+const loading = ref(true);
+const error = ref<string | null>(null);
+const downloading = ref(false);
 
 const load = async () => {
   loading.value = true;
@@ -60,9 +171,12 @@ const load = async () => {
     eventDetail.value = await fetchConsoleEvent(eventId);
     eventTitle.value = getLocalizedText(eventDetail.value.title);
     backLink.value = `/console/communities/${eventDetail.value.communityId}/events`;
-    registrations.value = await fetchConsoleEventRegistrations(eventId);
+    summary.value = await fetchEventRegistrationsSummary(eventId);
+    const list = await fetchEventRegistrations(eventId);
+    registrations.value = list.items;
+    totalRegistrations.value = list.total;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '読み込みに失敗しました';
+    error.value = err instanceof Error ? err.message : '参加者情報の取得に失敗しました';
   } finally {
     loading.value = false;
   }
@@ -74,6 +188,77 @@ const formatDate = (value: string) =>
     timeStyle: 'short',
   });
 
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'open':
+      return '受付中';
+    case 'closed':
+      return '終了';
+    default:
+      return status;
+  }
+};
+
+const paymentLabel = (status: string) => {
+  switch (status) {
+    case 'paid':
+      return '支払済み';
+    case 'unpaid':
+      return '未払い';
+    case 'refunded':
+      return '返金済み';
+    default:
+      return status;
+  }
+};
+
+const attendanceLabel = (reg: ConsoleEventRegistrationItem) => {
+  if (reg.attended) return '出席';
+  if (reg.noShow) return '無断欠席';
+  return '未開始';
+};
+
+const progressPercent = (group: { count: number; capacity?: number | null }) => {
+  const fallback = group.count || 1;
+  const cap = group.capacity ?? summary.value?.capacity ?? fallback;
+  return Math.min(100, Math.round((group.count / cap) * 100));
+};
+
+const avatarInitial = (name?: string | null) => (name ? name.charAt(0).toUpperCase() : '?');
+
+const toggleAnswers = (id: string) => {
+  expandedRows.value[id] = !expandedRows.value[id];
+};
+
+const formEntries = (reg: ConsoleEventRegistrationItem) =>
+  Object.entries((reg.formAnswers ?? {}) as Record<string, unknown>);
+
+const formatAnswer = (value: unknown) => {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+const downloadCsv = async () => {
+  downloading.value = true;
+  try {
+    const blob = await exportEventRegistrationsCsv(eventId);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `event-${eventId}-registrations.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'CSVのエクスポートに失敗しました';
+  } finally {
+    downloading.value = false;
+  }
+};
+
 onMounted(load);
 </script>
 
@@ -83,35 +268,223 @@ onMounted(load);
   flex-direction: column;
   gap: 1rem;
 }
-
-.reg-table {
+.summary-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+.badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: #e2e8f0;
+}
+.badge.open {
+  background: #dcfce7;
+  color: #15803d;
+}
+.badge.closed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.8rem;
+}
+.stat {
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+.stat p {
+  margin: 0;
+  color: #475569;
+}
+.stat strong {
+  font-size: 1.5rem;
+}
+.group-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.group-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.group-label {
+  display: flex;
+  justify-content: space-between;
+  color: #475569;
+  font-size: 0.9rem;
+}
+.progress {
   width: 100%;
-  border-collapse: collapse;
+  height: 10px;
+  background: #e2e8f0;
+  border-radius: 999px;
+}
+.progress .fill {
+  height: 100%;
+  background: #4ade80;
+  border-radius: 999px;
+}
+.avatar-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 0.5rem;
+}
+.avatar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+.avatar-item img,
+.avatar-fallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.summary-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.card {
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 0.75rem;
-  overflow: hidden;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
-
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.reg-table {
+  width: 100%;
+  border-collapse: collapse;
+}
 .reg-table th,
 .reg-table td {
   padding: 0.75rem;
   border-bottom: 1px solid #e2e8f0;
 }
-
-.reg-table tbody tr:last-child td {
-  border-bottom: none;
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
-
+.user-cell img,
+.user-cell .avatar-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ticket p {
+  margin: 0;
+}
+.pill {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: #f1f5f9;
+}
+.pill.paid {
+  background: #dcfce7;
+  color: #15803d;
+}
+.pill.unpaid {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.pill.attended {
+  background: #d1fae5;
+  color: #065f46;
+}
+.pill.noshow {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.actions-cell {
+  text-align: right;
+}
+.answers-row {
+  background: #f8fafc;
+}
+.answers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.answer-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.answer-label {
+  min-width: 140px;
+  color: #475569;
+  font-weight: 600;
+}
+.answer-value {
+  flex: 1;
+}
 .status {
   color: #475569;
 }
-
 .error {
   color: #b91c1c;
 }
-
 .muted {
   color: #94a3b8;
+}
+.primary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}
+.secondary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+  background: white;
+  cursor: pointer;
+}
+.ghost {
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+  background: transparent;
+  cursor: pointer;
 }
 </style>

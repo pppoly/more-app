@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ConsoleCommunitiesService } from './console-communities.service';
 import { ConsoleEventsService } from './console-events.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('console/communities')
 @UseGuards(JwtAuthGuard)
@@ -16,7 +18,14 @@ export class ConsoleCommunitiesController {
     return this.service.listManagedCommunities(req.user.id);
   }
 
+  @Get('pricing-plans')
+  listPricingPlans() {
+    return this.service.listPricingPlans();
+  }
+
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles('organizer')
   createCommunity(@Req() req: any, @Body() body: any) {
     return this.service.createCommunity(req.user.id, body);
   }
@@ -37,6 +46,8 @@ export class ConsoleCommunitiesController {
   }
 
   @Post(':communityId/events')
+  @UseGuards(RolesGuard)
+  @Roles('organizer')
   createEvent(
     @Param('communityId') communityId: string,
     @Req() req: any,
@@ -71,5 +82,22 @@ export class ConsoleCommunitiesController {
   @Get(':communityId/analytics')
   analytics(@Param('communityId') communityId: string, @Req() req: any) {
     return this.service.getAnalytics(communityId, req.user.id);
+  }
+
+  @Post(':communityId/stripe/onboard')
+  startStripeOnboarding(@Param('communityId') communityId: string, @Req() req: any) {
+    return this.service.startStripeOnboarding(req.user.id, communityId);
+  }
+
+  @Post(':communityId/subscription')
+  updateSubscription(
+    @Param('communityId') communityId: string,
+    @Req() req: any,
+    @Body('planId') planId: string,
+  ) {
+    if (!planId) {
+      throw new BadRequestException('planId is required');
+    }
+    return this.service.subscribeCommunityPlan(req.user.id, communityId, planId);
   }
 }

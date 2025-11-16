@@ -6,7 +6,9 @@
         <nav>
           <RouterLink to="/">Home</RouterLink>
           <RouterLink to="/events">Events</RouterLink>
-          <RouterLink v-if="user" to="/console/communities">Console</RouterLink>
+          <RouterLink v-if="user?.isOrganizer" to="/console/communities">Console</RouterLink>
+          <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
+          <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
           <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
         </nav>
       </div>
@@ -15,6 +17,13 @@
         <template v-else>
           <div v-if="user" class="logged-in">
             <span>ようこそ, {{ user.name }}</span>
+            <RouterLink
+              v-if="!user.isOrganizer"
+              class="apply-link"
+              to="/organizer/apply"
+            >
+              主理人申請
+            </RouterLink>
             <button type="button" @click="logout">Logout</button>
           </div>
           <div v-else class="login-buttons">
@@ -109,6 +118,11 @@ nav a {
   padding: 0.4rem 0.9rem;
   border-radius: 0.5rem;
   cursor: pointer;
+}
+.apply-link {
+  text-decoration: none;
+  color: #2563eb;
+  font-weight: 600;
 }
 
 main {

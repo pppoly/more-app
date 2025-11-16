@@ -1,16 +1,22 @@
 <template>
-  <section class="event-detail-page">
-    <RouterLink class="back-link" to="/events">← イベント一覧へ戻る</RouterLink>
+  <section class="detail-shell">
+    <header class="detail-header">
+      <button type="button" class="icon-btn" @click="goBack">←</button>
+      <p>イベント詳細</p>
+      <button type="button" class="icon-btn" @click="shareEvent">⋯</button>
+    </header>
 
-    <p v-if="loading" class="status">Loading event...</p>
+    <p v-if="loading" class="status">読み込み中...</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
-    <article v-else-if="event" class="event-detail">
-      <div v-if="gallery.length" class="hero">
-        <img :src="gallery[currentSlide].imageUrl" alt="event cover" />
-        <button v-if="gallery.length > 1" class="nav prev" @click="prevSlide">‹</button>
-        <button v-if="gallery.length > 1" class="nav next" @click="nextSlide">›</button>
-        <div class="dots">
+    <template v-else-if="event">
+      <div class="hero" v-if="heroImage">
+        <img :src="heroImage" alt="cover" />
+        <div class="hero-overlay">
+          <p class="hero-title">{{ title }}</p>
+          <p class="hero-sub">{{ event.community.name }}</p>
+        </div>
+        <div v-if="gallery.length > 1" class="hero-dots">
           <button
             v-for="(item, index) in gallery"
             :key="item.id"
@@ -20,38 +26,43 @@
         </div>
       </div>
 
-      <header>
-        <p class="category" v-if="event.category">#{{ event.category }}</p>
-        <h2>{{ title }}</h2>
-        <p class="community">{{ event.community.name }}</p>
-      </header>
+      <div class="info-card">
+        <div class="card-header">
+          <span v-if="event.category" class="category-chip">#{{ event.category }}</span>
+          <p class="card-title">{{ title }}</p>
+        </div>
+        <div class="info-row">
+          <span class="label">日時</span>
+          <span>{{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">場所</span>
+          <span>
+            {{ event.locationText }}
+            <button type="button" class="link" @click="openMap" :disabled="!mapUrl">
+              地図を開く
+            </button>
+          </span>
+        </div>
+        <div class="info-row">
+          <span class="label">受付期間</span>
+          <span>{{ formatDate(event.regStartTime ?? event.startTime) }} 〜 {{ formatDate(event.regEndTime ?? event.startTime) }}</span>
+        </div>
+        <div class="info-row">
+          <span class="label">ステータス</span>
+          <span class="status-pill" :class="event.status === 'open' ? 'open' : 'closed'">
+            {{ event.status === 'open' ? '受付中' : '終了' }}
+          </span>
+        </div>
+      </div>
 
-      <dl class="meta">
-        <div>
-          <dt>開始</dt>
-          <dd>{{ formatDate(event.startTime) }}</dd>
-        </div>
-        <div v-if="event.endTime">
-          <dt>終了</dt>
-          <dd>{{ formatDate(event.endTime) }}</dd>
-        </div>
-        <div>
-          <dt>場所</dt>
-          <dd>{{ event.locationText }}</dd>
-        </div>
-        <div>
-          <dt>受付期間</dt>
-          <dd>{{ formatDate(event.regStartTime ?? event.startTime) }} - {{ formatDate(event.regEndTime ?? event.startTime) }}</dd>
-        </div>
-      </dl>
-
-      <section class="description">
+      <div class="info-card">
         <h3>イベント概要</h3>
         <p>{{ description }}</p>
         <div v-if="event.descriptionHtml" class="rich" v-html="event.descriptionHtml"></div>
-      </section>
+      </div>
 
-      <section v-if="event.config" class="config">
+      <div class="info-card" v-if="event.config">
         <h3>参加ルール</h3>
         <ul>
           <li v-if="event.config.requireCheckin">✔ チェックイン必須</li>
@@ -59,34 +70,34 @@
           <li v-if="event.config.refundPolicy">返金: {{ event.config.refundPolicy }}</li>
           <li v-if="event.config.riskNoticeEnabled">⚠️ 注意事項をご確認ください。</li>
         </ul>
-      </section>
+      </div>
 
-      <section class="cta">
-        <p v-if="!isLoggedIn" class="login-hint">Dev Login すると参加登録できます。</p>
-        <div v-else class="cta-actions">
-          <button
-            type="button"
-            class="cta-button"
-            :disabled="isRegistering || hasRegistered || Boolean(pendingPayment)"
-            @click="startRegistration"
-          >
-            <span v-if="hasRegistered">参加予定です</span>
-            <span v-else-if="isRegistering">登録中...</span>
-            <span v-else>このイベントに参加する</span>
+      <p v-if="paymentMessage" class="status info">{{ paymentMessage }}</p>
+      <div v-if="pendingPayment" class="info-card payment-card">
+        <p>支払額: ¥{{ pendingPayment.amount ?? 0 }}</p>
+        <div class="payment-actions">
+          <button type="button" class="primary" @click="handleStripeCheckout" :disabled="isRedirecting">
+            {{ isRedirecting ? 'Stripeへ移動中...' : 'Stripeで支払う' }}
           </button>
-          <p v-if="paymentMessage" class="info">{{ paymentMessage }}</p>
-          <div v-if="pendingPayment" class="payment-box">
-            <p>支払額: {{ pendingPayment.amount ?? 0 }} 円</p>
-            <button type="button" @click="handleMockPayment" :disabled="isPaying">
-              {{ isPaying ? '決済中...' : '支払いを完了する（Mock）' }}
-            </button>
-          </div>
-          <p v-if="registrationError" class="error">{{ registrationError }}</p>
+          <button type="button" class="secondary" @click="handleMockPayment" :disabled="isPaying">
+            {{ isPaying ? 'Mock 決済中...' : 'Mock 支払い（デモ）' }}
+          </button>
         </div>
-      </section>
-    </article>
+      </div>
+      <p v-if="registrationError" class="status error">{{ registrationError }}</p>
+    </template>
 
     <p v-else class="status">イベントが見つかりません。</p>
+
+    <div class="bottom-bar" v-if="event">
+      <div class="price-block">
+        <p class="price-label">{{ isLoggedIn ? '参加費' : 'ログインが必要です' }}</p>
+        <p class="price-value">{{ priceHint }}</p>
+      </div>
+      <button type="button" class="cta-btn" :disabled="ctaDisabled" @click="startRegistration">
+        {{ ctaLabel }}
+      </button>
+    </div>
 
     <!-- Dynamic registration modal -->
     <div v-if="showFormModal" class="modal-backdrop" @click.self="closeFormModal">
@@ -169,13 +180,20 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, reactive } from 'vue';
-import { useRoute } from 'vue-router';
-import { createMockPayment, createRegistration, fetchEventById, fetchEventGallery } from '../../api/client';
+import { useRoute, useRouter } from 'vue-router';
+import {
+  createMockPayment,
+  createRegistration,
+  createStripeCheckout,
+  fetchEventById,
+  fetchEventGallery,
+} from '../../api/client';
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { useAuth } from '../../composables/useAuth';
 
 const route = useRoute();
+const router = useRouter();
 const eventId = computed(() => route.params.eventId as string);
 const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
@@ -187,6 +205,7 @@ const hasRegistered = ref(false);
 const registrationError = ref<string | null>(null);
 const pendingPayment = ref<{ registrationId: string; amount?: number } | null>(null);
 const isPaying = ref(false);
+const isRedirecting = ref(false);
 const paymentMessage = ref<string | null>(null);
 const showFormModal = ref(false);
 const formAnswers = reactive<Record<string, any>>({});
@@ -217,59 +236,70 @@ const loadEvent = async (id: string) => {
 };
 
 watch(eventId, (id) => {
-  if (id) {
-    loadEvent(id);
-  }
+  if (id) loadEvent(id);
 });
 
 onMounted(() => {
-  if (eventId.value) {
-    loadEvent(eventId.value);
-  }
+  if (eventId.value) loadEvent(eventId.value);
 });
 
 const title = computed(() => (event.value ? getLocalizedText(event.value.title) : ''));
 const description = computed(() => (event.value ? getLocalizedText(event.value.description ?? event.value.title) : ''));
-
-const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
+const heroImage = computed(() => gallery.value[currentSlide.value]?.imageUrl ?? null);
+const priceHint = computed(() => {
+  const ev = event.value;
+  if (!ev?.config) return '無料/未設定';
+  if (ev.config.price) return `¥${ev.config.price}`;
+  return '無料/未設定';
+});
+const mapUrl = computed(() => {
+  const ev = event.value;
+  if (!ev) return null;
+  if (typeof ev.locationLat === 'number' && typeof ev.locationLng === 'number') {
+    return `https://www.google.com/maps/dir/?api=1&destination=${ev.locationLat},${ev.locationLng}`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.locationText)}`;
+});
+const ctaLabel = computed(() => {
+  if (!isLoggedIn.value) return 'ログイン';
+  if (hasRegistered.value) return '参加予定です';
+  return '参加する';
+});
+const ctaDisabled = computed(() => isRegistering.value || hasRegistered.value || Boolean(pendingPayment.value));
 
 const formatDate = (value?: string | null) => {
-  if (!value) return '未設定';
+  if (!value) return '--';
   return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 };
 
-const startRegistration = () => {
+const startRegistration = async () => {
   if (!eventId.value || !isLoggedIn.value) {
     registrationError.value = 'ログインしてください';
     return;
   }
-
   if (formFields.value.length) {
     initializeFormAnswers();
     showFormModal.value = true;
-    registrationError.value = null;
     return;
   }
-
-  submitRegistration({});
+  await submitRegistration({});
 };
 
+const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
+
 const submitRegistration = async (answers: Record<string, any>) => {
-  if (!eventId.value || !isLoggedIn.value) {
-    registrationError.value = 'ログインしてください';
-    return;
-  }
   isRegistering.value = true;
   registrationError.value = null;
   try {
-    const registration = await createRegistration(eventId.value, { formAnswers: answers });
+    const registration = await createRegistration(eventId.value!, { formAnswers: answers });
     handleRegistrationResult(registration);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to register for this event';
-    registrationError.value = message;
+    registrationError.value = err instanceof Error ? err.message : 'Failed to register for this event';
   } finally {
     isRegistering.value = false;
   }
@@ -277,10 +307,7 @@ const submitRegistration = async (answers: Record<string, any>) => {
 
 const handleRegistrationResult = (registration: EventRegistrationSummary) => {
   if (registration.paymentRequired) {
-    pendingPayment.value = {
-      registrationId: registration.registrationId,
-      amount: registration.amount,
-    };
+    pendingPayment.value = { registrationId: registration.registrationId, amount: registration.amount };
     paymentMessage.value = 'お支払いを完了すると参加が確定します。';
   } else {
     hasRegistered.value = true;
@@ -299,26 +326,32 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to process payment';
-    registrationError.value = message;
+    registrationError.value = err instanceof Error ? err.message : 'Failed to process payment';
   } finally {
     isPaying.value = false;
   }
 };
 
-const prevSlide = () => {
-  currentSlide.value = (currentSlide.value - 1 + gallery.value.length) % gallery.value.length;
-};
-const nextSlide = () => {
-  currentSlide.value = (currentSlide.value + 1) % gallery.value.length;
+const handleStripeCheckout = async () => {
+  if (!pendingPayment.value) return;
+  isRedirecting.value = true;
+  registrationError.value = null;
+  try {
+    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
+    window.location.href = checkoutUrl;
+  } catch (err: any) {
+    const message =
+      err?.response?.data?.message ??
+      (err instanceof Error ? err.message : 'Stripe Checkoutの開始に失敗しました');
+    registrationError.value = message;
+    isRedirecting.value = false;
+  }
 };
 
 const fieldKey = (field: RegistrationFormField, index: number) => field.id ?? `${field.label ?? 'field'}-${index}`;
 
 const initializeFormAnswers = () => {
-  for (const [key] of Object.entries(formAnswers)) {
-    delete formAnswers[key];
-  }
+  Object.keys(formAnswers).forEach((key) => delete formAnswers[key]);
   formFields.value.forEach((field, index) => {
     const key = fieldKey(field, index);
     if (field.type === 'checkbox') {
@@ -342,8 +375,7 @@ const submitDynamicForm = async () => {
   await submitRegistration({ ...formAnswers });
 };
 
-const getOptions = (field: RegistrationFormField) =>
-  Array.isArray(field.options) ? field.options : [];
+const getOptions = (field: RegistrationFormField) => (Array.isArray(field.options) ? field.options : []);
 
 const toggleMulti = (field: RegistrationFormField, index: number, option: string, checked: boolean) => {
   const key = fieldKey(field, index);
@@ -373,180 +405,280 @@ const inputType = (type: string) => {
       return 'text';
   }
 };
+
+const goBack = () => {
+  router.back();
+};
+
+const shareEvent = () => {
+  if (navigator.share && event.value) {
+    navigator.share({ title: title.value, url: window.location.href }).catch(() => undefined);
+  }
+};
+
+const openMap = () => {
+  if (mapUrl.value) {
+    window.open(mapUrl.value, '_blank');
+  }
+};
 </script>
 
 <style scoped>
-.event-detail-page {
+.detail-shell {
+  min-height: 100vh;
+  background: var(--color-bg);
+  padding-bottom: 72px;
+}
+
+.detail-header {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.back-link {
-  color: #2563eb;
-  text-decoration: none;
-}
-.status {
-  margin: 0.5rem 0;
-}
-.event-detail {
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
   background: #fff;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
 }
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+}
+
 .hero {
   position: relative;
   width: 100%;
-  height: 50vh;
-  border-radius: 0.75rem;
+  height: 260px;
   overflow: hidden;
 }
+
 .hero img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.hero .nav {
+
+.hero-overlay {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.4);
-  color: #fff;
-  border: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.hero .prev {
-  left: 1rem;
-}
-.hero .next {
-  right: 1rem;
-}
-.hero .dots {
-  position: absolute;
-  bottom: 1rem;
-  width: 100%;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.6));
   display: flex;
-  justify-content: center;
-  gap: 0.4rem;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 1rem;
+  color: #fff;
 }
-.hero .dot {
-  width: 10px;
-  height: 10px;
+
+.hero-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.hero-sub {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.hero-dots {
+  position: absolute;
+  bottom: 10px;
+  right: 16px;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.5);
 }
-.hero .dot.active {
-  background: white;
+
+.dot.active {
+  background: #fff;
 }
-.category {
-  font-size: 0.9rem;
-  color: #2563eb;
-  margin-bottom: 0.25rem;
+
+.info-card {
+  background: #fff;
+  border-radius: 18px;
+  margin: 12px;
+  padding: 1.1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 }
-.community {
-  color: #475569;
+.info-card ul {
+  padding-left: 1rem;
+  margin: 0.3rem 0;
 }
-.meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
+.info-card ul li {
+  margin: 0.2rem 0;
 }
-.meta dt {
-  font-weight: 600;
-  color: #475569;
-}
-.meta dd {
-  margin: 0;
-}
-.description .rich {
-  margin-top: 0.75rem;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 0.75rem;
-}
-.description .rich :global(p) {
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
-.config ul {
-  padding-left: 1.25rem;
+
+.card-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
-.cta {
-  border-top: 1px solid #e2e8f0;
-  padding-top: 1rem;
+
+.category-chip {
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  color: var(--color-primary);
+  font-size: 0.75rem;
 }
-.cta-actions {
+
+.info-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin-bottom: 0.45rem;
 }
-.cta-button {
-  padding: 0.8rem 1.4rem;
+
+.label {
+  color: var(--color-subtext);
+}
+
+.link {
   border: none;
-  border-radius: 0.5rem;
-  background: #2563eb;
-  color: #fff;
-  cursor: pointer;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
 }
-.payment-box {
-  border: 1px solid #cbd5f5;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
+
+.status-pill {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.status-pill.open {
+  background: rgba(0, 185, 0, 0.15);
+  color: var(--color-primary);
+}
+
+.status-pill.closed {
+  background: #ffe1e1;
+  color: #c53030;
+}
+
+.payment-card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
-.error {
-  color: #b91c1c;
+
+.payment-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.payment-actions button {
+  width: 100%;
+  border: none;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.payment-actions .primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.payment-actions .secondary {
+  background: #f1f3f5;
+  color: #333;
+}
+
+.rich :deep(h2),
+.rich :deep(h3) {
+  margin-top: 1rem;
+}
+
+.rich :deep(p) {
+  margin: 0.5rem 0;
+}
+
+.bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  gap: 1rem;
+}
+
+.price-block {
+  flex: 1;
+}
+
+.price-label {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-subtext);
+}
+
+.price-value {
+  margin: 0;
+  font-weight: 600;
+}
+
+.cta-btn {
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
+  padding: 0.7rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 600;
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  z-index: 50;
 }
+
 .modal {
   background: #fff;
   border-radius: 0.75rem;
-  width: min(600px, 100%);
   max-height: 90vh;
   overflow-y: auto;
-  padding: 1.25rem;
+  width: min(560px, 100%);
+  padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-.modal header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal .close {
-  border: none;
-  background: transparent;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-.dynamic-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
+
 .dynamic-form label,
 .dynamic-form textarea,
 .dynamic-form input,
 .dynamic-form select {
   width: 100%;
 }
+
 .dynamic-form input,
 .dynamic-form textarea,
 .dynamic-form select {
@@ -554,34 +686,48 @@ const inputType = (type: string) => {
   border-radius: 0.5rem;
   padding: 0.5rem;
 }
+
 .choice-group {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
+
 .choice-group .inline {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.4rem;
 }
+
 .dynamic-form footer {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
 }
+
 .primary {
   padding: 0.5rem 1rem;
-  background: #2563eb;
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 0.5rem;
-  cursor: pointer;
 }
+
 .secondary {
   padding: 0.5rem 1rem;
   border: 1px solid #cbd5f5;
-  background: white;
+  background: transparent;
   border-radius: 0.5rem;
-  cursor: pointer;
+}
+
+.status {
+  padding: 1rem;
+}
+.status.info {
+  color: var(--color-primary);
+}
+
+.error {
+  color: #c53030;
 }
 </style>

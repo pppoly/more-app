@@ -27,6 +27,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         language: true,
         prefecture: true,
         avatarUrl: true,
+        isOrganizer: true,
+        isAdmin: true,
       },
     });
 

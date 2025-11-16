@@ -19,10 +19,13 @@ model User {
   prefecture    String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  isOrganizer   Boolean             @default(false)
+  isAdmin       Boolean             @default(false)
   communities   Community[]         @relation("CommunityOwner")
   memberships   CommunityMember[]
   registrations EventRegistration[]
   payments      Payment[]
+  organizerApplications OrganizerApplication[]
 }
 
 model Community {
@@ -35,19 +38,26 @@ model Community {
   labels         String[]
   visibleLevel   String
   language       String?
+  pricingPlanId  String?
+  stripeAccountId String?
+  stripeAccountOnboarded Boolean    @default(false)
+  stripeSubscriptionId String?
+  stripeCustomerId String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   owner          User               @relation("CommunityOwner", fields: [ownerId], references: [id])
+  pricingPlan    PricingPlan?       @relation(fields: [pricingPlanId], references: [id])
   members        CommunityMember[]
   events         Event[]
+  payments       Payment[]
 }
 
 model CommunityMember {
   id              String    @id @default(cuid())
   communityId     String
   userId          String
-  role            String
-  status          String
+  role            String    @default("member")
+  status          String    @default("active")
   joinedAt        DateTime  @default(now())
   lastActiveAt    DateTime?
   totalAttendance Int       @default(0)
@@ -73,6 +83,8 @@ model Event {
   regStartTime           DateTime?
   regEndTime             DateTime?
   locationText           String
+  locationLat            Float?
+  locationLng            Float?
   minParticipants        Int?
   maxParticipants        Int?
   visibility             String
@@ -80,6 +92,7 @@ model Event {
   status                 String
   registrationFormSchema Json?
   config                 Json?
+  refundPolicy           Json?
   coverType              String?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
@@ -121,6 +134,7 @@ model EventRegistration {
   user          User            @relation(fields: [userId], references: [id])
   ticketType    EventTicketType @relation(fields: [ticketTypeId], references: [id])
   checkins      EventCheckin[]
+  payment       Payment?        @relation("RegistrationPayment")
 }
 
 model EventCheckin {
@@ -144,16 +158,61 @@ model EventGallery {
 }
 
 model Payment {
-  id            String    @id @default(cuid())
-  userId        String
-  eventId       String?
-  amount        Int
-  method        String
-  platformFee   Int       @default(0)
-  status        String
-  transactionId String    @unique
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  user          User      @relation(fields: [userId], references: [id])
-  event         Event?    @relation(fields: [eventId], references: [id])
+  id                      String    @id @default(cuid())
+  userId                  String
+  communityId             String?
+  eventId                 String?
+  registrationId          String?  @unique
+  amount                  Int
+  platformFee             Int      @default(0)
+  currency                String   @default("jpy")
+  status                  String   @default("pending")
+  method                  String   @default("stripe")
+  stripePaymentIntentId   String?
+  stripeChargeId          String?
+  stripeRefundId          String?
+  stripeCheckoutSessionId String? @unique
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], references: [id])
+  community               Community? @relation(fields: [communityId], references: [id])
+  event                   Event?    @relation(fields: [eventId], references: [id])
+  registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
+}
+
+model PricingPlan {
+  id                    String      @id
+  name                  String
+  monthlyFee            Int
+  transactionFeePercent Float
+  transactionFeeFixed   Int
+  payoutSchedule        String
+  features              Json?
+  stripePriceId         String?
+  active                Boolean     @default(true)
+  feePolicies           FeePolicy[]
+  communities           Community[]
+}
+
+model FeePolicy {
+  id            String   @id @default(cuid())
+  pricingPlanId String
+  pricingPlan   PricingPlan @relation(fields: [pricingPlanId], references: [id])
+  percent       Float
+  fixed         Int
+  startAt       DateTime @default(now())
+  endAt         DateTime?
+}
+
+model OrganizerApplication {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  status     String   @default("pending")
+  reason     String?
+  experience String?
+  note       String?
+  createdAt  DateTime @default(now())
+  reviewedAt DateTime?
+  reviewerId String?
 }

@@ -1,44 +1,89 @@
 <template>
-  <section class="events-page">
-    <header>
-      <h2>MORE App イベント一覧</h2>
-      <p class="subtext">公開中のイベントを確認して、気になるものをチェックしましょう。</p>
+  <section class="events-mobile">
+    <header class="app-bar">
+      <div class="logo-circle">M</div>
+      <div class="app-title">
+        <p class="title">MORE イベント</p>
+        <p class="subtitle">気になるイベントをチャット感覚でチェック</p>
+      </div>
+      <RouterLink v-if="!user" class="login-chip" to="/organizer/apply">ログイン</RouterLink>
+      <div v-else class="user-avatar">{{ userInitial }}</div>
     </header>
 
-    <p v-if="loading" class="status">読み込み中…</p>
+    <div class="search-section">
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input v-model="searchTerm" type="search" placeholder="イベント / コミュニティを検索" />
+      </div>
+      <div class="chip-row">
+        <button
+          v-for="chip in categories"
+          :key="chip.value"
+          :class="['chip', { active: selectedCategory === chip.value }]"
+          type="button"
+          @click="selectedCategory = chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
+    </div>
+
+    <p v-if="loading" class="status">読み込み中...</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
-    <template v-else>
-      <div v-if="!events.length" class="empty">
-        <p>現在公開中のイベントはありません。（暂无活动）</p>
+    <div v-else class="list-wrapper">
+      <div v-if="!filteredEvents.length" class="empty-state">
+        現在公開中のイベントはありません。
       </div>
-      <ul v-else class="event-list">
-        <li v-for="event in events" :key="event.id" class="event-card">
-          <RouterLink :to="`/events/${event.id}`">
-            <h3>{{ titleFor(event) }}</h3>
-          </RouterLink>
-          <div class="meta-row">
-            <span class="badge" :class="statusBadge(event).class">{{ statusBadge(event).text }}</span>
-            <span class="price">{{ priceLabel(event) }}</span>
+      <ul v-else class="chat-list">
+        <li v-for="event in filteredEvents" :key="event.id" class="chat-card" @click="goDetail(event.id)">
+          <div class="cover" :style="coverStyle(event)">
+            <span>{{ coverInitial(event) }}</span>
           </div>
-          <p class="community">{{ event.community.name }}</p>
-          <p class="time">{{ formatDate(event.startTime) }}</p>
-          <p class="location">{{ event.locationText }}</p>
+          <div class="info">
+            <p class="chat-title">{{ titleFor(event) }}</p>
+            <p class="chat-sub">{{ formatDate(event.startTime) }} · {{ event.locationText }}</p>
+            <div class="chat-meta">
+              <span class="status-pill" :class="statusBadge(event).class">{{ statusBadge(event).text }}</span>
+              <span class="capacity">{{ participationLabel }}</span>
+            </div>
+          </div>
         </li>
       </ul>
-    </template>
+    </div>
+
+    <nav class="tab-bar">
+      <RouterLink to="/events" class="tab-item active">イベント</RouterLink>
+      <RouterLink to="/community/musashino-kids" class="tab-item">コミュニティ</RouterLink>
+      <RouterLink to="/console" class="tab-item">コンソール</RouterLink>
+    </nav>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { useAuth } from '../../composables/useAuth';
+
+const router = useRouter();
+const { user } = useAuth();
 
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const searchTerm = ref('');
+const categories = [
+  { label: '全部', value: 'all' },
+  { label: '親子', value: 'kids' },
+  { label: 'スポーツ', value: 'sports' },
+  { label: '言語交換', value: 'language' },
+  { label: '新来日本', value: 'newlife' },
+  { label: '仕事・スキル', value: 'career' },
+];
+const selectedCategory = ref('all');
 
 const loadEvents = async () => {
   loading.value = true;
@@ -52,12 +97,26 @@ const loadEvents = async () => {
   }
 };
 
+const filteredEvents = computed(() => {
+  const keyword = searchTerm.value.toLowerCase();
+  return events.value.filter((event) => {
+    const category = (event.category || 'other').toLowerCase();
+    const matchesCategory = selectedCategory.value === 'all' || category.includes(selectedCategory.value);
+    const title = titleFor(event).toLowerCase();
+    const matchesKeyword = !keyword || title.includes(keyword) || event.locationText.toLowerCase().includes(keyword);
+    return matchesCategory && matchesKeyword;
+  });
+});
+
+const userInitial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?? 'U');
+
 const titleFor = (event: EventSummary) => getLocalizedText(event.title);
 
 const formatDate = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+  new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    weekday: 'short',
   });
 
 const statusBadge = (event: EventSummary) => {
@@ -69,115 +128,244 @@ const statusBadge = (event: EventSummary) => {
   return { text: '終了', class: 'closed' };
 };
 
-const priceLabel = (event: EventSummary) => {
-  if (!event.priceRange || event.priceRange.max <= 0) {
-    return '参加費: 無料';
-  }
-  const { min, max } = event.priceRange;
-  if (min === max) {
-    return `参加費: ¥${min.toLocaleString()}`;
-  }
-  return `参加費: ¥${min.toLocaleString()}〜`;
+const coverInitial = (event: EventSummary) => (event.community.name?.charAt(0) ?? 'M').toUpperCase();
+const coverStyle = (event: EventSummary) => ({
+  background: `linear-gradient(135deg, var(--color-primary), #4cd964)`,
+});
+
+const participationLabel = '参加枠: チェック中';
+
+const goDetail = (eventId: string) => {
+  router.push(`/events/${eventId}`);
 };
 
 onMounted(loadEvents);
 </script>
 
 <style scoped>
-.events-page {
+.events-mobile {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  background: var(--color-bg);
+  padding-bottom: 64px;
 }
 
-header h2 {
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.logo-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-title .title {
   margin: 0;
+  font-weight: 700;
 }
 
-.subtext {
-  color: #475569;
-  margin: 0.2rem 0 0;
+.app-title .subtitle {
+  margin: 0;
+  color: var(--color-subtext);
+  font-size: 0.75rem;
 }
 
-.status {
-  margin: 0.5rem 0;
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #d6f5db;
+  color: var(--color-primary);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.empty {
-  border: 1px dashed #cbd5f5;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  color: #475569;
-  background: #f8fafc;
+.login-chip {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
 }
 
-.event-list {
+.search-section {
+  padding: 0.75rem 1rem 0.25rem;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f1f3f4;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.search-box input {
+  border: none;
+  flex: 1;
+  background: transparent;
+  font-size: 0.95rem;
+}
+
+.search-box input:focus {
+  outline: none;
+}
+
+.chip-row {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.chip {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-subtext);
+}
+
+.chip.active {
+  background: var(--color-primary);
+  border: none;
+  color: #fff;
+}
+
+.list-wrapper {
+  flex: 1;
+  padding: 0 1rem;
+}
+
+.chat-list {
   list-style: none;
   padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
-.event-card {
-  background: #fff;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-}
-
-.event-card h3 {
-  margin: 0 0 0.4rem;
-  color: #1e293b;
-}
-
-.meta-row {
+.chat-card {
   display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.4rem;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
 }
 
-.badge {
-  padding: 0.1rem 0.6rem;
+.cover {
+  width: 90px;
+  height: 68px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.chat-sub {
+  margin: 0;
+  color: var(--color-subtext);
+  font-size: 0.85rem;
+}
+
+.chat-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-pill {
+  padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
 }
 
-.badge.open {
-  background: #dcfce7;
-  color: #15803d;
+.status-pill.open {
+  background: rgba(0, 185, 0, 0.15);
+  color: var(--color-primary);
 }
 
-.badge.closed {
-  background: #fee2e2;
-  color: #b91c1c;
+.status-pill.closed {
+  background: #ffe9e9;
+  color: #c53030;
 }
 
-.price {
-  font-size: 0.85rem;
-  color: #475569;
+.capacity {
+  font-size: 0.75rem;
+  color: var(--color-subtext);
 }
 
-.community {
-  color: #0f172a;
+.empty-state {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px dashed var(--color-border);
+  color: var(--color-subtext);
+}
+
+.tab-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid var(--color-border);
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 0.65rem 0;
+  color: var(--color-subtext);
   font-weight: 600;
-  margin: 0.2rem 0;
 }
 
-.time,
-.location {
-  margin: 0.2rem 0;
-  color: #475569;
+.tab-item.active {
+  color: var(--color-primary);
+}
+
+.status {
+  padding: 0 1rem;
 }
 
 .error {
-  color: #b91c1c;
-}
-
-.muted {
-  color: #94a3b8;
+  color: #c53030;
 }
 </style>

@@ -9,6 +9,7 @@ import { MeModule } from './me/me.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ConsoleModule } from './console/console.module';
 import { AiModule } from './ai/ai.module';
+import { OrganizersModule } from './organizers/organizers.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AiModule } from './ai/ai.module';
     PaymentsModule,
     ConsoleModule,
     AiModule,
+    OrganizersModule,
   ],
   controllers: [HealthController, HelloController],
   providers: [],

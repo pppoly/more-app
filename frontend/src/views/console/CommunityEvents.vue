@@ -1,44 +1,48 @@
 <template>
-  <section class="console-section" v-if="community">
-    <header class="section-header">
-      <div>
+  <section class="console-feed" v-if="community">
+    <header class="feed-header">
+      <div class="title-block">
+        <p class="label">{{ community.slug }}</p>
         <h2>{{ community.name }}</h2>
-        <p class="slug">{{ community.slug }}</p>
       </div>
-      <RouterLink :to="`/console/communities/${community.id}/events/create`" class="primary">
-        ＋ 新規イベント
-      </RouterLink>
+      <div class="header-actions">
+        <RouterLink :to="`/console/communities/${community.id}/finance`" class="link-btn">決済/プラン</RouterLink>
+        <RouterLink :to="`/console/communities/${community.id}/events/create`" class="fab small">
+          ＋ 新規
+        </RouterLink>
+      </div>
     </header>
 
-    <p v-if="loading" class="status">イベント読み込み中…</p>
+    <p v-if="loading" class="status">イベント読み込み中...</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
-    <template v-else>
-      <table class="event-table" v-if="events.length">
-        <thead>
-          <tr>
-            <th>タイトル</th>
-            <th>開始</th>
-            <th>状態</th>
-            <th>公開範囲</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="event in events" :key="event.id">
-            <td>{{ getTitle(event) }}</td>
-            <td>{{ formatDate(event.startTime) }}</td>
-            <td>{{ event.status }}</td>
-            <td>{{ event.visibility }}</td>
-            <td class="actions">
-              <RouterLink :to="`/console/events/${event.id}/edit`">編集</RouterLink>
-              <RouterLink :to="`/console/events/${event.id}/registrations`">参加者</RouterLink>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="muted">このコミュニティにまだイベントがありません。</p>
-    </template>
+    <div v-else>
+      <div v-if="!events.length" class="empty-state">
+        まだイベントがありません。右下のボタンから作成しましょう。
+      </div>
+      <ul v-else class="chat-feed">
+        <li v-for="event in events" :key="event.id" class="feed-card">
+          <div class="thumb">{{ coverInitial(event) }}</div>
+          <div class="feed-info">
+            <p class="feed-title">{{ getTitle(event) }}</p>
+            <p class="feed-sub">{{ formatDate(event.startTime) }} · {{ event.status }}</p>
+            <div class="feed-meta">
+              <span class="status-pill" :class="event.status === 'open' ? 'open' : 'closed'">
+                {{ event.status === 'open' ? '受付中' : '終了' }}
+              </span>
+              <div class="actions">
+                <RouterLink :to="`/console/events/${event.id}/edit`">編集</RouterLink>
+                <RouterLink :to="`/console/events/${event.id}/registrations`">参加者</RouterLink>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <RouterLink :to="`/console/communities/${community.id}/events/create`" class="fab">
+      ＋ 新しいイベント
+    </RouterLink>
   </section>
 </template>
 
@@ -71,75 +75,158 @@ const load = async () => {
 };
 
 const getTitle = (event: ConsoleEventSummary) => getLocalizedText(event.title);
-
 const formatDate = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+  new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    weekday: 'short',
+    hour: '2-digit',
   });
+const coverInitial = (event: ConsoleEventSummary) => getTitle(event).charAt(0).toUpperCase();
 
 onMounted(load);
 </script>
 
 <style scoped>
-.console-section {
+.console-feed {
+  position: relative;
+  padding-bottom: 80px;
+}
+
+.feed-header {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
   gap: 1rem;
 }
 
-.section-header {
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.link-btn {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  color: var(--color-primary);
+}
+
+.title-block .label {
+  margin: 0;
+  color: var(--color-subtext);
+  font-size: 0.85rem;
+}
+
+.title-block h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.chat-feed {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.feed-card {
+  display: flex;
+  gap: 0.75rem;
+  background: #fff;
+  padding: 0.75rem;
+  border-radius: 14px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+}
+
+.thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--color-primary), #6dda8b);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.3rem;
+}
+
+.feed-info {
+  flex: 1;
+}
+
+.feed-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.feed-sub {
+  margin: 0.2rem 0;
+  color: var(--color-subtext);
+  font-size: 0.85rem;
+}
+
+.feed-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.slug {
-  color: #94a3b8;
+.status-pill {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
 }
 
-.event-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  border-radius: 0.75rem;
-  overflow: hidden;
+.status-pill.open {
+  background: rgba(0, 185, 0, 0.15);
+  color: var(--color-primary);
 }
 
-.event-table th,
-.event-table td {
-  padding: 0.75rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.event-table tbody tr:last-child td {
-  border-bottom: none;
+.status-pill.closed {
+  background: #ffe1e1;
+  color: #c53030;
 }
 
 .actions a {
-  margin-right: 0.5rem;
-  color: #2563eb;
-  text-decoration: none;
+  margin-left: 0.5rem;
+  color: var(--color-primary);
 }
 
 .status {
-  color: #475569;
+  color: var(--color-subtext);
 }
 
 .error {
-  color: #b91c1c;
+  color: #c53030;
 }
 
-.muted {
-  color: #94a3b8;
+.empty-state {
+  background: #fff;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  padding: 1rem;
+  color: var(--color-subtext);
 }
 
-.primary {
-  padding: 0.4rem 0.9rem;
-  border-radius: 0.5rem;
-  background: #2563eb;
-  color: white;
-  text-decoration: none;
+.fab {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.6rem 1.2rem;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.fab.small {
+  position: static;
+  box-shadow: none;
 }
 </style>

@@ -1,18 +1,19 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import type { Express } from 'express';
+import { PermissionsService } from '../auth/permissions.service';
 
 const EVENT_UPLOAD_ROOT = join(process.cwd(), 'uploads', 'events');
 
 @Injectable()
 export class ConsoleEventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
-    await this.ensureCommunityAdmin(userId, communityId);
+    await this.permissions.assertCommunityManager(userId, communityId);
     return this.prisma.event.findMany({
       where: { communityId },
       orderBy: { startTime: 'asc' },
@@ -28,7 +29,8 @@ export class ConsoleEventsService {
   }
 
   async createEvent(userId: string, communityId: string, payload: any) {
-    await this.ensureCommunityAdmin(userId, communityId);
+    await this.permissions.assertOrganizer(userId);
+    await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
     return this.prisma.event.create({
@@ -49,19 +51,17 @@ export class ConsoleEventsService {
   }
 
   async getEvent(userId: string, eventId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: { ticketTypes: true, community: true, galleries: { orderBy: { order: 'asc' } } },
     });
     if (!event) throw new NotFoundException('Event not found');
-    await this.ensureCommunityAdmin(userId, event.communityId, event.community.ownerId);
     return event;
   }
 
   async updateEvent(userId: string, eventId: string, data: any) {
-    const event = await this.prisma.event.findUnique({ where: { id: eventId }, include: { community: true } });
-    if (!event) throw new NotFoundException('Event not found');
-    await this.ensureCommunityAdmin(userId, event.communityId, event.community.ownerId);
+    await this.permissions.assertEventManager(userId, eventId);
     const { ticketTypes = [], ...rest } = data;
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
     const updated = await this.prisma.event.update({
@@ -96,25 +96,170 @@ export class ConsoleEventsService {
     return updated;
   }
 
-  async listRegistrations(userId: string, eventId: string) {
-    const event = await this.prisma.event.findUnique({ where: { id: eventId }, include: { community: true } });
-    if (!event) throw new NotFoundException('Event not found');
-    await this.ensureCommunityAdmin(userId, event.communityId, event.community.ownerId);
-
-    return this.prisma.eventRegistration.findMany({
+  async listRegistrationsDetailed(userId: string, eventId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registrations = await this.prisma.eventRegistration.findMany({
       where: { eventId },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        status: true,
-        paymentStatus: true,
-        createdAt: true,
-        user: { select: { id: true, name: true, language: true } },
+      include: {
+        user: { select: { id: true, name: true, avatarUrl: true } },
+        ticketType: { select: { id: true, name: true, price: true } },
       },
     });
+
+    return {
+      total: registrations.length,
+      items: registrations.map((reg) => ({
+        registrationId: reg.id,
+        user: {
+          id: reg.user?.id ?? '',
+          name: reg.user?.name ?? 'ゲスト',
+          avatarUrl: reg.user?.avatarUrl ?? null,
+        },
+        ticket: reg.ticketType
+          ? {
+              id: reg.ticketType.id,
+              name: this.getLocalizedText(reg.ticketType.name),
+              price: reg.ticketType.price,
+            }
+          : null,
+        status: reg.status,
+        paymentStatus: reg.paymentStatus,
+        attended: reg.attended,
+        noShow: reg.noShow,
+        amount: reg.amount,
+        createdAt: reg.createdAt,
+        formAnswers: reg.formAnswers ?? {},
+      })),
+    };
+  }
+
+  async getRegistrationsSummary(userId: string, eventId: string) {
+    const event = await this.permissions.assertEventManager(userId, eventId);
+    const fullEvent = await this.prisma.event.findUnique({
+      where: { id: event.id },
+      include: { ticketTypes: true },
+    });
+    if (!fullEvent) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const registrations = await this.prisma.eventRegistration.findMany({
+      where: { eventId },
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { id: true, name: true, avatarUrl: true } } },
+    });
+
+    const total = registrations.length;
+    const paid = registrations.filter((reg) => reg.paymentStatus === 'paid').length;
+    const attended = registrations.filter((reg) => reg.attended).length;
+    const noShow = registrations.filter((reg) => reg.noShow).length;
+    const capacity = fullEvent.maxParticipants ?? null;
+
+    const groups = fullEvent.ticketTypes.map((ticket) => ({
+      label: this.getLocalizedText(ticket.name),
+      count: registrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
+      capacity: ticket.quota ?? capacity,
+    }));
+
+    const avatars = registrations.slice(0, 20).map((reg) => ({
+      userId: reg.userId,
+      name: reg.user?.name ?? 'ゲスト',
+      avatarUrl: reg.user?.avatarUrl ?? null,
+      status: reg.paymentStatus,
+    }));
+
+    return {
+      eventId: fullEvent.id,
+      title: this.getLocalizedText(fullEvent.title),
+      status: fullEvent.status,
+      capacity,
+      totalRegistrations: total,
+      paidRegistrations: paid,
+      attended,
+      noShow,
+      groups,
+      avatars,
+    };
+  }
+
+  async exportRegistrationsCsv(userId: string, eventId: string) {
+    const event = await this.permissions.assertEventManager(userId, eventId);
+    const fullEvent = await this.prisma.event.findUnique({ where: { id: event.id } });
+    if (!fullEvent) throw new NotFoundException('Event not found');
+
+    const formSchema = Array.isArray(fullEvent.registrationFormSchema)
+      ? (fullEvent.registrationFormSchema as Array<Record<string, any>>)
+      : [];
+    const dynamicColumns = formSchema.map((field, index) => {
+      const label = field?.label ? String(field.label) : `Field ${index + 1}`;
+      const key = field?.id ? String(field.id) : `${field?.label ?? 'field'}-${index}`;
+      return { key, label };
+    });
+
+    const registrations = await this.prisma.eventRegistration.findMany({
+      where: { eventId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: { select: { id: true, name: true } },
+        ticketType: { select: { id: true, name: true, price: true } },
+      },
+    });
+
+    const baseHeaders = [
+      'User Name',
+      'User ID',
+      'Ticket Name',
+      'Ticket Price',
+      'Amount',
+      'Payment Status',
+      'Status',
+      'Attended',
+      'No Show',
+      'Created At',
+    ];
+    const headerRow = [...baseHeaders, ...dynamicColumns.map((col) => col.label)];
+
+    const rows = registrations.map((reg) => {
+      const ticketName = reg.ticketType ? this.getLocalizedText(reg.ticketType.name) : '';
+      const baseValues = [
+        reg.user?.name ?? 'ゲスト',
+        reg.user?.id ?? '',
+        ticketName,
+        (reg.ticketType?.price ?? '').toString(),
+        reg.amount?.toString() ?? '',
+        reg.paymentStatus,
+        reg.status,
+        reg.attended ? 'yes' : 'no',
+        reg.noShow ? 'yes' : 'no',
+        reg.createdAt.toISOString(),
+      ];
+
+      const answers = (reg.formAnswers ?? {}) as Record<string, any>;
+      const dynamicValues = dynamicColumns.map((col) => {
+        const raw = answers[col.key] ?? answers[col.label];
+        if (raw === undefined || raw === null) return '';
+        if (Array.isArray(raw)) return raw.join('; ');
+        if (typeof raw === 'object') return JSON.stringify(raw);
+        return String(raw);
+      });
+
+      return [...baseValues, ...dynamicValues];
+    });
+
+    const csvLines = [headerRow, ...rows].map((row) => row.map(this.escapeCsv).join(','));
+    return {
+      filename: `event-${eventId}-registrations.csv`,
+      csv: csvLines.join('\n'),
+    };
+  }
+
+  async listRegistrations(userId: string, eventId: string) {
+    return this.listRegistrationsDetailed(userId, eventId);
   }
 
   async closeEvent(eventId: string, userId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: { community: true },
@@ -123,8 +268,6 @@ export class ConsoleEventsService {
     if (!event) {
       throw new NotFoundException('Event not found');
     }
-
-    await this.ensureCommunityAdmin(userId, event.communityId, event.community.ownerId);
 
     if (event.status === 'closed') {
       return { eventId: event.id, status: 'closed', summary: await this.buildSummary(eventId) };
@@ -208,46 +351,31 @@ export class ConsoleEventsService {
     };
   }
 
-  private async ensureCommunityAdmin(userId: string, communityId: string, ownerId?: string) {
-    if (!ownerId) {
-      const community = await this.prisma.community.findUnique({ where: { id: communityId } });
-      if (!community) throw new NotFoundException('Community not found');
-      ownerId = community.ownerId;
+  private getLocalizedText(content: Prisma.JsonValue | string | null | undefined): string {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (typeof content === 'object') {
+      const record = content as Record<string, any>;
+      if (typeof record.original === 'string') {
+        return record.original;
+      }
     }
-
-    if (ownerId === userId) {
-      return;
-    }
-
-    const member = await this.prisma.communityMember.findUnique({
-      where: { communityId_userId: { communityId, userId } },
-    });
-
-    if (!member || (member.role !== 'admin' && member.role !== 'owner')) {
-      throw new ForbiddenException('Not authorized');
-    }
+    return '';
   }
 
-  private async buildSummary(eventId: string) {
-    const totalRegistrations = await this.prisma.eventRegistration.count({ where: { eventId } });
-    const attended = await this.prisma.eventRegistration.count({ where: { eventId, attended: true } });
-    const noShow = await this.prisma.eventRegistration.count({ where: { eventId, noShow: true } });
-    return {
-      totalRegistrations,
-      attended,
-      noShow,
-    };
+  private escapeCsv(value: string) {
+    const str = value ?? '';
+    if (/[",\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
   }
 
   async uploadEventCovers(userId: string, eventId: string, files: Express.Multer.File[]) {
     if (!files || !files.length) {
       return [];
     }
-    const event = await this.prisma.event.findUnique({ where: { id: eventId }, include: { community: true } });
-    if (!event) {
-      throw new NotFoundException('Event not found');
-    }
-    await this.ensureCommunityAdmin(userId, event.communityId, event.community.ownerId);
+    await this.permissions.assertEventManager(userId, eventId);
 
     await fs.mkdir(EVENT_UPLOAD_ROOT, { recursive: true });
     const eventDir = join(EVENT_UPLOAD_ROOT, eventId);
@@ -315,6 +443,8 @@ export class ConsoleEventsService {
     }
 
     assign('locationText', payload.locationText);
+    assign('locationLat', payload.locationLat ?? null);
+    assign('locationLng', payload.locationLng ?? null);
 
     if (payload.minParticipants !== undefined) {
       assign('minParticipants', payload.minParticipants);
@@ -341,5 +471,16 @@ export class ConsoleEventsService {
     }
     assign('coverType', payload.coverType ?? null);
     return data;
+  }
+
+  private async buildSummary(eventId: string) {
+    const totalRegistrations = await this.prisma.eventRegistration.count({ where: { eventId } });
+    const attended = await this.prisma.eventRegistration.count({ where: { eventId, attended: true } });
+    const noShow = await this.prisma.eventRegistration.count({ where: { eventId, noShow: true } });
+    return {
+      totalRegistrations,
+      attended,
+      noShow,
+    };
   }
 }

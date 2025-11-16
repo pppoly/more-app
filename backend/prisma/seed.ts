@@ -63,6 +63,7 @@ async function createRegistration(options: {
   attended?: boolean;
   noShow?: boolean;
 }) {
+  const event = await prisma.event.findUnique({ where: { id: options.eventId }, select: { communityId: true } });
   const ticket = await prisma.eventTicketType.findUnique({ where: { id: options.ticketTypeId } });
   const amount = ticket?.price ?? 0;
 
@@ -86,11 +87,13 @@ async function createRegistration(options: {
       data: {
         userId: options.userId,
         eventId: options.eventId,
+        communityId: event?.communityId,
+        registrationId: registration.id,
         amount,
         method: 'mock',
         platformFee: 0,
+        currency: 'jpy',
         status: 'paid',
-        transactionId: `seed-${registration.id}-${Date.now()}`,
       },
     });
   }
@@ -116,7 +119,30 @@ async function main() {
   await prisma.event.deleteMany();
   await prisma.communityMember.deleteMany();
   await prisma.community.deleteMany();
+  await prisma.feePolicy.deleteMany();
+  await prisma.pricingPlan.deleteMany();
+  await prisma.organizerApplication.deleteMany();
   await prisma.user.deleteMany();
+
+  const starterPlan = await prisma.pricingPlan.create({
+    data: {
+      id: 'starter',
+      name: 'Starter',
+      monthlyFee: 0,
+      transactionFeePercent: 5,
+      transactionFeeFixed: 0,
+      payoutSchedule: 'manual',
+      features: { support: ['basic'] },
+    },
+  });
+
+  await prisma.feePolicy.create({
+    data: {
+      pricingPlanId: starterPlan.id,
+      percent: 5,
+      fixed: 0,
+    },
+  });
 
   const ownerA = await prisma.user.create({
     data: { name: '三鷹 多文化ママ', language: 'ja', prefecture: 'Tokyo' },
@@ -143,6 +169,7 @@ async function main() {
       name: '武蔵野 多文化親子探索会',
       slug: 'musashino-kids',
       ownerId: ownerA.id,
+      pricingPlanId: starterPlan.id,
       visibleLevel: 'public',
       labels: ['親子', '多文化', '自然'],
       description: multiText(
@@ -159,6 +186,7 @@ async function main() {
       name: 'Tokyo Language & Culture Lounge',
       slug: 'tokyo-language-exchange',
       ownerId: ownerB.id,
+      pricingPlanId: starterPlan.id,
       visibleLevel: 'public',
       labels: ['言語交換', '国際交流'],
       description: multiText(
