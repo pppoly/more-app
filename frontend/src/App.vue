@@ -1,12 +1,28 @@
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <h1>MORE App (モア アプリ)</h1>
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/events">Events</RouterLink>
-        <RouterLink to="/console">Console</RouterLink>
-      </nav>
+      <div class="brand">
+        <h1>MORE App (モア アプリ)</h1>
+        <nav>
+          <RouterLink to="/">Home</RouterLink>
+          <RouterLink to="/events">Events</RouterLink>
+          <RouterLink v-if="user" to="/console/communities">Console</RouterLink>
+          <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
+        </nav>
+      </div>
+      <div class="auth-panel">
+        <span v-if="initializing">Checking session...</span>
+        <template v-else>
+          <div v-if="user" class="logged-in">
+            <span>ようこそ, {{ user.name }}</span>
+            <button type="button" @click="logout">Logout</button>
+          </div>
+          <div v-else class="login-buttons">
+            <button type="button" @click="handleDevLogin">Dev Login</button>
+            <button type="button" @click="handleLineLogin">LINE Login</button>
+          </div>
+        </template>
+      </div>
     </header>
     <main>
       <RouterView />
@@ -14,7 +30,25 @@
   </div>
 </template>
 
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { useAuth } from './composables/useAuth';
+
+const { user, initializing, loginDev, logout } = useAuth();
+
+const handleDevLogin = async () => {
+  const name = window.prompt('Enter a display name for dev login', 'MORE Test User');
+  if (!name) {
+    return;
+  }
+  await loginDev(name);
+};
+
+const handleLineLogin = () => {
+  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
+  const backendOrigin = base.replace(/\/$/, '').replace(/\/api\/v1$/, '');
+  window.location.href = `${backendOrigin}/api/v1/auth/line/redirect`;
+};
+</script>
 
 <style scoped>
 .app-shell {
@@ -34,6 +68,12 @@
   gap: 1rem;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
 .app-header h1 {
   margin: 0;
   font-size: 1.4rem;
@@ -48,6 +88,27 @@ nav a {
   text-decoration: none;
   color: #2f5bea;
   font-weight: 600;
+}
+
+.auth-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logged-in {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-panel button {
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  padding: 0.4rem 0.9rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
 }
 
 main {

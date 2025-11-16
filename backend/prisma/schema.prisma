@@ -1,0 +1,159 @@
+// Prisma schema for MORE App backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String              @id @default(cuid())
+  lineUserId    String?             @unique
+  email         String?             @unique
+  name          String?
+  avatarUrl     String?
+  language      String?
+  prefecture    String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  communities   Community[]         @relation("CommunityOwner")
+  memberships   CommunityMember[]
+  registrations EventRegistration[]
+  payments      Payment[]
+}
+
+model Community {
+  id             String             @id @default(cuid())
+  ownerId        String
+  name           String
+  slug           String             @unique
+  description    Json
+  coverImageUrl  String?
+  labels         String[]
+  visibleLevel   String
+  language       String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  owner          User               @relation("CommunityOwner", fields: [ownerId], references: [id])
+  members        CommunityMember[]
+  events         Event[]
+}
+
+model CommunityMember {
+  id              String    @id @default(cuid())
+  communityId     String
+  userId          String
+  role            String
+  status          String
+  joinedAt        DateTime  @default(now())
+  lastActiveAt    DateTime?
+  totalAttendance Int       @default(0)
+  totalRegistered Int       @default(0)
+  totalNoShow     Int       @default(0)
+  community       Community @relation(fields: [communityId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([communityId, userId])
+}
+
+model Event {
+  id                     String               @id @default(cuid())
+  communityId            String
+  title                  Json
+  description            Json
+  descriptionHtml        String?
+  originalLanguage       String               @default("ja")
+  category               String?
+  startTime              DateTime
+  endTime                DateTime
+  regDeadline            DateTime
+  regStartTime           DateTime?
+  regEndTime             DateTime?
+  locationText           String
+  minParticipants        Int?
+  maxParticipants        Int?
+  visibility             String
+  requireApproval        Boolean              @default(false)
+  status                 String
+  registrationFormSchema Json?
+  config                 Json?
+  coverType              String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  community              Community            @relation(fields: [communityId], references: [id])
+  ticketTypes            EventTicketType[]
+  registrations          EventRegistration[]
+  checkins               EventCheckin[]
+  galleries              EventGallery[]
+  payments               Payment[]
+}
+
+model EventTicketType {
+  id         String   @id @default(cuid())
+  eventId    String
+  name       Json
+  type       String
+  price      Int
+  quota      Int?
+  createdAt  DateTime @default(now())
+  event      Event    @relation(fields: [eventId], references: [id])
+  registrations EventRegistration[]
+}
+
+model EventRegistration {
+  id            String          @id @default(cuid())
+  eventId       String
+  userId        String
+  ticketTypeId  String
+  status        String
+  formAnswers   Json?
+  amount        Int             @default(0)
+  paidAmount    Int             @default(0)
+  paymentStatus String
+  attended      Boolean         @default(false)
+  noShow        Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  event         Event           @relation(fields: [eventId], references: [id])
+  user          User            @relation(fields: [userId], references: [id])
+  ticketType    EventTicketType @relation(fields: [ticketTypeId], references: [id])
+  checkins      EventCheckin[]
+}
+
+model EventCheckin {
+  id             String           @id @default(cuid())
+  eventId        String
+  registrationId String
+  checkinAt      DateTime         @default(now())
+  checkinType    String
+  event          Event            @relation(fields: [eventId], references: [id])
+  registration   EventRegistration @relation(fields: [registrationId], references: [id])
+}
+
+model EventGallery {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  imageUrl  String
+  isCover   Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Payment {
+  id            String    @id @default(cuid())
+  userId        String
+  eventId       String?
+  amount        Int
+  method        String
+  platformFee   Int       @default(0)
+  status        String
+  transactionId String    @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id])
+  event         Event?    @relation(fields: [eventId], references: [id])
+}
