@@ -10,6 +10,7 @@ export interface UserProfile {
   prefecture?: string | null;
   avatarUrl?: string | null;
   isOrganizer?: boolean;
+  isAdmin?: boolean;
 }
 
 export interface CommunitySummary {
@@ -262,6 +263,31 @@ export interface ConsoleEventRegistrationsResponse {
   items: ConsoleEventRegistrationItem[];
 }
 
+export interface ConsoleEventAssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  type: 'text' | 'proposal';
+  content: string;
+  createdAt: string;
+  payload?: Record<string, unknown> | null;
+}
+
+export interface ConsoleEventAssistantLog {
+  id: string;
+  communityId: string;
+  userId: string;
+  user?: {
+    id: string;
+    name?: string | null;
+  } | null;
+  stage: string;
+  summary?: string | null;
+  qaState?: Record<string, unknown> | null;
+  messages: ConsoleEventAssistantMessage[];
+  aiResult?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export interface OrganizerApplicationInfo {
   id: string;
   status: string;
@@ -305,4 +331,77 @@ export interface GenerateEventCopyInput {
   audience: string;
   style: string;
   details: string;
+}
+
+export type EventVisibility = 'public' | 'community-only' | 'private';
+
+export interface EventTicketDraft {
+  id?: string;
+  name: LocalizedContent | string;
+  type?: string;
+  price: number;
+  currency?: string;
+  quota?: number | null;
+  description?: string;
+}
+
+export interface EventScheduleEntry {
+  start?: string;
+  label: string;
+  description?: string;
+}
+
+export interface EventRequirement {
+  label: string;
+  type?: 'must' | 'nice-to-have';
+}
+
+export interface EventDraftConfig {
+  requireCheckin?: boolean;
+  enableWaitlist?: boolean;
+  visibleRange?: 'public' | 'community' | 'private';
+  notes?: string;
+  riskNoticeEnabled?: boolean;
+  riskNoticeText?: string;
+  refundPolicy?: string;
+}
+
+export interface EventDraft {
+  id?: string;
+  communityId?: string;
+  status?: 'draft' | 'ready' | 'published' | 'open' | 'closed' | 'archived';
+  title: LocalizedContent | string;
+  subtitle?: LocalizedContent | string;
+  purpose?: LocalizedContent | string;
+  description: LocalizedContent | string;
+  descriptionHtml?: string;
+  targetAudience?: string;
+  languages?: string[];
+  format?: 'online' | 'offline' | 'hybrid';
+  startTime: string;
+  endTime?: string;
+  regStartTime?: string;
+  regEndTime?: string;
+  regDeadline?: string;
+  locationText: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
+  category?: string;
+  minParticipants?: number | null;
+  maxParticipants?: number | null;
+  capacity?: number | null;
+  vibe?: 'intimate' | 'casual' | 'open' | 'formal' | string;
+  isFree?: boolean;
+  ticketTypes: EventTicketDraft[];
+  scheduleOutline?: EventScheduleEntry[];
+  requirements?: EventRequirement[];
+  bringList?: string[];
+  riskNotice?: string;
+  refundPolicy?: string;
+  visibility: EventVisibility;
+  requireApproval?: boolean;
+  config?: EventDraftConfig;
+  registrationFormSchema: RegistrationFormField[];
+  aiSummary?: string;
+  versionNotes?: string;
 }

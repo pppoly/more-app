@@ -1,74 +1,133 @@
 <template>
-  <div class="px-3 py-3 pb-20 space-y-4">
-    <section class="bg-white rounded-2xl p-4 shadow-sm">
-      <div class="flex items-center justify-between gap-2">
-        <div class="min-w-0">
-          <p class="text-[11px] text-slate-400">現在のコミュニティ</p>
-          <h1 class="text-sm font-semibold text-slate-900 truncate">
-            {{ communityName || '未選択' }}
-          </h1>
-          <p class="mt-0.5 text-[11px] text-slate-400">役割：{{ roleLabel }}</p>
-        </div>
-        <button
-          class="px-3 py-1.5 rounded-full border border-slate-200 text-[11px] text-slate-600 shrink-0"
-          @click="openCommunityPicker"
-        >
-          社群を切り替え
-        </button>
+  <div class="console-home">
+    <section class="hero-card">
+      <div class="hero-chip">
+        <span class="i-lucide-layout-dashboard text-sm"></span>
+        Console
       </div>
-      <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div class="rounded-xl bg-slate-50 py-2">
-          <p class="text-[11px] text-slate-400">今月の収入</p>
-          <p class="text-sm font-semibold text-slate-900">{{ stats.monthRevenueText }}</p>
+      <p class="hero-subtitle">運営コミュニティ</p>
+      <h1 class="hero-title">{{ communityName || '未選択のコミュニティ' }}</h1>
+      <p class="hero-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録しましょう' }}</p>
+      <button
+        v-if="hasCommunity"
+        class="hero-switch"
+        type="button"
+        @click="openCommunityPicker"
+      >
+        <span class="i-lucide-building-2"></span>
+        コミュニティを切り替える
+      </button>
+      <button
+        v-else
+        class="hero-switch hero-switch--primary"
+        type="button"
+        @click="goCreateCommunity"
+      >
+        <span class="i-lucide-sparkles"></span>
+        コミュニティを作成
+      </button>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <p>今月の収入</p>
+          <strong>{{ hasCommunity ? stats.monthRevenueText : '---' }}</strong>
         </div>
-        <div class="rounded-xl bg-slate-50 py-2">
-          <p class="text-[11px] text-slate-400">今月のイベント</p>
-          <p class="text-sm font-semibold text-slate-900">{{ stats.eventCount }}</p>
+        <div class="hero-stat">
+          <p>今月のイベント</p>
+          <strong>{{ hasCommunity ? stats.eventCount : '--' }}</strong>
         </div>
-        <div class="rounded-xl bg-slate-50 py-2">
-          <p class="text-[11px] text-slate-400">申込数</p>
-          <p class="text-sm font-semibold text-slate-900">{{ stats.registrationCount }}</p>
+        <div class="hero-stat">
+          <p>申込数</p>
+          <strong>{{ hasCommunity ? stats.registrationCount : '--' }}</strong>
         </div>
       </div>
     </section>
 
-    <section>
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="text-xs font-semibold text-slate-500">このコミュニティのイベント</h2>
-        <button class="text-[11px] text-[#00B900]" @click="goAllEvents">一覧を見る</button>
+    <section class="action-grid">
+      <button class="action-card" type="button" @click="goCreateCommunity">
+        <span class="action-icon i-lucide-sparkles"></span>
+        <div>
+          <p class="action-title">コミュニティ作成</p>
+          <p class="action-desc">新しいコミュニティを登録</p>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="createEvent"
+      >
+        <span class="action-icon i-lucide-plus"></span>
+        <div>
+          <p class="action-title">新しいイベント</p>
+          <p class="action-desc">イベントを作成して公開</p>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goAllEvents"
+      >
+        <span class="action-icon i-lucide-calendar-search"></span>
+        <div>
+          <p class="action-title">イベント管理</p>
+          <p class="action-desc">登録状況と参加者を確認</p>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goPayout"
+      >
+        <span class="action-icon i-lucide-piggy-bank"></span>
+        <div>
+          <p class="action-title">収益と入金</p>
+          <p class="action-desc">入金設定・請求を確認</p>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goSubscription"
+      >
+        <span class="action-icon i-lucide-settings"></span>
+        <div>
+          <p class="action-title">プランと設定</p>
+          <p class="action-desc">プラン変更や通知設定</p>
+        </div>
+      </button>
+    </section>
+
+    <section class="events-section">
+      <div class="section-head">
+        <div>
+          <p class="section-label">イベントの進行状況</p>
+          <h2>最新イベント</h2>
+        </div>
+        <button class="link-button" type="button" @click="goAllEvents">一覧を見る</button>
       </div>
-      <div class="bg-white rounded-2xl shadow-sm divide-y">
+      <div class="event-cards">
         <button
           v-for="item in displayEvents"
           :key="item.id"
-          class="w-full px-3 py-2 flex items-center active:bg-slate-50"
+          class="event-card"
+          type="button"
           @click="openManage(item.id)"
         >
-          <img :src="item.coverUrl" class="w-10 h-10 rounded-xl object-cover mr-3 flex-shrink-0" alt="" />
-          <div class="flex-1 min-w-0 text-left">
-            <p class="text-[13px] font-semibold text-slate-900 line-clamp-2">
-              {{ item.title }}
-            </p>
-            <p class="mt-0.5 text-[11px] text-slate-400">
-              {{ item.dateTimeText }} · {{ item.entrySummary }}
-            </p>
-          </div>
-          <span class="ml-2 px-2 py-0.5 rounded-full text-[10px]" :class="statusBadgeClass(item.status)">
+          <div class="event-status" :class="statusBadgeClass(item.status)">
             {{ statusLabel(item.status) }}
-          </span>
+          </div>
+          <p class="event-date">{{ item.dateTimeText }}</p>
+          <h3>{{ item.title }}</h3>
+          <p class="event-meta">{{ item.entrySummary }}</p>
         </button>
-        <div v-if="!displayEvents.length" class="px-3 py-4 text-center text-[11px] text-slate-400">
-          まだイベントがありません。
+        <div v-if="!displayEvents.length" class="event-empty">
+          まだイベントがありません。新しい企画を始めましょう。
         </div>
       </div>
     </section>
-
-    <button
-      class="fixed right-4 bottom-20 w-12 h-12 rounded-full bg-[#00B900] text-white flex items-center justify-center shadow-lg"
-      @click="createEvent"
-    >
-      <span class="i-lucide-plus text-xl"></span>
-    </button>
   </div>
 </template>
 
@@ -88,6 +147,7 @@ const loading = ref(false);
 const community = computed(() => communityStore.getActiveCommunity());
 const communityName = computed(() => community.value?.name ?? '');
 const communityId = computed(() => communityStore.activeCommunityId.value);
+const hasCommunity = computed(() => Boolean(communityId.value));
 const roleLabel = computed(() => {
   const role = community.value?.role;
   switch (role) {
@@ -139,6 +199,18 @@ const openCommunityPicker = () => {
   window.dispatchEvent(new CustomEvent('console:open-community-picker'));
 };
 
+const goCreateCommunity = () => {
+  router.push({ name: 'ConsoleMobileCommunityCreate' });
+};
+
+const goPayout = () => {
+  router.push({ name: 'ConsoleMobilePayout' });
+};
+
+const goSubscription = () => {
+  router.push({ name: 'ConsoleMobileSubscription' });
+};
+
 const goAllEvents = () => {
   if (!communityId.value) return;
   router.push({ name: 'ConsoleMobileCommunityEvents', params: { communityId: communityId.value } });
@@ -150,7 +222,7 @@ const openManage = (eventId: string) => {
 
 const createEvent = () => {
   if (!communityId.value) return;
-  router.push({ path: `/console/communities/${communityId.value}/events/create` });
+  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId: communityId.value } });
 };
 
 const formatDate = (start: string, end?: string) => {
@@ -200,3 +272,232 @@ onMounted(async () => {
   }
 });
 </script>
+
+<style scoped>
+.console-home {
+  min-height: 100vh;
+  padding: calc(env(safe-area-inset-top, 0px) + 4px) 4px calc(60px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #f5fbff 0%, #eef2f7 40%, #f7f9fb 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-card {
+  position: relative;
+  border-radius: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #0090d9, #22bbaa);
+  color: #fff;
+  box-shadow: 0 25px 60px rgba(0, 144, 217, 0.35);
+  overflow: hidden;
+}
+
+.hero-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.4), transparent 40%);
+  pointer-events: none;
+}
+
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hero-title {
+  margin: 8px 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.hero-subtitle,
+.hero-role {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.hero-switch {
+  margin-top: 12px;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hero-switch--primary {
+  background: rgba(255, 255, 255, 0.2);
+  color: #003443;
+}
+
+.hero-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hero-stat {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+  padding: 10px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.hero-stat p {
+  margin: 0;
+  opacity: 0.8;
+}
+
+.hero-stat strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.action-card {
+  border: none;
+  border-radius: 18px;
+  background: #fff;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  box-shadow: 0 15px 30px rgba(15, 23, 42, 0.08);
+}
+
+.action-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(0, 144, 217, 0.12);
+  color: #0090d9;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+
+.action-desc {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--m-color-text-tertiary);
+}
+
+.action-card.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.events-section {
+  background: #fff;
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.section-label {
+  margin: 0;
+  font-size: 11px;
+  color: var(--m-color-text-tertiary);
+}
+
+.section-head h2 {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0090d9;
+}
+
+.event-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-card {
+  border: none;
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(247, 249, 251, 0.8);
+  text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.03);
+}
+
+.event-status {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.event-date {
+  margin: 0;
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+
+.event-card h3 {
+  margin: 4px 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+
+.event-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--m-color-text-secondary);
+}
+
+.event-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+</style>

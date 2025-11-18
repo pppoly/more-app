@@ -1,5 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { extname, join } from 'path';
+import { promises as fs } from 'fs';
+import type { Express } from 'express';
+
+const AVATAR_UPLOAD_ROOT = join(process.cwd(), 'uploads', 'avatars');
 
 @Injectable()
 export class MeService {
@@ -51,5 +56,32 @@ export class MeService {
       noShow: registration.noShow,
       event: registration.event,
     }));
+  }
+
+  async updateAvatar(userId: string, file: Express.Multer.File) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('無効な画像ファイルです');
+    }
+    await fs.mkdir(AVATAR_UPLOAD_ROOT, { recursive: true });
+    const userDir = join(AVATAR_UPLOAD_ROOT, userId);
+    await fs.mkdir(userDir, { recursive: true });
+    const extension = extname(file.originalname?.toLowerCase() || '') || '.jpg';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
+    const filePath = join(userDir, filename);
+    await fs.writeFile(filePath, file.buffer);
+    const avatarUrl = `/uploads/avatars/${userId}/${filename}`;
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        prefecture: true,
+        avatarUrl: true,
+        isOrganizer: true,
+        isAdmin: true,
+      },
+    });
   }
 }

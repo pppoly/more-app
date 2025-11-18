@@ -5,10 +5,12 @@ import { ConsoleCommunitiesService } from './console-communities.service';
 import { ConsoleCommunitiesController } from './console-communities.controller';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeModule } from '../stripe/stripe.module';
+import { ConsoleEventAssistantController } from './console-event-assistant.controller';
+import { ConsoleEventAssistantService } from './console-event-assistant.service';
 
 @Module({
   imports: [StripeModule],
-  controllers: [ConsoleEventsController, ConsoleCommunitiesController],
-  providers: [ConsoleEventsService, ConsoleCommunitiesService, PermissionsService],
+  controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController],
+  providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService],
 })
 export class ConsoleModule {}

@@ -1,210 +1,243 @@
 <template>
-  <div class="relative min-h-screen bg-[#F7F9FB] pb-20">
-    <header
-      class="fixed top-0 left-0 right-0 h-12 flex items-center justify-between px-3 z-20 text-white bg-gradient-to-b from-black/40 to-transparent"
-    >
-      <button class="w-8 h-8 flex items-center justify-center" @click="goBack">
-        <span class="i-lucide-chevron-left text-lg"></span>
-      </button>
-      <div class="text-sm font-medium truncate">イベント詳細</div>
-      <button class="w-8 h-8 flex items-center justify-center" @click="shareEvent">
-        <span class="i-lucide-share-2 text-lg"></span>
-      </button>
-    </header>
+  <div class="event-detail-page">
+    <div v-if="loading" class="event-state m-text-meta">読み込み中...</div>
+    <div v-else-if="error" class="event-state error">{{ error }}</div>
 
-    <div v-if="loading" class="pt-16 text-center text-slate-400">読み込み中...</div>
-    <div v-else-if="error" class="pt-16 text-center text-rose-500">{{ error }}</div>
     <template v-else-if="detail">
-      <div class="relative h-[260px] w-full bg-slate-200">
-        <img v-if="detail.coverUrl" :src="detail.coverUrl" class="w-full h-full object-cover" alt="cover" />
-        <div class="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
-          <span class="px-2 py-0.5 text-[11px] rounded-full bg-white/80 text-slate-800">
-            {{ detail.categoryLabel }}
-          </span>
-          <h1 class="mt-2 text-white text-lg font-semibold leading-tight line-clamp-2">
-            {{ detail.title }}
-          </h1>
-        </div>
-      </div>
-
-      <div class="-mt-4 relative z-10 rounded-t-3xl bg-white p-4 min-h-[60vh]">
-        <section class="mb-3">
-          <h2 class="text-xs font-semibold text-slate-500 mb-1">日時</h2>
-          <p class="text-sm text-slate-900">{{ detail.timeFullText }}</p>
-        </section>
-
-        <section class="mb-3">
-          <h2 class="text-xs font-semibold text-slate-500 mb-1">場所</h2>
-          <p class="text-sm text-slate-900">{{ detail.locationText }}</p>
-          <button
-            v-if="detail.mapUrl"
-            class="mt-1 inline-flex items-center px-3 py-1 rounded-full border border-slate-200 text-[11px] text-slate-600"
-            @click="openMap"
-          >
-            <span class="i-lucide-map-pin mr-1"></span>地図で開く
-          </button>
-        </section>
-
-        <section class="mb-3">
-          <h2 class="text-xs font-semibold text-slate-500 mb-1">申込状況</h2>
-          <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-            <span>{{ detail.regSummary }}</span>
-            <span class="text-slate-400">{{ detail.capacityText }}</span>
-          </div>
-          <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
-            <div class="h-full bg-[#00B900]" :style="{ width: detail.regProgress + '%' }"></div>
-          </div>
-        </section>
-
-        <section v-if="formFields.length" class="mb-3">
-          <div class="p-3 rounded-2xl bg-slate-50">
-            <p class="text-xs font-semibold text-slate-700 mb-1">申込時に入力が必要な情報</p>
-            <ul class="text-[11px] text-slate-600 space-y-0.5">
-              <li v-for="(field, idx) in formFields" :key="fieldKey(field, idx)">・{{ field.label }}</li>
-            </ul>
-          </div>
-        </section>
-
-        <section class="mt-4">
-          <h2 class="text-xs font-semibold text-slate-500 mb-1">イベント説明</h2>
-          <div class="prose prose-sm max-w-none text-slate-800" v-html="detail.descriptionHtml"></div>
-        </section>
-
-        <section v-if="paymentMessage" class="mt-4">
-          <div class="p-3 rounded-2xl bg-amber-50 text-xs text-slate-700 space-y-2">
-            <p>{{ paymentMessage }}</p>
-            <div v-if="pendingPayment" class="flex flex-col gap-2">
-              <button
-                class="w-full px-3 py-1.5 rounded-full text-sm font-medium bg-[#00B900] text-white disabled:bg-slate-300"
-                @click="handleStripeCheckout"
-                :disabled="isRedirecting"
+      <main class="m-event-content event-content--with-footer">
+        <section class="event-hero">
+          <div class="event-hero__overlay"></div>
+          <div class="event-cover-wrapper" :style="heroBackgroundStyle">
+            <div class="event-carousel">
+              <div
+                v-for="(slide, index) in heroSlides"
+                :key="slide.id || slide.imageUrl || index"
+                class="event-carousel__slide"
+                :class="{ 'is-active': index === activeSlide }"
               >
-                {{ isRedirecting ? 'Stripeへ移動中…' : 'Stripeで支払う' }}
+                <img :src="slide.imageUrl" class="event-cover" :alt="`event cover ${index + 1}`" />
+              </div>
+              <button
+                v-if="heroSlides.length > 1"
+                class="carousel-nav carousel-nav--prev"
+                type="button"
+                @click="goPrevSlide"
+              >
+                <span class="i-lucide-chevron-left"></span>
               </button>
               <button
-                class="w-full px-3 py-1.5 rounded-full text-sm border border-slate-200"
-                @click="handleMockPayment"
-                :disabled="isPaying"
+                v-if="heroSlides.length > 1"
+                class="carousel-nav carousel-nav--next"
+                type="button"
+                @click="goNextSlide"
               >
-                {{ isPaying ? 'Mock 決済中…' : 'Mock 支払い（デモ）' }}
+                <span class="i-lucide-chevron-right"></span>
+              </button>
+              <div v-if="heroSlides.length > 1" class="carousel-dots">
+                <button
+                  v-for="(slide, index) in heroSlides"
+                  :key="slide.id || slide.imageUrl || `dot-${index}`"
+                  class="carousel-dot"
+                  :class="{ 'is-active': index === activeSlide }"
+                  @click="setSlide(index)"
+                ></button>
+              </div>
+            </div>
+            <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
+          </div>
+          <div class="event-hero-info">
+            <h1 class="m-text-event-title-main">{{ detail.title }}</h1>
+            <div class="event-hero-actions">
+              <button class="event-action" type="button" @click="shareEvent">
+                <span class="i-lucide-share-2"></span>
+                共有する
+              </button>
+              <button
+                class="event-action"
+                :class="{ 'is-active': isFavoriteEvent }"
+                type="button"
+                @click="handleFavoriteToggle"
+              >
+                <span class="i-lucide-bookmark"></span>
+                お気に入り
               </button>
             </div>
           </div>
         </section>
 
-        <p v-if="registrationError" class="text-xs text-rose-500 mt-3">{{ registrationError }}</p>
-      </div>
-
-      <div class="fixed bottom-0 left-0 right-0 border-t bg-white px-3 py-2 flex items-center justify-between">
-        <div class="flex flex-col text-xs">
-          <span class="font-semibold text-slate-900">{{ detail.priceText }}</span>
-          <span class="text-[11px] text-slate-400">{{ detail.statusLabel }}・{{ detail.regSummary }}</span>
+        <div class="m-chip-row" v-if="dateOptions.length > 1">
+          <button
+            v-for="option in dateOptions"
+            :key="option.id"
+            class="m-chip"
+            :class="{ 'is-active': option.id === selectedDateId }"
+            @click="selectedDateId = option.id"
+          >
+            {{ option.label }}
+          </button>
         </div>
-        <button
-          class="px-4 py-2 rounded-full text-sm font-semibold text-white bg-[#00B900] disabled:bg-slate-300"
-          @click="openBookingSheet"
-          :disabled="detail.status !== 'open'"
-        >
-          {{ detail.status === 'open' ? '参加する' : '受付終了' }}
-        </button>
-      </div>
 
-      <div v-if="showBooking" class="fixed inset-0 bg-black/40 flex items-end z-50" @click.self="closeBookingSheet">
-        <div class="w-full bg-white rounded-t-2xl max-h-[80vh] p-4 overflow-y-auto">
-          <div class="w-10 h-1.5 bg-slate-300 rounded-full mx-auto mb-3"></div>
-          <h2 class="text-sm font-semibold mb-2">申込情報</h2>
-
-          <div class="space-y-3">
-            <label v-for="(field, index) in formFields" :key="fieldKey(field, index)" class="flex flex-col gap-1 text-xs">
-              <span class="text-slate-600">{{ field.label }}</span>
-              <template v-if="['text', 'email', 'phone', 'number', 'date'].includes(field.type)">
-                <input
-                  :type="inputType(field.type)"
-                  class="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-                  :required="field.required"
-                  v-model="formValues[fieldKey(field, index)]"
-                />
-              </template>
-              <textarea
-                v-else-if="field.type === 'textarea'"
-                rows="3"
-                class="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-                :required="field.required"
-                v-model="formValues[fieldKey(field, index)]"
-              ></textarea>
-              <select
-                v-else-if="field.type === 'select'"
-                class="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-                :required="field.required"
-                v-model="formValues[fieldKey(field, index)]"
-              >
-                <option value="">選択してください</option>
-                <option v-for="option in getOptions(field)" :key="option" :value="option">{{ option }}</option>
-              </select>
-              <div v-else-if="field.type === 'singleChoice'" class="flex flex-col gap-1">
-                <label
-                  v-for="option in getOptions(field)"
-                  :key="option"
-                  class="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2"
-                >
-                  <input
-                    type="radio"
-                    :name="fieldKey(field, index)"
-                    :value="option"
-                    v-model="formValues[fieldKey(field, index)]"
-                    :required="field.required"
-                  />
-                  <span>{{ option }}</span>
-                </label>
+        <section class="m-event-card event-meta-card">
+          <div class="event-schedule-block">
+            <div class="event-meta-row event-meta-row--schedule">
+              <div class="event-meta-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="4" width="18" height="17" rx="3" stroke="currentColor" stroke-width="1.5" />
+                  <path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
               </div>
-              <div v-else-if="field.type === 'multiChoice'" class="flex flex-col gap-1">
-                <label
-                  v-for="option in getOptions(field)"
-                  :key="option"
-                  class="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="Array.isArray(formValues[fieldKey(field, index)]) && formValues[fieldKey(field, index)].includes(option)"
-                    @change="toggleMulti(field, index, option, ($event.target as HTMLInputElement).checked)"
-                  />
-                  <span>{{ option }}</span>
-                </label>
+              <div class="event-schedule">
+                <p class="event-schedule__day">{{ selectedDateMeta?.label ?? detail.timeFullText }}</p>
+                <p class="event-schedule__time">{{ selectedDateMeta?.meta ?? detail.timeFullText }}</p>
               </div>
-              <label v-else-if="field.type === 'checkbox'" class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  :checked="Boolean(formValues[fieldKey(field, index)])"
-                  @change="formValues[fieldKey(field, index)] = ($event.target as HTMLInputElement).checked"
-                />
-                <span>{{ field.label }}</span>
-              </label>
-            </label>
-          </div>
-
-          <label class="flex items-center text-xs text-slate-500 mt-4">
-            <input type="checkbox" v-model="agree" class="mr-2" />
-            利用規約とリスク説明に同意します
-          </label>
-
-          <div class="mt-4 flex items-center justify-between">
-            <button class="px-4 py-2 text-sm border border-slate-200 rounded-full" @click="closeBookingSheet">閉じる</button>
-            <button
-              class="px-4 py-2 rounded-full text-sm font-semibold text-white bg-[#00B900] disabled:bg-slate-300"
-              :disabled="!agree || submitting"
-              @click="submitBooking"
-            >
-              {{ submitting ? '送信中…' : '確認して申込' }}
+              <span v-if="isMultiDay" class="event-schedule__badge">複数日程</span>
+            </div>
+            <button v-if="calendarLink" class="event-schedule__cta" type="button" @click="openCalendar">
+              <span class="i-lucide-calendar-plus"></span>
+              カレンダーに追加
             </button>
           </div>
+          <div class="m-divider"></div>
+          <div class="event-meta-row event-meta-row--location">
+            <div class="event-meta-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                />
+                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div class="event-meta-text">
+              <div class="event-location-title">{{ detail.locationText }}</div>
+            </div>
+            <button class="event-map-button" type="button" @click="openMap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                />
+                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+              ルートを見る
+            </button>
+          </div>
+        </section>
+
+        <section class="event-section" v-if="shouldShowParticipants">
+          <h2 class="m-section-title">参加状況</h2>
+          <div class="m-event-card">
+            <div class="event-progress-head">
+              <span>{{ detail.regSummary }}</span>
+              <span>{{ detail.capacityText }}</span>
+            </div>
+            <div class="event-progress">
+              <div class="event-progress__bar" :style="{ width: `${detail.regProgress}%` }"></div>
+            </div>
+            <div class="participant-wall" v-if="participantPreview.length">
+              <div class="participant-avatars">
+                <button
+                  v-for="participant in participantPreview"
+                  :key="participant.id || participant.name"
+                  class="participant-avatar"
+                  type="button"
+                  @click="openAllParticipants"
+                >
+                  <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
+                  <span v-else>{{ participantInitial(participant.name) }}</span>
+                  <span class="sr-only">{{ participant.name }}</span>
+                </button>
+                <button
+                  v-if="hasMoreParticipants"
+                  class="participant-more"
+                  type="button"
+                  @click="openAllParticipants"
+                >
+                  +{{ remainingParticipants }}
+                </button>
+              </div>
+              <p class="participants-hint">最近の参加者（{{ participantsTotalLabel }}）</p>
+            </div>
+            <p v-else class="participants-empty">表示できる参加者がまだいません。</p>
+          </div>
+        </section>
+
+        <section class="event-section">
+          <h2 class="m-section-title">主催コミュニティ</h2>
+          <div class="m-event-card event-group-card">
+            <div class="group-main">
+              <button class="group-info" type="button" @click="openCommunityPortal" :disabled="!detail.communitySlug">
+                <div class="group-avatar"></div>
+                <div class="group-text">
+                  <div class="group-name">{{ detail.hostName }}</div>
+                  <div class="m-text-meta">最新ニュースとイベント情報</div>
+                </div>
+              </button>
+              <button class="group-follow" :class="{ 'is-active': isFollowingCommunity }" type="button" @click="toggleFollow">
+                <span v-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
+                <span v-else class="i-lucide-bell-plus"></span>
+                {{ isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+              </button>
+            </div>
+            <p class="group-hint">このコミュニティをフォローすると最新イベントやアナウンスを受け取れます。</p>
+          </div>
+        </section>
+
+        <section class="event-section">
+          <h2 class="m-section-title">About</h2>
+          <div class="m-event-card">
+            <div class="m-text-body prose prose-sm max-w-none" v-html="detail.descriptionHtml"></div>
+          </div>
+        </section>
+
+        <section class="event-section" v-if="formFields.length">
+          <h2 class="m-section-title">申込時の必須情報</h2>
+          <div class="m-event-card">
+            <ul class="event-requirements">
+              <li v-for="(field, idx) in formFields" :key="fieldKey(field, idx)">・{{ field.label }}</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <footer class="event-footer">
+        <div class="price-block">
+          <p class="price">{{ detail.priceText }}</p>
         </div>
-      </div>
+        <button class="rails-cta" type="button" :disabled="detail.status !== 'open'" @click="handleCtaClick">
+          <span>{{ detail.status === 'open' ? 'イベントに申し込む' : '受付終了' }}</span>
+        </button>
+      </footer>
     </template>
+
+    <div v-if="showAllParticipants" class="fixed inset-0 z-40 flex items-center justify-center bg-black/50" @click.self="closeAllParticipants">
+      <div class="max-h-[80vh] w-[90vw] max-w-md overflow-y-auto rounded-3xl bg-white p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-base font-semibold">参加者一覧</h3>
+          <button class="participant-close" type="button" @click="closeAllParticipants">
+            <span class="i-lucide-x text-lg"></span>
+          </button>
+        </div>
+        <ul class="participant-list">
+          <li v-for="participant in participantsList" :key="participant.id || participant.name" class="participant-list__item">
+            <div class="participant-list__avatar">
+              <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
+              <span v-else>{{ participantInitial(participant.name) }}</span>
+            </div>
+            <div class="participant-list__name">{{ participant.name || 'ゲスト' }}</div>
+          </li>
+        </ul>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   createMockPayment,
@@ -221,10 +254,13 @@ import type {
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { useAuth } from '../../composables/useAuth';
+import Button from '../../components/ui/Button.vue';
+import { useFavorites } from '../../composables/useFavorites';
 
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
+const favoritesStore = useFavorites();
 
 const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
@@ -239,11 +275,18 @@ const paymentMessage = ref<string | null>(null);
 const isPaying = ref(false);
 const isRedirecting = ref(false);
 const formValues = reactive<Record<string, any>>({});
+const selectedDateId = ref<string | null>(null);
+const activeSlide = ref(0);
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
 
 const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
+const isFavoriteEvent = computed(() => {
+  const currentId = detail.value?.id;
+  if (!currentId) return false;
+  return favoritesStore.isFavorite(currentId);
+});
 
 const detail = computed(() => {
   if (!event.value) return null;
@@ -252,7 +295,6 @@ const detail = computed(() => {
   return {
     id: event.value.id,
     status: event.value.status,
-    statusLabel: event.value.status === 'open' ? '受付中' : '受付終了',
     title: getLocalizedText(event.value.title),
     categoryLabel: event.value.category ?? 'イベント',
     timeFullText: `${start} 〜 ${end}`,
@@ -262,6 +304,8 @@ const detail = computed(() => {
     capacityText: event.value.maxParticipants ? `定員 ${event.value.maxParticipants}名` : '定員未設定',
     regProgress: event.value.config?.regProgress ?? 40,
     priceText: event.value.config?.priceText ?? '無料 / 未定',
+    hostName: event.value.community?.name ?? 'SOCIALMORE Community',
+    communitySlug: event.value.community?.slug ?? null,
     descriptionHtml:
       event.value.descriptionHtml ??
       `<p>${getLocalizedText(event.value.description ?? event.value.title)}</p>`,
@@ -269,8 +313,128 @@ const detail = computed(() => {
       typeof event.value.locationLat === 'number' && typeof event.value.locationLng === 'number'
         ? `https://www.google.com/maps/dir/?api=1&destination=${event.value.locationLat},${event.value.locationLng}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`,
+    participants:
+      Array.isArray(event.value.config?.participants) && event.value.config?.participants?.length
+        ? (event.value.config?.participants as Array<{ id?: string; name?: string; avatarUrl?: string }>)
+        : [],
+    participantCount: event.value.config?.participantCount ?? event.value.config?.participants?.length ?? null,
+    showParticipants: event.value.config?.showRegistrationStatus !== false,
   };
 });
+
+const heroSlides = computed(() => {
+  if (gallery.value.length) {
+    return gallery.value.map((item, index) => ({
+      id: item.id ?? `gallery-${index}`,
+      imageUrl: item.imageUrl,
+    }));
+  }
+  const fallback = detail.value?.coverUrl;
+  return fallback ? [{ id: 'cover', imageUrl: fallback }] : [];
+});
+
+const activeSlideImage = computed(() => {
+  if (!heroSlides.value.length) return detail.value?.coverUrl ?? '';
+  return heroSlides.value[activeSlide.value]?.imageUrl ?? heroSlides.value[0]?.imageUrl ?? '';
+});
+
+const heroBackgroundStyle = computed(() =>
+  activeSlideImage.value
+    ? {
+        backgroundImage: `url(${activeSlideImage.value})`,
+      }
+    : {},
+);
+
+const calendarLink = computed(() => {
+  if (!detail.value || !event.value?.startTime) return '';
+  const start = formatCalendarDate(event.value.startTime);
+  const end = formatCalendarDate(event.value.endTime ?? event.value.startTime);
+  if (!start || !end) return '';
+  const title = encodeURIComponent(detail.value.title);
+  const location = encodeURIComponent(detail.value.locationText ?? '');
+  const description = encodeURIComponent(
+    getLocalizedText(event.value.description ?? event.value.title) ?? detail.value.title,
+  );
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&location=${location}&details=${description}`;
+});
+
+const dateOptions = computed(() => {
+  if (!event.value) return [];
+  const baseOption = {
+    id: event.value.id,
+    label: formatLongDate(event.value.startTime),
+    meta: formatTimeRange(event.value.startTime, event.value.endTime),
+  };
+  const occurrences = ((event.value as any).occurrences ?? event.value.config?.occurrences) || [];
+  const extra = Array.isArray(occurrences)
+    ? occurrences.map((occ: any, index: number) => ({
+        id: `occ-${index}`,
+        label: formatLongDate(occ.start ?? occ.startTime ?? event.value?.startTime),
+        meta: formatTimeRange(occ.start ?? occ.startTime, occ.end ?? occ.endTime),
+      }))
+    : [];
+  return [baseOption, ...extra];
+});
+
+watch(
+  dateOptions,
+  (options) => {
+    if (options.length && !selectedDateId.value) {
+      selectedDateId.value = options[0].id;
+    }
+  },
+  { immediate: true },
+) ;
+
+const selectedDateMeta = computed(() => dateOptions.value.find((opt) => opt.id === selectedDateId.value) ?? dateOptions.value[0]);
+const favoritePayload = computed(() => {
+  if (!detail.value) return null;
+  return {
+    id: detail.value.id,
+    title: detail.value.title,
+    coverUrl: detail.value.coverUrl,
+    timeText: detail.value.timeFullText,
+    locationText: detail.value.locationText,
+  };
+});
+
+const isMultiDay = computed(() => {
+  if (!event.value?.startTime || !event.value?.endTime) return false;
+  const start = new Date(event.value.startTime);
+  const end = new Date(event.value.endTime);
+  return start.toDateString() !== end.toDateString();
+});
+
+const statusBadge = computed(() => {
+  const status = event.value?.status ?? 'draft';
+  const map: Record<
+    string,
+    {
+      label: string;
+      variant: string;
+    }
+  > = {
+    open: { label: '受付中', variant: 'is-live' },
+    pending: { label: '受付前', variant: 'is-pending' },
+    soldout: { label: '満席', variant: 'is-soldout' },
+    closed: { label: '受付終了', variant: 'is-closed' },
+    ended: { label: '終了', variant: 'is-closed' },
+    draft: { label: '準備中', variant: 'is-pending' },
+  };
+  return map[status] ?? { label: 'ステータス未設定', variant: 'is-closed' };
+});
+
+const shouldShowParticipants = computed(() => Boolean(detail.value?.showParticipants));
+const participantsList = computed(() => detail.value?.participants ?? []);
+const participantsTotal = computed(() => detail.value?.participantCount ?? participantsList.value.length ?? 0);
+const participantPreview = computed(() => participantsList.value.slice(0, 20));
+const hasMoreParticipants = computed(() => participantsList.value.length > participantPreview.value.length);
+const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
+const participantsTotalLabel = computed(() =>
+  participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
+);
+const showAllParticipants = ref(false);
 
 const loadEvent = async () => {
   if (!eventId.value) return;
@@ -287,6 +451,13 @@ const loadEvent = async () => {
   }
 };
 
+watch(
+  () => heroSlides.value.length,
+  () => {
+    activeSlide.value = 0;
+  },
+);
+
 const goBack = () => {
   router.back();
 };
@@ -297,6 +468,61 @@ const shareEvent = () => {
   }
 };
 
+const handleFavoriteToggle = () => {
+  if (!detail.value || !favoritePayload.value) return;
+  if (!isLoggedIn.value) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('favorite:redirect', route.fullPath);
+      window.localStorage.setItem('favorite:data', JSON.stringify(favoritePayload.value));
+    }
+    router.push({ name: 'organizer-apply', query: { redirect: route.fullPath } });
+    return;
+  }
+  favoritesStore.toggleFavorite(favoritePayload.value);
+};
+
+const setSlide = (index: number) => {
+  if (index < 0 || index >= heroSlides.value.length) return;
+  activeSlide.value = index;
+};
+
+const goPrevSlide = () => {
+  if (!heroSlides.value.length) return;
+  activeSlide.value = (activeSlide.value - 1 + heroSlides.value.length) % heroSlides.value.length;
+};
+
+const goNextSlide = () => {
+  if (!heroSlides.value.length) return;
+  activeSlide.value = (activeSlide.value + 1) % heroSlides.value.length;
+};
+
+const openCalendar = () => {
+  if (!calendarLink.value) return;
+  window.open(calendarLink.value, '_blank');
+};
+
+const isFollowingCommunity = ref(false);
+
+const toggleFollow = () => {
+  isFollowingCommunity.value = !isFollowingCommunity.value;
+};
+
+const openCommunityPortal = () => {
+  if (!detail.value?.communitySlug) return;
+  router.push({ name: 'community-portal', params: { slug: detail.value.communitySlug } });
+};
+
+const participantInitial = (name?: string | null) => (name ? name.charAt(0).toUpperCase() : 'G');
+
+const openAllParticipants = () => {
+  if (!participantPreview.value.length) return;
+  showAllParticipants.value = true;
+};
+
+const closeAllParticipants = () => {
+  showAllParticipants.value = false;
+};
+
 const openMap = () => {
   if (detail.value?.mapUrl) {
     window.open(detail.value.mapUrl, '_blank');
@@ -304,11 +530,6 @@ const openMap = () => {
 };
 
 const openBookingSheet = () => {
-  if (!detail.value) return;
-  if (!isLoggedIn.value) {
-    registrationError.value = 'ログインしてください';
-    return;
-  }
   initializeFormValues();
   agree.value = false;
   showBooking.value = true;
@@ -318,6 +539,23 @@ const closeBookingSheet = () => {
   if (!submitting.value) {
     showBooking.value = false;
   }
+};
+
+const handleCtaClick = () => {
+  if (!detail.value) return;
+  const targetRoute = { name: 'MobileEventRegister', params: { eventId: detail.value.id } };
+  const registerPath = router.resolve(targetRoute).href;
+  if (detail.value.status !== 'open') {
+    return;
+  }
+  if (!isLoggedIn.value) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('booking:redirect', registerPath);
+    }
+    router.push({ name: 'organizer-apply', query: { redirect: registerPath } });
+    return;
+  }
+  router.push(targetRoute);
 };
 
 const submitBooking = async () => {
@@ -434,5 +672,646 @@ const formatDate = (value: string) =>
     minute: '2-digit',
   });
 
+const formatLongDate = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString('ja-JP', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
+};
+
+const formatTimeRange = (start?: string, end?: string) => {
+  if (!start) return '';
+  const startDate = new Date(start);
+  const startTime = startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  if (!end) {
+    return `${formatLongDate(start)} ${startTime} 開始`;
+  }
+  const endDate = new Date(end);
+  const endTime = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) {
+    return `${startTime} - ${endTime}`;
+  }
+  return `${formatLongDate(start)} ${startTime} 〜 ${formatLongDate(end)} ${endTime}`;
+};
+
+const pad = (value: number) => value.toString().padStart(2, '0');
+
+const formatCalendarDate = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(
+    date.getUTCHours(),
+  )}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
+};
+
 onMounted(loadEvent);
+
+watch(
+  () => [isLoggedIn.value, detail.value?.id],
+  () => {
+    if (typeof window === 'undefined') return;
+    if (isLoggedIn.value && detail.value && favoritePayload.value) {
+      const pendingRaw = window.localStorage.getItem('favorite:data');
+      if (pendingRaw) {
+        try {
+          const pending = JSON.parse(pendingRaw);
+          if (pending.id === detail.value.id && !favoritesStore.isFavorite(pending.id)) {
+            favoritesStore.addFavorite(pending);
+          }
+        } catch (error) {
+          console.warn('Failed to process pending favorite', error);
+        } finally {
+          window.localStorage.removeItem('favorite:data');
+        }
+      }
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  participantsList,
+  (list) => {
+    if (!list.length) {
+      showAllParticipants.value = false;
+    }
+  },
+  { immediate: true },
+);
 </script>
+
+<style scoped>
+.event-detail-page {
+  background-color: var(--m-color-bg);
+  min-height: 100vh;
+}
+
+.event-state {
+  text-align: center;
+  padding: 48px 0;
+}
+
+.event-state.error {
+  color: #e11d48;
+}
+
+.event-meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.event-meta-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-color-text-secondary);
+}
+
+.event-meta-row--location {
+  align-items: center;
+  gap: 12px;
+}
+
+.event-meta-row--schedule {
+  align-items: flex-start;
+}
+
+.event-schedule-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-meta-text {
+  flex: 1;
+}
+
+.event-meta-title {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--m-color-text-primary);
+}
+
+.event-map-button {
+  border: none;
+  background: rgba(10, 122, 255, 0.08);
+  color: var(--m-color-primary);
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.event-hero {
+  position: relative;
+  margin: 0 0 12px;
+}
+
+.event-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-schedule__day {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+
+.event-location-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+
+.event-schedule__time {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--m-color-text-secondary);
+}
+
+.event-schedule__badge {
+  margin-left: auto;
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #055160;
+  background: #cffafe;
+}
+
+.event-schedule__cta {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #fff;
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+  box-shadow: 0 8px 20px rgba(0, 144, 217, 0.25);
+}
+
+.event-hero__overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px;
+}
+
+.event-cover-wrapper {
+  position: relative;
+  margin: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.event-carousel {
+  position: relative;
+  overflow: hidden;
+  background: #050505;
+  min-height: clamp(220px, 55vw, 320px);
+}
+
+.event-carousel__slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.event-carousel__slide.is-active {
+  opacity: 1;
+  position: relative;
+}
+
+.event-cover {
+  width: 100%;
+  height: clamp(220px, 55vw, 320px);
+  object-fit: contain;
+  background-color: transparent;
+  display: block;
+}
+
+.carousel-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.carousel-nav--prev {
+  left: 12px;
+}
+
+.carousel-nav--next {
+  right: 12px;
+}
+
+.carousel-dots {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+}
+
+.carousel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.carousel-dot.is-active {
+  width: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.event-status-badge {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.event-status-badge.is-open {
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+}
+
+.event-status-badge.is-live {
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+}
+
+.event-status-badge.is-pending {
+  background: rgba(59, 130, 246, 0.8);
+}
+
+.event-status-badge.is-soldout {
+  background: rgba(245, 158, 11, 0.9);
+}
+
+.event-status-badge.is-closed {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.event-hero-info {
+  padding: 0 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-hero-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.event-action {
+  flex: 1;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--m-color-text-primary);
+}
+
+.event-action.is-active {
+  background: rgba(0, 144, 217, 0.15);
+  color: var(--m-color-primary);
+}
+
+.event-section {
+  margin-top: 12px;
+}
+
+.event-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.group-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.group-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background-color: var(--m-color-chip-bg);
+}
+
+.group-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--m-color-text-primary);
+}
+
+.group-follow {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--m-color-text-primary);
+}
+
+.group-follow.is-active {
+  background: rgba(0, 144, 217, 0.15);
+  color: var(--m-color-primary);
+}
+
+.group-follow:active {
+  opacity: 0.85;
+}
+
+.group-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+
+.event-price-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+  margin: 0;
+}
+
+.event-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+
+.event-progress {
+  margin-top: 12px;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #edf2f7;
+  overflow: hidden;
+}
+
+.event-progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+}
+
+.event-requirements {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--m-color-text-secondary);
+  line-height: 1.6;
+}
+
+.event-payment {
+  margin-top: 12px;
+  background: #fffdf5;
+  color: #92400e;
+  font-size: 13px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.event-payment__actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.event-content--with-footer {
+  padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+}
+
+.participant-wall {
+  margin-top: 16px;
+}
+
+.participant-avatars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.participant-avatar,
+.participant-more {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
+  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+  overflow: hidden;
+}
+
+.participant-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.participant-more {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.participants-hint,
+.participants-empty {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+
+.participants-empty {
+  margin-top: 12px;
+}
+
+.participant-close {
+  border: none;
+  background: transparent;
+  color: var(--m-color-text-secondary);
+}
+
+.participant-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.participant-list__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.participant-list__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+  overflow: hidden;
+}
+
+.participant-list__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.participant-list__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--m-color-text-primary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.event-footer {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--m-color-surface);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.price-block .price {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+
+.rails-cta {
+  flex: 1;
+  border: none;
+  border-radius: 999px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #0090d9;
+  color: #fff;
+  box-shadow: 0 15px 30px rgba(0, 144, 217, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.rails-cta:active:not(:disabled) {
+  transform: scale(0.98);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
+}
+
+.rails-cta:disabled {
+  background: #92d0f5;
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: none;
+}
+
+</style>

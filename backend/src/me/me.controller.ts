@@ -1,6 +1,9 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MeService } from './me.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Express } from 'express';
 
 @Controller('me')
 @UseGuards(JwtAuthGuard)
@@ -10,5 +13,14 @@ export class MeController {
   @Get('events')
   getMyEvents(@Req() req: any) {
     return this.meService.getMyEvents(req.user.id);
+  }
+
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('avatar', { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadAvatar(@UploadedFile() file: Express.Multer.File | undefined, @Req() req: any) {
+    if (!file) {
+      throw new BadRequestException('Avatar file is required');
+    }
+    return this.meService.updateAvatar(req.user.id, file);
   }
 }

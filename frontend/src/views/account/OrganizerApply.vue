@@ -56,10 +56,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useAuth } from '../../composables/useAuth';
 import { fetchMyOrganizerApplication, submitOrganizerApplication } from '../../api/client';
 import type { OrganizerApplicationStatus } from '../../types/api';
+import { useRouter, useRoute } from 'vue-router';
 
 const auth = useAuth();
 const user = auth.user;
 const initializing = auth.initializing;
+const router = useRouter();
+const route = useRoute();
 
 const status = ref<OrganizerApplicationStatus | null>(null);
 const loadingStatus = ref(false);
@@ -90,6 +93,21 @@ watch(
   (val) => {
     if (val) {
       loadStatus();
+      if (typeof window !== 'undefined') {
+        const bookingRedirect = window.localStorage.getItem('booking:redirect');
+        const favoriteRedirect = window.localStorage.getItem('favorite:redirect');
+        const queryRedirect = route.query.redirect as string | undefined;
+        const redirect = bookingRedirect || favoriteRedirect || queryRedirect;
+        if (bookingRedirect) {
+          window.localStorage.removeItem('booking:redirect');
+        }
+        if (favoriteRedirect) {
+          window.localStorage.removeItem('favorite:redirect');
+        }
+        if (redirect) {
+          router.replace(redirect);
+        }
+      }
     } else {
       status.value = null;
     }

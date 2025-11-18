@@ -73,6 +73,10 @@ export function useAuth() {
     state.user = await fetchMe();
   };
 
+  const setUserProfile = (profile: UserProfile | null) => {
+    state.user = profile;
+  };
+
   const logout = () => {
     setToken(null);
     state.user = null;
@@ -84,6 +88,7 @@ export function useAuth() {
     initializing: computed(() => state.initializing),
     loginDev,
     fetchCurrentUser,
+    setUserProfile,
     logout,
     setToken,
   };

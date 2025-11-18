@@ -1,48 +1,78 @@
 <template>
-  <div class="app-shell">
-    <header class="app-header">
-      <div class="brand">
-        <h1>MORE App (モア アプリ)</h1>
-        <nav>
-          <RouterLink to="/">Home</RouterLink>
-          <RouterLink to="/events">Events</RouterLink>
-          <RouterLink v-if="user?.isOrganizer" to="/console/communities">Console</RouterLink>
-          <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
-          <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
-          <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
-        </nav>
-      </div>
-      <div class="auth-panel">
-        <span v-if="initializing">Checking session...</span>
-        <template v-else>
-          <div v-if="user" class="logged-in">
-            <span>ようこそ, {{ user.name }}</span>
-            <RouterLink
-              v-if="!user.isOrganizer"
-              class="apply-link"
-              to="/organizer/apply"
-            >
-              主理人申請
-            </RouterLink>
-            <button type="button" @click="logout">Logout</button>
-          </div>
-          <div v-else class="login-buttons">
-            <button type="button" @click="handleDevLogin">Dev Login</button>
-            <button type="button" @click="handleLineLogin">LINE Login</button>
-          </div>
-        </template>
-      </div>
-    </header>
-    <main>
-      <RouterView />
-    </main>
+  <div class="app-shell" :class="{ 'app-shell--mobile': isMobile }">
+    <template v-if="isMobile">
+      <MobileShell>
+        <RouterView />
+      </MobileShell>
+    </template>
+    <template v-else>
+      <header class="app-header">
+        <div class="brand">
+          <h1>MORE App (モア アプリ)</h1>
+          <nav>
+            <RouterLink to="/">Home</RouterLink>
+            <RouterLink to="/events">Events</RouterLink>
+            <RouterLink v-if="user?.isOrganizer" to="/console/communities">Console</RouterLink>
+            <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
+            <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
+            <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
+          </nav>
+        </div>
+        <div class="auth-panel">
+          <span v-if="initializing">Checking session...</span>
+          <template v-else>
+            <div v-if="user" class="logged-in">
+              <span>ようこそ, {{ user.name }}</span>
+              <RouterLink
+                v-if="!user.isOrganizer"
+                class="apply-link"
+                to="/organizer/apply"
+              >
+                主理人申請
+              </RouterLink>
+              <button type="button" @click="logout">Logout</button>
+            </div>
+            <div v-else class="login-buttons">
+              <button type="button" @click="handleDevLogin">Dev Login</button>
+              <button type="button" @click="handleLineLogin">LINE Login</button>
+            </div>
+          </template>
+        </div>
+      </header>
+      <main class="desktop-main">
+        <RouterView />
+      </main>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue';
+import MobileShell from './layouts/MobileShell.vue';
 import { useAuth } from './composables/useAuth';
 
 const { user, initializing, loginDev, logout } = useAuth();
+const isMobile = ref(false);
+const mediaQuery =
+  typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
+
+if (mediaQuery) {
+  isMobile.value = mediaQuery.matches;
+}
+
+const handleViewportChange = () => {
+  if (!mediaQuery) return;
+  isMobile.value = mediaQuery.matches;
+};
+
+onMounted(() => {
+  handleViewportChange();
+  mediaQuery?.addEventListener('change', handleViewportChange);
+});
+
+onUnmounted(() => {
+  mediaQuery?.removeEventListener('change', handleViewportChange);
+});
 
 const handleDevLogin = async () => {
   const name = window.prompt('Enter a display name for dev login', 'MORE Test User');
@@ -125,7 +155,12 @@ nav a {
   font-weight: 600;
 }
 
-main {
+.desktop-main {
   padding: 2rem;
+}
+
+.app-shell--mobile {
+  min-height: 100vh;
+  background: #020617;
 }
 </style>

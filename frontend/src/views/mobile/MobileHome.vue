@@ -1,7 +1,5 @@
 <template>
-  <div class="p-4">
-    <div class="bg-white rounded-xl shadow-sm p-6 text-center text-slate-500">
-      Mobile Home Placeholder
-    </div>
+  <div class="p-4 text-sm text-slate-500">
+    <p>モバイルホーム画面は準備中です。現在は「活動」タブからイベントを閲覧できます。</p>
   </div>
 </template>

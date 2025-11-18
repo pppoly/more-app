@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../config';
 import type {
   CommunityAnalytics,
   CommunityPortal,
+  ConsoleEventAssistantLog,
   ConsoleCommunityDetail,
   ConsoleEventDetail,
   ConsoleEventRegistrationsResponse,
@@ -89,6 +90,15 @@ export async function fetchMyEvents(): Promise<MyEventItem[]> {
   return data;
 }
 
+export async function uploadMyAvatar(file: File): Promise<UserProfile> {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  const { data } = await apiClient.post<UserProfile>('/me/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 export async function createMockPayment(registrationId: string): Promise<MockPaymentResponse> {
   const { data } = await apiClient.post<MockPaymentResponse>('/payments/mock', { registrationId });
   return data;
@@ -157,6 +167,32 @@ export async function fetchConsoleCommunityEvents(
   communityId: string,
 ): Promise<ConsoleEventSummary[]> {
   const { data } = await apiClient.get<ConsoleEventSummary[]>(`/console/communities/${communityId}/events`);
+  return data;
+}
+
+export async function fetchEventAssistantLogs(
+  communityId: string,
+): Promise<ConsoleEventAssistantLog[]> {
+  const { data } = await apiClient.get<ConsoleEventAssistantLog[]>(
+    `/console/communities/${communityId}/event-assistant/logs`,
+  );
+  return data;
+}
+
+export async function saveEventAssistantLog(
+  communityId: string,
+  payload: {
+    stage?: string;
+    summary?: string;
+    qaState?: Record<string, unknown>;
+    messages: unknown;
+    aiResult?: unknown;
+  },
+): Promise<ConsoleEventAssistantLog> {
+  const { data } = await apiClient.post<ConsoleEventAssistantLog>(
+    `/console/communities/${communityId}/event-assistant/logs`,
+    payload,
+  );
   return data;
 }
 

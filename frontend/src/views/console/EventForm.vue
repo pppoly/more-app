@@ -1,5 +1,5 @@
 <template>
-  <section class="console-section">
+  <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
     <header class="section-header">
       <div>
         <h2>{{ isEdit ? 'イベント編集' : 'イベント作成' }}</h2>
@@ -7,60 +7,6 @@
       </div>
       <RouterLink :to="backLink">戻る</RouterLink>
     </header>
-
-    <!-- AI Assistant (chat style) -->
-<section class="mt-4 rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col h-[420px]">
-  <header class="px-3 py-2 border-b flex items-center justify-between">
-    <div class="text-xs font-semibold text-slate-700">AI 活動アシスタント</div>
-    <div class="text-[10px] text-slate-400">企画の相談・文案作成に使えます</div>
-  </header>
-  <div class="flex-1 px-3 py-2 bg-[#F5F7F9] overflow-y-auto space-y-2">
-    <div v-for="msg in chatMessagesV2" :key="msg.id" :class="msg.role === 'user' ? 'text-right' : 'text-left'">
-      <div
-        v-if="msg.type === 'text'"
-        :class="[
-          'inline-block px-3 py-2 text-sm rounded-2xl max-w-[80%] text-left whitespace-pre-line',
-          msg.role === 'user' ? 'bg-[#00B900] text-white ml-auto' : 'bg-white text-slate-800 shadow-sm',
-        ]"
-      >
-        {{ msg.content }}
-      </div>
-      <div v-else-if="msg.type === 'proposal'" class="inline-block bg-white rounded-2xl p-3 shadow-sm max-w-[90%] text-left">
-        <h3 class="text-xs text-slate-500 mb-1">AI 提案のイベント概要</h3>
-        <p class="text-sm font-semibold mb-1">{{ msg.payload?.title }}</p>
-        <p class="text-xs text-slate-600 whitespace-pre-line mb-2">{{ msg.payload?.description }}</p>
-        <button class="w-full mt-1 py-1.5 text-xs rounded-full bg-[#00B900] text-white" @click="applyAiResultToFormFromMsg(msg)">
-          この内容をフォームに反映する
-        </button>
-      </div>
-      <div class="mt-0.5 text-[10px] text-slate-400" v-if="msg.createdAt">{{ msg.createdAt }}</div>
-    </div>
-    <div v-if="aiLoading" class="text-xs text-slate-500">AIが文章を考えています...</div>
-  </div>
-  <div v-if="aiError" class="px-3 text-[11px] text-rose-500">
-    {{ aiError }}
-  </div>
-  <div class="flex items-center px-3 py-2 bg-white border-t border-slate-200">
-    <button class="w-8 h-8 flex items-center justify-center text-slate-500" @click="requestGeneration">
-      <span class="i-lucide-plus"></span>
-    </button>
-    <input
-      v-model="chatDraft"
-      type="text"
-      class="flex-1 mx-2 px-3 py-2 rounded-full bg-slate-100 text-sm outline-none"
-      placeholder="想举办什么样的活动？（例：親子BBQ・語学交換など）"
-      @keyup.enter="handleSend"
-    />
-    <button
-      class="w-8 h-8 flex items-center justify-center rounded-full"
-      :class="chatDraft ? 'bg-[#00B900] text-white' : 'bg-slate-200 text-slate-500'"
-      @click="handleSend"
-      :disabled="!chatDraft || aiLoading"
-    >
-      <span class="i-lucide-send"></span>
-    </button>
-  </div>
-</section>
 
     <!-- Cover uploader -->
     <section class="card">
@@ -277,29 +223,15 @@ import {
   fetchConsoleEvent,
   updateConsoleEvent,
   fetchConsoleCommunity,
-  generateEventContent,
   uploadEventCovers,
   fetchEventGallery,
 } from '../../api/client';
-import type { GeneratedEventContent, RegistrationFormField, EventGalleryItem } from '../../types/api';
+import type { RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { QuillEditor } from '@vueup/vue-quill';
 import '@vueup/vue-quill/dist/vue-quill.snow.css';
 import LocationPicker from '../../components/console/LocationPicker.vue';
+import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../constants/console';
 
-type ChatRole = 'user' | 'assistant';
-type ChatMessageType = 'text' | 'proposal';
-interface ChatMessage {
-  id: string;
-  role: ChatRole;
-  type: ChatMessageType;
-  content: string;
-  createdAt: string;
-  payload?: {
-    title?: string;
-    description?: string;
-    raw?: (GeneratedEventContent & { summary?: string }) | null;
-  };
-}
 interface BuilderField extends RegistrationFormField {
   uuid: string;
   optionsText?: string;
@@ -310,6 +242,7 @@ const router = useRouter();
 const communityId = route.params.communityId as string | undefined;
 const eventId = route.params.eventId as string | undefined;
 const isEdit = computed(() => Boolean(eventId));
+const isMobileLayout = computed(() => route.meta?.layout === 'console-mobile');
 
 const defaultConfig = () => ({
   requireCheckin: false,
@@ -344,48 +277,6 @@ const form = reactive({
 const registrationFields = ref<BuilderField[]>([]);
 const galleries = ref<EventGalleryItem[]>([]);
 const coverError = ref<string | null>(null);
-
-const qaState = reactive({
-  baseLanguage: '',
-  topic: '',
-  audience: '',
-  style: '',
-  details: '',
-});
-
-const questions = [
-  {
-    key: 'baseLanguage',
-    prompt: 'こんにちは！まず、どの言語で考えたいですか？（日本語 / 中文 / English）',
-  },
-  {
-    key: 'topic',
-    prompt: 'これはどんなイベントですか？（例：親子自然探検、言語交換カフェなど）',
-  },
-  {
-    key: 'audience',
-    prompt: '主な対象者を教えてください。（例：3〜8歳の子どもを持つ多文化家庭）',
-  },
-  {
-    key: 'style',
-    prompt: 'イベントの雰囲気やスタイルは？（family-friendly / casual / formal など）',
-  },
-  {
-    key: 'details',
-    prompt: '場所・所要時間・持ち物など、自由に補足してください。',
-  },
-];
-
-const formatTime = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-const chatMessagesV2 = ref<ChatMessage[]>([]);
-const chatDraft = ref('');
-const currentQuestionIndex = ref(0);
-const awaitingConfirmation = ref(false);
-const chatMessagesLimit = 200;
-
-const aiLoading = ref(false);
-const aiError = ref<string | null>(null);
-const aiResult = ref<(GeneratedEventContent & { summary: string }) | null>(null);
 
 const submitting = ref(false);
 const error = ref<string | null>(null);
@@ -459,21 +350,6 @@ const getLocalizedText = (field: any) => {
   return String(field ?? '');
 };
 
-const extractText = (content: any) => {
-  if (!content) return '';
-  if (typeof content === 'string') return content;
-  if (typeof content === 'object') return content.original ?? '';
-  return '';
-};
-
-const snsCaption = (channel: 'line' | 'instagram') => {
-  if (!aiResult.value) return '';
-  const lang = qaState.baseLanguage || 'ja';
-  const captions = aiResult.value.snsCaptions?.[channel];
-  if (!captions) return '';
-  return captions[lang] || captions.ja || Object.values(captions)[0] || '';
-};
-
 const toLocalInput = (value?: string | null) => {
   if (!value) return '';
   return new Date(value).toISOString().slice(0, 16);
@@ -487,8 +363,8 @@ const buildContent = (text: string) => ({
 
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined);
 
-const buildRegistrationSchema = () =>
-  registrationFields.value
+function buildRegistrationSchema() {
+  return registrationFields.value
     .filter((field) => field.label.trim().length > 0)
     .map((field) => ({
       label: field.label,
@@ -502,6 +378,7 @@ const buildRegistrationSchema = () =>
             .filter(Boolean)
         : undefined,
     }));
+}
 
 const buildBuilderFields = (schema: RegistrationFormField[]): BuilderField[] =>
   schema.map((field, index) => ({
@@ -615,143 +492,41 @@ const handleCoverUpload = async (ev: Event) => {
   }
 };
 
-const pushMessage = (role: ChatRole, type: ChatMessageType, content: string, payload?: ChatMessage['payload']) => {
-  chatMessagesV2.value.push({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    role,
-    type,
-    content,
-    createdAt: formatTime(),
-    payload,
-  });
-  if (chatMessagesV2.value.length > chatMessagesLimit) {
-    chatMessagesV2.value.shift();
-  }
-};
-
-const handleSend = () => {
-  if (!chatDraft.value.trim() || aiLoading.value) return;
-  const content = chatDraft.value.trim();
-  chatDraft.value = '';
-  pushMessage('user', 'text', content);
-  handleChatAnswer(content);
-};
-
-const handleChatAnswer = (text: string) => {
-  if (awaitingConfirmation.value) {
-    if (shouldGenerate(text)) {
-      pushMessage('assistant', 'text', '了解しました。少々お待ちください。');
-      requestGeneration();
-    } else {
-      pushMessage('assistant', 'text', '了解しました。準備ができたら「生成」と入力してください。');
-    }
-    return;
-  }
-
-  const question = questions[currentQuestionIndex.value];
-  if (question) {
-    (qaState as any)[question.key] = text;
-  }
-
-  if (currentQuestionIndex.value < questions.length - 1) {
-    currentQuestionIndex.value += 1;
-    pushMessage('assistant', 'text', questions[currentQuestionIndex.value].prompt);
-  } else {
-    awaitingConfirmation.value = true;
-    pushMessage(
-      'assistant',
-      'text',
-      'ありがとう！この内容をもとにAIでイベント案内文を作成しても良いですか？「生成」や「再入力」など自由に回答してください。',
-    );
-  }
-};
-
-const shouldGenerate = (text: string) => {
-  const normalized = text.trim().toLowerCase();
-  const positiveWords = ['生成', 'はい', 'yes', 'ok', '好的', '好', 'go', 'start'];
-  return positiveWords.some((word) => normalized.includes(word) || text.includes(word));
-};
-
-const requestGeneration = async () => {
-  const payload = {
-    baseLanguage: qaState.baseLanguage || 'ja',
-    topic: qaState.topic || form.title || 'コミュニティイベント',
-    audience: qaState.audience || '地域の仲間',
-    style: qaState.style || 'family-friendly',
-    details: qaState.details || form.description || form.descriptionHtml || '詳細未定',
-  };
-  aiLoading.value = true;
-  aiError.value = null;
+const applyAssistantDraftFromStorage = () => {
+  if (eventId) return;
   try {
-    const result = await generateEventContent(payload);
-    const summary = buildSummary(payload);
-    aiResult.value = { ...result, summary };
-    pushMessage('assistant', 'text', summary);
-    pushMessage('assistant', 'text', 'こちらがAI案です。内容を確認してください。');
-    pushMessage('assistant', 'proposal', '', {
-      title: extractText(result.title),
-      description: extractText(result.description),
-      raw: aiResult.value,
-    });
-    awaitingConfirmation.value = false;
+    const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    if (stored?.title && !form.title) {
+      form.title = stored.title;
+    }
+    if (stored?.description) {
+      form.description = stored.description;
+      form.descriptionHtml = `<p>${stored.description}</p>`;
+    }
+    if (stored?.notes) {
+      form.config.notes = stored.notes;
+    }
+    if (stored?.riskNotice) {
+      form.config.riskNoticeText = stored.riskNotice;
+    }
+    if (stored?.ticketPrice != null) {
+      form.ticketPrice = Number(stored.ticketPrice) || 0;
+    }
+    if (stored?.category && !form.category) {
+      form.category = stored.category;
+    }
   } catch (err) {
-    aiError.value = err instanceof Error ? err.message : 'AI生成に失敗しました';
-    pushMessage('assistant', 'text', aiError.value ?? 'AI生成に失敗しました。もう一度お試しください。');
+    console.warn('Failed to apply AI draft', err);
   } finally {
-    aiLoading.value = false;
+    sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   }
 };
 
-const buildSummary = (state: typeof qaState) => {
-  const lang = state.baseLanguage || 'ja';
-  return `AIの理解：これは「${state.audience || '地域の参加者'}」向けの「${state.topic || 'コミュニティ活動'}」イベントで、雰囲気は「${state.style || 'カジュアル'}」。主な内容は「${state.details || '主催者のオリジナル企画'}」というイメージです。（${lang}ベース）`;
-};
-
-const applyAiToForm = () => {
-  if (!aiResult.value) return;
-  const title = extractText(aiResult.value.title);
-  const description = extractText(aiResult.value.description);
-  if (title) {
-    form.title = title;
-  }
-  if (description) {
-    form.description = description;
-    form.descriptionHtml = `<p>${description}</p>`;
-  }
-  const notes = extractText(aiResult.value.notes);
-  if (notes) {
-    form.config.notes = notes;
-  }
-  const risk = extractText(aiResult.value.riskNotice);
-  if (risk) {
-    form.config.riskNoticeText = risk;
-  }
-};
-
-const applyAiResultToFormFromMsg = (msg: ChatMessage) => {
-  if (msg.type !== 'proposal' || !msg.payload) return;
-  if (msg.payload.raw) {
-    aiResult.value = msg.payload.raw;
-    applyAiToForm();
-    return;
-  }
-  if (msg.payload.title) {
-    form.title = msg.payload.title;
-  }
-  if (msg.payload.description) {
-    form.description = msg.payload.description;
-    form.descriptionHtml = `<p>${msg.payload.description}</p>`;
-  }
-};
-
-onMounted(() => {
-  if (!chatMessagesV2.value.length) {
-    pushMessage('assistant', 'text', questions[0].prompt);
-  }
-});
-
-onMounted(() => {
-  load();
+onMounted(async () => {
+  await load();
+  applyAssistantDraftFromStorage();
 });
 </script>
 
@@ -909,5 +684,80 @@ select {
 .hint {
   font-size: 0.9rem;
   color: #475569;
+}
+.console-section--mobile {
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(48px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #f6fbff 0%, #eef3f8 40%, #f9f9fb 100%);
+  gap: 0.75rem;
+}
+
+.console-section--mobile .section-header {
+  background: #fff;
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 15px 40px rgba(15, 23, 42, 0.08);
+}
+
+.console-section--mobile .section-header h2 {
+  font-size: 18px;
+}
+
+.console-section--mobile .section-header p {
+  font-size: 12px;
+  color: var(--m-color-text-tertiary);
+}
+
+.console-section--mobile .card {
+  border: none;
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.console-section--mobile .card-header {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.console-section--mobile .form {
+  gap: 1rem;
+}
+
+.console-section--mobile input,
+.console-section--mobile textarea,
+.console-section--mobile select {
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 10px 12px;
+}
+
+.console-section--mobile .actions {
+  position: sticky;
+  bottom: 12px;
+  justify-content: center;
+}
+
+.console-section--mobile .primary {
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0090d9, #22bbaa);
+  box-shadow: 0 20px 40px rgba(0, 144, 217, 0.35);
+}
+
+.console-section--mobile .primary.ghost {
+  border-color: rgba(0, 144, 217, 0.3);
+  color: #0090d9;
+}
+
+@media (max-width: 768px) {
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

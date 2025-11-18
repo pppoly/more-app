@@ -1,7 +1,5 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
 import Home from '../views/Home.vue';
-import EventList from '../views/events/EventList.vue';
-import EventDetail from '../views/events/EventDetail.vue';
 import CommunityPortal from '../views/community/CommunityPortal.vue';
 import MyEvents from '../views/me/MyEvents.vue';
 import AuthCallback from '../views/auth/AuthCallback.vue';
@@ -16,10 +14,24 @@ import ConsoleAccessLayout from '../views/console/ConsoleAccessLayout.vue';
 import AdminHome from '../views/admin/AdminHome.vue';
 import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
+import DesktopLanding from '../views/desktop/DesktopLanding.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
-import MobileShell from '../layouts/MobileShell.vue';
 import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
+
+function isMobile() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return true;
+  }
+  return window.innerWidth < 768 || /Mobile|Android|iPhone/i.test(navigator.userAgent);
+}
+
+const loadMobileOrDesktop = (
+  mobileImport: () => Promise<unknown>,
+  desktopImport: () => Promise<unknown>,
+) => {
+  return () => (isMobile() ? mobileImport() : desktopImport());
+};
 
 async function communityRouteGuard(to: any, from: any, next: any) {
   const store = useConsoleCommunityStore();
@@ -42,61 +54,94 @@ async function communityRouteGuard(to: any, from: any, next: any) {
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    component: MobileShell,
-    // TODO: In future, detect viewport/UA to decide whether to render MobileShell or a desktop layout.
-    children: [
-      {
-        path: '',
-        name: 'MobileHome',
-        component: () => import('../views/mobile/MobileHome.vue'),
-        meta: { title: 'ホーム', layout: 'mobile-user' },
-      },
-      {
-        path: 'events',
-        name: 'MobileEvents',
-        component: () => import('../views/mobile/MobileEvents.vue'),
-        meta: { title: 'イベント', layout: 'mobile-user' },
-      },
-      {
-        path: 'events/:eventId',
-        name: 'MobileEventDetail',
-        component: () => import('../views/mobile/MobileEventDetail.vue'),
-        meta: { title: 'イベント詳細', layout: 'mobile-user' },
-      },
-      {
-        path: 'me',
-        name: 'MobileMe',
-        component: () => import('../views/mobile/MobileMe.vue'),
-        meta: { title: 'マイページ', layout: 'mobile-user' },
-      },
-      {
-        path: 'communities',
-        name: 'MobileCommunities',
-        component: () => import('../views/mobile/MobileCommunities.vue'),
-        meta: { title: 'コミュニティ', layout: 'mobile-user' },
-      },
-    ],
+    name: 'home',
+    component: DesktopLanding,
+    meta: { desktopOnly: true },
   },
   {
     path: '/desktop-home',
-    name: 'home',
+    name: 'legacy-home',
     component: Home,
+    meta: { desktopOnly: true },
   },
   {
     path: '/events',
     name: 'events',
-    component: EventList,
+    component: loadMobileOrDesktop(
+      () => import('../views/mobile/MobileEvents.vue'),
+      () => import('../views/events/EventList.vue'),
+    ),
+    meta: {
+      title: 'イベント',
+      layout: 'mobile-user',
+    },
   },
   {
     path: '/events/:eventId',
     name: 'event-detail',
-    component: EventDetail,
+    component: loadMobileOrDesktop(
+      () => import('../views/mobile/MobileEventDetail.vue'),
+      () => import('../views/events/EventDetail.vue'),
+    ),
+    meta: {
+      title: 'イベント詳細',
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+    },
+    props: true,
+  },
+  {
+    path: '/events/:eventId/register',
+    name: 'MobileEventRegister',
+    component: () => import('../views/mobile/MobileEventRegister.vue'),
+    meta: {
+      title: 'イベント申込',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+    },
     props: true,
   },
   {
     path: '/organizer/apply',
     name: 'organizer-apply',
     component: OrganizerApply,
+  },
+  {
+    path: '/me',
+    name: 'MobileMe',
+    component: () => import('../views/mobile/MobileMe.vue'),
+    meta: {
+      title: 'マイページ',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      fixedPage: true,
+      hideShellHeader: true,
+    },
+  },
+  {
+    path: '/settings',
+    name: 'MobileSettings',
+    component: () => import('../views/mobile/MobileSettings.vue'),
+    meta: {
+      title: '設定',
+      layout: 'mobile-user',
+      mobileOnly: true,
+    },
+  },
+  {
+    path: '/communities',
+    name: 'MobileCommunities',
+    component: () => import('../views/mobile/MobileCommunities.vue'),
+    meta: {
+      title: 'コミュニティ',
+      layout: 'mobile-user',
+      mobileOnly: true,
+    },
   },
   {
     path: '/console',
@@ -248,6 +293,19 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const auth = useAuth();
+  const mobile = isMobile();
+
+  if (mobile && to.meta.desktopOnly) {
+    return next({ name: 'events' });
+  }
+
+  if (!mobile && to.meta.mobileOnly) {
+    return next({ name: 'home' });
+  }
+
+  if (mobile && to.path === '/') {
+    return next({ name: 'events' });
+  }
 
   if (!auth.user.value && auth.accessToken.value) {
     try {

@@ -26,6 +26,7 @@ model User {
   registrations EventRegistration[]
   payments      Payment[]
   organizerApplications OrganizerApplication[]
+  aiEventDraftLogs AiEventDraftLog[]
 }
 
 model Community {
@@ -50,6 +51,7 @@ model Community {
   members        CommunityMember[]
   events         Event[]
   payments       Payment[]
+  aiEventDraftLogs AiEventDraftLog[]
 }
 
 model CommunityMember {
@@ -215,4 +217,18 @@ model OrganizerApplication {
   createdAt  DateTime @default(now())
   reviewedAt DateTime?
   reviewerId String?
+}
+
+model AiEventDraftLog {
+  id           String    @id @default(cuid())
+  communityId  String
+  userId       String
+  stage        String
+  summary      String?
+  qaState      Json?
+  messages     Json
+  aiResult     Json?
+  createdAt    DateTime  @default(now())
+  community    Community @relation(fields: [communityId], references: [id])
+  user         User      @relation(fields: [userId], references: [id])
 }

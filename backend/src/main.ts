@@ -9,15 +9,21 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
+  const allowedOrigins = (process.env.FRONTEND_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true,
   });
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads/' });
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`MORE App backend is running on http://localhost:${port}/api/v1`);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
+  console.log(`MORE App backend is running on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/api/v1`);
 }
 
 bootstrap();

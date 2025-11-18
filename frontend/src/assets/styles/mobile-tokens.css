@@ -1,0 +1,48 @@
+:root {
+  --color-page-bg: #f5f6fa;
+  --color-surface: #ffffff;
+  --color-badge-bg: #f3f4f6;
+  --color-text-main: #0c1f33;
+  --color-text-strong: #000000;
+  --color-text-muted: #777777;
+  --color-text-disabled: #acacac;
+  --color-text-on-primary: #ffffff;
+  --color-primary: #0090d9;
+  --color-tag-dark-bg: #0c1f33;
+  --color-border-soft: #f2f1f6;
+  --color-border-accent: #d1e8f7;
+  --color-divider-soft: #f2f2f2;
+
+  --font-family-base: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 16px;
+  --line-height-xs: 14px;
+  --line-height-sm: 17px;
+  --line-height-md: 20px;
+  --line-height-lg: 21px;
+  --line-height-xl: 22px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --letter-spacing-tight: 0.2px;
+  --letter-spacing-normal: 0.3px;
+
+  --radius-card: 8px;
+  --radius-pill: 13px;
+  --radius-tag: 10px;
+  --radius-full: 999px;
+
+  --shadow-card: 0 4px 8px rgba(232, 232, 232, 1);
+  --shadow-subtle: 0 0 4px rgba(242, 242, 242, 1);
+
+  --space-xxs: 4px;
+  --space-xs: 7px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+}
