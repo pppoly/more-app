@@ -1,5 +1,7 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import OpenAI from 'openai';
+import { COACHING_PROMPT_CONFIG, PromptDefaultsProfile } from './prompt.config';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface GenerateEventContentDto {
   baseLanguage: string;
@@ -17,6 +19,7 @@ export interface AiLocalizedField {
 
 export interface AiEventContent {
   title: AiLocalizedField;
+  subtitle?: AiLocalizedField;
   description: AiLocalizedField;
   notes: AiLocalizedField;
   riskNotice: AiLocalizedField;
@@ -24,6 +27,116 @@ export interface AiEventContent {
     line: Record<string, string>;
     instagram: Record<string, string>;
   };
+  logistics?: {
+    startTime?: string;
+    endTime?: string;
+    locationText?: string;
+    locationNote?: string;
+  };
+  ticketTypes?: Array<{
+    name: string;
+    price: number;
+    currency?: string;
+    quota?: number | null;
+    type?: string;
+  }>;
+  requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
+  registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
+  visibility?: 'public' | 'community' | 'private';
+}
+
+export interface AssistantConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface GenerateAssistantReplyDto extends GenerateEventContentDto {
+  conversation?: AssistantConversationMessage[];
+}
+
+export type AssistantReplyStatus = 'collecting' | 'options' | 'ready';
+
+export type AssistantStage = 'coach' | 'editor' | 'writer';
+
+interface AiAssistantReplyPayload {
+  status: AssistantReplyStatus;
+  message: string;
+  options?: string[];
+  proposal?: AiEventContent;
+  thinkingSteps?: string[];
+  stage?: AssistantStage;
+  coachPrompts?: string[];
+  editorChecklist?: string[];
+  writerSummary?: {
+    headline?: string;
+    audience?: string;
+    logistics?: string;
+    riskNotes?: string;
+    nextSteps?: string;
+  };
+  confirmQuestions?: string[];
+}
+
+export interface AiAssistantReply extends AiAssistantReplyPayload {
+  promptVersion: string;
+  language: string;
+  turnCount: number;
+  thinkingSteps: string[];
+}
+
+export interface AiAssistantProfileDefaults {
+  version: string;
+  defaults: PromptDefaultsProfile;
+}
+
+export interface AiModuleUsageMetrics {
+  totalLogs: number;
+  last24h: number;
+  last7d: number;
+  activeCommunities: number;
+  activeUsers: number;
+  lastActivityAt: Date | null;
+}
+
+export interface AiModuleUsageSummary {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'coming-soon';
+  metrics?: AiModuleUsageMetrics;
+}
+
+export interface AiUsageSummaryResponse {
+  generatedAt: Date;
+  modules: AiModuleUsageSummary[];
+}
+
+export interface AiUsageDetailResponse {
+  module: {
+    id: string;
+    name: string;
+    description: string;
+  };
+  metrics: AiModuleUsageMetrics & {
+    avgTurns: number | null;
+  };
+  breakdown: {
+    stage: Array<{ label: string; count: number }>;
+    language: Array<{ label: string; count: number }>;
+  };
+  recentSessions: Array<{
+    id: string;
+    communityId: string;
+    communityName: string;
+    userId: string;
+    userName: string;
+    userEmail?: string | null;
+    stage?: string | null;
+    status?: string | null;
+    summary?: string | null;
+    turnCount?: number | null;
+    createdAt: Date;
+  }>;
 }
 
 @Injectable()
@@ -31,7 +144,7 @@ export class AiService {
   private readonly client: OpenAI | null;
   private readonly model: string;
 
-  constructor() {
+  constructor(private readonly prisma: PrismaService) {
     const apiKey = process.env.OPENAI_API_KEY;
     this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     this.client = apiKey ? new OpenAI({ apiKey }) : null;
@@ -92,7 +205,290 @@ export class AiService {
     }
   }
 
+  async generateAssistantReply(payload: GenerateAssistantReplyDto): Promise<AiAssistantReply> {
+    if (!this.client) {
+      throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
+    }
+
+    const conversation = (payload.conversation ?? []).slice(-12);
+    const turnCount = conversation.filter((msg) => msg.role === 'user').length;
+    const latestUserMessage =
+      [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
+    const promptConfig = COACHING_PROMPT_CONFIG;
+    const detectedLanguage = this.detectLanguage(latestUserMessage, payload.baseLanguage);
+    const instruction = promptConfig.instruction
+      .replace('{minQuestionTurns}', promptConfig.minQuestionTurns.toString())
+      .replace('{optionPhaseTurns}', promptConfig.optionPhaseTurns.toString())
+      .replace('{readyTurns}', promptConfig.readyTurns.toString())
+      .replace('{latestMessage}', latestUserMessage || '');
+
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        temperature: 0.65,
+        response_format: {
+          type: 'json_schema',
+          json_schema: this.buildAssistantReplySchema(),
+        },
+        messages: [
+          {
+            role: 'system',
+            content: promptConfig.systemPrompt,
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              profile: {
+                baseLanguage: payload.baseLanguage,
+                topic: payload.topic,
+                audience: payload.audience,
+                style: payload.style,
+              },
+              conversation,
+              turnCount,
+              latestUserMessage,
+              targetLanguage: detectedLanguage,
+              instruction,
+            }),
+          },
+        ],
+      });
+
+      const raw = this.extractMessageContent(completion);
+      if (!raw) {
+        throw new Error('Empty response from AI');
+      }
+
+      const parsed = JSON.parse(raw) as AiAssistantReplyPayload;
+      const stageTag = parsed.stage ?? 'coach';
+      return {
+        ...parsed,
+        promptVersion: promptConfig.version,
+        language: detectedLanguage,
+        turnCount,
+        stage: stageTag,
+        thinkingSteps: Array.isArray(parsed.thinkingSteps) ? parsed.thinkingSteps : [],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to generate assistant reply', HttpStatus.INTERNAL_SERVER_ERROR, {
+        cause: error,
+      });
+    }
+  }
+
+  async getAiUsageSummary(): Promise<AiUsageSummaryResponse> {
+    const eventMetrics = await this.computeEventAssistantMetrics();
+    const modules: AiModuleUsageSummary[] = [
+      {
+        id: 'event-assistant',
+        name: '活动助手（Console）',
+        description: 'Console 端创建活动的对话式助手，执行 Coach / Editor / Writer 三阶段',
+        status: 'active',
+        metrics: eventMetrics,
+      },
+      {
+        id: 'community-assistant',
+        name: '社区策略助手',
+        description: '社群定位、内容与增长实验的 AI 伙伴',
+        status: 'coming-soon',
+      },
+      {
+        id: 'translator',
+        name: '翻译 · 多语言指南',
+        description: '跨语言内容校对与生活语境提示',
+        status: 'coming-soon',
+      },
+    ];
+
+    return {
+      generatedAt: new Date(),
+      modules,
+    };
+  }
+
+  async getAiUsageDetail(moduleId: string): Promise<AiUsageDetailResponse> {
+    if (moduleId !== 'event-assistant') {
+      throw new NotFoundException('Module not found');
+    }
+    return this.buildEventAssistantUsageDetail();
+  }
+
+  private async computeEventAssistantMetrics(): Promise<AiModuleUsageMetrics> {
+    const now = Date.now();
+    const last24h = new Date(now - 24 * 60 * 60 * 1000);
+    const last7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+    const [totalLogs, last24hCount, last7dCount, communityDistinct, userDistinct, latestLog] =
+      await Promise.all([
+        this.prisma.aiEventDraftLog.count(),
+        this.prisma.aiEventDraftLog.count({ where: { createdAt: { gte: last24h } } }),
+        this.prisma.aiEventDraftLog.count({ where: { createdAt: { gte: last7d } } }),
+        this.prisma.aiEventDraftLog.findMany({ distinct: ['communityId'], select: { communityId: true } }),
+        this.prisma.aiEventDraftLog.findMany({ distinct: ['userId'], select: { userId: true } }),
+        this.prisma.aiEventDraftLog.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+      ]);
+
+    return {
+      totalLogs,
+      last24h: last24hCount,
+      last7d: last7dCount,
+      activeCommunities: communityDistinct.length,
+      activeUsers: userDistinct.length,
+      lastActivityAt: latestLog?.createdAt ?? null,
+    };
+  }
+
+  private async buildEventAssistantUsageDetail(): Promise<AiUsageDetailResponse> {
+    const metrics = await this.computeEventAssistantMetrics();
+    const [avgTurns, stageGroups, languageGroups, recentLogs] = await Promise.all([
+      this.prisma.aiEventDraftLog.aggregate({
+        _avg: { turnCount: true },
+      }),
+      this.prisma.aiEventDraftLog.groupBy({
+        by: ['stage'],
+        _count: { _all: true },
+      }),
+      this.prisma.aiEventDraftLog.groupBy({
+        by: ['language'],
+        _count: { _all: true },
+      }),
+      this.prisma.aiEventDraftLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          community: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+
+    const formatBreakdown = <T extends { _count: { _all: number } }>(items: T[], key: keyof T) =>
+      items.map((item) => ({
+        label: ((item[key] as string | null) ?? '未标注') as string,
+        count: item._count._all,
+      }));
+
+    return {
+      module: {
+        id: 'event-assistant',
+        name: '活动助手（Console）',
+        description: 'Console 端活动创建助手 · Speak → Guide → Write → Confirm 全流程',
+      },
+      metrics: {
+        ...metrics,
+        avgTurns: avgTurns._avg.turnCount ?? null,
+      },
+      breakdown: {
+        stage: formatBreakdown(stageGroups as Array<{ stage: string | null; _count: { _all: number } }>, 'stage'),
+        language: formatBreakdown(
+          languageGroups as Array<{ language: string | null; _count: { _all: number } }>,
+          'language',
+        ),
+      },
+      recentSessions: recentLogs.map((log) => ({
+        id: log.id,
+        communityId: log.communityId,
+        communityName: log.community.name,
+        userId: log.userId,
+        userName: log.user.name ?? '未命名',
+        userEmail: log.user.email,
+        stage: log.stage,
+        status: log.status,
+        summary: log.summary,
+        turnCount: log.turnCount,
+        createdAt: log.createdAt,
+      })),
+    };
+  }
+
+  private extractMessageContent(completion: OpenAI.Chat.Completions.ChatCompletion) {
+    const messageContent = completion.choices[0]?.message?.content;
+    if (typeof messageContent === 'string') {
+      return messageContent;
+    }
+    if (Array.isArray(messageContent)) {
+      return (messageContent as Array<{ text?: string } | null>).map((part) => part?.text ?? '').join('');
+    }
+    return '';
+  }
+
   private buildJsonSchema() {
+    return {
+      name: 'MoreAppEventContent',
+      schema: this.getEventContentSchema(),
+    };
+  }
+
+  private buildAssistantReplySchema() {
+    return {
+      name: 'MoreAppAssistantReply',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          status: { type: 'string', enum: ['collecting', 'options', 'ready'] },
+          message: { type: 'string' },
+          stage: { type: 'string', enum: ['coach', 'editor', 'writer'] },
+          thinkingSteps: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: 6,
+          },
+          coachPrompts: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          editorChecklist: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          writerSummary: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              headline: { type: 'string' },
+              audience: { type: 'string' },
+              logistics: { type: 'string' },
+              riskNotes: { type: 'string' },
+              nextSteps: { type: 'string' },
+            },
+          },
+          confirmQuestions: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          proposal: this.getEventContentSchema(),
+        },
+        required: ['status', 'message', 'thinkingSteps', 'stage'],
+      },
+    };
+  }
+
+  private detectLanguage(latestMessage: string, fallback?: string) {
+    if (latestMessage && /[\u3040-\u30ff]/.test(latestMessage)) {
+      return 'ja';
+    }
+    if (latestMessage && /[\u4e00-\u9fff]/.test(latestMessage)) {
+      if (fallback === 'zh') {
+        return 'zh';
+      }
+      return 'ja';
+    }
+    if (latestMessage && /[a-zA-Z]/.test(latestMessage)) {
+      return 'en';
+    }
+    return fallback || 'ja';
+  }
+
+  private getEventContentSchema() {
     const localized = {
       type: 'object',
       properties: {
@@ -125,27 +521,83 @@ export class AiService {
     };
 
     return {
-      name: 'MoreAppEventContent',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          title: localized,
-          description: localized,
-          notes: localized,
-          riskNotice: localized,
-          snsCaptions: {
-            type: 'object',
-            properties: {
-              line: caption,
-              instagram: caption,
-            },
-            required: ['line', 'instagram'],
-            additionalProperties: false,
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        title: localized,
+        subtitle: localized,
+        description: localized,
+        notes: localized,
+        riskNotice: localized,
+        snsCaptions: {
+          type: 'object',
+          properties: {
+            line: caption,
+            instagram: caption,
+          },
+          required: ['line', 'instagram'],
+          additionalProperties: false,
+        },
+        logistics: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            startTime: { type: 'string' },
+            endTime: { type: 'string' },
+            locationText: { type: 'string' },
+            locationNote: { type: 'string' },
           },
         },
-        required: ['title', 'description', 'notes', 'riskNotice', 'snsCaptions'],
+        ticketTypes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              name: { type: 'string' },
+              price: { type: 'number' },
+              currency: { type: 'string' },
+              quota: { type: ['integer', 'null'] },
+              type: { type: 'string' },
+            },
+            required: ['name', 'price'],
+          },
+        },
+        requirements: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              label: { type: 'string' },
+              type: { type: 'string', enum: ['must', 'nice-to-have'] },
+            },
+            required: ['label'],
+          },
+        },
+        registrationForm: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              label: { type: 'string' },
+              type: { type: 'string' },
+              required: { type: 'boolean' },
+            },
+            required: ['label', 'type'],
+          },
+        },
+        visibility: { type: 'string', enum: ['public', 'community', 'private'] },
       },
+      required: ['title', 'description', 'notes', 'riskNotice', 'snsCaptions'],
+    };
+  }
+
+  getProfileDefaults(): AiAssistantProfileDefaults {
+    return {
+      version: COACHING_PROMPT_CONFIG.version,
+      defaults: COACHING_PROMPT_CONFIG.defaults,
     };
   }
 }

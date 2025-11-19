@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ConsoleEventAssistantService } from './console-event-assistant.service';
 
@@ -17,6 +17,11 @@ export class ConsoleEventAssistantController {
       qaState?: any;
       messages: any;
       aiResult?: any;
+      promptVersion?: string;
+      status?: string;
+      turnCount?: number;
+      language?: string;
+      meta?: any;
     },
     @Req() req: any,
   ) {
@@ -26,5 +31,13 @@ export class ConsoleEventAssistantController {
   @Get('logs')
   listLogs(@Param('communityId') communityId: string, @Req() req: any) {
     return this.assistantService.listLogs(req.user.id, communityId);
+  }
+
+  @Get('dashboard')
+  dashboard(@Param('communityId') communityId: string, @Req() req: any) {
+    if (!req.user?.isAdmin) {
+      throw new ForbiddenException('Admins only');
+    }
+    return this.assistantService.getDashboard(req.user.id, communityId, true);
   }
 }

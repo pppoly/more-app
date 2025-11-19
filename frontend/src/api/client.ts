@@ -1,14 +1,20 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import type {
+  AiUsageDetailResponse,
+  AiUsageSummaryResponse,
   CommunityAnalytics,
   CommunityPortal,
   ConsoleEventAssistantLog,
+  EventAssistantDashboard,
   ConsoleCommunityDetail,
   ConsoleEventDetail,
   ConsoleEventRegistrationsResponse,
   ConsoleEventSummary,
   DevLoginResponse,
+  EventAssistantReply,
+  EventAssistantRequest,
+  EventAssistantProfileDefaults,
   EventDetail,
   EventGalleryItem,
   EventRegistrationSummary,
@@ -218,6 +224,43 @@ export async function generateEventContent(
   return data;
 }
 
+export async function requestEventAssistantReply(
+  payload: EventAssistantRequest,
+): Promise<EventAssistantReply> {
+  const { data } = await apiClient.post<EventAssistantReply>('/ai/events/assistant', payload, {
+    timeout: 60000,
+  });
+  return data;
+}
+
+export async function fetchAssistantDashboard(
+  communityId: string,
+): Promise<EventAssistantDashboard> {
+  const { data } = await apiClient.get<EventAssistantDashboard>(
+    `/console/communities/${communityId}/event-assistant/dashboard`,
+  );
+  return data;
+}
+
+export async function fetchAssistantProfileDefaults(): Promise<EventAssistantProfileDefaults> {
+  const { data } = await apiClient.get<EventAssistantProfileDefaults>('/ai/events/profile-defaults');
+  return data;
+}
+
+export async function sendEmailLoginCode(email: string): Promise<void> {
+  await apiClient.post('/auth/email/send-code', { email });
+}
+
+export async function verifyEmailLoginCode(email: string, code: string): Promise<{ accessToken: string; user: UserProfile }> {
+  const { data } = await apiClient.post<{ accessToken: string; user: UserProfile }>('/auth/email/verify', { email, code });
+  return data;
+}
+
+export async function updateProfile(payload: { name?: string }): Promise<UserProfile> {
+  const { data } = await apiClient.post<UserProfile>('/me/profile', payload);
+  return data;
+}
+
 export async function uploadEventCovers(eventId: string, files: File[]) {
   const formData = new FormData();
   files.forEach((file) => formData.append('files', file));
@@ -256,5 +299,15 @@ export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicatio
 
 export async function submitOrganizerApplication(payload: { reason: string; experience?: string }) {
   const { data } = await apiClient.post('/organizers/apply', payload);
+  return data;
+}
+
+export async function fetchAiUsageSummary(): Promise<AiUsageSummaryResponse> {
+  const { data } = await apiClient.get<AiUsageSummaryResponse>('/admin/ai/usage-summary');
+  return data;
+}
+
+export async function fetchAiUsageDetail(moduleId: string): Promise<AiUsageDetailResponse> {
+  const { data } = await apiClient.get<AiUsageDetailResponse>(`/admin/ai/usage/${moduleId}`);
   return data;
 }

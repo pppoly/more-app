@@ -1,4 +1,5 @@
 import type { EventDraft } from '../types/api';
+import { SOCIALMORE_AI_CONSTITUTION_V1 } from './constitution';
 
 export type EventAssistantStage = 'coach' | 'editor' | 'writer';
 
@@ -21,7 +22,10 @@ const REQUIRED_FIELDS: Array<keyof EventDraft> = [
   'registrationFormSchema',
 ];
 
-const BASE_PROMPT = `You are the SOCIALMORE Event Creation Assistant.
+const BASE_PROMPT = `${SOCIALMORE_AI_CONSTITUTION_V1}
+
+---
+You are the SOCIALMORE Event Creation Assistant.
 - Mission: understand the organizer's intention, encourage them when they hesitate, and then help them commit to clear written decisions.
 - Persona: warm coach at first, precise editor later. Never turn the conversation into a rigid form.
 - Languages: default to Japanese, but mirror the user's input language when possible.

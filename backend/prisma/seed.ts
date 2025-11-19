@@ -150,6 +150,9 @@ async function main() {
   const ownerB = await prisma.user.create({
     data: { name: '东京多文化社区', language: 'zh', prefecture: 'Tokyo' },
   });
+  const ownerC = await prisma.user.create({
+    data: { name: 'TCOC Organizer', language: 'en', prefecture: 'Tokyo' },
+  });
 
   const guests = await Promise.all(
     [
@@ -198,10 +201,31 @@ async function main() {
     },
   });
 
+  const tcocAboutEn =
+    'Connect. Collaborate. Create.\n\nWelcome to Tokyo Community Organizations Meetup Group — a hub for people who build, support, and connect communities across Tokyo. From neighborhood associations and cultural groups to NPOs, startups, and social innovators, this is where collaboration begins.\n\nWe host regular meetups, open discussions, and showcase sessions that explore:\n• Community engagement and social design in Japan\n• Cross-cultural collaboration and inclusion\n• Event management, fundraising, and digital tools for NPOs\n• Local government partnerships and sustainability initiatives\n\nWhether you’re leading a local project, volunteering, or just curious about social impact in Tokyo — you’ll find inspiration, connections, and real opportunities to make things happen.';
+  const tcocAboutJa =
+    'Connect. Collaborate. Create.\n\nTokyo Community Organizations Meetup Group は、東京でコミュニティをつくり、支え、つなぐ人のためのハブです。町会や文化団体、NPO、スタートアップ、ソーシャルイノベーターまで、ここから協働が始まります。\n\n定期的なミートアップやオープンディスカッション、ショーケースでは次のテーマを探究します。\n・日本におけるコミュニティエンゲージメントとソーシャルデザイン\n・多文化協働とインクルーシブな場づくり\n・NPOのためのイベント運営、資金調達、デジタルツール\n・自治体との連携やサステナビリティの取り組み\n\n地域プロジェクトを率いる人、ボランティア、東京の社会的インパクトに興味がある人など、誰もが刺激と仲間、そして実行の機会を見つけられます。';
+  const tcocAboutZh =
+    '连接 · 协作 · 共创。\n\nTokyo Community Organizations Meetup Group 是汇聚东京各类社区组织的枢纽。从街区协会、文化团体到 NPO、初创团队与社会创新者，协作在此起步。\n\n我们定期举办聚会、开放讨论与展示，聚焦以下主题：\n• 日本的社区参与与社会设计\n• 跨文化协作与包容\n• 活动运营、募资与 NPO 数字工具\n• 与地方政府合作及永续倡议\n\n无论你在带领在地计划、投身志愿，抑或只是对东京的社会影响好奇—在这里都能找到灵感、链接与让想法落地的机会。';
+
+  const communityTcoc = await prisma.community.create({
+    data: {
+      name: 'Tokyo Community Organizations Meetup Group',
+      slug: 'tcoc',
+      ownerId: ownerC.id,
+      pricingPlanId: starterPlan.id,
+      visibleLevel: 'public',
+      labels: ['collaboration', 'npo', 'community'],
+      description: multiText(tcocAboutJa, tcocAboutZh, tcocAboutEn),
+      language: 'en',
+    },
+  });
+
   await prisma.communityMember.createMany({
     data: [
       { communityId: communityKids.id, userId: ownerA.id, role: 'owner', status: 'active' },
       { communityId: communityLanguage.id, userId: ownerB.id, role: 'owner', status: 'active' },
+      { communityId: communityTcoc.id, userId: ownerC.id, role: 'owner', status: 'active' },
     ],
   });
 

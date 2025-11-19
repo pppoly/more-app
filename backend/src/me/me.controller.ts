@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MeService } from './me.service';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -22,5 +22,10 @@ export class MeController {
       throw new BadRequestException('Avatar file is required');
     }
     return this.meService.updateAvatar(req.user.id, file);
+  }
+
+  @Post('profile')
+  async updateProfile(@Body('name') name: string | undefined, @Req() req: any) {
+    return this.meService.updateProfile(req.user.id, { name });
   }
 }

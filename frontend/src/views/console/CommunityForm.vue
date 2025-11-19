@@ -5,7 +5,7 @@
         <h2>{{ isEdit ? 'コミュニティ編集' : 'コミュニティ新規作成' }}</h2>
         <p>基本情報を入力してください。</p>
       </div>
-      <RouterLink to="/console/communities">一覧へ戻る</RouterLink>
+      <RouterLink :to="{ name: 'console-communities' }">一覧へ戻る</RouterLink>
     </header>
 
     <form class="form" @submit.prevent="handleSubmit">
@@ -120,7 +120,7 @@ const handleSubmit = async () => {
     } else {
       await createConsoleCommunity(payload);
     }
-    router.replace('/console/communities');
+    router.replace({ name: 'console-communities' });
   } catch (err) {
     error.value = err instanceof Error ? err.message : '保存に失敗しました';
   } finally {

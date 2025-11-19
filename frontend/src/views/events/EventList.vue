@@ -2,10 +2,6 @@
   <section class="events-mobile">
     <header class="app-bar">
       <div class="logo-circle">M</div>
-      <div class="app-title">
-        <p class="title">MORE イベント</p>
-        <p class="subtitle">気になるイベントをチャット感覚でチェック</p>
-      </div>
       <RouterLink v-if="!user" class="login-chip" to="/organizer/apply">ログイン</RouterLink>
       <div v-else class="user-avatar">{{ userInitial }}</div>
     </header>
@@ -15,16 +11,19 @@
         <span class="icon">🔍</span>
         <input v-model="searchTerm" type="search" placeholder="イベント / コミュニティを検索" />
       </div>
-      <div class="chip-row">
-        <button
-          v-for="chip in categories"
-          :key="chip.value"
-          :class="['chip', { active: selectedCategory === chip.value }]"
-          type="button"
-          @click="selectedCategory = chip.value"
-        >
-          {{ chip.label }}
-        </button>
+      <div class="chip-container">
+        <p class="chip-label">タグ</p>
+        <div class="chip-row">
+          <button
+            v-for="chip in categories"
+            :key="chip.value"
+            :class="['chip', { active: selectedCategory === chip.value }]"
+            type="button"
+            @click="selectedCategory = chip.value"
+          >
+            {{ chip.label }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -35,15 +34,16 @@
       <div v-if="!filteredEvents.length" class="empty-state">
         現在公開中のイベントはありません。
       </div>
-      <ul v-else class="chat-list">
-        <li v-for="event in filteredEvents" :key="event.id" class="chat-card" @click="goDetail(event.id)">
-          <div class="cover" :style="coverStyle(event)">
-            <span>{{ coverInitial(event) }}</span>
+      <ul v-else class="event-list">
+        <li v-for="event in filteredEvents" :key="event.id" class="event-card" @click="goDetail(event.id)">
+          <div class="event-card__cover" :style="coverImageStyle(event)">
+            <span v-if="!event.coverImageUrl" class="event-card__fallback">{{ coverInitial(event) }}</span>
           </div>
-          <div class="info">
-            <p class="chat-title">{{ titleFor(event) }}</p>
-            <p class="chat-sub">{{ formatDate(event.startTime) }} · {{ event.locationText }}</p>
-            <div class="chat-meta">
+          <div class="event-card__body">
+            <p class="event-card__title">{{ titleFor(event) }}</p>
+            <p class="event-card__meta">{{ formatDate(event.startTime) }}</p>
+            <p class="event-card__location">{{ event.locationText }}</p>
+            <div class="event-card__footer">
               <span class="status-pill" :class="statusBadge(event).class">{{ statusBadge(event).text }}</span>
               <span class="capacity">{{ participationLabel }}</span>
             </div>
@@ -55,7 +55,7 @@
     <nav class="tab-bar">
       <RouterLink to="/events" class="tab-item active">イベント</RouterLink>
       <RouterLink to="/community/musashino-kids" class="tab-item">コミュニティ</RouterLink>
-      <RouterLink to="/console" class="tab-item">コンソール</RouterLink>
+      <RouterLink :to="{ name: 'console-home' }" class="tab-item">コンソール</RouterLink>
     </nav>
   </section>
 </template>
@@ -129,9 +129,14 @@ const statusBadge = (event: EventSummary) => {
 };
 
 const coverInitial = (event: EventSummary) => (event.community.name?.charAt(0) ?? 'M').toUpperCase();
-const coverStyle = (event: EventSummary) => ({
-  background: `linear-gradient(135deg, var(--color-primary), #4cd964)`,
-});
+const coverImageStyle = (event: EventSummary) => {
+  if (event.coverImageUrl) {
+    return { backgroundImage: `url(${event.coverImageUrl})` };
+  }
+  return {
+    background: `linear-gradient(135deg, var(--color-primary), #4cd964)`,
+  };
+};
 
 const participationLabel = '参加枠: チェック中';
 
@@ -170,17 +175,6 @@ onMounted(loadEvents);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.app-title .title {
-  margin: 0;
-  font-weight: 700;
-}
-
-.app-title .subtitle {
-  margin: 0;
-  color: var(--color-subtext);
-  font-size: 0.75rem;
 }
 
 .user-avatar {
@@ -228,6 +222,21 @@ onMounted(loadEvents);
   outline: none;
 }
 
+.chip-container {
+  margin-top: 0.5rem;
+  border-radius: 16px;
+  padding: 0.6rem;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid var(--color-primary);
+}
+
+.chip-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 .chip-row {
   display: flex;
   gap: 0.4rem;
@@ -255,7 +264,7 @@ onMounted(loadEvents);
   padding: 0 1rem;
 }
 
-.chat-list {
+.event-list {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -264,51 +273,64 @@ onMounted(loadEvents);
   gap: 0.75rem;
 }
 
-.chat-card {
+.event-card {
   display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border-radius: 12px;
+  flex-direction: column;
+  gap: 0.6rem;
+  border-radius: 18px;
   background: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 10px 30px rgba(3, 7, 18, 0.08);
+  overflow: hidden;
   cursor: pointer;
 }
 
-.cover {
-  width: 90px;
-  height: 68px;
-  border-radius: 16px;
+.event-card__cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 1.5rem;
 }
 
-.info {
-  flex: 1;
+.event-card__fallback {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.event-card__body {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.35rem;
+  padding: 0 1rem 1rem;
 }
 
-.chat-title {
+.event-card__title {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
-.chat-sub {
+.event-card__meta {
   margin: 0;
   color: var(--color-subtext);
   font-size: 0.85rem;
 }
 
-.chat-meta {
+.event-card__location {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.event-card__footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-top: 0.25rem;
 }
 
 .status-pill {

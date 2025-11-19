@@ -6,6 +6,10 @@
         {{ communityName }}
       </h1>
       <p class="mt-0.5 text-[11px] text-slate-400">全てのイベント一覧</p>
+      <button v-if="isAdmin" type="button" class="dashboard-link" @click="openDashboard">
+        <span class="i-lucide-activity mr-1"></span>
+        AI助手仪表盘
+      </button>
     </header>
 
     <div class="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
@@ -49,6 +53,12 @@
       </div>
       <div v-if="loading" class="px-3 py-4 text-center text-[11px] text-slate-400">読み込み中...</div>
     </div>
+    <div class="mt-4">
+      <button type="button" class="create-event-button" @click="createEvent">
+        <span class="i-lucide-plus mr-2 text-lg"></span>
+        新しいイベントを作成
+      </button>
+    </div>
   </div>
 </template>
 
@@ -59,10 +69,12 @@ import { fetchConsoleCommunityEvents } from '../../../api/client';
 import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
+import { useAuth } from '../../../composables/useAuth';
 
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
+const { user } = useAuth();
 
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
@@ -78,6 +90,7 @@ const communityName = computed(() => {
   const target = communityStore.communities.value.find((c) => c.id === communityId.value);
   return target?.name ?? '未選択';
 });
+const isAdmin = computed(() => Boolean(user.value?.isAdmin));
 
 const normalizedEvents = computed(() =>
   events.value.map((event) => ({
@@ -116,6 +129,16 @@ watch(
 
 const openManage = (eventId: string) => {
   router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
+};
+
+const createEvent = () => {
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId: communityId.value } });
+};
+
+const openDashboard = () => {
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileAssistantDashboard', params: { communityId: communityId.value } });
 };
 
 const formatDate = (start: string, end?: string) => {
@@ -170,5 +193,29 @@ onMounted(async () => {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+.dashboard-link {
+  margin-top: 8px;
+  border: 1px solid #d4e4ff;
+  color: #2563eb;
+  border-radius: var(--app-border-radius);
+  padding: 4px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.create-event-button {
+  width: 100%;
+  border: none;
+  border-radius: var(--app-border-radius);
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #fff;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 15px 25px rgba(14, 165, 233, 0.3);
 }
 </style>

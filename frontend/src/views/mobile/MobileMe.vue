@@ -31,27 +31,22 @@
     </section>
 
     <section class="m-section-title">マイサービス</section>
-    <div class="me-grid">
-      <button class="me-card" @click="goMyEvents">
-        <span class="me-card__icon i-lucide-calendar-check"></span>
-        <span class="me-card__label">参加したイベント</span>
-        <span class="me-card__meta">予約・チケット</span>
-      </button>
-      <button class="me-card" @click="goMyPayments">
-        <span class="me-card__icon i-lucide-credit-card"></span>
-        <span class="me-card__label">支払い履歴</span>
-        <span class="me-card__meta">お支払い記録</span>
-      </button>
-      <button class="me-card" @click="goFavorites">
-        <span class="me-card__icon i-lucide-heart"></span>
-        <span class="me-card__label">お気に入りイベント</span>
-        <span class="me-card__meta">お気に入り</span>
-      </button>
-      <button class="me-card" @click="goSettings">
-        <span class="me-card__icon i-lucide-settings-2"></span>
-        <span class="me-card__label">設定</span>
-        <span class="me-card__meta">アプリ環境</span>
-      </button>
+    <div class="service-form-group">
+      <form
+        v-for="entry in serviceEntries"
+        :key="entry.title"
+        class="service-form"
+        @submit.prevent="entry.action()"
+      >
+        <div class="service-form__body">
+          <p class="service-form__label">{{ entry.title }}</p>
+          <p class="service-form__meta">{{ entry.description }}</p>
+        </div>
+        <button type="submit" class="service-form__submit">
+          {{ entry.cta }}
+          <span class="i-lucide-arrow-right"></span>
+        </button>
+      </form>
     </div>
 
   </div>
@@ -100,6 +95,33 @@ const goSettings = () => {
   router.push({ name: 'MobileSettings' });
 };
 
+const serviceEntries = [
+  {
+    title: '参加したイベント',
+    description: '予約・チケット',
+    cta: '確認する',
+    action: () => goMyEvents(),
+  },
+  {
+    title: '支払い履歴',
+    description: 'お支払い記録',
+    cta: '見る',
+    action: () => goMyPayments(),
+  },
+  {
+    title: 'お気に入りイベント',
+    description: 'お気に入り',
+    cta: '開く',
+    action: () => goFavorites(),
+  },
+  {
+    title: '設定',
+    description: 'アプリ環境',
+    cta: '設定する',
+    action: () => goSettings(),
+  },
+];
+
 const goApplyOrganizer = () => {
   router.push({ name: 'organizer-apply' });
 };
@@ -117,7 +139,7 @@ const handleAuthAction = () => {
   if (isLoggedIn.value) {
     router.push({ path: '/me' });
   } else {
-    router.push({ name: 'organizer-apply' });
+    router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
   }
 };
 
@@ -128,7 +150,7 @@ const avatarStatusType = ref<'success' | 'error'>('success');
 
 const handleAvatarTap = () => {
   if (!isLoggedIn.value) {
-    router.push({ name: 'organizer-apply', query: { redirect: route.fullPath } });
+    router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
     return;
   }
   avatarStatus.value = '';
@@ -390,38 +412,54 @@ const onAvatarSelected = async (event: Event) => {
   border: 0;
 }
 
-.me-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.service-form-group {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.me-card {
+.service-form {
   border: none;
-  border-radius: 18px;
+  border-radius: 20px;
   background: #fff;
-  padding: 1rem;
-  text-align: left;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 12px 25px rgba(15, 23, 42, 0.08);
+  gap: 1rem;
+}
+
+.service-form__body {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
-.me-card__icon {
-  font-size: 1.4rem;
-  color: var(--m-color-primary, #0a7aff);
-}
-
-.me-card__label {
-  font-size: 0.95rem;
+.service-form__label {
+  margin: 0;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--m-color-text-primary, #111);
 }
 
-.me-card__meta {
-  font-size: 0.75rem;
+.service-form__meta {
+  margin: 0;
+  font-size: 0.8rem;
   color: var(--m-color-text-tertiary, #666);
+}
+
+.service-form__submit {
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: linear-gradient(120deg, #0a7aff, #3b82f6);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .me-stack {

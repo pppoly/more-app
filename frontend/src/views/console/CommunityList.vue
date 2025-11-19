@@ -5,7 +5,7 @@
         <h2>私のコミュニティ</h2>
         <p>管理中のコミュニティを一覧できます。</p>
       </div>
-      <RouterLink class="primary" to="/console/communities/new">＋ 新規コミュニティ</RouterLink>
+      <RouterLink class="primary" :to="{ name: 'console-community-create' }">＋ 新規コミュニティ</RouterLink>
     </header>
 
     <p v-if="loading" class="status">読み込み中…</p>
@@ -29,8 +29,16 @@
             <td>{{ community.labels?.join(', ') }}</td>
             <td>{{ community.visibleLevel }}</td>
             <td class="actions">
-              <RouterLink :to="`/console/communities/${community.id}/events`">管理</RouterLink>
-              <RouterLink :to="`/console/communities/${community.id}/edit`">編集</RouterLink>
+              <RouterLink
+                :to="{ name: 'console-community-events', params: { communityId: community.id } }"
+              >
+                管理
+              </RouterLink>
+              <RouterLink
+                :to="{ name: 'console-community-edit', params: { communityId: community.id } }"
+              >
+                編集
+              </RouterLink>
             </td>
           </tr>
         </tbody>

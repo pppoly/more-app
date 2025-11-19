@@ -1,9 +1,14 @@
 <template>
   <div class="app-shell" :class="{ 'app-shell--mobile': isMobile }">
+    <div v-if="showDevPageName" class="dev-page-overlay">
+      {{ currentPageName }}
+    </div>
     <template v-if="isMobile">
-      <MobileShell>
-        <RouterView />
-      </MobileShell>
+      <RouterView v-slot="{ Component }">
+        <MobileShell>
+          <component :is="Component" />
+        </MobileShell>
+      </RouterView>
     </template>
     <template v-else>
       <header class="app-header">
@@ -12,7 +17,12 @@
           <nav>
             <RouterLink to="/">Home</RouterLink>
             <RouterLink to="/events">Events</RouterLink>
-            <RouterLink v-if="user?.isOrganizer" to="/console/communities">Console</RouterLink>
+            <RouterLink
+              v-if="user?.isOrganizer"
+              :to="{ name: 'console-communities' }"
+            >
+              Console
+            </RouterLink>
             <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
             <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
             <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
@@ -33,8 +43,7 @@
               <button type="button" @click="logout">Logout</button>
             </div>
             <div v-else class="login-buttons">
-              <button type="button" @click="handleDevLogin">Dev Login</button>
-              <button type="button" @click="handleLineLogin">LINE Login</button>
+              <button type="button" @click="goToLogin">Login / Register</button>
             </div>
           </template>
         </div>
@@ -47,14 +56,26 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
 import { useAuth } from './composables/useAuth';
 
-const { user, initializing, loginDev, logout } = useAuth();
+const { user, initializing, logout } = useAuth();
 const isMobile = ref(false);
 const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
+const router = useRouter();
+const currentRoute = useRoute();
+const showDevPageName = computed(() => import.meta.env.DEV);
+const currentPageName = computed(() => {
+  const metaName = currentRoute.meta?.devPageName as string | undefined;
+  if (metaName) return metaName;
+  const metaTitle = currentRoute.meta?.title as string | undefined;
+  if (metaTitle) return metaTitle;
+  if (typeof currentRoute.name === 'string') return currentRoute.name;
+  return '未命名页面';
+});
 
 if (mediaQuery) {
   isMobile.value = mediaQuery.matches;
@@ -74,18 +95,9 @@ onUnmounted(() => {
   mediaQuery?.removeEventListener('change', handleViewportChange);
 });
 
-const handleDevLogin = async () => {
-  const name = window.prompt('Enter a display name for dev login', 'MORE Test User');
-  if (!name) {
-    return;
-  }
-  await loginDev(name);
-};
-
-const handleLineLogin = () => {
-  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
-  const backendOrigin = base.replace(/\/$/, '').replace(/\/api\/v1$/, '');
-  window.location.href = `${backendOrigin}/api/v1/auth/line/redirect`;
+const goToLogin = () => {
+  const redirect = currentRoute.fullPath || '/';
+  router.push({ name: 'auth-login', query: { redirect } });
 };
 </script>
 
@@ -95,6 +107,22 @@ const handleLineLogin = () => {
   color: #1f2933;
   min-height: 100vh;
   background: #f6f8fb;
+}
+
+.dev-page-overlay {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  z-index: 9999;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
 }
 
 .app-header {
@@ -146,7 +174,7 @@ nav a {
   background: #2563eb;
   color: #fff;
   padding: 0.4rem 0.9rem;
-  border-radius: 0.5rem;
+  border-radius: var(--app-border-radius);
   cursor: pointer;
 }
 .apply-link {

@@ -137,6 +137,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import type { RouteLocationRaw } from 'vue-router';
 import {
   fetchConsoleEvent,
   fetchEventRegistrationsSummary,
@@ -155,7 +156,7 @@ const eventId = route.params.eventId as string;
 
 const eventDetail = ref<ConsoleEventDetail | null>(null);
 const eventTitle = ref('イベント詳細');
-const backLink = ref('/console/communities');
+const backLink = ref<RouteLocationRaw>({ name: 'console-communities' });
 const summary = ref<EventRegistrationsSummary | null>(null);
 const registrations = ref<ConsoleEventRegistrationItem[]>([]);
 const totalRegistrations = ref(0);
@@ -170,7 +171,10 @@ const load = async () => {
   try {
     eventDetail.value = await fetchConsoleEvent(eventId);
     eventTitle.value = getLocalizedText(eventDetail.value.title);
-    backLink.value = `/console/communities/${eventDetail.value.communityId}/events`;
+    backLink.value = {
+      name: 'console-community-events',
+      params: { communityId: eventDetail.value.communityId },
+    };
     summary.value = await fetchEventRegistrationsSummary(eventId);
     const list = await fetchEventRegistrations(eventId);
     registrations.value = list.items;

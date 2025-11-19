@@ -228,6 +228,11 @@ model AiEventDraftLog {
   qaState      Json?
   messages     Json
   aiResult     Json?
+  promptVersion String?  @default("coach-v1")
+  status       String?   @default("collecting")
+  turnCount    Int?      @default(0)
+  language     String?
+  meta         Json?
   createdAt    DateTime  @default(now())
   community    Community @relation(fields: [communityId], references: [id])
   user         User      @relation(fields: [userId], references: [id])

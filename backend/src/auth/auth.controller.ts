@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -54,5 +54,21 @@ export class AuthController {
   async me(@Req() req: any) {
     const user = await this.authService.getProfile(req.user.id);
     return user;
+  }
+
+  @Post('email/send-code')
+  async sendEmailCode(@Body() body: { email?: string }) {
+    if (!body?.email) {
+      throw new BadRequestException('email is required');
+    }
+    return this.authService.sendEmailLoginCode(body.email);
+  }
+
+  @Post('email/verify')
+  async verifyEmail(@Body() body: { email?: string; code?: string }) {
+    if (!body?.email || !body?.code) {
+      throw new BadRequestException('email and code are required');
+    }
+    return this.authService.verifyEmailLoginCode(body.email, body.code);
   }
 }

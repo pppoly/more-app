@@ -285,7 +285,26 @@ export interface ConsoleEventAssistantLog {
   qaState?: Record<string, unknown> | null;
   messages: ConsoleEventAssistantMessage[];
   aiResult?: Record<string, unknown> | null;
+  promptVersion?: string | null;
+  status?: string | null;
+  turnCount?: number | null;
+  language?: string | null;
+  meta?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface EventAssistantDashboardStats {
+  totalSessions: number;
+  readySessions: number;
+  readyRate: number;
+  averageTurns: number;
+  promptVersions: Record<string, number>;
+  languages: Record<string, number>;
+}
+
+export interface EventAssistantDashboard {
+  stats: EventAssistantDashboardStats;
+  logs: ConsoleEventAssistantLog[];
 }
 
 export interface OrganizerApplicationInfo {
@@ -316,6 +335,7 @@ export interface CommunityAnalytics {
 
 export interface GeneratedEventContent {
   title: LocalizedContent;
+  subtitle?: LocalizedContent;
   description: LocalizedContent;
   notes: LocalizedContent;
   riskNotice: LocalizedContent;
@@ -323,6 +343,22 @@ export interface GeneratedEventContent {
     line: Record<string, string>;
     instagram: Record<string, string>;
   };
+  logistics?: {
+    startTime?: string;
+    endTime?: string;
+    locationText?: string;
+    locationNote?: string;
+  };
+  ticketTypes?: Array<{
+    name: string;
+    price: number;
+    currency?: string;
+    quota?: number | null;
+    type?: string;
+  }>;
+  requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
+  registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
+  visibility?: EventVisibility;
 }
 
 export interface GenerateEventCopyInput {
@@ -331,6 +367,49 @@ export interface GenerateEventCopyInput {
   audience: string;
   style: string;
   details: string;
+}
+
+export interface EventAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface EventAssistantRequest extends GenerateEventCopyInput {
+  conversation: EventAssistantMessage[];
+}
+
+export type EventAssistantStatus = 'collecting' | 'options' | 'ready';
+
+export interface EventAssistantReply {
+  status: EventAssistantStatus;
+  message: string;
+  options?: string[];
+  proposal?: GeneratedEventContent;
+  thinkingSteps?: string[];
+  stage?: 'coach' | 'editor' | 'writer';
+  coachPrompts?: string[];
+  editorChecklist?: string[];
+  writerSummary?: {
+    headline?: string;
+    audience?: string;
+    logistics?: string;
+    riskNotes?: string;
+    nextSteps?: string;
+  };
+  confirmQuestions?: string[];
+  promptVersion: string;
+  language: string;
+  turnCount: number;
+}
+
+export interface EventAssistantProfileDefaults {
+  version: string;
+  defaults: {
+    baseLanguage: string;
+    topic: string;
+    audience: string;
+    style: string;
+  };
 }
 
 export type EventVisibility = 'public' | 'community-only' | 'private';
@@ -404,4 +483,56 @@ export interface EventDraft {
   registrationFormSchema: RegistrationFormField[];
   aiSummary?: string;
   versionNotes?: string;
+}
+
+export interface AiModuleUsageMetrics {
+  totalLogs: number;
+  last24h: number;
+  last7d: number;
+  activeCommunities: number;
+  activeUsers: number;
+  lastActivityAt?: string | null;
+}
+
+export interface AiModuleUsageSummary {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'coming-soon';
+  metrics?: AiModuleUsageMetrics;
+}
+
+export interface AiUsageSummaryResponse {
+  generatedAt: string;
+  modules: AiModuleUsageSummary[];
+}
+
+export interface AiAssistantSessionSummary {
+  id: string;
+  communityId: string;
+  communityName: string;
+  userId: string;
+  userName: string;
+  userEmail?: string | null;
+  stage?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  turnCount?: number | null;
+  createdAt: string;
+}
+
+export interface AiUsageDetailResponse {
+  module: {
+    id: string;
+    name: string;
+    description: string;
+  };
+  metrics: AiModuleUsageMetrics & {
+    avgTurns: number | null;
+  };
+  breakdown: {
+    stage: Array<{ label: string; count: number }>;
+    language: Array<{ label: string; count: number }>;
+  };
+  recentSessions: AiAssistantSessionSummary[];
 }

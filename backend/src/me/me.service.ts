@@ -84,4 +84,31 @@ export class MeService {
       },
     });
   }
+
+  async updateProfile(userId: string, payload: { name?: string | undefined }) {
+    const data: Record<string, any> = {};
+    if (payload.name !== undefined) {
+      const trimmed = payload.name.trim();
+      if (!trimmed) {
+        throw new BadRequestException('表示名を入力してください');
+      }
+      data.name = trimmed;
+    }
+    if (!Object.keys(data).length) {
+      throw new BadRequestException('更新する項目が未指定です');
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        prefecture: true,
+        avatarUrl: true,
+        isOrganizer: true,
+        isAdmin: true,
+      },
+    });
+  }
 }

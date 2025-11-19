@@ -6,8 +6,16 @@
         <h2>{{ community.name }}</h2>
       </div>
       <div class="header-actions">
-        <RouterLink :to="`/console/communities/${community.id}/finance`" class="link-btn">決済/プラン</RouterLink>
-        <RouterLink :to="`/console/communities/${community.id}/events/create`" class="fab small">
+        <RouterLink
+          :to="{ name: 'console-community-finance', params: { communityId: community.id } }"
+          class="link-btn"
+        >
+          決済/プラン
+        </RouterLink>
+        <RouterLink
+          :to="{ name: 'console-event-create', params: { communityId: community.id } }"
+          class="fab small"
+        >
           ＋ 新規
         </RouterLink>
       </div>
@@ -31,8 +39,12 @@
                 {{ event.status === 'open' ? '受付中' : '終了' }}
               </span>
               <div class="actions">
-                <RouterLink :to="`/console/events/${event.id}/edit`">編集</RouterLink>
-                <RouterLink :to="`/console/events/${event.id}/registrations`">参加者</RouterLink>
+                <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">
+                  編集
+                </RouterLink>
+                <RouterLink :to="{ name: 'console-event-registrations', params: { eventId: event.id } }">
+                  参加者
+                </RouterLink>
               </div>
             </div>
           </div>
@@ -40,7 +52,10 @@
       </ul>
     </div>
 
-    <RouterLink :to="`/console/communities/${community.id}/events/create`" class="fab">
+    <RouterLink
+      :to="{ name: 'console-event-create', params: { communityId: community.id } }"
+      class="fab"
+    >
       ＋ 新しいイベント
     </RouterLink>
   </section>

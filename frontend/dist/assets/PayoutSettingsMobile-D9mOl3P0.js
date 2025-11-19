@@ -1,0 +1,1 @@
+import{_ as e,a as t,b as o}from"./index-OEpVzuiB.js";const s={},c={class:"p-4 text-center text-slate-500"};function n(a,r){return o(),t("div",c," Console Mobile Payout Settings Placeholder ")}const _=e(s,[["render",n]]);export{_ as default};

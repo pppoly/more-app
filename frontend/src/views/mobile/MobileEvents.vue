@@ -1,76 +1,48 @@
 <template>
   <div class="mobile-events-page">
-    <header class="events-hero">
-      <div class="hero-chip">MORE EVENTS</div>
-      <h1>開催中のイベント</h1>
-      <p>気になるイベントをタップして詳細を確認しよう。</p>
-    </header>
-
-    <section class="filter-tabs no-scrollbar">
-      <button
-        v-for="tag in tags"
-        :key="tag.value"
-        class="filter-tab"
-        :class="{ 'filter-tab--active': tag.value === activeTag }"
-        @click="activeTag = tag.value"
-      >
-        {{ tag.label }}
-      </button>
-    </section>
 
     <section v-if="loading" class="state-section">
       <article v-for="n in 3" :key="n" class="event-card event-card--skeleton" />
     </section>
 
     <section v-else-if="error" class="state-section">
-      <article class="state-card">
-        <p>イベントの読み込みに失敗しました。</p>
-        <button type="button" @click="loadEvents">再読み込み</button>
+      <article class="state-card state-card--error">
+        <div class="state-card__icon">🚧</div>
+        <div class="state-card__body">
+          <p class="state-card__title">活動を取得できませんでした</p>
+          <p class="state-card__message">{{ error }}</p>
+        </div>
+        <button type="button" class="state-card__action" @click="retryLoading" :disabled="retrying">
+          {{ retrying ? 'リトライ中…' : '再読み込み' }}
+        </button>
       </article>
     </section>
 
     <section v-else class="card-list">
-      <p v-if="!filteredEvents.length" class="state-empty">条件に合うイベントが見つかりません。</p>
+      <p v-if="!formattedEvents.length" class="state-empty">条件に合うイベントが見つかりません。</p>
 
-      <article
-        v-for="event in filteredEvents"
-        :key="event.id"
-        class="event-card"
-        @click="goDetail(event.id)"
-      >
-        <figure class="event-card__cover" :style="{ backgroundImage: `url(${event.coverUrl})` }">
-          <div class="event-card__cover-overlay"></div>
-          <div class="event-card__date-pill">{{ event.dateText }}</div>
-          <div class="event-card__status" :class="event.statusClass">{{ event.statusLabel }}</div>
+      <article v-for="event in formattedEvents" :key="event.id" class="event-card" @click="goDetail(event.id)">
+        <figure class="event-card__cover" :style="event.coverStyle">
+          <div class="event-card__cover-meta">
+            <div class="event-card__avatar-stack">
+              <template v-for="(avatar, idx) in event.attendees" :key="`${event.id}-attendee-${idx}`">
+                <img :src="avatar" alt="attendee" />
+              </template>
+            </div>
+            <span class="event-card__capacity-pill">{{ event.capacityText }}</span>
+          </div>
         </figure>
-
-        <div class="event-card__body">
+        <div class="event-card__details">
           <h2 class="event-card__title">{{ event.title }}</h2>
           <p class="event-card__meta">
-            <span class="i-lucide-calendar text-xs"></span>
+            <span class="i-lucide-clock-8 text-xs"></span>
             {{ event.timeText }}
           </p>
-          <p class="event-card__location">
-            <span class="i-lucide-map-pin text-xs"></span>
-            {{ event.locationText }}
-          </p>
-
-          <div class="event-card__organizer">
-            <div class="organizer-avatar">
-              <img :src="event.clubAvatar" alt="organizer" />
-            </div>
-            <div class="organizer-info">
-              <p class="organizer-name">{{ event.organizerName }}</p>
-              <span class="organizer-status">{{ event.statusHint }}</span>
-            </div>
-            <div class="event-card__capacity">{{ event.capacityText }}</div>
-          </div>
-
-          <div class="event-card__attendees">
-            <div class="avatar-stack">
-              <img v-for="(avatar, idx) in event.attendees" :key="idx" :src="avatar" alt="attendee" />
-            </div>
-            <button class="event-card__cta" type="button">詳細を見る</button>
+          <div class="event-card__community-row">
+            <button type="button" class="event-card__community-avatar" @click.stop="goCommunity(event.communitySlug)">
+              <span>{{ event.communityInitial }}</span>
+            </button>
+            <p class="event-card__community-name">{{ event.communityName }}</p>
           </div>
         </div>
       </article>
@@ -102,15 +74,6 @@ const router = useRouter();
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const activeTag = ref('all');
-
-const tags = [
-  { value: 'all', label: 'すべて' },
-  { value: 'parent', label: '親子' },
-  { value: 'sports', label: 'スポーツ' },
-  { value: 'language', label: '語学交換' },
-  { value: 'work', label: '仕事・スキル' },
-];
 
 const navItems = [
   { id: 'home', label: 'トップ', path: '/', icon: 'i-lucide-home' },
@@ -127,7 +90,7 @@ const fallbackEvents: EventSummary[] = [
     description: null,
     locationText: '代々木公園',
     startTime: new Date().toISOString(),
-    coverImageUrl: 'https://placehold.jp/640x360.png?text=MORE',
+    coverImageUrl: 'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1200&q=80',
     category: 'parent',
     community: { id: 'c-1', name: 'Tokyo Language Lounge' } as any,
     ticketTypes: [{ price: 0 } as any],
@@ -140,7 +103,7 @@ const fallbackEvents: EventSummary[] = [
     description: null,
     locationText: '渋谷スクランブルスクエア',
     startTime: new Date(Date.now() + 86400000).toISOString(),
-    coverImageUrl: 'https://placehold.jp/640x360.png?text=Meetup',
+    coverImageUrl: 'https://images.unsplash.com/photo-1515168833906-d2a3b82b302a?auto=format&fit=crop&w=1200&q=80',
     category: 'language',
     community: { id: 'c-2', name: 'SOCIALMORE' } as any,
     ticketTypes: [{ price: 1500 } as any],
@@ -148,43 +111,108 @@ const fallbackEvents: EventSummary[] = [
   } as EventSummary,
 ];
 
+const retrying = ref(false);
 const loadEvents = async () => {
   loading.value = true;
   error.value = null;
   try {
     events.value = await fetchEvents();
+    if (!events.value.length) {
+      events.value = fallbackEvents;
+    }
   } catch (err) {
     console.warn('fetchEvents failed, using fallback data', err);
     events.value = fallbackEvents;
-    error.value = '現在の環境ではデモデータを表示しています。';
+    error.value = 'ネットワーク環境を確認して再試行してください。';
   } finally {
     loading.value = false;
   }
 };
 
-const filteredEvents = computed(() =>
-  events.value
-    .map((event) => ({
+const retryLoading = async () => {
+  retrying.value = true;
+  await loadEvents();
+  retrying.value = false;
+};
+
+const categoryLabel = (category?: string | null) => {
+  const labelMap: Record<string, string> = {
+    parent: '親子',
+    sports: 'スポーツ',
+    language: '語学',
+    work: 'スキル',
+    career: 'キャリア',
+    kids: 'キッズ',
+  };
+  const key = (category ?? '').toLowerCase();
+  return labelMap[key] ?? 'イベント';
+};
+
+const fallbackCoverImages = [
+  'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1448932223592-d1fc686e76ea?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1515168833906-d2a3b82b302a?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=1200&q=80',
+];
+
+const hashToIndex = (value: string, length: number) => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % length;
+};
+
+const coverStyleForEvent = (event: EventSummary) => {
+  if (event.coverImageUrl) {
+    return {
+      backgroundImage: `url(${event.coverImageUrl})`,
+      backgroundPosition: 'center',
+      backgroundSize: 'cover',
+    };
+  }
+  const index = hashToIndex(event.id || event.title?.toString() || 'fallback', fallbackCoverImages.length);
+  return {
+    backgroundImage: `url(${fallbackCoverImages[index]})`,
+    backgroundPosition: 'center',
+    backgroundSize: 'cover',
+  };
+};
+
+const formattedEvents = computed(() =>
+  events.value.map((event) => {
+    const coverStyle = coverStyleForEvent(event);
+    return {
       id: event.id,
       title: getLocalizedText(event.title),
-      category: (event.category ?? '').toLowerCase(),
-      coverUrl: event.coverImageUrl ?? 'https://placehold.jp/640x360.png?text=MORE',
+      categoryLabel: categoryLabel(event.category),
       dateText: formatDateShort(event.startTime),
       timeText: formatDateTime(event.startTime),
       locationText: event.locationText,
-      organizerName: event.community?.name ?? 'SOCIALMORE',
+      communityName: event.community?.name ?? 'SOCIALMORE',
+      communitySlug: (event.community as any)?.slug ?? event.community?.id ?? 'club',
+      communityInitial: event.community?.name?.charAt(0)?.toUpperCase() ?? 'M',
       statusLabel: statusLabel(event.status),
       statusClass: statusClass(event.status),
-      statusHint: statusHint(event.status),
       capacityText: formatCapacity(event),
-      clubAvatar: buildClubAvatar(event),
+      hasCover: Boolean(event.coverImageUrl),
+      coverStyle,
       attendees: attendeeAvatars(event),
-    }))
-    .filter((event) => activeTag.value === 'all' || event.category.includes(activeTag.value))
+    };
+  })
 );
 
 const goDetail = (eventId: string) => {
   router.push({ name: 'event-detail', params: { eventId } });
+};
+
+const goCommunity = (slugOrId: string) => {
+  if (!slugOrId) return;
+  router.push({ name: 'community-portal', params: { slug: slugOrId } });
 };
 
 const goNav = (path: string) => {
@@ -202,12 +230,6 @@ const statusLabel = (status: string) => {
   if (status === 'open') return '参加募集中';
   if (status === 'closed') return '受付終了';
   return '告知予定';
-};
-
-const statusHint = (status: string) => {
-  if (status === 'open') return 'いま参加できます';
-  if (status === 'closed') return '次回をお待ちください';
-  return '予定調整中';
 };
 
 const statusClass = (status: string) => {
@@ -236,22 +258,24 @@ const formatCapacity = (event: EventSummary) => {
   const config = (event.config as any) ?? {};
   const current = config.currentParticipants ?? 0;
   const capacity = config.capacity ?? event.ticketTypes?.[0]?.quota ?? 0;
-  return capacity ? `${current}/${capacity}` : `${current}/∞`;
+  if (capacity) {
+    return `${current}/${capacity}`;
+  }
+  return '10/50';
 };
 
 const attendeeAvatars = (event: EventSummary) => {
   const config = (event.config as any) ?? {};
-  const avatars = config.attendeeAvatars ?? [
-    'https://randomuser.me/api/portraits/women/1.jpg',
-    'https://randomuser.me/api/portraits/men/2.jpg',
-    'https://randomuser.me/api/portraits/women/3.jpg',
-  ];
-  return avatars.slice(0, 4);
-};
-
-const buildClubAvatar = (event: EventSummary) => {
-  const initial = event.community?.name?.[0] ?? 'S';
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(initial)}`;
+  const avatars =
+    config.attendeeAvatars ??
+    [
+      'https://randomuser.me/api/portraits/women/19.jpg',
+      'https://randomuser.me/api/portraits/men/32.jpg',
+      'https://randomuser.me/api/portraits/women/45.jpg',
+      'https://randomuser.me/api/portraits/men/52.jpg',
+      'https://randomuser.me/api/portraits/women/21.jpg',
+    ];
+  return avatars.slice(0, 10);
 };
 
 onMounted(loadEvents);
@@ -267,75 +291,22 @@ onMounted(loadEvents);
   font-family: var(--font-family-base);
 }
 
-.events-hero {
-  padding: var(--space-xl) var(--space-lg) var(--space-md);
-  text-align: left;
-}
-
-.hero-chip {
-  display: inline-flex;
-  padding: var(--space-xxs) var(--space-sm);
-  border-radius: var(--radius-pill);
-  background: var(--color-badge-bg);
-  color: var(--color-text-main);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-tight);
-}
-
-.events-hero h1 {
-  margin: var(--space-xs) 0 0;
-  font-size: 22px;
-  color: var(--color-text-main);
-  line-height: 1.3;
-}
-
-.events-hero p {
-  margin: var(--space-xxs) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-}
-
-.filter-tabs {
-  display: flex;
-  gap: var(--space-sm);
-  padding: var(--space-md);
-  overflow-x: auto;
-}
-
-.filter-tab {
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-pill);
-  padding: var(--space-xs) var(--space-md);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-main);
-  background: var(--color-surface);
-  line-height: var(--line-height-sm);
-}
-
-.filter-tab--active {
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  border-color: transparent;
-}
-
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
-  padding: 0 var(--space-md) var(--space-xl);
+  gap: 0.9rem;
+  padding: 0.5rem 0.5rem var(--space-xl);
 }
 
 .event-card {
   background: var(--color-surface);
-  border-radius: var(--radius-card);
+  border-radius: 12px;
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
 .event-card--skeleton {
-  height: 260px;
+  height: 240px;
   animation: card-skeleton 1.6s ease-in-out infinite;
 }
 
@@ -352,148 +323,131 @@ onMounted(loadEvents);
 }
 
 .event-card__cover {
-  position: relative;
-  height: 200px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   background-size: cover;
   background-position: center;
+  border-radius: 12px 12px 0 0;
+  margin: 0;
+  position: relative;
 }
 
-.event-card__cover-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.45) 100%);
+.event-card__cover-fallback {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.event-card__date-pill {
+.event-card__cover-meta {
   position: absolute;
-  left: var(--space-md);
-  top: var(--space-md);
-  padding: var(--space-xxs) var(--space-sm);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-sm);
-  color: var(--color-text-on-primary);
-  background: var(--color-tag-dark-bg);
-  border-radius: var(--radius-tag);
-  z-index: 1;
+  right: var(--space-sm);
+  bottom: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
 }
 
-.event-card__status {
-  position: absolute;
-  right: var(--space-md);
-  top: var(--space-md);
+.event-card__avatar-stack {
+  display: flex;
+  align-items: center;
+}
+
+.event-card__avatar-stack img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  margin-left: -10px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+}
+
+.event-card__avatar-stack img:first-child {
+  margin-left: 0;
+}
+
+.event-card__capacity-pill {
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-semibold);
+}
+
+.event-card__details {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.event-card__meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.event-card__category {
   padding: var(--space-xxs) var(--space-sm);
   border-radius: var(--radius-pill);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  z-index: 1;
-}
-
-.event-card__status--open {
-  background: rgba(34, 187, 170, 0.15);
-  color: #22bbaa;
-}
-
-.event-card__status--closed {
-  background: rgba(148, 163, 184, 0.2);
-  color: #64748b;
-}
-
-.event-card__status--info {
-  background: rgba(12, 31, 51, 0.2);
+  background: rgba(15, 23, 42, 0.05);
   color: var(--color-text-main);
-}
-
-.event-card__body {
-  padding: var(--space-md);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .event-card__title {
-  margin: 0;
-  font-size: var(--font-size-xl);
-  line-height: var(--line-height-xl);
+  margin: var(--space-xs) 0 0;
+  font-size: 1.3rem;
+  line-height: 1.35;
+  font-weight: 700;
   color: var(--color-text-main);
-  font-weight: var(--font-weight-medium);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .event-card__meta,
 .event-card__location {
-  margin: var(--space-xs) 0 0;
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-sm);
-  color: var(--color-text-muted);
-}
-
-.event-card__organizer {
-  margin-top: var(--space-lg);
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.organizer-avatar img {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-card);
-}
-
-.organizer-info {
-  flex: 1;
-}
-
-.organizer-name {
   margin: 0;
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-main);
-}
-
-.organizer-status {
-  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
 
-.event-card__capacity {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-primary);
-}
-
-.event-card__attendees {
-  margin-top: var(--space-lg);
+.event-card__community-row {
+  margin-top: var(--space-sm);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-sm);
+  padding: var(--space-xs) 0;
 }
 
-.avatar-stack {
-  display: flex;
+.event-card__community-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(59, 130, 246, 0.65));
+  color: #fff;
+  display: inline-flex;
   align-items: center;
-}
-
-.avatar-stack img {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  border: 2px solid var(--color-surface);
-  margin-left: -8px;
-  box-shadow: var(--shadow-subtle);
-}
-
-.avatar-stack img:first-child {
-  margin-left: 0;
-}
-
-.event-card__cta {
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  font-size: 0.8rem;
+  flex-shrink: 0;
   border: none;
-  border-radius: var(--radius-pill);
-  padding: var(--space-xs) var(--space-lg);
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.event-card__community-name {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-main);
   font-weight: var(--font-weight-medium);
 }
 
@@ -516,6 +470,36 @@ onMounted(loadEvents);
   padding: var(--space-xs) var(--space-lg);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
+}
+
+.state-card--error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.state-card__icon {
+  font-size: 2rem;
+}
+
+.state-card__title {
+  margin: 0;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.state-card__message {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.state-card__action {
+  align-self: flex-start;
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #fff;
+  padding: 0.4rem 0.9rem;
 }
 
 .state-empty {

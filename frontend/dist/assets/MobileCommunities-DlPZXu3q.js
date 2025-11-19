@@ -1,0 +1,1 @@
+import{_ as s,a as t,b as o,e as a}from"./index-OEpVzuiB.js";const c={},n={class:"p-4 space-y-3"};function r(i,e){return o(),t("div",n,[...e[0]||(e[0]=[a("div",{class:"bg-white rounded-xl shadow-sm p-6 text-center text-slate-500"}," Mobile Communities Placeholder ",-1)])])}const d=s(c,[["render",r]]);export{d as default};

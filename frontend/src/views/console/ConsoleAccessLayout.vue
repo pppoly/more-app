@@ -1,7 +1,7 @@
 <template>
   <section class="console-shell">
     <header class="console-header">
-      <RouterLink class="logo" to="/console">MORE Console</RouterLink>
+      <RouterLink class="logo" :to="{ name: 'console-home' }">MORE Console</RouterLink>
       <div class="switcher" v-if="user?.isOrganizer">
         <template v-if="communities.length">
           <label>
@@ -15,7 +15,7 @@
         </template>
         <template v-else>
           <span>まだ管理できるコミュニティがありません。</span>
-          <RouterLink class="primary" to="/console/communities/new">コミュニティを作成</RouterLink>
+          <RouterLink class="primary" :to="{ name: 'console-community-create' }">コミュニティを作成</RouterLink>
         </template>
       </div>
     </header>
@@ -35,7 +35,7 @@
         <div v-if="!communities.length && !loading" class="card">
           <h3>管理対象のコミュニティがありません</h3>
           <p>まずはコミュニティを作成してみましょう。</p>
-          <RouterLink class="primary" to="/console/communities/new">新しいコミュニティを作成</RouterLink>
+          <RouterLink class="primary" :to="{ name: 'console-community-create' }">新しいコミュニティを作成</RouterLink>
         </div>
         <RouterView />
       </div>

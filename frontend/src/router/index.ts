@@ -56,13 +56,13 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: DesktopLanding,
-    meta: { desktopOnly: true },
+    meta: { desktopOnly: true, devPageName: '桌面首页' },
   },
   {
     path: '/desktop-home',
     name: 'legacy-home',
     component: Home,
-    meta: { desktopOnly: true },
+    meta: { desktopOnly: true, devPageName: '旧版桌面' },
   },
   {
     path: '/events',
@@ -74,6 +74,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'イベント',
       layout: 'mobile-user',
+      devPageName: '活动列表',
     },
   },
   {
@@ -89,6 +90,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
+      devPageName: '活动详情',
     },
     props: true,
   },
@@ -103,13 +105,55 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
+      devPageName: '活动报名',
     },
     props: true,
+  },
+  {
+    path: '/auth/login',
+    name: 'auth-login',
+    component: () => import('../views/auth/Login.vue'),
+    meta: {
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: '登录',
+    },
+  },
+  {
+    path: '/auth/setup',
+    name: 'auth-setup',
+    component: () => import('../views/auth/SetupProfile.vue'),
+    meta: {
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: '资料确认',
+    },
+  },
+  {
+    path: '/staff',
+    name: 'MobileStaff',
+    component: () => import('../views/mobile/MobileStaff.vue'),
+    meta: {
+      title: '员工管理',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      requiresAdmin: true,
+      devPageName: '员工管理',
+    },
   },
   {
     path: '/organizer/apply',
     name: 'organizer-apply',
     component: OrganizerApply,
+    meta: {
+      devPageName: '主理人申请',
+    },
   },
   {
     path: '/me',
@@ -121,6 +165,7 @@ const routes: RouteRecordRaw[] = [
       mobileOnly: true,
       fixedPage: true,
       hideShellHeader: true,
+      devPageName: '我的主页',
     },
   },
   {
@@ -131,6 +176,7 @@ const routes: RouteRecordRaw[] = [
       title: '設定',
       layout: 'mobile-user',
       mobileOnly: true,
+      devPageName: '设置',
     },
   },
   {
@@ -141,45 +187,90 @@ const routes: RouteRecordRaw[] = [
       title: 'コミュニティ',
       layout: 'mobile-user',
       mobileOnly: true,
+      devPageName: '社群广场',
     },
   },
   {
     path: '/console',
     component: ConsoleMobileShell,
-    meta: { requiresAuth: true, requiresOrganizer: true, layout: 'console-mobile' },
+    meta: { requiresAuth: true, requiresOrganizer: true, layout: 'console-mobile', devPageName: 'Console 移动壳' },
     children: [
       {
         path: '',
         name: 'ConsoleMobileHome',
         component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
+        meta: { devPageName: 'Console-首页' },
       },
       {
         path: 'communities/:communityId/events',
         name: 'ConsoleMobileCommunityEvents',
         component: () => import('../views/console/mobile/ConsoleCommunityEventsMobile.vue'),
         beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-社区活动' },
+      },
+      {
+        path: 'communities/:communityId/events/create',
+        name: 'ConsoleMobileEventCreate',
+        component: () => import('../views/console/mobile/ConsoleEventAssistantMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          fixedPage: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-活动助手',
+        },
+      },
+      {
+        path: 'communities/:communityId/event-assistant/dashboard',
+        name: 'ConsoleMobileAssistantDashboard',
+        component: () => import('../views/console/mobile/ConsoleEventAssistantDashboard.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: { hideTabbar: true, hideShellHeader: true, devPageName: 'Console-助手面板' },
+      },
+      {
+        path: 'communities/:communityId/events/form',
+        name: 'ConsoleMobileEventForm',
+        component: () => import('../views/console/EventForm.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-活动表单',
+        },
+      },
+      {
+        path: 'communities/:communityId/settings',
+        name: 'ConsoleMobileCommunitySettings',
+        component: () => import('../views/console/mobile/ConsoleCommunitySettingsMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: { hideTabbar: true, hideShellHeader: true, devPageName: 'Console-社群設定' },
       },
       {
         path: 'events/:eventId/manage',
         name: 'ConsoleMobileEventManage',
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
+        meta: { devPageName: 'Console-活动管理' },
       },
       {
         path: 'settings/payout',
         name: 'ConsoleMobilePayout',
         component: () => import('../views/console/mobile/PayoutSettingsMobile.vue'),
+        meta: { devPageName: 'Console-收款设置' },
       },
       {
         path: 'subscription',
         name: 'ConsoleMobileSubscription',
         component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
+        meta: { devPageName: 'Console-订阅管理' },
       },
     ],
   },
   {
     path: '/console-desktop',
     component: ConsoleAccessLayout,
-    meta: { requiresAuth: true, requiresOrganizer: true },
+    meta: { requiresAuth: true, requiresOrganizer: true, devPageName: 'Console 桌面壳' },
     children: [
       {
         path: '',
@@ -199,16 +290,19 @@ const routes: RouteRecordRaw[] = [
           }
           return next();
         },
+        meta: { devPageName: 'Console 桌面首页' },
       },
       {
         path: 'communities',
         name: 'console-communities',
         component: CommunityList,
+        meta: { devPageName: 'Console-社群列表' },
       },
       {
         path: 'communities/new',
         name: 'console-community-create',
         component: CommunityForm,
+        meta: { devPageName: 'Console-创建社群' },
       },
       {
         path: 'communities/:communityId/edit',
@@ -216,6 +310,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityForm,
         props: true,
         beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-编辑社群' },
       },
       {
         path: 'communities/:communityId/events',
@@ -223,6 +318,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityEvents,
         props: true,
         beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-活动列表' },
       },
       {
         path: 'communities/:communityId/finance',
@@ -230,6 +326,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityFinance,
         props: true,
         beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-财务' },
       },
       {
         path: 'communities/:communityId/events/create',
@@ -237,18 +334,21 @@ const routes: RouteRecordRaw[] = [
         component: EventForm,
         props: true,
         beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-创建活动' },
       },
       {
         path: 'events/:eventId/edit',
         name: 'console-event-edit',
         component: EventForm,
         props: true,
+        meta: { devPageName: 'Console-编辑活动' },
       },
       {
         path: 'events/:eventId/registrations',
         name: 'console-event-registrations',
         component: EventRegistrations,
         props: true,
+        meta: { devPageName: 'Console-报名列表' },
       },
     ],
   },
@@ -256,33 +356,65 @@ const routes: RouteRecordRaw[] = [
     path: '/admin',
     name: 'admin-home',
     component: AdminHome,
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { requiresAuth: true, requiresAdmin: true, devPageName: '管理员后台' },
+  },
+  {
+    path: '/admin/ai',
+    name: 'admin-ai-overview',
+    component: () => import('../views/admin/AdminAiOverview.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, devPageName: 'AI 使用概览' },
+  },
+  {
+    path: '/admin/ai/:moduleId',
+    name: 'admin-ai-detail',
+    component: () => import('../views/admin/AdminAiModuleDetail.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideTabbar: true, devPageName: 'AI 使用详情' },
+    props: true,
   },
   {
     path: '/community/:slug',
     name: 'community-portal',
     component: CommunityPortal,
     props: true,
+    meta: {
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      mobileOnly: true,
+      devPageName: '社群门户',
+    },
   },
   {
     path: '/me/events',
     name: 'my-events',
     component: MyEvents,
+    meta: {
+      devPageName: '我的活动',
+    },
   },
   {
     path: '/auth/callback',
     name: 'auth-callback',
     component: AuthCallback,
+    meta: {
+      devPageName: '登录回调',
+    },
   },
   {
     path: '/payments/success',
     name: 'payment-success',
     component: PaymentSuccess,
+    meta: {
+      devPageName: '支付成功',
+    },
   },
   {
     path: '/payments/cancel',
     name: 'payment-cancel',
     component: PaymentCancel,
+    meta: {
+      devPageName: '支付取消',
+    },
   },
 ];
 
@@ -324,7 +456,7 @@ router.beforeEach(async (to, from, next) => {
     return next({ name: 'home' });
   }
 
-  if (to.meta.requiresOrganizer && !auth.user.value?.isOrganizer) {
+  if (to.meta.requiresOrganizer && !auth.user.value?.isOrganizer && !auth.user.value?.isAdmin) {
     return next({ name: 'organizer-apply' });
   }
 

@@ -10,8 +10,15 @@ interface DevLoginPayload {
   language?: string;
 }
 
+interface EmailCodeEntry {
+  code: string;
+  expiresAt: number;
+}
+
 @Injectable()
 export class AuthService {
+  private emailCodeStore = new Map<string, EmailCodeEntry>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -26,6 +33,8 @@ export class AuthService {
       throw new BadRequestException('Name is required');
     }
 
+    const isAdminName = name.toLowerCase() === 'admin';
+
     let user = await this.prisma.user.findFirst({
       where: { name },
     });
@@ -36,7 +45,19 @@ export class AuthService {
           name,
           language: payload.language || 'ja',
           prefecture: 'Tokyo',
+          isAdmin: isAdminName,
+          isOrganizer: true,
         },
+      });
+    } else if (isAdminName && !user.isAdmin) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { isAdmin: true, isOrganizer: true },
+      });
+    } else if (!user.isOrganizer) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { isOrganizer: true },
       });
     }
 
@@ -64,6 +85,57 @@ export class AuthService {
         isAdmin: true,
       },
     });
+  }
+
+  async sendEmailLoginCode(email: string) {
+    const normalized = this.normalizeEmail(email);
+    if (!normalized) {
+      throw new BadRequestException('Invalid email');
+    }
+    const code = this.generateCode();
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    this.emailCodeStore.set(normalized, { code, expiresAt });
+    // Mock email sending: log message for developers/testing.
+    const subject = `Your MORE verification code: ${code}`;
+    const body = `You can use the code ${code} to log into MORE App.\n\nCode: ${code}\nValid for 5 minutes.`;
+    console.info(`[EmailLogin] ${normalized}\nSubject: ${subject}\n${body}`);
+    return { success: true };
+  }
+
+  async verifyEmailLoginCode(email: string, code: string) {
+    const normalized = this.normalizeEmail(email);
+    if (!normalized) {
+      throw new BadRequestException('Invalid email');
+    }
+    const entry = this.emailCodeStore.get(normalized);
+    if (!entry) {
+      throw new BadRequestException('Verification code not found. Please request a new code.');
+    }
+    if (Date.now() > entry.expiresAt) {
+      this.emailCodeStore.delete(normalized);
+      throw new BadRequestException('Verification code has expired. Please request a new code.');
+    }
+    if (entry.code !== code) {
+      throw new BadRequestException('Verification code is incorrect.');
+    }
+    let user = await this.prisma.user.findFirst({
+      where: { email: normalized },
+    });
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: normalized,
+          name: normalized.split('@')[0],
+          language: 'ja',
+        },
+      });
+    }
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      userId: user.id,
+    });
+    this.emailCodeStore.delete(normalized);
+    return { accessToken, user };
   }
 
   async exchangeLineToken(code: string) {
@@ -123,5 +195,17 @@ export class AuthService {
 
     const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
     return { accessToken, user };
+  }
+
+  private normalizeEmail(email: string | undefined | null) {
+    if (!email) return '';
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed.includes('@')) return '';
+    return trimmed;
+  }
+
+  private generateCode() {
+    const value = Math.floor(100000 + Math.random() * 900000);
+    return value.toString();
   }
 }

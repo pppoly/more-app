@@ -5,7 +5,13 @@
         <p class="label">{{ community.slug }}</p>
         <h2>決済・サブスクリプション設定</h2>
       </div>
-      <RouterLink :to="`/console/communities/${community.id}/events`" class="link-btn">イベント一覧へ戻る</RouterLink>
+      <RouterLink
+        v-if="community"
+        :to="{ name: 'console-community-events', params: { communityId: community.id } }"
+        class="link-btn"
+      >
+        イベント一覧へ戻る
+      </RouterLink>
     </header>
 
     <div class="grid">

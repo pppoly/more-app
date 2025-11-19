@@ -5,6 +5,9 @@
         <span>創</span>
       </div>
       <div class="header-title">MORE</div>
+      <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
+        <span class="i-lucide-shield"></span>
+      </button>
       <button class="profile-entry" @click="handlePrimaryAction">
         <span class="i-lucide-user-round text-lg"></span>
       </button>
@@ -57,8 +60,12 @@ const tabs = computed(() => {
   if (user.value?.isOrganizer || user.value?.isAdmin) {
     base.splice(1, 0, { id: 'console', label: 'Console', path: '/console', icon: 'i-lucide-layout-dashboard' });
   }
+  if (user.value?.isAdmin) {
+    base.splice(base.length - 1, 0, { id: 'admin', label: '管理', path: '/admin', icon: 'i-lucide-shield' });
+  }
   return base;
 });
+const isAdminUser = computed(() => Boolean(user.value?.isAdmin));
 
 const titleMap: Record<string, string> = {
   '/': '開催中のイベント',
@@ -78,6 +85,7 @@ const activeTab = computed(() => {
   const path = route.path;
   if (path === '/' || path.startsWith('/events')) return 'events';
   if (path.startsWith('/console')) return 'console';
+  if (path.startsWith('/admin')) return 'admin';
   if (path.startsWith('/me')) return 'me';
   return 'events';
 });
@@ -85,8 +93,7 @@ const activeTab = computed(() => {
 const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ログイン'));
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
-  const paths = tabs.value.map((tab) => tab.path);
-  return paths.some((path) => route.path === path || route.path.startsWith(path));
+  return tabs.value.some((tab) => route.path === tab.path || route.path.startsWith(`${tab.path}/`));
 });
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
@@ -98,7 +105,12 @@ const handlePrimaryAction = () => {
     router.push('/me');
     return;
   }
-  router.push({ name: 'organizer-apply' });
+  router.push({ name: 'auth-login', query: { redirect: '/me' } });
+};
+
+const goAdmin = () => {
+  if (!isAdminUser.value) return;
+  router.push({ name: 'admin-home' });
 };
 
 const go = (path: string) => {
@@ -152,6 +164,18 @@ const tabbarSafeAreaStyle = computed(() => ({
   font-size: 1rem;
   font-weight: 600;
   color: var(--m-color-text-primary);
+}
+
+.admin-entry {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid rgba(37, 99, 235, 0.4);
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .profile-entry {

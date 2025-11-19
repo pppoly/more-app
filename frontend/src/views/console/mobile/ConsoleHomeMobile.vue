@@ -98,6 +98,30 @@
           <p class="action-desc">プラン変更や通知設定</p>
         </div>
       </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goCommunitySettings"
+      >
+        <span class="action-icon i-lucide-pencil"></span>
+        <div>
+          <p class="action-title">社群情報を編集</p>
+          <p class="action-desc">紹介文・タグ・公開設定を更新</p>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goPublicPortal"
+      >
+        <span class="action-icon i-lucide-external-link"></span>
+        <div>
+          <p class="action-title">公開ページを見る</p>
+          <p class="action-desc">社群ポータルを確認（ユーザー側表示）</p>
+        </div>
+      </button>
     </section>
 
     <section class="events-section">
@@ -209,6 +233,16 @@ const goPayout = () => {
 
 const goSubscription = () => {
   router.push({ name: 'ConsoleMobileSubscription' });
+};
+
+const goCommunitySettings = () => {
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileCommunitySettings', params: { communityId: communityId.value } });
+};
+
+const goPublicPortal = () => {
+  if (!community.value?.slug) return;
+  router.push({ name: 'community-portal', params: { slug: community.value.slug } });
 };
 
 const goAllEvents = () => {

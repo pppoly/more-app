@@ -1,37 +1,113 @@
 <template>
-  <section class="community-portal">
-    <RouterLink class="back-link" to="/">← HOME</RouterLink>
+  <section class="community-portal-mobile">
 
-    <p v-if="loading" class="status">読み込み中…</p>
+    <div v-if="loading" class="portal-skeleton">
+      <div class="portal-skeleton__hero"></div>
+      <div class="portal-skeleton__card"></div>
+      <div class="portal-skeleton__card"></div>
+    </div>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
-    <article v-else-if="community" class="community-card">
-      <header>
-        <h2>{{ community.name }}</h2>
-        <p class="visibility">公開設定: {{ community.visibleLevel }}</p>
-        <div class="labels" v-if="community.labels.length">
-          <span v-for="label in community.labels" :key="label">#{{ label }}</span>
+    <template v-else-if="community">
+      <article class="portal-hero" :style="heroStyle">
+        <div class="portal-hero__overlay"></div>
+        <div class="portal-hero__content">
+          <h1>{{ community.name }}</h1>
+          <div class="portal-hero__labels" v-if="community.labels.length">
+            <span v-for="label in community.labels" :key="label">#{{ label }}</span>
+          </div>
         </div>
-      </header>
+      </article>
 
-      <section class="description">
-        <h3>紹介</h3>
-        <p>{{ getLocalizedText(community.description) }}</p>
-      </section>
+      <article class="portal-card">
+        <header class="portal-card__header">
+          <p class="eyebrow">ABOUT</p>
+          <h2>コミュニティ紹介</h2>
+        </header>
+        <p class="portal-card__body" :class="{ truncated: !descriptionExpanded }">
+          {{ descriptionText }}
+        </p>
+        <button
+          v-if="shouldTruncate"
+          type="button"
+          class="portal-hero__toggle"
+          @click="descriptionExpanded = !descriptionExpanded"
+        >
+          {{ descriptionExpanded ? '閉じる' : '続きを読む' }}
+        </button>
+      </article>
 
-      <section class="events">
-        <h3>最近のイベント</h3>
-        <p v-if="!recentEvents.length" class="muted">公開イベントはまだありません。（暂无活动）</p>
-        <ul v-else class="event-list">
-          <li v-for="event in recentEvents" :key="event.id">
-            <RouterLink :to="`/events/${event.id}`">
-              {{ getLocalizedText(event.title) || 'イベント' }}
-            </RouterLink>
-            <span>{{ formatDate(event.startTime) }} · {{ event.locationText }}</span>
-          </li>
-        </ul>
-      </section>
-    </article>
+      <article class="portal-card" ref="eventsSection">
+        <header class="portal-card__header">
+          <p class="eyebrow">EVENTS</p>
+          <h2>活動ハイライト</h2>
+        </header>
+        <nav class="portal-nav">
+          <button
+            v-for="tab in tabs"
+            :key="tab.value"
+            type="button"
+            :class="['portal-nav__item', { active: activeTab === tab.value }]"
+            @click="activeTab = tab.value"
+          >
+            <div class="portal-nav__icon" :class="tab.icon"></div>
+            <div class="portal-nav__text">
+              <p>{{ tab.label }}</p>
+              <small>{{ tab.description }}</small>
+            </div>
+            <span class="portal-nav__chevron">›</span>
+          </button>
+        </nav>
+        <div class="tab-panel">
+          <template v-if="activeTab === 'upcoming'">
+            <div v-if="!upcomingEvents.length" class="empty-panel">
+              <p>まだ招募中のイベントはありません。</p>
+              <span>フォローして最新情報を受け取りましょう。</span>
+            </div>
+            <ul v-else class="portal-event-list">
+              <li v-for="event in upcomingEvents" :key="event.id">
+                <RouterLink :to="`/events/${event.id}`">
+                  <div class="event-item">
+                    <div class="event-item__content">
+                      <p class="event-item__title">{{ event.title }}</p>
+                      <p class="event-item__meta">{{ event.date }} · {{ event.locationText || '場所未定' }}</p>
+                    </div>
+                    <span class="event-item__status open">受付中</span>
+                  </div>
+                </RouterLink>
+              </li>
+            </ul>
+          </template>
+          <template v-else-if="activeTab === 'past'">
+            <div v-if="!pastEvents.length" class="empty-panel">
+              <p>まだ過去のアーカイブがありません。</p>
+            </div>
+            <ul v-else class="portal-event-list">
+              <li v-for="event in pastEvents" :key="event.id">
+                <div class="event-item">
+                  <div class="event-item__content">
+                    <p class="event-item__title">{{ event.title }}</p>
+                    <p class="event-item__meta">{{ event.date }} · {{ event.locationText || '場所未定' }}</p>
+                  </div>
+                  <span class="event-item__status closed">終了</span>
+                </div>
+              </li>
+            </ul>
+          </template>
+          <template v-else>
+            <div v-if="!highlightMoments.length" class="empty-panel">
+              <p>まだ写真がありません。</p>
+            </div>
+            <div v-else class="moment-grid">
+              <figure v-for="moment in highlightMoments" :key="moment.id">
+                <img :src="moment.image" :alt="moment.title" />
+                <figcaption>{{ moment.title }}</figcaption>
+              </figure>
+            </div>
+          </template>
+        </div>
+      </article>
+    </template>
   </section>
 </template>
 
@@ -47,11 +123,11 @@ const slug = computed(() => route.params.slug as string);
 const community = ref<CommunityPortal | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const recentEvents = computed(() => community.value?.events ?? []);
+const eventsSection = ref<HTMLElement | null>(null);
 
 const loadCommunity = async (value: string) => {
   if (!value) {
-    error.value = 'Missing community slug';
+    error.value = 'コミュニティIDが見つかりません';
     return;
   }
   loading.value = true;
@@ -75,70 +151,293 @@ watch(
   { immediate: true },
 );
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+const descriptionExpanded = ref(false);
+const descriptionText = computed(() => getLocalizedText(community.value?.description) || '紹介文は準備中です。');
+const shouldTruncate = computed(() => descriptionText.value.length > 120);
+
+watch(community, () => {
+  descriptionExpanded.value = false;
+});
+
+const heroStyle = computed(() => {
+  const cover = community.value?.coverImageUrl;
+  const fallback =
+    'linear-gradient(135deg, rgba(15, 23, 42, 0.5), rgba(3, 7, 18, 0.85)), url("https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1400&q=80")';
+  return {
+    backgroundImage: cover
+      ? `linear-gradient(135deg, rgba(15, 23, 42, 0.45), rgba(3, 7, 18, 0.9)), url(${cover})`
+      : fallback,
+  };
+});
+
+const formattedEvents = computed(() =>
+  (community.value?.events ?? []).map((event) => ({
+    ...event,
+    title: getLocalizedText(event.title) || 'イベント',
+    date: new Date(event.startTime).toLocaleString('ja-JP', {
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    statusLabel: event.status === 'open' ? '受付中' : '終了',
+    statusClass: event.status === 'open' ? 'open' : 'closed',
+  })),
+);
+
+const scrollToEvents = () => {
+  eventsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const tabs = [
+  { value: 'upcoming', label: '招募中', description: '現在受付中のイベント', icon: 'i-lucide-play-circle' },
+  { value: 'past', label: '往期活動', description: '過去に実施した活動', icon: 'i-lucide-archive' },
+  { value: 'moments', label: '精彩瞬間', description: 'ハイライト写真', icon: 'i-lucide-stars' },
+];
+const activeTab = ref<'upcoming' | 'past' | 'moments'>('upcoming');
+
+const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.status === 'open'));
+const pastEvents = computed(() => formattedEvents.value.filter((event) => event.status !== 'open'));
+const highlightMoments = computed(() =>
+  pastEvents.value.slice(0, 3).map((event, index) => ({
+    id: `${event.id}-${index}`,
+    title: event.title,
+    image:
+      community.value?.coverImageUrl ??
+      'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=800&q=80',
+  })),
+);
 </script>
 
 <style scoped>
-.community-portal {
+.community-portal-mobile {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  padding-bottom: 2rem;
 }
 
-.back-link {
-  color: #2563eb;
-  text-decoration: none;
+.portal-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-.status {
-  margin: 0.5rem 0;
+.portal-skeleton__hero,
+.portal-skeleton__card {
+  border-radius: 1.25rem;
+  background: linear-gradient(90deg, #f4f6fb 25%, #e9edf7 37%, #f4f6fb 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
 }
 
-.community-card {
-  background: #fff;
+.portal-skeleton__hero {
+  height: 220px;
+}
+
+.portal-skeleton__card {
+  height: 140px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: -135% 50%;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.portal-hero {
+  position: relative;
+  min-height: 220px;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.2);
+}
+
+.portal-hero__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.1), rgba(2, 6, 23, 0.8));
+}
+
+.portal-hero__content {
+  position: relative;
+  z-index: 1;
   padding: 1.5rem;
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  color: #fff;
 }
 
-.labels {
+.portal-hero__content h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  line-height: 1.2;
+}
+
+.portal-hero__labels {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.35rem;
 }
 
-.labels span {
-  background: #eef2ff;
-  padding: 0.2rem 0.6rem;
+.portal-hero__labels span {
+  padding: 0.15rem 0.6rem;
   border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
   font-size: 0.85rem;
 }
 
-.description,
-.events {
-  margin-top: 1.5rem;
-}
-
-.event-list {
-  list-style: none;
-  padding: 0;
-}
-
-.event-list li {
+.portal-card {
+  background: #fff;
+  border-radius: 1.25rem;
+  padding: 1.25rem;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
-  margin-bottom: 0.75rem;
+  gap: 0.85rem;
 }
 
-.event-list span {
+.portal-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.portal-card__header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.portal-card__body {
+  margin: 0;
   color: #475569;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.portal-card__body.truncated {
+  -webkit-line-clamp: 3;
+}
+
+.portal-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem;
+  border-radius: 0.9rem;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.portal-meta p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.portal-event-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.empty-panel {
+  border: 1px dashed #cbd5f5;
+  border-radius: 1rem;
+  padding: 1rem;
+  text-align: center;
+  color: #64748b;
   font-size: 0.9rem;
+}
+
+.empty-panel span {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.portal-event-list a {
+  text-decoration: none;
+}
+
+.event-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.event-item__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.event-item__title {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.event-item__meta {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.event-item__status {
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.event-item__status.open {
+  background: rgba(34, 187, 170, 0.15);
+  color: #0f9f85;
+}
+
+.event-item__status.closed {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
 }
 
 .error {
@@ -148,4 +447,123 @@ const formatDate = (value: string) =>
 .muted {
   color: #94a3b8;
 }
+
+.portal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.portal-tab {
+  flex: 1;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 0.5rem;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
+.portal-tab.active {
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(14, 165, 233, 0.3);
+  border-color: transparent;
+}
+.tab-panel {
+  margin-top: 0.5rem;
+}
+
+.moment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.moment-grid figure {
+  margin: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.moment-grid img {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+}
+
+.moment-grid figcaption {
+  padding: 0.4rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
 </style>
+.portal-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.portal-nav__item {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.1rem;
+  padding: 0.85rem;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: #1e293b;
+  text-align: left;
+  position: relative;
+}
+
+.portal-nav__item.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #fff;
+  box-shadow: 0 18px 25px rgba(14, 165, 233, 0.25);
+}
+
+.portal-nav__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0ea5e9;
+  font-size: 1.3rem;
+}
+
+.portal-nav__item.active .portal-nav__icon {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.portal-nav__text p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.portal-nav__text small {
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.portal-nav__item.active .portal-nav__text small {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.portal-nav__chevron {
+  margin-left: auto;
+  font-size: 1.2rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.portal-nav__item.active .portal-nav__chevron {
+  color: #fff;
+}
