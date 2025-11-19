@@ -67,6 +67,7 @@ import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { useAuth } from '../../composables/useAuth';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const router = useRouter();
 const { user } = useAuth();
@@ -131,7 +132,7 @@ const statusBadge = (event: EventSummary) => {
 const coverInitial = (event: EventSummary) => (event.community.name?.charAt(0) ?? 'M').toUpperCase();
 const coverImageStyle = (event: EventSummary) => {
   if (event.coverImageUrl) {
-    return { backgroundImage: `url(${event.coverImageUrl})` };
+    return { backgroundImage: `url(${resolveAssetUrl(event.coverImageUrl)})` };
   }
   return {
     background: `linear-gradient(135deg, var(--color-primary), #4cd964)`,

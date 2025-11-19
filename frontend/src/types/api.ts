@@ -186,6 +186,7 @@ export interface ConsoleEventSummary {
   endTime?: string;
   status: string;
   visibility: string;
+  coverImageUrl?: string | null;
 }
 
 export interface ConsoleEventDetail extends ConsoleEventSummary {

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
+import { resolveAssetUrl } from '../utils/assetUrl';
 import type {
   AiUsageDetailResponse,
   AiUsageSummaryResponse,
@@ -62,7 +63,10 @@ export async function fetchEventById(eventId: string): Promise<EventDetail> {
 
 export async function fetchEventGallery(eventId: string): Promise<EventGalleryItem[]> {
   const { data } = await apiClient.get<EventGalleryItem[]>(`/events/${eventId}/gallery`);
-  return data;
+  return data.map((item) => ({
+    ...item,
+    imageUrl: resolveAssetUrl(item.imageUrl),
+  }));
 }
 
 export async function fetchCommunityBySlug(slug: string): Promise<CommunityPortal> {
@@ -267,6 +271,11 @@ export async function uploadEventCovers(eventId: string, files: File[]) {
   const { data } = await apiClient.post(`/console/events/${eventId}/covers`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data as EventGalleryItem[];
+}
+
+export async function deleteEventCover(eventId: string, coverId: string) {
+  const { data } = await apiClient.delete(`/console/events/${eventId}/covers/${coverId}`);
   return data as EventGalleryItem[];
 }
 

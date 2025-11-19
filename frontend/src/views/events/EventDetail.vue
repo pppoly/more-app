@@ -6,7 +6,12 @@
       <button type="button" class="icon-btn" @click="shareEvent">⋯</button>
     </header>
 
-    <p v-if="loading" class="status">読み込み中...</p>
+    <div v-if="loading" class="detail-skeleton">
+      <div class="skeleton-hero shimmer"></div>
+      <div class="skeleton-card shimmer"></div>
+      <div class="skeleton-card shimmer"></div>
+      <div class="skeleton-card skeleton-card--thin shimmer"></div>
+    </div>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
     <template v-else-if="event">
@@ -729,5 +734,45 @@ const openMap = () => {
 
 .error {
   color: #c53030;
+}
+
+.detail-skeleton {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.skeleton-hero {
+  width: 100%;
+  height: 220px;
+  border-radius: 20px;
+}
+
+.skeleton-card {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 20px;
+}
+
+.skeleton-card--thin {
+  min-height: 80px;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, #f0f2f5 25%, #e3e6eb 37%, #f0f2f5 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 </style>

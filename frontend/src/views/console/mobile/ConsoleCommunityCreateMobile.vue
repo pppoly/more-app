@@ -170,7 +170,7 @@ const submit = async () => {
 .info-card,
 .form-card {
   background: #fff;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
 }

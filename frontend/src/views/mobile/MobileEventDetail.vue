@@ -1,6 +1,18 @@
 <template>
   <div class="event-detail-page">
-    <div v-if="loading" class="event-state m-text-meta">読み込み中...</div>
+    <div v-if="loading" class="event-skeleton">
+      <div class="skeleton-hero shimmer"></div>
+      <div class="skeleton-content">
+        <div class="skeleton-title shimmer"></div>
+        <div class="skeleton-button-row">
+          <span class="skeleton-button shimmer"></span>
+          <span class="skeleton-button shimmer"></span>
+        </div>
+        <div class="skeleton-card shimmer"></div>
+        <div class="skeleton-card shimmer"></div>
+        <div class="skeleton-card skeleton-card--short shimmer"></div>
+      </div>
+    </div>
     <div v-else-if="error" class="event-state error">{{ error }}</div>
 
     <template v-else-if="detail">
@@ -756,6 +768,67 @@ watch(
 
 .event-state.error {
   color: #e11d48;
+}
+
+.event-skeleton {
+  padding: 18px 16px 80px;
+}
+
+.skeleton-hero {
+  width: 100%;
+  height: 220px;
+  border-radius: 20px;
+  margin-bottom: 18px;
+}
+
+.skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.skeleton-title {
+  height: 28px;
+  width: 70%;
+  border-radius: 16px;
+}
+
+.skeleton-button-row {
+  display: flex;
+  gap: 10px;
+}
+
+.skeleton-button {
+  flex: 1;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.skeleton-card {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 20px;
+}
+
+.skeleton-card--short {
+  min-height: 80px;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, #f4f7fb 25%, #e5e9f2 37%, #f4f7fb 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .event-meta-row {

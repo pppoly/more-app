@@ -1,31 +1,30 @@
 <template>
   <div class="console-home">
     <section class="hero-card">
-      <div class="hero-chip">
-        <span class="i-lucide-layout-dashboard text-sm"></span>
-        Console
+      <div class="hero-heading">
+        <img :src="communityAvatar" alt="avatar" class="hero-avatar" @click="goCommunitySettings" />
+        <div class="hero-heading-text" @click="goCommunitySettings">
+          <h1 class="hero-title">{{ communityName || '未選択のコミュニティ' }}</h1>
+          <p class="hero-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
+        </div>
+        <button
+          v-if="hasCommunity"
+          class="hero-switch inline-switch"
+          type="button"
+          @click="openCommunityPicker"
+        >
+          切り替え
+        </button>
+        <button
+          v-else
+          class="hero-switch hero-switch--primary"
+          type="button"
+          @click="goCreateCommunity"
+        >
+          <span class="i-lucide-sparkles"></span>
+          コミュニティを作成
+        </button>
       </div>
-      <p class="hero-subtitle">運営コミュニティ</p>
-      <h1 class="hero-title">{{ communityName || '未選択のコミュニティ' }}</h1>
-      <p class="hero-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録しましょう' }}</p>
-      <button
-        v-if="hasCommunity"
-        class="hero-switch"
-        type="button"
-        @click="openCommunityPicker"
-      >
-        <span class="i-lucide-building-2"></span>
-        コミュニティを切り替える
-      </button>
-      <button
-        v-else
-        class="hero-switch hero-switch--primary"
-        type="button"
-        @click="goCreateCommunity"
-      >
-        <span class="i-lucide-sparkles"></span>
-        コミュニティを作成
-      </button>
       <div class="hero-stats">
         <div class="hero-stat">
           <p>今月の収入</p>
@@ -44,10 +43,14 @@
 
     <section class="action-grid">
       <button class="action-card" type="button" @click="goCreateCommunity">
-        <span class="action-icon i-lucide-sparkles"></span>
-        <div>
-          <p class="action-title">コミュニティ作成</p>
-          <p class="action-desc">新しいコミュニティを登録</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">コミュニティ作成</p>
+            <p class="action-desc">新しいコミュニティを登録</p>
+          </div>
         </div>
       </button>
       <button
@@ -56,10 +59,30 @@
         :class="{ 'is-disabled': !hasCommunity }"
         @click="createEvent"
       >
-        <span class="action-icon i-lucide-plus"></span>
-        <div>
-          <p class="action-title">新しいイベント</p>
-          <p class="action-desc">イベントを作成して公開</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">新しいイベント</p>
+            <p class="action-desc">イベントを作成して公開</p>
+          </div>
+        </div>
+      </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goEventAssistant"
+      >
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">AI イベント助手</p>
+            <p class="action-desc">SOCIALMORE 憲法で企画</p>
+          </div>
         </div>
       </button>
       <button
@@ -68,10 +91,14 @@
         :class="{ 'is-disabled': !hasCommunity }"
         @click="goAllEvents"
       >
-        <span class="action-icon i-lucide-calendar-search"></span>
-        <div>
-          <p class="action-title">イベント管理</p>
-          <p class="action-desc">登録状況と参加者を確認</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">イベント管理</p>
+            <p class="action-desc">登録状況と参加者を確認</p>
+          </div>
         </div>
       </button>
       <button
@@ -80,10 +107,14 @@
         :class="{ 'is-disabled': !hasCommunity }"
         @click="goPayout"
       >
-        <span class="action-icon i-lucide-piggy-bank"></span>
-        <div>
-          <p class="action-title">収益と入金</p>
-          <p class="action-desc">入金設定・請求を確認</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">収益と入金</p>
+            <p class="action-desc">入金設定・請求を確認</p>
+          </div>
         </div>
       </button>
       <button
@@ -92,22 +123,14 @@
         :class="{ 'is-disabled': !hasCommunity }"
         @click="goSubscription"
       >
-        <span class="action-icon i-lucide-settings"></span>
-        <div>
-          <p class="action-title">プランと設定</p>
-          <p class="action-desc">プラン変更や通知設定</p>
-        </div>
-      </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goCommunitySettings"
-      >
-        <span class="action-icon i-lucide-pencil"></span>
-        <div>
-          <p class="action-title">社群情報を編集</p>
-          <p class="action-desc">紹介文・タグ・公開設定を更新</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">プランと設定</p>
+            <p class="action-desc">プラン変更や通知設定</p>
+          </div>
         </div>
       </button>
       <button
@@ -116,10 +139,14 @@
         :class="{ 'is-disabled': !hasCommunity }"
         @click="goPublicPortal"
       >
-        <span class="action-icon i-lucide-external-link"></span>
-        <div>
-          <p class="action-title">公開ページを見る</p>
-          <p class="action-desc">社群ポータルを確認（ユーザー側表示）</p>
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">公開ページを見る</p>
+            <p class="action-desc">社群ポータルを確認（ユーザー側表示）</p>
+          </div>
         </div>
       </button>
     </section>
@@ -162,6 +189,7 @@ import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { fetchConsoleCommunityEvents } from '../../../api/client';
 import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
 
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
@@ -172,6 +200,11 @@ const community = computed(() => communityStore.getActiveCommunity());
 const communityName = computed(() => community.value?.name ?? '');
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const hasCommunity = computed(() => Boolean(communityId.value));
+const communityAvatar = computed(
+  () =>
+    community.value?.avatarUrl ||
+    'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-community.png',
+);
 const roleLabel = computed(() => {
   const role = community.value?.role;
   switch (role) {
@@ -189,6 +222,10 @@ const stats = computed(() => ({
   eventCount: events.value.length,
   registrationCount: '--',
 }));
+const defaultActionIcon =
+  'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/icon-action-default.png';
+const defaultEventCover =
+  'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event.png';
 
 const displayEvents = computed(() =>
   events.value.slice(0, 5).map((event) => ({
@@ -197,7 +234,7 @@ const displayEvents = computed(() =>
     status: event.status,
     dateTimeText: formatDate(event.startTime, event.endTime),
     entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-    coverUrl: 'https://placehold.co/120x120?text=Event',
+    coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
   })),
 );
 
@@ -256,6 +293,11 @@ const openManage = (eventId: string) => {
 
 const createEvent = () => {
   if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileEventForm', params: { communityId: communityId.value } });
+};
+
+const goEventAssistant = () => {
+  if (!communityId.value) return;
   router.push({ name: 'ConsoleMobileEventCreate', params: { communityId: communityId.value } });
 };
 
@@ -311,7 +353,7 @@ onMounted(async () => {
 .console-home {
   min-height: 100vh;
   padding: calc(env(safe-area-inset-top, 0px) + 4px) 4px calc(60px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #f5fbff 0%, #eef2f7 40%, #f7f9fb 100%);
+  background: #f7f7fb;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -327,55 +369,61 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.hero-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.4), transparent 40%);
-  pointer-events: none;
+.hero-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-.hero-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
+.hero-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.hero-heading-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
 }
 
 .hero-title {
-  margin: 8px 0 4px;
+  margin: 0;
   font-size: 20px;
   font-weight: 700;
 }
 
-.hero-subtitle,
 .hero-role {
   margin: 0;
   font-size: 12px;
-  opacity: 0.85;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .hero-switch {
-  margin-top: 12px;
   border: none;
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 8px 12px;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.2);
-  color: #fff;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
   font-size: 12px;
   font-weight: 600;
 }
 
 .hero-switch--primary {
-  background: rgba(255, 255, 255, 0.2);
-  color: #003443;
+  background: rgba(0, 144, 217, 0.12);
+  color: #0090d9;
+}
+
+.inline-switch {
+  margin-top: 0;
 }
 
 .hero-stats {
@@ -416,21 +464,29 @@ onMounted(async () => {
   background: #fff;
   padding: 12px;
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
   text-align: left;
   box-shadow: 0 15px 30px rgba(15, 23, 42, 0.08);
 }
 
+.action-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .action-icon {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: rgba(0, 144, 217, 0.12);
-  color: #0090d9;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.06);
+  display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.action-icon img {
+  width: 28px;
+  height: 28px;
 }
 
 .action-title {

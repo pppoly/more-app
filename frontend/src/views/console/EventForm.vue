@@ -9,43 +9,50 @@
     </header>
 
     <section v-if="isMobileLayout" class="mobile-hero-card">
-      <div class="hero-top">
-        <p class="hero-eyebrow">{{ isEdit ? 'イベント編集' : 'AI と一緒に企画する' }}</p>
-        <h1>{{ isEdit ? '活动编辑' : '智能创建活动' }}</h1>
-        <p class="hero-desc">
-          {{ aiPrefillNotice || '先定封面，再顺着导航把信息说清楚。' }}
-        </p>
+      <div class="hero-top" v-if="aiPrefillNotice">
+        <p class="hero-desc">{{ aiPrefillNotice }}</p>
       </div>
       <div class="hero-cover-panel" ref="sectionCover">
-        <div class="hero-cover-head">
-          <p>活動カバー画像</p>
-          <span>{{ coverDisplayItems.length ? '点击更换' : '请添加封面图' }}</span>
+        <div v-if="coverDisplayItems.length" class="hero-cover-strip">
+          <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
+            <img :src="item.imageUrl" alt="cover" />
+            <span v-if="index === 0" class="hero-cover-main">主图</span>
+            <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
+          </figure>
+          <button
+            v-if="canAddMoreCovers"
+            type="button"
+            class="hero-cover-add"
+            @click.stop="triggerCoverPicker"
+          >
+            <span>+</span>
+            <p>继续添加</p>
+          </button>
         </div>
-        <div
-          class="hero-cover-uploader"
-          :class="{ 'hero-cover-uploader--filled': coverDisplayItems.length }"
-          @click="triggerCoverPicker"
+        <button
+          v-else
+          type="button"
+          class="hero-cover-add hero-cover-add--solo"
+          @click.stop="triggerCoverPicker"
         >
-          <input
-            ref="coverInputRef"
-            type="file"
-            multiple
-            accept="image/*"
-            class="hidden-input"
-            @change="handleCoverUpload"
-          />
-          <template v-if="!coverDisplayItems.length">
-            <div class="hero-cover-avatar">
-              <span>+</span>
-            </div>
-          </template>
-          <div v-else class="hero-cover-gallery">
-            <figure v-for="item in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
-              <img :src="item.imageUrl" alt="cover" />
-            </figure>
-          </div>
-        </div>
+          <span>+</span>
+          <p>添加优质图片</p>
+        </button>
+        <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
+        <p v-if="coverError" class="status error">{{ coverError }}</p>
+        <input
+          ref="coverInputRef"
+          type="file"
+          multiple
+          accept="image/*"
+          class="hidden-input"
+          @change="handleCoverUpload"
+        />
       </div>
+      <button v-if="communityId" type="button" class="hero-assistant" @click="openAssistant">
+        <span class="i-lucide-bot mr-1.5"></span>
+        用 AI 助手生成草案
+      </button>
       <nav class="hero-nav">
         <button type="button" @click="scrollToSection('basic')">基本</button>
         <button type="button" @click="scrollToSection('schedule')">人数</button>
@@ -53,6 +60,24 @@
         <button type="button" @click="scrollToSection('form')">表单</button>
       </nav>
     </section>
+
+    <section v-if="eventCommunityId" class="copy-card">
+      <div>
+        <p class="copy-title">复制历史活动</p>
+        <p class="copy-desc">快速带入既有活动的标题、时间、报名表等所有内容</p>
+      </div>
+      <button type="button" class="copy-btn" @click="openCopyOverlay">
+        <span class="i-lucide-files mr-1.5"></span>
+        选择活动
+      </button>
+    </section>
+
+    <div v-if="uploadingCover" class="cover-upload-overlay">
+      <div class="cover-upload-box">
+        <span class="cover-upload-spinner"></span>
+        <p>封面上传中...</p>
+      </div>
+    </div>
 
     <section v-else-if="aiPrefillNotice" class="ai-prefill">
       <p>{{ aiPrefillNotice }}</p>
@@ -80,37 +105,6 @@
       </div>
     </section>
 
-    <!-- Cover uploader -->
-    <section v-if="!isMobileLayout" class="card cover-card" ref="sectionCover">
-      <div
-        class="cover-card-uploader"
-        :class="{ 'cover-card-uploader--filled': coverDisplayItems.length }"
-        @click="triggerCoverPicker"
-      >
-        <input
-          ref="coverInputRef"
-          type="file"
-          multiple
-          accept="image/*"
-          class="hidden-input"
-          @change="handleCoverUpload"
-        />
-        <template v-if="!coverDisplayItems.length">
-          <div class="cover-card-avatar">
-            <span>+</span>
-          </div>
-          <p class="cover-card-text">请添加活动封面图</p>
-        </template>
-        <div v-else class="cover-card-gallery">
-          <figure v-for="item in coverDisplayItems" :key="item.id" class="cover-card-thumb">
-            <img :src="item.imageUrl" alt="cover" />
-          </figure>
-        </div>
-      </div>
-
-      <p v-if="coverError" class="status error">{{ coverError }}</p>
-    </section>
-
     <form class="form" @submit.prevent="handleSubmit">
       <!-- Category -->
       <section class="card" ref="sectionCategory">
@@ -131,53 +125,49 @@
       <!-- Basic info -->
       <section class="ios-panel" ref="sectionBasic">
         <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('title')">
+          <div class="ios-row ios-row--builder-line" @click="focusMainInline('title')">
             <span class="ios-label">タイトル</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.title }">
-              {{ form.title || '请输入 >' }}
-            </span>
-          </button>
-          <button
-            type="button"
-            class="ios-row ios-row--action ios-row--textarea"
-            @click="openFieldEditor('description')"
-          >
-            <span class="ios-label">ショート説明</span>
-            <span
-              class="ios-value ios-value--multiline"
-              :class="{ 'ios-value--placeholder': !form.description }"
-            >
-              {{ form.description ? form.description : '请输入 >' }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action" @click="toggleLocationSheet(true)">
+            <input
+              type="text"
+              class="ios-inline-input ios-inline-input--text"
+              placeholder="请输入"
+              ref="titleInputRef"
+              v-model="form.title"
+            />
+          </div>
+          <div class="ios-row ios-row--builder-line" @click="focusMainInline('locationText')">
             <span class="ios-label">場所</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.locationText }">
-              {{ form.locationText || '选择' }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('startTime')">
+            <input
+              type="text"
+              class="ios-inline-input"
+              placeholder="例：渋谷駅周辺"
+              ref="locationInputRef"
+              :value="form.locationText"
+              @input="handleLocationInput"
+            />
+          </div>
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('startTime')">
             <span class="ios-label">開始日時</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.startTime }">
-              {{ form.startTime ? formatDisplayDate(form.startTime) : '选择' }}
+              {{ form.startTime ? formatDisplayDate(form.startTime) : '请设置' }}
             </span>
           </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('endTime')">
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('endTime')">
             <span class="ios-label">終了日時</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.endTime }">
-              {{ form.endTime ? formatDisplayDate(form.endTime) : '选择' }}
+              {{ form.endTime ? formatDisplayDate(form.endTime) : '请设置' }}
             </span>
           </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('regStartTime')">
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regStartTime')">
             <span class="ios-label">受付開始</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regStartTime }">
-              {{ form.regStartTime ? formatDisplayDate(form.regStartTime) : '选择' }}
+              {{ form.regStartTime ? formatDisplayDate(form.regStartTime) : '请设置' }}
             </span>
           </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('regEndTime')">
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regEndTime')">
             <span class="ios-label">受付締切</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regEndTime }">
-              {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '选择' }}
+              {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '请设置' }}
             </span>
           </button>
         </div>
@@ -186,40 +176,74 @@
       <!-- Participants -->
       <section class="ios-panel" ref="sectionSchedule">
         <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('minParticipants')">
+          <div class="ios-row ios-row--builder-line">
             <span class="ios-label">最低参加人数</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': form.minParticipants == null }">
-              {{ form.minParticipants == null ? '选择' : `${form.minParticipants} 人` }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('maxParticipants')">
+            <input
+              type="tel"
+              class="ios-inline-input"
+              placeholder="请设置"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              ref="minParticipantsInputRef"
+              :value="minParticipantsDisplay"
+              @input="handleParticipantsInput('min', $event)"
+            />
+          </div>
+          <div class="ios-row ios-row--builder-line">
             <span class="ios-label">最大参加人数</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': form.maxParticipants == null }">
-              {{ form.maxParticipants == null ? '选择' : `${form.maxParticipants} 人` }}
-            </span>
-          </button>
+            <input
+              type="tel"
+              class="ios-inline-input"
+              placeholder="请设置"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              ref="maxParticipantsInputRef"
+              :value="maxParticipantsDisplay"
+              @input="handleParticipantsInput('max', $event)"
+            />
+          </div>
         </div>
       </section>
 
       <!-- Config -->
       <section class="ios-panel" ref="sectionConfig">
         <div class="ios-form">
-          <label class="ios-row ios-row--toggle">
+          <button type="button" class="ios-row ios-row--action" @click="form.requireApproval = !form.requireApproval">
             <span class="ios-label">参加承認</span>
-            <input type="checkbox" v-model="form.requireApproval" class="ios-switch" />
-          </label>
-          <label class="ios-row ios-row--toggle">
+            <span class="ios-value ios-value--switch">
+              <input type="checkbox" v-model="form.requireApproval" class="ios-switch" @click.stop />
+            </span>
+          </button>
+          <button
+            type="button"
+            class="ios-row ios-row--action"
+            @click="form.config.requireCheckin = !form.config.requireCheckin"
+          >
             <span class="ios-label">強制チェックイン</span>
-            <input type="checkbox" v-model="form.config.requireCheckin" class="ios-switch" />
-          </label>
-          <label class="ios-row ios-row--toggle">
+            <span class="ios-value ios-value--switch">
+              <input type="checkbox" v-model="form.config.requireCheckin" class="ios-switch" @click.stop />
+            </span>
+          </button>
+          <button
+            type="button"
+            class="ios-row ios-row--action"
+            @click="form.config.enableWaitlist = !form.config.enableWaitlist"
+          >
             <span class="ios-label">キャンセル待ち</span>
-            <input type="checkbox" v-model="form.config.enableWaitlist" class="ios-switch" />
-          </label>
-          <label class="ios-row ios-row--toggle">
+            <span class="ios-value ios-value--switch">
+              <input type="checkbox" v-model="form.config.enableWaitlist" class="ios-switch" @click.stop />
+            </span>
+          </button>
+          <button
+            type="button"
+            class="ios-row ios-row--action"
+            @click="form.config.riskNoticeEnabled = !form.config.riskNoticeEnabled"
+          >
             <span class="ios-label">免責事項</span>
-            <input type="checkbox" v-model="form.config.riskNoticeEnabled" class="ios-switch" />
-          </label>
+            <span class="ios-value ios-value--switch">
+              <input type="checkbox" v-model="form.config.riskNoticeEnabled" class="ios-switch" @click.stop />
+            </span>
+          </button>
         </div>
         <div class="ios-form">
           <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('visibility')">
@@ -230,84 +254,140 @@
             <span class="ios-label">Console 可視範囲</span>
             <span class="ios-value">{{ getSelectLabel('visibleRange', form.config.visibleRange) }}</span>
           </button>
-          <button
-            type="button"
-            class="ios-row ios-row--action ios-row--textarea"
-            @click="openFieldEditor('refundPolicy')"
-          >
+          <div class="ios-row ios-row--builder-line ios-row--textarea" @click="focusRefundPolicy">
             <span class="ios-label">返金ポリシー</span>
-            <span
-              class="ios-value ios-value--multiline"
-              :class="{ 'ios-value--placeholder': !form.config.refundPolicy }"
-            >
-              {{ form.config.refundPolicy ? form.config.refundPolicy : '请输入 >' }}
+            <textarea
+              class="ios-inline-input ios-inline-input--textarea"
+              placeholder="请输入"
+              ref="refundPolicyInputRef"
+              v-model="form.config.refundPolicy"
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- Rich text -->
+      <section class="ios-panel" ref="sectionRichText">
+        <div class="ios-form">
+          <button type="button" class="ios-row ios-row--action ios-row--textarea" @click="openRichTextEditor">
+            <span class="ios-label">活动详情</span>
+            <span class="ios-value ios-value--multiline" :class="{ 'ios-value--placeholder': !richTextPreview }">
+              {{ richTextPreview || '点击编辑笔记' }}
             </span>
           </button>
         </div>
       </section>
 
-      <!-- Rich text -->
-      <section class="card" ref="sectionRichText">
-        <h3>詳細 (富テキスト)</h3>
-        <QuillEditor v-model:content="form.descriptionHtml" theme="snow" content-type="html" />
-      </section>
-
       <!-- Ticket -->
-      <section class="card" ref="sectionTickets">
-        <h3>チケット</h3>
-        <label>
-          参加費 (円)
-          <input v-model.number="form.ticketPrice" type="number" min="0" />
-        </label>
+      <section class="ios-panel" ref="sectionTickets">
+        <div class="ios-form">
+          <div class="ios-row ios-row--builder-line">
+            <span class="ios-label">参加費</span>
+            <input
+              type="tel"
+              class="ios-inline-input"
+              placeholder="免费活动"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              ref="ticketPriceInputRef"
+              :value="ticketPriceDisplay"
+              @input="handleTicketInput"
+            />
+            <span v-if="form.ticketPrice != null" class="ios-suffix">円</span>
+          </div>
+        </div>
       </section>
 
       <!-- Dynamic form -->
-      <section class="card" ref="sectionForm">
-        <div class="card-header">
-          <h3>応募フォーム項目</h3>
-          <button type="button" class="secondary" @click="addField">＋ フィールド追加</button>
+      <section class="ios-panel ios-panel--builder" ref="sectionForm">
+        <div class="ios-builder-head">
+          <p class="builder-eyebrow">招募表单</p>
+          <div class="builder-actions">
+            <p v-if="!registrationFields.length" class="builder-hint">{{ builderHintText }}</p>
+            <button type="button" class="ios-add-btn" @click="addField">＋ 新增项目</button>
+          </div>
         </div>
-        <div v-if="!registrationFields.length" class="hint">まだフィールドがありません。［フィールド追加］を押してください。</div>
-        <div v-for="field in registrationFields" :key="field.uuid" class="field-builder">
-          <div class="grid-2">
-            <label>
-              ラベル
-              <input v-model="field.label" type="text" required />
-            </label>
-            <label>
-              種類
-              <select v-model="field.type">
-                <option value="text">text</option>
-                <option value="textarea">textarea</option>
-                <option value="number">number</option>
-                <option value="date">date</option>
-                <option value="phone">phone</option>
-                <option value="email">email</option>
-                <option value="select">select</option>
-                <option value="singleChoice">singleChoice</option>
-                <option value="multiChoice">multiChoice</option>
-                <option value="checkbox">checkbox</option>
-              </select>
-            </label>
+        <article
+          v-for="(field, index) in registrationFields"
+          :key="field.uuid"
+          class="ios-field-set"
+        >
+          <div class="ios-field-set__head">
+            <p>質問 {{ index + 1 }}</p>
+            <button type="button" class="ios-field-card__delete" @click="removeField(field.uuid)">
+              削除
+            </button>
           </div>
-          <div class="grid-2">
-            <label>
-              Placeholder
-              <input v-model="field.placeholder" type="text" />
-            </label>
-            <label>
-              必須
-              <select v-model="field.required">
-                <option :value="true">必須</option>
-                <option :value="false">任意</option>
+          <div class="ios-field-set__body">
+            <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'label')">
+              <span class="ios-label">タイトル</span>
+              <input
+                class="ios-inline-input"
+                :data-field="`label-${field.uuid}`"
+                placeholder="例：参加者の氏名"
+                v-model="field.label"
+              />
+            </div>
+            <div class="ios-row ios-row--builder-line">
+              <span class="ios-label">回答形式</span>
+              <select v-model="field.type" class="ios-inline-select">
+                <option value="text">テキスト</option>
+                <option value="textarea">複数行</option>
+                <option value="number">数字</option>
+                <option value="date">日付</option>
+                <option value="phone">電話</option>
+                <option value="email">メール</option>
+                <option value="select">セレクト</option>
+                <option value="singleChoice">単一選択</option>
+                <option value="multiChoice">複数選択</option>
+                <option value="checkbox">同意チェック</option>
               </select>
-            </label>
+            </div>
+            <div class="ios-row ios-row--builder-line">
+              <span class="ios-label">必須</span>
+              <label class="ios-toggle">
+                <input type="checkbox" v-model="field.required" />
+                <span></span>
+              </label>
+            </div>
+            <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'placeholder')">
+              <span class="ios-label">ヒント</span>
+              <input
+                class="ios-inline-input"
+                :data-field="`placeholder-${field.uuid}`"
+                placeholder="例：参加動機を教えてください"
+                v-model="field.placeholder"
+              />
+            </div>
+            <div
+              class="ios-row ios-row--builder-line"
+              v-if="['select', 'singleChoice', 'multiChoice'].includes(field.type)"
+              @click="focusFieldInput(field.uuid, 'options')"
+            >
+              <span class="ios-label">選択肢</span>
+              <input
+                class="ios-inline-input"
+                :data-field="`options-${field.uuid}`"
+                placeholder="A,B,C"
+                v-model="field.optionsText"
+              />
+            </div>
           </div>
-          <label v-if="['select', 'singleChoice', 'multiChoice'].includes(field.type)">
-            オプション (カンマ区切り)
-            <input v-model="field.optionsText" type="text" placeholder="A,B,C" />
-          </label>
-          <button type="button" class="danger" @click="removeField(field.uuid)">削除</button>
+        </article>
+        <p v-if="registrationFields.length" class="builder-hint builder-hint--inline">
+          {{ builderHintText }}
+        </p>
+        <button
+          v-if="registrationFields.length"
+          type="button"
+          class="ios-add-btn ios-add-btn--full"
+          @click="addField"
+        >
+          ＋ 新增项目
+        </button>
+        <div v-else class="hint">
+          目前还没有报名字段，点击［新增项目］开始设置。
         </div>
       </section>
 
@@ -383,36 +463,68 @@
               <span v-if="fieldDraft === opt.value" class="i-lucide-check"></span>
             </button>
           </div>
-          <input
+          <IosDateTimePicker
             v-else
             v-model="fieldDraft"
-            type="datetime-local"
           />
         </div>
       </div>
     </div>
 
-    <div v-if="showLocationSheet" class="field-modal" @click.self="toggleLocationSheet(false)">
-      <div class="field-sheet field-sheet--large">
-        <header class="field-sheet-head">
-          <button type="button" @click="toggleLocationSheet(false)">取消</button>
-          <p>选择活动地点</p>
-          <button type="button" class="highlight" @click="toggleLocationSheet(false)">完成</button>
+    <NoteEditorOverlay
+      v-if="showNoteOverlay"
+      :context="noteOverlayContext"
+      @close="closeNoteOverlay"
+      @save="handleNoteOverlaySave"
+    />
+
+    <div v-if="showCopyOverlay" class="copy-overlay" @click.self="closeCopyOverlay">
+      <div class="copy-sheet">
+        <header class="copy-sheet-head">
+          <button type="button" class="sheet-close" @click="closeCopyOverlay">
+            <span class="i-lucide-x"></span>
+          </button>
+          <div>
+            <p class="copy-sheet-title">选择要复制的活动</p>
+            <p class="copy-sheet-desc">会带入所有字段，发布前请再确认</p>
+          </div>
         </header>
-        <div class="field-sheet-body">
-          <LocationPicker
-            v-model:address="form.locationText"
-            v-model:lat="form.locationLat"
-            v-model:lng="form.locationLng"
-          />
+        <div class="copy-sheet-body">
+          <p v-if="copyLoading" class="copy-status">加载历史活动中…</p>
+          <p v-else-if="copyError" class="copy-status error">{{ copyError }}</p>
+          <template v-else>
+            <button
+              v-for="item in copyEventItems"
+              :key="item.id"
+              type="button"
+              class="copy-list-item"
+              @click="handleCopyFromEvent(item.id)"
+              :disabled="Boolean(copySelectingId) && copySelectingId !== item.id"
+            >
+              <div class="copy-list-text">
+                <p class="copy-list-title">{{ item.title }}</p>
+                <p class="copy-list-meta">{{ item.dateRange }}</p>
+              </div>
+              <span class="copy-list-status">{{ copyStatusLabel(item.status) }}</span>
+              <span
+                v-if="copySelectingId === item.id"
+                class="copy-spinner"
+              ></span>
+            </button>
+            <p v-if="!copyEventItems.length" class="copy-status">
+              暂无可复制的活动。
+            </p>
+          </template>
         </div>
       </div>
     </div>
+
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue';
+import { computed, reactive, ref, onMounted, onUnmounted, onActivated, nextTick, watch } from 'vue';
+import type { Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { RouteLocationRaw } from 'vue-router';
 import {
@@ -420,14 +532,23 @@ import {
   fetchConsoleEvent,
   updateConsoleEvent,
   fetchConsoleCommunity,
+  fetchConsoleCommunityEvents,
   uploadEventCovers,
   fetchEventGallery,
+  deleteEventCover,
 } from '../../api/client';
-import type { RegistrationFormField, EventGalleryItem } from '../../types/api';
-import { QuillEditor } from '@vueup/vue-quill';
-import '@vueup/vue-quill/dist/vue-quill.snow.css';
-import LocationPicker from '../../components/console/LocationPicker.vue';
-import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../constants/console';
+import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
+import type {
+  RegistrationFormField,
+  EventGalleryItem,
+  ConsoleEventSummary,
+  ConsoleEventDetail,
+} from '../../types/api';
+import {
+  CONSOLE_AI_EVENT_DRAFT_KEY,
+  CONSOLE_EVENT_SCROLL_KEY,
+} from '../../constants/console';
+import NoteEditorOverlay from '../../components/console/NoteEditorOverlay.vue';
 
 type FieldKey =
   | 'title'
@@ -438,6 +559,7 @@ type FieldKey =
   | 'regEndTime'
   | 'minParticipants'
   | 'maxParticipants'
+  | 'ticketPrice'
   | 'visibility'
   | 'visibleRange'
   | 'refundPolicy';
@@ -447,16 +569,27 @@ interface BuilderField extends RegistrationFormField {
   optionsText?: string;
 }
 
+type NoteOverlayContext = {
+  text: string;
+  html: string;
+  images: Array<{ id: string; src: string }>;
+};
+
 const route = useRoute();
 const router = useRouter();
 const communityId = route.params.communityId as string | undefined;
 const eventId = route.params.eventId as string | undefined;
+const eventCommunityId = ref<string | null>(communityId ?? null);
 const isEdit = computed(() => Boolean(eventId));
+const prefersMobileLayout = ref(false);
 const isMobileLayout = computed(() => {
+  if (prefersMobileLayout.value) return true;
   if (route.meta?.layout === 'console-mobile') return true;
   if (String(route.name ?? '').startsWith('ConsoleMobile')) return true;
   return route.matched.some((record) => record.meta?.layout === 'console-mobile');
 });
+let mobileMediaQuery: MediaQueryList | null = null;
+let handleMobileMediaChange: ((event: MediaQueryListEvent) => void) | null = null;
 
 const defaultConfig = () => ({
   requireCheckin: false,
@@ -481,19 +614,17 @@ const form = reactive({
   endTime: '',
   regStartTime: '',
   regEndTime: '',
-  minParticipants: null as number | null,
-  maxParticipants: null as number | null,
+  minParticipants: 5 as number | null,
+  maxParticipants: 20 as number | null,
   visibility: 'public',
   requireApproval: false,
-  ticketPrice: 0,
+  ticketPrice: null as number | null,
   config: defaultConfig(),
 });
 
 const registrationFields = ref<BuilderField[]>([]);
 const galleries = ref<EventGalleryItem[]>([]);
 const coverInputRef = ref<HTMLInputElement | null>(null);
-const pendingCoverFiles = ref<File[]>([]);
-const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const coverError = ref<string | null>(null);
 const sectionChecklist = ref<HTMLElement | null>(null);
 const sectionCover = ref<HTMLElement | null>(null);
@@ -516,13 +647,50 @@ const backLink = computed<RouteLocationRaw>(() =>
 const aiPrefillNotice = ref<string | null>(null);
 const aiChecklist = ref<Array<{ id: string; text: string; checked: boolean }>>([]);
 const aiConfirmQuestions = ref<Array<{ id: string; text: string; checked: boolean }>>([]);
+const builderHintText = '设置报名表里需要填写的问题，顺序即为用户看到的顺序。';
+const localCoverPreviews = ref<EventGalleryItem[]>([]);
+const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
+const MAX_COVERS = 9;
+const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB
+const COVER_RULES_TEXT = '尺寸 750×X，最多上传 9 张，默认第一张为主图';
 const coverDisplayItems = computed(() =>
   eventId ? galleries.value : localCoverPreviews.value,
 );
+const currentCoverCount = computed(() => coverDisplayItems.value.length);
+const canAddMoreCovers = computed(() => currentCoverCount.value < MAX_COVERS);
 const editingField = ref<FieldKey | null>(null);
 const fieldDraft = ref('');
-const showLocationSheet = ref(false);
+const richNoteImages = ref<Array<{ id: string; src: string }>>([]);
 const actionLoading = ref<'draft' | 'publish' | null>(null);
+const uploadingCover = ref(false);
+const titleInputRef = ref<HTMLInputElement | null>(null);
+const locationInputRef = ref<HTMLInputElement | null>(null);
+const refundPolicyInputRef = ref<HTMLTextAreaElement | null>(null);
+const ticketPriceInputRef = ref<HTMLInputElement | null>(null);
+const minParticipantsInputRef = ref<HTMLInputElement | null>(null);
+const maxParticipantsInputRef = ref<HTMLInputElement | null>(null);
+const ticketPriceDisplay = computed(() =>
+  form.ticketPrice != null ? String(form.ticketPrice) : '',
+);
+const showNoteOverlay = ref(false);
+const noteOverlayContext = ref<NoteOverlayContext>({
+  text: '',
+  html: '',
+  images: [],
+});
+const showCopyOverlay = ref(false);
+const copyEvents = ref<ConsoleEventSummary[]>([]);
+const copyLoading = ref(false);
+const copyError = ref<string | null>(null);
+const copySelectingId = ref<string | null>(null);
+const copyEventItems = computed(() =>
+  copyEvents.value.map((event) => ({
+    id: event.id,
+    title: getLocalizedText(event.title),
+    status: event.status,
+    dateRange: formatCopyRange(event.startTime, event.endTime),
+  })),
+);
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
@@ -534,6 +702,7 @@ const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placehol
   regEndTime: { label: '受付締切', type: 'datetime' },
   minParticipants: { label: '最低参加人数', type: 'number', placeholder: '请输入 >' },
   maxParticipants: { label: '最大参加人数', type: 'number', placeholder: '请输入 >' },
+  ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: '请输入 >' },
   visibility: { label: '公開範囲', type: 'select' },
   visibleRange: { label: 'Console 可視範囲', type: 'select' },
   refundPolicy: { label: '返金ポリシー', type: 'textarea', placeholder: '例：イベント3日前まで全額返金' },
@@ -569,8 +738,20 @@ const getSelectLabel = (key: 'visibility' | 'visibleRange', value?: string | nul
   return target?.label || '选择';
 };
 
+const stripHtml = (value: string) => value.replace(/<[^>]*>/g, '');
+const richTextPreview = computed(() => {
+  const text = stripHtml(form.descriptionHtml || '') || form.description;
+  const base = text ? text.slice(0, 80) : '';
+  if (richNoteImages.value.length) {
+    return base
+      ? `${base} · ${richNoteImages.value.length} 张图`
+      : `${richNoteImages.value.length} 张图`;
+  }
+  return base;
+});
+
 const formatDisplayDate = (value: string) => {
-  if (!value) return '选择';
+  if (!value) return '请设置';
   try {
     return new Date(value).toLocaleString('ja-JP', {
       month: 'short',
@@ -619,10 +800,6 @@ const confirmFieldEditor = () => {
   closeFieldEditor();
 };
 
-const toggleLocationSheet = (state?: boolean) => {
-  showLocationSheet.value = typeof state === 'boolean' ? state : !showLocationSheet.value;
-};
-
 const toChecklistItems = (items: string[]) =>
   items.map((text, idx) => ({
     id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2)}`,
@@ -639,6 +816,7 @@ const applyAiDraft = (draft: any) => {
   if (draft.description) {
     form.description = draft.description;
     form.descriptionHtml = `<p>${draft.description}</p>`;
+    richNoteImages.value = [];
   }
   if (draft.logistics) {
     form.locationText = draft.logistics.locationText || form.locationText;
@@ -653,7 +831,14 @@ const applyAiDraft = (draft: any) => {
     form.visibility = draft.visibility;
   }
   if (Array.isArray(draft.ticketTypes) && draft.ticketTypes.length) {
-    form.ticketPrice = draft.ticketTypes[0].price ?? form.ticketPrice;
+    const price = Number(draft.ticketTypes[0].price);
+    form.ticketPrice = Number.isFinite(price) ? price : form.ticketPrice;
+  }
+  if (draft.minParticipants != null) {
+    form.minParticipants = draft.minParticipants;
+  }
+  if (draft.maxParticipants != null) {
+    form.maxParticipants = draft.maxParticipants;
   }
   if (Array.isArray(draft.registrationForm) && draft.registrationForm.length) {
     registrationFields.value = draft.registrationForm.map((field: any) => ({
@@ -686,6 +871,50 @@ const loadAiDraftFromSession = () => {
   }
 };
 
+const applyEventDetailToForm = (
+  event: ConsoleEventDetail,
+  options: {
+    syncCommunity?: boolean;
+    setSubtitle?: boolean;
+    includeGalleries?: boolean;
+  } = {},
+) => {
+  const titleText = getLocalizedText(event.title);
+  form.title = titleText;
+  form.description = getLocalizedText(event.description);
+  form.descriptionHtml = event.descriptionHtml ?? '';
+  richNoteImages.value = extractNoteImagesFromHtml(form.descriptionHtml);
+  form.category = event.category ?? '';
+  form.locationText = event.locationText ?? '';
+  form.locationLat = event.locationLat ?? null;
+  form.locationLng = event.locationLng ?? null;
+  form.startTime = toLocalInput(event.startTime);
+  form.endTime = toLocalInput(event.endTime ?? event.startTime);
+  form.regStartTime = toLocalInput(event.regStartTime ?? event.startTime);
+  form.regEndTime = toLocalInput(event.regEndTime ?? event.regDeadline ?? event.endTime ?? event.startTime);
+  form.minParticipants = event.minParticipants ?? form.minParticipants;
+  form.maxParticipants = event.maxParticipants ?? form.maxParticipants;
+  form.visibility = event.visibility ?? form.visibility;
+  form.requireApproval = event.requireApproval ?? form.requireApproval;
+  const firstTicket = event.ticketTypes?.[0];
+  form.ticketPrice = typeof firstTicket?.price === 'number' ? firstTicket.price : null;
+  form.config = { ...defaultConfig(), ...(event.config ?? {}) };
+  const schema = Array.isArray(event.registrationFormSchema)
+    ? (event.registrationFormSchema as RegistrationFormField[])
+    : [];
+  registrationFields.value = buildBuilderFields(schema);
+
+  if (options.syncCommunity && event.communityId) {
+    eventCommunityId.value = event.communityId;
+  }
+  if (options.setSubtitle) {
+    subtitle.value = titleText;
+  }
+  if (options.includeGalleries) {
+    galleries.value = event.galleries ?? [];
+  }
+};
+
 const load = async () => {
   if (communityId && !eventId) {
     const community = await fetchConsoleCommunity(communityId);
@@ -698,28 +927,8 @@ const load = async () => {
   }
   try {
     const event = await fetchConsoleEvent(eventId);
-    subtitle.value = getLocalizedText(event.title);
-    form.title = getLocalizedText(event.title);
-    form.description = getLocalizedText(event.description);
-    form.descriptionHtml = event.descriptionHtml ?? '';
-    form.category = event.category ?? '';
-    form.locationText = event.locationText;
-    form.locationLat = event.locationLat ?? null;
-    form.locationLng = event.locationLng ?? null;
-    form.startTime = toLocalInput(event.startTime);
-    form.endTime = toLocalInput(event.endTime ?? event.startTime);
-    form.regStartTime = toLocalInput(event.regStartTime ?? event.startTime);
-    form.regEndTime = toLocalInput(event.regEndTime ?? event.regDeadline);
-    form.minParticipants = event.minParticipants ?? 0;
-    form.maxParticipants = event.maxParticipants ?? 40;
-    form.visibility = event.visibility;
-    form.requireApproval = event.requireApproval;
-    form.ticketPrice = event.ticketTypes[0]?.price ?? 0;
-    form.config = { ...defaultConfig(), ...(event.config ?? {}) };
-    registrationFields.value = buildBuilderFields(event.registrationFormSchema ?? []);
-    if (event.galleries && event.galleries.length) {
-      galleries.value = event.galleries;
-    } else {
+    applyEventDetailToForm(event, { syncCommunity: true, setSubtitle: true, includeGalleries: true });
+    if (!event.galleries?.length) {
       await reloadGallery();
     }
   } catch (err) {
@@ -769,10 +978,141 @@ const scrollToSection = (section: string) => {
   }
 };
 
+const formatCopyRange = (start: string, end?: string) => {
+  const startText = new Date(start).toLocaleString('ja-JP', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  if (!end) return startText;
+  const endText = new Date(end).toLocaleString('ja-JP', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${startText}〜${endText}`;
+};
+
+const copyStatusLabel = (status: string) => {
+  switch (status) {
+    case 'open':
+      return '受付中';
+    case 'closed':
+      return '已结束';
+    default:
+      return '草稿';
+  }
+};
+
 const triggerCoverPicker = () => {
   if (coverInputRef.value) {
     coverInputRef.value.click();
   }
+};
+
+const loadCopyEvents = async () => {
+  if (!eventCommunityId.value) return;
+  copyLoading.value = true;
+  copyError.value = null;
+  try {
+    copyEvents.value = await fetchConsoleCommunityEvents(eventCommunityId.value);
+  } catch (err) {
+    copyError.value = err instanceof Error ? err.message : '无法加载历史活动，请稍后再试';
+  } finally {
+    copyLoading.value = false;
+  }
+};
+
+const importGalleryToPending = async (detail: ConsoleEventDetail) => {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
+  if (!detail.galleries?.length) return;
+  revokeLocalCoverPreviews();
+  const gallerySlice = detail.galleries.slice(0, MAX_COVERS);
+  const tasks = gallerySlice.map(async (item, index) => {
+    try {
+      const response = await fetch(item.imageUrl);
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const extension = blob.type.includes('png') ? 'png' : 'jpg';
+      const fileName = `copied-${Date.now()}-${index}.${extension}`;
+      const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const id = `${fileName}-${Math.random().toString(36).slice(2)}`;
+      pendingCoverFiles.value.push({ id, file });
+      const objectUrl = URL.createObjectURL(file);
+      localCoverPreviews.value.push({
+        id,
+        imageUrl: objectUrl,
+        order: index,
+      });
+    } catch (err) {
+      console.warn('Failed to import gallery cover', err);
+    }
+  });
+  await Promise.all(tasks);
+};
+
+const openCopyOverlay = async () => {
+  if (!eventCommunityId.value) {
+    error.value = '请选择社群后再复制历史活动';
+    return;
+  }
+  showCopyOverlay.value = true;
+  if (!copyEvents.value.length && !copyLoading.value) {
+    await loadCopyEvents();
+  }
+};
+
+const closeCopyOverlay = () => {
+  showCopyOverlay.value = false;
+};
+
+const handleCopyFromEvent = async (sourceEventId: string) => {
+  copySelectingId.value = sourceEventId;
+  copyError.value = null;
+  try {
+    const detail = await fetchConsoleEvent(sourceEventId);
+    applyEventDetailToForm(detail, {
+      includeGalleries: Boolean(eventId),
+    });
+    if (!eventId) {
+      await importGalleryToPending(detail);
+    }
+    aiPrefillNotice.value = `已复制「${getLocalizedText(detail.title) || '历史活动'}」内容，请根据实际情况调整。`;
+    showCopyOverlay.value = false;
+  } catch (err) {
+    copyError.value = err instanceof Error ? err.message : '复制失败，请稍后再试';
+  } finally {
+    copySelectingId.value = null;
+  }
+};
+
+const revokeLocalCoverPreviews = () => {
+  localCoverPreviews.value.forEach((item) => URL.revokeObjectURL(item.imageUrl));
+  localCoverPreviews.value = [];
+  pendingCoverFiles.value = [];
+};
+
+const setLocalCoverPreviews = (files: File[]) => {
+  const startOrder = localCoverPreviews.value.length;
+  files.forEach((file, idx) => {
+    const url = URL.createObjectURL(file);
+    const id = `local-${Date.now()}-${idx}`;
+    localCoverPreviews.value.push({
+      id,
+      imageUrl: url,
+      order: startOrder + idx,
+    });
+    pendingCoverFiles.value.push({ id, file });
+  });
+};
+
+const removeLocalCoverPreview = (coverId: string) => {
+  const preview = localCoverPreviews.value.find((item) => item.id === coverId);
+  if (preview) {
+    URL.revokeObjectURL(preview.imageUrl);
+  }
+  localCoverPreviews.value = localCoverPreviews.value.filter((item) => item.id !== coverId);
+  pendingCoverFiles.value = pendingCoverFiles.value.filter((item) => item.id !== coverId);
 };
 
 const buildContent = (text: string) => ({
@@ -825,6 +1165,184 @@ const removeField = (uuid: string) => {
   registrationFields.value = registrationFields.value.filter((field) => field.uuid !== uuid);
 };
 
+const setCaretToEnd = (target: HTMLElement) => {
+  const range = document.createRange();
+  range.selectNodeContents(target);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+};
+
+const focusFieldInput = (fieldId: string, key: string) => {
+  nextTick(() => {
+    const selector = `[data-field="${key}-${fieldId}"]`;
+    const target = document.querySelector<HTMLElement>(selector);
+    if (target) {
+      target.focus();
+      if (target instanceof HTMLInputElement) {
+        const length = target.value.length;
+        target.setSelectionRange(length, length);
+      } else {
+        setCaretToEnd(target);
+      }
+    }
+  });
+};
+
+const focusMainInline = (key: 'title' | 'locationText') => {
+  nextTick(() => {
+    const target = key === 'title' ? titleInputRef.value : locationInputRef.value;
+    if (!target) return;
+    target.focus();
+    target.setSelectionRange(target.value.length, target.value.length);
+  });
+};
+
+const handleLocationInput = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  form.locationText = input.value;
+  form.locationLat = null;
+  form.locationLng = null;
+};
+
+const handleInlineFocus = (event: Event) => {
+  const target = event.target as HTMLElement;
+  setCaretToEnd(target);
+};
+
+const focusRefundPolicy = () => {
+  nextTick(() => {
+    if (refundPolicyRef.value) {
+      refundPolicyRef.value.focus();
+      setCaretToEnd(refundPolicyRef.value);
+    }
+  });
+};
+
+const handleRefundPolicyInput = (event: Event) => {
+  const target = event.target as HTMLElement;
+  form.config.refundPolicy = target.textContent ?? '';
+  setCaretToEnd(target);
+};
+
+const minParticipantsDisplay = computed(() =>
+  form.minParticipants != null ? String(form.minParticipants) : '',
+);
+const maxParticipantsDisplay = computed(() =>
+  form.maxParticipants != null ? String(form.maxParticipants) : '',
+);
+
+const handleParticipantsInput = (
+  type: 'min' | 'max',
+  event: Event,
+) => {
+  const input = event.target as HTMLInputElement;
+  const raw = input.value.replace(/[^0-9]/g, '').trim();
+  const value = raw ? Number(raw) : null;
+  if (type === 'min') {
+    form.minParticipants = value;
+  } else {
+    form.maxParticipants = value;
+  }
+  input.value = raw;
+};
+
+const handleTicketInput = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const raw = input.value.replace(/[^0-9]/g, '').trim();
+  if (!raw) {
+    form.ticketPrice = null;
+    input.value = '';
+    return;
+  }
+  const parsed = Number(raw);
+  form.ticketPrice = Number.isFinite(parsed) ? parsed : form.ticketPrice;
+  input.value = String(form.ticketPrice ?? '');
+};
+
+const extractNoteImagesFromHtml = (html?: string | null) => {
+  if (!html) return [];
+  const matches = Array.from(html.matchAll(/<img[^>]*src=["']([^"']+)["'][^>]*>/gi));
+  return matches.map((match, index) => ({
+    id: `html-note-${index}-${Date.now()}`,
+    src: match[1],
+  }));
+};
+
+const openRichTextEditor = () => {
+  noteOverlayContext.value = {
+    text: form.description,
+    html: form.descriptionHtml,
+    images: [...richNoteImages.value],
+  };
+  sessionStorage.setItem(CONSOLE_EVENT_SCROLL_KEY, String(window.scrollY ?? 0));
+  showNoteOverlay.value = true;
+};
+
+const handleNoteOverlaySave = (payload: NoteOverlayContext) => {
+  form.description = payload.text;
+  form.descriptionHtml = payload.html;
+  richNoteImages.value = payload.images;
+  showNoteOverlay.value = false;
+};
+
+const closeNoteOverlay = () => {
+  showNoteOverlay.value = false;
+};
+
+const restoreScrollPosition = () => {
+  const raw = sessionStorage.getItem(CONSOLE_EVENT_SCROLL_KEY);
+  if (!raw) return;
+  sessionStorage.removeItem(CONSOLE_EVENT_SCROLL_KEY);
+  const value = Number(raw);
+  if (Number.isFinite(value)) {
+    const scrollOnce = () => window.scrollTo(0, value);
+    scrollOnce();
+    requestAnimationFrame(scrollOnce);
+  }
+};
+
+const setupMobileMediaQuery = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+  mobileMediaQuery = window.matchMedia('(max-width: 768px)');
+  prefersMobileLayout.value = mobileMediaQuery.matches;
+  handleMobileMediaChange = (event: MediaQueryListEvent) => {
+    prefersMobileLayout.value = event.matches;
+  };
+  if (typeof mobileMediaQuery.addEventListener === 'function') {
+    mobileMediaQuery.addEventListener('change', handleMobileMediaChange);
+  } else if (typeof mobileMediaQuery.addListener === 'function') {
+    mobileMediaQuery.addListener(handleMobileMediaChange);
+  }
+};
+
+const teardownMobileMediaQuery = () => {
+  if (!mobileMediaQuery || !handleMobileMediaChange) return;
+  if (typeof mobileMediaQuery.removeEventListener === 'function') {
+    mobileMediaQuery.removeEventListener('change', handleMobileMediaChange);
+  } else if (typeof mobileMediaQuery.removeListener === 'function') {
+    mobileMediaQuery.removeListener(handleMobileMediaChange);
+  }
+  mobileMediaQuery = null;
+  handleMobileMediaChange = null;
+};
+
+const goToPublishSuccess = (targetEventId: string, fallback: 'edit' | 'list' = 'list') => {
+  if (isMobileLayout.value) {
+    router.replace({
+      name: 'ConsoleMobileEventPublishSuccess',
+      params: { eventId: targetEventId },
+    });
+    return;
+  }
+  if (fallback === 'edit') {
+    router.replace({ name: 'console-event-edit', params: { eventId: targetEventId } });
+  } else {
+    router.replace(backLink.value);
+  }
+};
+
 const persistEvent = async (status: 'draft' | 'open') => {
   submitting.value = true;
   actionLoading.value = status;
@@ -866,14 +1384,13 @@ const persistEvent = async (status: 'draft' | 'open') => {
         ticketTypes: [
           {
             name: buildContent(`${form.title} チケット`),
-            type: form.ticketPrice > 0 ? 'normal' : 'free',
-            price: form.ticketPrice,
+            type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
+            price: form.ticketPrice ?? 0,
           },
         ],
       });
-      await uploadPendingCovers(eventId);
       if (status === 'open') {
-        router.replace(backLink.value);
+        goToPublishSuccess(eventId, 'list');
       }
     } else if (communityId) {
       const event = await createConsoleEvent(communityId, {
@@ -881,13 +1398,19 @@ const persistEvent = async (status: 'draft' | 'open') => {
         ticketTypes: [
           {
             name: buildContent(`${form.title} チケット`),
-            type: form.ticketPrice > 0 ? 'normal' : 'free',
-            price: form.ticketPrice,
+            type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
+            price: form.ticketPrice ?? 0,
           },
         ],
       });
-      await uploadPendingCovers(event.id);
-      router.replace({ name: 'console-event-edit', params: { eventId: event.id } });
+      if (pendingCoverFiles.value.length) {
+        await uploadPendingCovers(event.id);
+      }
+      if (status === 'open') {
+        goToPublishSuccess(event.id, 'edit');
+      } else {
+        router.replace({ name: 'console-event-edit', params: { eventId: event.id } });
+      }
       return;
     } else {
       throw new Error('コミュニティIDが必要です');
@@ -913,53 +1436,91 @@ const handlePreview = () => {
   router.push({ name: 'event-detail', params: { eventId } });
 };
 
-const revokeLocalCoverPreviews = () => {
-  localCoverPreviews.value.forEach((item) => {
-    URL.revokeObjectURL(item.imageUrl);
-  });
-  localCoverPreviews.value = [];
-};
-
-const setLocalCoverPreviews = (files: File[]) => {
-  revokeLocalCoverPreviews();
-  localCoverPreviews.value = files.map((file, idx) => ({
-    id: `local-${Date.now()}-${idx}`,
-    imageUrl: URL.createObjectURL(file),
-    order: idx,
-  }));
-};
-
-const uploadPendingCovers = async (targetEventId: string) => {
-  if (!pendingCoverFiles.value.length) return;
-  try {
-    await uploadEventCovers(targetEventId, pendingCoverFiles.value);
-  } finally {
-    pendingCoverFiles.value = [];
-    revokeLocalCoverPreviews();
-    if (eventId && targetEventId === eventId) {
-      await reloadGallery();
-    }
-  }
+const openAssistant = () => {
+  if (!communityId) return;
+  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId } });
 };
 
 const handleCoverUpload = async (ev: Event) => {
   const input = ev.target as HTMLInputElement;
   if (!input.files || !input.files.length) return;
+  const existing = coverDisplayItems.value.length;
+  if (existing >= MAX_COVERS) {
+    coverError.value = '最多可上传 9 张图片';
+    input.value = '';
+    return;
+  }
   const files = Array.from(input.files);
+  const valid: File[] = [];
+  for (const file of files) {
+    if (!file.type?.startsWith('image/')) {
+      coverError.value = '仅支持上传 jpg/png 等图片文件';
+      continue;
+    }
+    if (file.size > MAX_COVER_SIZE) {
+      coverError.value = '图片过大，请压缩后重新上传';
+      continue;
+    }
+    valid.push(file);
+    if (existing + valid.length >= MAX_COVERS) break;
+  }
+  if (!valid.length) {
+    input.value = '';
+    return;
+  }
   if (!eventId) {
+    pendingCoverFiles.value.push(...valid);
+    setLocalCoverPreviews(valid);
     coverError.value = null;
-    pendingCoverFiles.value = files;
-    setLocalCoverPreviews(files);
     input.value = '';
     return;
   }
   coverError.value = null;
+  uploadingCover.value = true;
   try {
-    await uploadEventCovers(eventId, files);
+    await uploadEventCovers(eventId, valid);
     await reloadGallery();
     input.value = '';
   } catch (err) {
     coverError.value = err instanceof Error ? err.message : '画像アップロードに失敗しました';
+  } finally {
+    uploadingCover.value = false;
+  }
+};
+
+const handleDeleteCover = async (coverId: string) => {
+  if (!eventId) {
+    removeLocalCoverPreview(coverId);
+    return;
+  }
+  uploadingCover.value = true;
+  coverError.value = null;
+  try {
+    galleries.value = await deleteEventCover(eventId, coverId);
+  } catch (err) {
+    coverError.value = err instanceof Error ? err.message : '封面删除失败，请重试';
+  } finally {
+    uploadingCover.value = false;
+  }
+};
+
+const uploadPendingCovers = async (targetEventId: string) => {
+  if (!pendingCoverFiles.value.length) return;
+  uploadingCover.value = true;
+  try {
+    while (pendingCoverFiles.value.length) {
+      const batchEntries = pendingCoverFiles.value.splice(0, MAX_COVERS);
+      await uploadEventCovers(
+        targetEventId,
+        batchEntries.map((entry) => entry.file),
+      );
+    }
+    await reloadGallery();
+    revokeLocalCoverPreviews();
+  } catch (err) {
+    coverError.value = err instanceof Error ? err.message : '封面上传失败，请检查网络';
+  } finally {
+    uploadingCover.value = false;
   }
 };
 
@@ -975,6 +1536,7 @@ const applyAssistantDraftFromStorage = () => {
     if (stored?.description) {
       form.description = stored.description;
       form.descriptionHtml = `<p>${stored.description}</p>`;
+      richNoteImages.value = [];
     }
     if (stored?.notes) {
       form.config.notes = stored.notes;
@@ -983,7 +1545,8 @@ const applyAssistantDraftFromStorage = () => {
       form.config.riskNoticeText = stored.riskNotice;
     }
     if (stored?.ticketPrice != null) {
-      form.ticketPrice = Number(stored.ticketPrice) || 0;
+      const parsed = Number(stored.ticketPrice);
+      form.ticketPrice = Number.isFinite(parsed) ? parsed : form.ticketPrice;
     }
     if (stored?.category && !form.category) {
       form.category = stored.category;
@@ -996,13 +1559,28 @@ const applyAssistantDraftFromStorage = () => {
 };
 
 onMounted(async () => {
+  setupMobileMediaQuery();
   await load();
   applyAssistantDraftFromStorage();
+  restoreScrollPosition();
 });
+
+watch(
+  () => eventCommunityId.value,
+  () => {
+    copyEvents.value = [];
+  },
+);
 
 onUnmounted(() => {
   revokeLocalCoverPreviews();
+  teardownMobileMediaQuery();
 });
+
+onActivated(() => {
+  restoreScrollPosition();
+});
+
 </script>
 
 <style scoped>
@@ -1119,7 +1697,7 @@ select {
 .card {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 0.75rem;
+  border-radius: 12px;
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
@@ -1181,13 +1759,195 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.75rem;
 }
-.field-builder {
-  border: 1px dashed #cbd5f5;
-  border-radius: 0.75rem;
-  padding: 1rem;
+.ios-panel--builder {
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 14px;
+}
+
+.ios-builder-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.builder-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(15, 23, 42, 0.4);
+}
+
+.ios-add-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.ios-field-set {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ios-field-set__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.ios-field-card__delete {
+  border: none;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.ios-form--stack .ios-row {
+  padding: 14px 0;
+}
+
+.ios-panel--builder .ios-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ios-panel--builder .ios-row::after {
+  left: 0;
+  right: 0;
+}
+
+.ios-row--builder-line {
+  cursor: text;
+}
+
+.ios-row--inline-value {
+  cursor: pointer;
+}
+
+.ios-row--tight {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.ios-inline-editor,
+.ios-inline-select {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  text-align: right;
+  padding: 0;
+}
+
+.ios-inline-editor:focus,
+.ios-inline-select:focus {
+  outline: none;
+}
+
+.ios-inline-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  text-align: right;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ios-inline-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.ios-inline-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  text-align: right;
+  padding: 0;
+}
+
+.ios-inline-input:focus {
+  outline: none;
+}
+
+.ios-inline-editor {
+  min-height: 20px;
+}
+
+.ios-inline-editor:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(15, 23, 42, 0.35);
+}
+
+.ios-inline-editor:focus::before {
+  content: '';
+}
+
+.ios-inline-select {
+  appearance: none;
+  background-image: none;
+}
+
+.ios-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 24px;
+}
+
+.ios-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ios-toggle span {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.25);
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+
+.ios-toggle span::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+}
+
+.ios-toggle input:checked + span {
+  background: #0ea5e9;
+}
+
+.ios-toggle input:checked + span::after {
+  transform: translateX(20px);
 }
 .hint {
   font-size: 0.9rem;
@@ -1201,7 +1961,7 @@ select {
 
 .console-section--mobile .section-header {
   background: #fff;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   box-shadow: 0 15px 40px rgba(15, 23, 42, 0.08);
 }
@@ -1217,7 +1977,7 @@ select {
 
 .console-section--mobile .card {
   border: none;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 18px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.98);
@@ -1242,7 +2002,7 @@ select {
 .ios-form {
   display: flex;
   flex-direction: column;
-  border-radius: 24px;
+  border-radius: 12px;
   overflow: hidden;
   background: #fff;
   margin-bottom: 18px;
@@ -1308,6 +2068,10 @@ select {
   opacity: 0;
 }
 
+.ios-row--borderless::after {
+  opacity: 0;
+}
+
 .ios-row--field {
   align-items: center;
 }
@@ -1347,6 +2111,45 @@ select {
   font-size: 16px;
   color: #0f172a;
   text-align: right;
+  white-space: nowrap;
+}
+
+.ios-row--input {
+  cursor: default;
+}
+
+.ios-value--inline-input {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.ios-value--inline-input input {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  width: 100%;
+  text-align: right;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ios-value--inline-input input:focus {
+  outline: none;
+}
+
+.ios-value--inline-input input::-webkit-outer-spin-button,
+.ios-value--inline-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.ios-suffix {
+  font-size: 14px;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .ios-value--multiline {
@@ -1360,6 +2163,12 @@ select {
 
 .ios-value--placeholder {
   color: rgba(15, 23, 42, 0.45);
+}
+
+.ios-value--switch {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .select-option-list {
@@ -1553,7 +2362,7 @@ select {
 
 .mobile-hero-card {
   background: linear-gradient(135deg, #081a32, #0f3c57 55%, #0f6971);
-  border-radius: 24px;
+  border-radius: 12px;
   padding: 20px;
   color: #ecf5ff;
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
@@ -1612,6 +2421,171 @@ select {
   background: rgba(255, 255, 255, 0.3);
 }
 
+.copy-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  gap: 12px;
+}
+
+.copy-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: #0f172a;
+}
+
+.copy-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.copy-btn {
+  border: none;
+  background: linear-gradient(135deg, #0090d9, #0ccbaf);
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 12px 30px rgba(0, 144, 217, 0.25);
+}
+
+.copy-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.copy-sheet {
+  width: 100%;
+  max-height: 70vh;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  padding: 18px 20px 28px;
+  box-shadow: 0 -20px 60px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.copy-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sheet-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.copy-sheet-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.copy-sheet-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.copy-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.copy-list-item {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.copy-list-item:disabled {
+  opacity: 0.7;
+}
+
+.copy-list-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.copy-list-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-list-meta {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.copy-list-status {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.65);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.copy-status {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+  margin: 8px 0;
+}
+
+.copy-status.error {
+  color: #dc2626;
+}
+
+.copy-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(15, 23, 42, 0.15);
+  border-top-color: #0f172a;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 .cover-card {
   gap: 1rem;
 }
@@ -1621,10 +2595,10 @@ select {
   border: 1px dashed rgba(8, 26, 50, 0.25);
   border-radius: 28px;
   background: rgba(8, 26, 50, 0.02);
-  padding: 24px 18px;
+  padding: 12px;
+  min-height: 100px;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 12px;
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
@@ -1661,14 +2635,14 @@ select {
 .hero-cover-gallery {
   width: 100%;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
 }
 
 .cover-card-thumb,
 .hero-cover-thumb {
-  width: 100px;
-  height: 100px;
+  width: 84px;
+  height: 84px;
   border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.15);
@@ -1682,6 +2656,85 @@ select {
   object-fit: cover;
 }
 
+.hero-cover-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hero-cover-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-cover-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(236, 245, 255, 0.85);
+}
+
+.hero-cover-rules {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(236, 245, 255, 0.7);
+}
+
+.hero-cover-add--solo {
+  width: 100%;
+  min-height: 96px;
+}
+
+.hero-cover-thumb {
+  position: relative;
+}
+
+.hero-cover-main {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.hero-cover-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.hero-cover-add {
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ecf5ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.hero-cover-add span {
+  font-size: 24px;
+  line-height: 1;
+}
+
 .hero-top {
   display: flex;
   flex-direction: column;
@@ -1689,25 +2742,105 @@ select {
 }
 
 .hero-cover-panel {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 26px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.05));
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   padding: 18px;
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
-  color: #0f172a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  color: #ecf5ff;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  backdrop-filter: blur(8px);
 }
 
 .hero-cover-head {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.7);
+  color: rgba(236, 245, 255, 0.9);
+}
+
+.hero-assistant {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(15, 76, 92, 0.2);
+  color: #ecf5ff;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.cover-upload-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+}
+
+.cover-upload-box {
+  background: rgba(18, 24, 38, 0.9);
+  color: #f8fafc;
+  padding: 18px 26px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.4);
+}
+
+.cover-upload-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(248, 250, 252, 0.3);
+  border-top-color: #f8fafc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .hidden-input {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.builder-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.builder-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.builder-hint--inline {
+  margin-top: 4px;
+  text-align: right;
+}
+
+.ios-add-btn--full {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.ios-inline-editor--multiline {
+  min-height: 36px;
+  text-align: right;
+  white-space: pre-wrap;
 }
 
 .console-section--mobile input,
@@ -1716,6 +2849,14 @@ select {
   border-radius: 14px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   padding: 10px 12px;
+}
+
+.console-section--mobile .ios-inline-input {
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  -webkit-appearance: none;
+  background: transparent;
 }
 
 .console-section--mobile .actions {

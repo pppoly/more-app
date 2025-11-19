@@ -147,7 +147,7 @@ onMounted(() => {
 }
 .card {
   background: #fff;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   display: flex;

@@ -420,7 +420,7 @@ const onAvatarSelected = async (event: Event) => {
 
 .service-form {
   border: none;
-  border-radius: 20px;
+  border-radius: 12px;
   background: #fff;
   padding: 1rem 1.25rem;
   display: flex;

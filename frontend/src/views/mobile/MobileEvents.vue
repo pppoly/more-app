@@ -69,6 +69,7 @@ import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const router = useRouter();
 const events = ref<EventSummary[]>([]);
@@ -170,7 +171,7 @@ const hashToIndex = (value: string, length: number) => {
 const coverStyleForEvent = (event: EventSummary) => {
   if (event.coverImageUrl) {
     return {
-      backgroundImage: `url(${event.coverImageUrl})`,
+      backgroundImage: `url(${resolveAssetUrl(event.coverImageUrl)})`,
       backgroundPosition: 'center',
       backgroundSize: 'cover',
     };

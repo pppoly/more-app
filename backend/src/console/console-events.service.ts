@@ -14,7 +14,7 @@ export class ConsoleEventsService {
 
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
-    return this.prisma.event.findMany({
+    const events = await this.prisma.event.findMany({
       where: { communityId },
       orderBy: { startTime: 'asc' },
       select: {
@@ -24,8 +24,22 @@ export class ConsoleEventsService {
         endTime: true,
         status: true,
         visibility: true,
+        galleries: {
+          orderBy: { order: 'asc' },
+          take: 1,
+          select: { imageUrl: true },
+        },
       },
     });
+    return events.map((event) => ({
+      id: event.id,
+      title: event.title,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      status: event.status,
+      visibility: event.visibility,
+      coverImageUrl: event.galleries[0]?.imageUrl ?? null,
+    }));
   }
 
   async createEvent(userId: string, communityId: string, payload: any) {
@@ -409,6 +423,47 @@ export class ConsoleEventsService {
 
     const created = await this.prisma.$transaction(creations);
     return created.map((item) => ({ id: item.id, imageUrl: item.imageUrl, order: item.order }));
+  }
+
+  async removeEventCover(userId: string, eventId: string, coverId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const target = await this.prisma.eventGallery.findUnique({ where: { id: coverId } });
+    if (!target || target.eventId !== eventId) {
+      throw new NotFoundException('封面不存在');
+    }
+    await this.prisma.eventGallery.delete({ where: { id: coverId } });
+
+    if (target.imageUrl) {
+      const filename = target.imageUrl.split('/').pop();
+      if (filename) {
+        const filePath = join(EVENT_UPLOAD_ROOT, eventId, filename);
+        try {
+          await fs.unlink(filePath);
+        } catch (err) {
+          // 文件可能已不存在，忽略
+        }
+      }
+    }
+
+    const remaining = await this.prisma.eventGallery.findMany({
+      where: { eventId },
+      orderBy: { order: 'asc' },
+    });
+
+    await this.prisma.$transaction(
+      remaining.map((item, index) =>
+        this.prisma.eventGallery.update({
+          where: { id: item.id },
+          data: { order: index, isCover: index === 0 },
+        }),
+      ),
+    );
+
+    return remaining.map((item, index) => ({
+      id: item.id,
+      imageUrl: item.imageUrl,
+      order: index,
+    }));
   }
 
   private prepareEventData(payload: any, isUpdate = false): Prisma.EventCreateInput | Prisma.EventUpdateInput {

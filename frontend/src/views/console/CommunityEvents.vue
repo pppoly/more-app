@@ -30,7 +30,10 @@
       </div>
       <ul v-else class="chat-feed">
         <li v-for="event in events" :key="event.id" class="feed-card">
-          <div class="thumb">{{ coverInitial(event) }}</div>
+          <div class="thumb" :class="{ 'thumb--image': Boolean(coverImageUrl(event)) }">
+            <img v-if="coverImageUrl(event)" :src="coverImageUrl(event)" alt="cover" />
+            <span v-else>{{ coverInitial(event) }}</span>
+          </div>
           <div class="feed-info">
             <p class="feed-title">{{ getTitle(event) }}</p>
             <p class="feed-sub">{{ formatDate(event.startTime) }} · {{ event.status }}</p>
@@ -67,6 +70,7 @@ import { useRoute } from 'vue-router';
 import { fetchConsoleCommunity, fetchConsoleCommunityEvents } from '../../api/client';
 import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const route = useRoute();
 const communityId = route.params.communityId as string;
@@ -98,6 +102,8 @@ const formatDate = (value: string) =>
     hour: '2-digit',
   });
 const coverInitial = (event: ConsoleEventSummary) => getTitle(event).charAt(0).toUpperCase();
+const coverImageUrl = (event: ConsoleEventSummary) =>
+  event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : null;
 
 onMounted(load);
 </script>
@@ -169,6 +175,19 @@ onMounted(load);
   justify-content: center;
   font-weight: 700;
   font-size: 1.3rem;
+}
+
+.thumb--image {
+  background: transparent;
+  padding: 0;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 16px;
+  display: block;
 }
 
 .feed-info {

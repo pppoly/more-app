@@ -241,6 +241,18 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'communities/:communityId/events/note-editor',
+        name: 'ConsoleMobileEventNoteEditor',
+        component: () => import('../views/console/mobile/ConsoleEventNoteEditorMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-活动详情编辑',
+        },
+      },
+      {
         path: 'communities/:communityId/settings',
         name: 'ConsoleMobileCommunitySettings',
         component: () => import('../views/console/mobile/ConsoleCommunitySettingsMobile.vue'),
@@ -252,6 +264,17 @@ const routes: RouteRecordRaw[] = [
         name: 'ConsoleMobileEventManage',
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
         meta: { devPageName: 'Console-活动管理' },
+      },
+      {
+        path: 'events/:eventId/publish-success',
+        name: 'ConsoleMobileEventPublishSuccess',
+        component: () => import('../views/console/mobile/ConsoleEventPublishSuccessMobile.vue'),
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-活动发布成功',
+        },
       },
       {
         path: 'settings/payout',

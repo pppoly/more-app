@@ -70,6 +70,7 @@ import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useAuth } from '../../../composables/useAuth';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
 
 const route = useRoute();
 const router = useRouter();
@@ -92,6 +93,8 @@ const communityName = computed(() => {
 });
 const isAdmin = computed(() => Boolean(user.value?.isAdmin));
 
+const DEFAULT_EVENT_COVER = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event.png';
+
 const normalizedEvents = computed(() =>
   events.value.map((event) => ({
     id: event.id,
@@ -99,7 +102,7 @@ const normalizedEvents = computed(() =>
     status: event.status,
     dateTimeText: formatDate(event.startTime, event.endTime),
     entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-    coverUrl: 'https://placehold.co/120x120?text=Event',
+    coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : DEFAULT_EVENT_COVER,
   })),
 );
 
@@ -133,7 +136,7 @@ const openManage = (eventId: string) => {
 
 const createEvent = () => {
   if (!communityId.value) return;
-  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId: communityId.value } });
+  router.push({ name: 'ConsoleMobileEventForm', params: { communityId: communityId.value } });
 };
 
 const openDashboard = () => {

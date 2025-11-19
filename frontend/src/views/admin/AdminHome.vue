@@ -308,7 +308,7 @@ const closeConstitutionSheet = () => {
 
 .quick-card {
   border: none;
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   background: #fff;
   box-shadow: 0 18px 35px rgba(15, 23, 42, 0.08);

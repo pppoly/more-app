@@ -10,6 +10,14 @@
           会话历史
         </button>
       </div>
+      <section class="assistant-guide">
+        <p class="guide-title">SOCIALMORE AI 使用说明</p>
+        <ol>
+          <li><strong>Speak</strong>：随便说出你的想法或需求。</li>
+          <li><strong>Guide</strong>：AI Coach/Editor 会提问，逐条回答即可。</li>
+          <li><strong>Write</strong>：完成提问后，AI 会生成方案，并可一键送表单或存草案。</li>
+        </ol>
+      </section>
       <div v-if="showHistory" class="history-panel">
         <div class="history-head">
           <p>历史草案</p>
@@ -100,20 +108,16 @@
               </div>
             </div>
           </div>
-          <div v-else class="proposal-card">
+         <div v-else class="proposal-card">
             <p class="proposal-title">{{ msg.payload?.title }}</p>
             <p class="proposal-desc">{{ msg.payload?.description }}</p>
-            <div class="proposal-actions">
-              <button type="button" class="proposal-button" @click="applyProposalToForm(msg.payload?.raw)">
-                送到表单
-              </button>
-              <button type="button" class="proposal-button secondary" @click="saveProposalDraft(msg.payload?.raw)">
-                保存为草案
-              </button>
-            </div>
           </div>
           <span class="chat-meta">{{ msg.createdAt }}</span>
         </div>
+      </div>
+      <div v-if="aiLoading" class="thinking-banner">
+        <span class="thinking-spinner"></span>
+        <p>AI 正在思考...</p>
       </div>
       <div v-if="aiError" class="assistant-error">{{ aiError }}</div>
     </section>
@@ -121,7 +125,7 @@
     <section v-if="aiResult" class="final-plan-card">
       <header>
         <p class="final-plan-label">AI 活动方案</p>
-        <p class="final-plan-title">{{ extractText(aiResult.title) || '活动名称待定' }}</p>
+        <p class="final-plan-title">{{ finalPlanTitle }}</p>
       </header>
       <div class="final-plan-section" v-if="extractText(aiResult.description)">
         <p class="final-plan-subtitle">活动亮点</p>
@@ -136,6 +140,39 @@
           <p class="final-plan-subtitle">风险提示</p>
           <p class="final-plan-text">{{ extractText(aiResult.riskNotice) }}</p>
         </article>
+      </div>
+      <div class="final-plan-section" v-if="finalPlanLogistics.length">
+        <p class="final-plan-subtitle">时间 & 地点</p>
+        <ul class="final-plan-list">
+          <li v-for="item in finalPlanLogistics" :key="`logistics-${item.label}`">
+            <strong>{{ item.label }}：</strong>{{ item.value }}
+          </li>
+        </ul>
+      </div>
+      <div class="final-plan-section" v-if="finalPlanTickets.length">
+        <p class="final-plan-subtitle">票务设置</p>
+        <ul class="final-plan-ticket-list">
+          <li v-for="(ticket, idx) in finalPlanTickets" :key="`ticket-${idx}`" class="final-plan-ticket">
+            <span>{{ ticket.name }}</span>
+            <span>{{ formatTicketPrice(ticket.price) }}</span>
+          </li>
+        </ul>
+      </div>
+      <div class="final-plan-section" v-if="finalPlanRequirements.length">
+        <p class="final-plan-subtitle">参加要求</p>
+        <ul class="final-plan-list">
+          <li v-for="(req, idx) in finalPlanRequirements" :key="`req-${idx}`">
+            {{ req.label }}{{ req.type === 'must' ? '（必需）' : '' }}
+          </li>
+        </ul>
+      </div>
+      <div class="final-plan-section" v-if="finalPlanFormFields.length">
+        <p class="final-plan-subtitle">报名表字段</p>
+        <ul class="final-plan-list">
+          <li v-for="(field, idx) in finalPlanFormFields" :key="`form-${idx}`">
+            {{ field.label }} · {{ field.type }}{{ field.required ? '（必填）' : '' }}
+          </li>
+        </ul>
       </div>
     </section>
 
@@ -156,10 +193,11 @@
         </button>
       </div>
 
-      <section class="assistant-actions" v-if="aiResult">
+      <section class="final-plan-actions" v-if="aiResult">
         <button class="primary gradient" type="button" :disabled="!communityId" @click="goToForm(true)">
-          AI案をフォームに送る
+          送到表单
         </button>
+        <button class="primary" type="button" @click="saveProposalDraft(aiResult!)">保存草案</button>
       </section>
     </div>
   </div>
@@ -317,6 +355,36 @@ const latestCoachPrompts = computed(() => {
 });
 const latestChecklist = ref<string[]>([]);
 const latestConfirmQuestions = ref<string[]>([]);
+const finalPlanTitle = computed(() => {
+  if (!aiResult.value) return '';
+  const title = extractText(aiResult.value.title);
+  return title || qaState.topic || 'AI 提案';
+});
+const finalPlanLogistics = computed(() => {
+  const logistics = aiResult.value?.logistics;
+  if (!logistics) return [];
+  const entries: Array<{ label: string; value: string }> = [];
+  if (logistics.startTime) {
+    entries.push({ label: '开始时间', value: formatDateTime(logistics.startTime) });
+  }
+  if (logistics.endTime) {
+    entries.push({ label: '结束时间', value: formatDateTime(logistics.endTime) });
+  }
+  if (logistics.locationText) {
+    entries.push({ label: '地点', value: logistics.locationText });
+  }
+  if (logistics.locationNote) {
+    entries.push({ label: '地点备注', value: logistics.locationNote });
+  }
+  return entries;
+});
+const finalPlanTickets = computed(() => aiResult.value?.ticketTypes ?? []);
+const finalPlanRequirements = computed(() => aiResult.value?.requirements ?? []);
+const finalPlanFormFields = computed(() => aiResult.value?.registrationForm ?? []);
+const formatTicketPrice = (price?: number) => {
+  if (price == null) return '免费';
+  return `¥${price.toLocaleString('ja-JP')}`;
+};
 
 const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   title: qaState.topic || '',
@@ -507,7 +575,8 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
     pendingQuestion.value = result.options?.[0] ?? null;
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
     const shouldPrepareProposal =
-      result.status === 'ready' || result.status === 'options' || Boolean(result.proposal);
+      (result.status === 'ready' || result.status === 'options' || Boolean(result.proposal)) &&
+      result.stage === 'writer';
     if (shouldPrepareProposal) {
       const finalProposal =
         result.proposal ??
@@ -1058,6 +1127,8 @@ onMounted(async () => {
   background: #fff;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(148, 163, 184, 0.15);
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .final-plan-label {
@@ -1103,6 +1174,37 @@ onMounted(async () => {
   border-radius: 14px;
   background: rgba(248, 250, 252, 0.8);
   border: 1px solid rgba(203, 213, 225, 0.6);
+}
+
+.final-plan-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 13px;
+  color: #0f172a;
+}
+.final-plan-list li {
+  margin: 4px 0;
+}
+.final-plan-list strong {
+  font-weight: 600;
+}
+
+.final-plan-ticket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.final-plan-ticket {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 13px;
 }
 
 .thinking-inline {
@@ -1343,27 +1445,6 @@ onMounted(async () => {
   white-space: pre-line;
 }
 
-.proposal-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.proposal-button {
-  flex: 1;
-  border: none;
-  border-radius: var(--app-border-radius);
-  padding: 8px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-}
-.proposal-button.secondary {
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
-}
-
 .assistant-bottom {
   padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.8), rgba(255, 255, 255, 1));
@@ -1433,17 +1514,68 @@ onMounted(async () => {
   letter-spacing: 0.08em;
 }
 
+.assistant-guide {
+  margin: 12px 16px 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.guide-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #475569;
+  letter-spacing: 0.1em;
+}
+
+.assistant-guide ol {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.assistant-guide li {
+  margin: 4px 0;
+}
+
+.assistant-guide strong {
+  color: #2563eb;
+}
+
 .assistant-error {
   font-size: 12px;
   color: #f87171;
   text-align: center;
 }
 
-.assistant-actions {
+.thinking-banner {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.thinking-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(71, 85, 105, 0.3);
+  border-top-color: #475569;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .primary {
@@ -1463,4 +1595,23 @@ onMounted(async () => {
 .primary:disabled {
   opacity: 0.4;
 }
+
+.final-plan-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 16px 24px;
+}
 </style>
+const formatDateTime = (value: string) => {
+  try {
+    return new Date(value).toLocaleString('ja-JP', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
+};

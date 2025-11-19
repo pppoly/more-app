@@ -155,7 +155,7 @@ onMounted(() => {
 }
 
 .error-card {
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 16px;
   background: #fff1f2;
   color: #b91c1c;

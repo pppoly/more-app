@@ -43,6 +43,11 @@ export class EventsService {
             price: true,
           },
         },
+        galleries: {
+          orderBy: { order: 'asc' },
+          take: 1,
+          select: { imageUrl: true },
+        },
       },
     });
 
@@ -62,6 +67,7 @@ export class EventsService {
         description: event.description,
         community: event.community,
         priceRange: { min, max },
+        coverImageUrl: event.galleries[0]?.imageUrl ?? null,
       };
     });
   }

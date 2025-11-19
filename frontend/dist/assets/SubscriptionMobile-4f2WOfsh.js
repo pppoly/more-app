@@ -1,1 +1,0 @@
-import{_ as e,a as t,b as o}from"./index-OEpVzuiB.js";const c={},s={class:"p-4 text-center text-slate-500"};function n(r,a){return o(),t("div",s," Console Mobile Subscription Placeholder ")}const l=e(c,[["render",n]]);export{l as default};

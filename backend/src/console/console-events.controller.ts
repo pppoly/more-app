@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -58,6 +59,11 @@ export class ConsoleEventsController {
     @Req() req: any,
   ) {
     return this.consoleEventsService.uploadEventCovers(req.user.id, eventId, files);
+  }
+
+  @Delete(':eventId/covers/:coverId')
+  removeCover(@Param('eventId') eventId: string, @Param('coverId') coverId: string, @Req() req: any) {
+    return this.consoleEventsService.removeEventCover(req.user.id, eventId, coverId);
   }
 
   @Get(':eventId/registrations/export')
