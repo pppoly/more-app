@@ -237,7 +237,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import { fetchConsoleCommunity, fetchConsoleCommunityEvents } from '../../../api/client';
+import {
+  fetchConsoleCommunity,
+  fetchConsoleCommunityEvents,
+  startCommunityStripeOnboarding,
+} from '../../../api/client';
 import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
@@ -415,6 +419,21 @@ const statusBadgeClass = (status: string) => {
       return 'bg-slate-100 text-slate-500';
     default:
       return 'bg-amber-100 text-amber-700';
+  }
+};
+
+const stripeOnboardLoading = ref(false);
+const startStripeOnboard = async () => {
+  if (!communityId.value || stripeOnboardLoading.value) return;
+  stripeOnboardLoading.value = true;
+  try {
+    const { url } = await startCommunityStripeOnboarding(communityId.value);
+    window.open(url, '_blank');
+  } catch (err) {
+    console.error('Failed to start Stripe onboarding', err);
+    window.alert('Stripe 連携リンクの取得に失敗しました');
+  } finally {
+    stripeOnboardLoading.value = false;
   }
 };
 

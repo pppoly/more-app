@@ -122,6 +122,8 @@ export class EventsService {
   }
 
   async getEventById(id: string) {
+    const DEFAULT_AVATAR =
+      'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
     const event = await this.prisma.event.findUnique({
       where: { id },
       select: {
@@ -136,21 +138,42 @@ export class EventsService {
         locationText: true,
         locationLat: true,
         locationLng: true,
-        title: true,
-        description: true,
-        descriptionHtml: true,
-        registrationFormSchema: true,
-        config: true,
-        category: true,
-        minParticipants: true,
-        maxParticipants: true,
-        community: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
+      title: true,
+      description: true,
+      descriptionHtml: true,
+      registrationFormSchema: true,
+      config: true,
+      category: true,
+      minParticipants: true,
+      maxParticipants: true,
+      registrations: {
+        where: { status: { in: ['paid', 'approved'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 24,
+        select: {
+          id: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatarUrl: true,
+            },
           },
         },
+      },
+      _count: {
+        select: { registrations: { where: { status: { in: ['paid', 'approved'] } } } },
+      },
+      community: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          coverImageUrl: true,
+          description: true,
+        },
+      },
         ticketTypes: {
           select: {
             id: true,
@@ -167,7 +190,41 @@ export class EventsService {
       throw new NotFoundException('Event not found');
     }
 
-    return event;
+    const currentParticipants = event._count?.registrations ?? 0;
+    const capacity = event.maxParticipants ?? null;
+    const regProgress = capacity ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : 0;
+    const attendeeAvatars = event.registrations
+      .map((reg) => reg.user?.avatarUrl ?? DEFAULT_AVATAR)
+      .filter((url): url is string => Boolean(url));
+    const participants = event.registrations.map((reg) => ({
+      id: reg.id,
+      name: reg.user?.name ?? 'ゲスト',
+      avatarUrl: reg.user?.avatarUrl ?? DEFAULT_AVATAR,
+    }));
+
+    const communityLogo = this.extractCommunityLogo(event.community?.description) ?? event.community?.coverImageUrl ?? null;
+
+    const mergedConfig = {
+      ...(event.config as Record<string, any>),
+      communityLogoUrl: communityLogo ?? undefined,
+      attendeeAvatars,
+      participants,
+      participantCount: participants.length,
+      currentParticipants,
+      regCount: currentParticipants,
+      capacity,
+      regProgress,
+      regSummary:
+        (event.config as any)?.regSummary ??
+        `${currentParticipants}名が参加予定${capacity ? ` / 定員 ${capacity}名` : ''}`,
+      showRegistrationStatus: true,
+    };
+
+    const { registrations, _count, ...rest } = event;
+    return {
+      ...rest,
+      config: mergedConfig,
+    };
   }
 
   async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {

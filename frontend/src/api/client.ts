@@ -29,8 +29,15 @@ import type {
   OrganizerApplicationStatus,
   PricingPlan,
   StripeCheckoutResponse,
+  SubscriptionResponse,
   UserProfile,
 } from '../types/api';
+import type { StripeOnboardResponse } from '../types/console';
+
+export interface CommunityPortalConfig {
+  theme?: string;
+  layout?: string[];
+}
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -74,12 +81,32 @@ export async function fetchCommunityBySlug(slug: string): Promise<CommunityPorta
   return data;
 }
 
+export async function fetchCommunityPortalConfig(communityId: string) {
+  const { data } = await apiClient.get<{ communityId: string; config: CommunityPortalConfig }>(
+    `/console/communities/${communityId}/portal`,
+  );
+  return data;
+}
+
+export async function updateCommunityPortalConfig(communityId: string, payload: CommunityPortalConfig) {
+  const { data } = await apiClient.patch<{ communityId: string; config: CommunityPortalConfig }>(
+    `/console/communities/${communityId}/portal`,
+    payload,
+  );
+  return data;
+}
+
 export async function uploadCommunityAsset(file: File, type: 'cover' | 'logo'): Promise<{ imageUrl: string }> {
   const formData = new FormData();
   formData.append('file', file);
   const { data } = await apiClient.post<{ imageUrl: string }>(`/console/communities/uploads?type=${type}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data;
+}
+
+export async function startCommunityStripeOnboarding(communityId: string): Promise<StripeOnboardResponse> {
+  const { data } = await apiClient.post<StripeOnboardResponse>(`/console/communities/${communityId}/stripe/onboard`, {});
   return data;
 }
 
@@ -154,22 +181,13 @@ export async function fetchPricingPlans(): Promise<PricingPlan[]> {
   return data;
 }
 
-export async function startCommunityStripeOnboarding(communityId: string): Promise<{ url: string }> {
-  const { data } = await apiClient.post<{ url: string }>(
-    `/console/communities/${communityId}/stripe/onboard`,
-    {},
-  );
-  return data;
-}
-
 export async function subscribeCommunityPlan(
   communityId: string,
   planId: string,
-): Promise<{ planId: string; subscriptionId: string | null }> {
-  const { data } = await apiClient.post<{ planId: string; subscriptionId: string | null }>(
-    `/console/communities/${communityId}/subscription`,
-    { planId },
-  );
+): Promise<SubscriptionResponse> {
+  const { data } = await apiClient.post<SubscriptionResponse>(`/console/communities/${communityId}/subscription`, {
+    planId,
+  });
   return data;
 }
 

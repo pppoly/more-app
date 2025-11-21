@@ -1,1 +1,0 @@
-import{_ as e,b as t,e as o}from"./index-CT-XDF2b.js";const s={},c={class:"p-4 text-center text-slate-500"};function n(a,r){return o(),t("div",c," Console Mobile Payout Settings Placeholder ")}const _=e(s,[["render",n]]);export{_ as default};

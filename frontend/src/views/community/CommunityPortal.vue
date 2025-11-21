@@ -1,5 +1,5 @@
 <template>
-  <section class="community-portal-mobile">
+  <section class="community-portal-mobile" :class="themeClass">
 
     <div v-if="loading" class="portal-skeleton">
       <div class="portal-skeleton__hero"></div>
@@ -15,6 +15,13 @@
           <h1>{{ community.name }}</h1>
           <div class="portal-hero__labels" v-if="community.labels.length">
             <span v-for="label in community.labels" :key="label">#{{ label }}</span>
+          </div>
+          <div class="portal-hero__ticker" v-if="heroTicker.length">
+            <div class="ticker-track">
+              <span v-for="item in heroTicker" :key="item.id + '-ticker'" class="ticker-chip">
+                {{ item.text }}
+              </span>
+            </div>
           </div>
         </div>
       </article>
@@ -117,6 +124,7 @@ import { useRoute } from 'vue-router';
 import { fetchCommunityBySlug } from '../../api/client';
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const route = useRoute();
 const slug = computed(() => route.params.slug as string);
@@ -160,15 +168,21 @@ watch(community, () => {
 });
 
 const heroStyle = computed(() => {
-  const cover = community.value?.coverImageUrl;
+  const cover = community.value?.coverImageUrl ? resolveAssetUrl(community.value.coverImageUrl) : '';
   const fallback =
     'linear-gradient(135deg, rgba(15, 23, 42, 0.5), rgba(3, 7, 18, 0.85)), url("https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1400&q=80")';
   return {
     backgroundImage: cover
       ? `linear-gradient(135deg, rgba(15, 23, 42, 0.45), rgba(3, 7, 18, 0.9)), url(${cover})`
       : fallback,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
   };
 });
+
+const themeName = computed(() => community.value?.portalConfig?.theme || 'immersive');
+const themeClass = computed(() => [`portal-theme-${themeName.value}`]);
 
 const formattedEvents = computed(() =>
   (community.value?.events ?? []).map((event) => ({
@@ -185,6 +199,18 @@ const formattedEvents = computed(() =>
     statusClass: event.status === 'open' ? 'open' : 'closed',
   })),
 );
+
+const heroUpdates = computed(() => {
+  const events = formattedEvents.value;
+  if (!events.length) {
+    return [{ id: 'empty', text: '最新の活動を準備中です' }];
+  }
+  return events.map((event) => ({
+    id: event.id,
+    text: `${event.status === 'open' ? '新着募集' : 'アーカイブ'} · ${event.title}`,
+  }));
+});
+const heroTicker = computed(() => [...heroUpdates.value, ...heroUpdates.value]);
 
 const scrollToEvents = () => {
   eventsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -203,9 +229,7 @@ const highlightMoments = computed(() =>
   pastEvents.value.slice(0, 3).map((event, index) => ({
     id: `${event.id}-${index}`,
     title: event.title,
-    image:
-      community.value?.coverImageUrl ??
-      'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=800&q=80',
+    image: resolveAssetUrl(community.value?.coverImageUrl) || 'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=800&q=80',
   })),
 );
 </script>
@@ -216,6 +240,40 @@ const highlightMoments = computed(() =>
   flex-direction: column;
   gap: 1rem;
   padding-bottom: 2rem;
+  --hero-overlay-from: rgba(15, 23, 42, 0.15);
+  --hero-overlay-to: rgba(2, 6, 23, 0.82);
+  --card-bg: #fff;
+  --chip-bg: rgba(255, 255, 255, 0.2);
+  --chip-border: rgba(255, 255, 255, 0.35);
+}
+
+.portal-theme-clean {
+  --hero-overlay-from: rgba(255, 255, 255, 0.15);
+  --hero-overlay-to: rgba(15, 23, 42, 0.25);
+  --card-bg: #f8fafc;
+  --chip-bg: rgba(15, 23, 42, 0.07);
+  --chip-border: rgba(15, 23, 42, 0.12);
+}
+
+.portal-theme-immersive {
+  --hero-overlay-from: rgba(15, 23, 42, 0.2);
+  --hero-overlay-to: rgba(2, 6, 23, 0.85);
+}
+
+.portal-theme-warm {
+  --hero-overlay-from: rgba(248, 180, 0, 0.35);
+  --hero-overlay-to: rgba(249, 115, 22, 0.65);
+  --card-bg: #fff7ed;
+  --chip-bg: rgba(249, 115, 22, 0.15);
+  --chip-border: rgba(249, 115, 22, 0.25);
+}
+
+.portal-theme-collage {
+  --hero-overlay-from: rgba(99, 102, 241, 0.32);
+  --hero-overlay-to: rgba(15, 23, 42, 0.8);
+  --card-bg: #f8f7ff;
+  --chip-bg: rgba(99, 102, 241, 0.15);
+  --chip-border: rgba(99, 102, 241, 0.25);
 }
 
 .portal-skeleton {
@@ -264,24 +322,24 @@ const highlightMoments = computed(() =>
 
 .portal-hero {
   position: relative;
-  min-height: 220px;
+  min-height: 240px;
   border-radius: 1.25rem;
   overflow: hidden;
   background-size: cover;
   background-position: center;
-  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.2);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
 }
 
 .portal-hero__overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.1), rgba(2, 6, 23, 0.8));
+  background: linear-gradient(180deg, var(--hero-overlay-from), var(--hero-overlay-to));
 }
 
 .portal-hero__content {
   position: relative;
   z-index: 1;
-  padding: 1.5rem;
+  padding: 1.2rem 1.25rem 1.4rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -303,12 +361,44 @@ const highlightMoments = computed(() =>
 .portal-hero__labels span {
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
   font-size: 0.85rem;
 }
 
+.portal-hero__ticker {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+}
+
+.ticker-track {
+  display: inline-flex;
+  gap: 0.5rem;
+  min-width: 100%;
+  animation: ticker 18s linear infinite;
+  will-change: transform;
+}
+
+.ticker-chip {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+@keyframes ticker {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
 .portal-card {
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 1.25rem;
   padding: 1.25rem;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);

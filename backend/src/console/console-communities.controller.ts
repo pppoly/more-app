@@ -117,4 +117,14 @@ export class ConsoleCommunitiesController {
     }
     return this.service.subscribeCommunityPlan(req.user.id, communityId, planId);
   }
+
+  @Get(':communityId/portal')
+  getPortalConfig(@Param('communityId') communityId: string, @Req() req: any) {
+    return this.service.getPortalConfig(req.user.id, communityId);
+  }
+
+  @Patch(':communityId/portal')
+  updatePortalConfig(@Param('communityId') communityId: string, @Req() req: any, @Body() body: any) {
+    return this.service.updatePortalConfig(req.user.id, communityId, body);
+  }
 }

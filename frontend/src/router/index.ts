@@ -14,6 +14,7 @@ import ConsoleAccessLayout from '../views/console/ConsoleAccessLayout.vue';
 import AdminHome from '../views/admin/AdminHome.vue';
 import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
+import StripeReturn from '../views/console/StripeReturn.vue';
 import DesktopLanding from '../views/desktop/DesktopLanding.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
@@ -301,6 +302,13 @@ const routes: RouteRecordRaw[] = [
         meta: { hideTabbar: true, hideShellHeader: true, devPageName: 'Console-社群設定' },
       },
       {
+        path: 'communities/:communityId/portal',
+        name: 'ConsoleMobileCommunityPortal',
+        component: () => import('../views/console/mobile/ConsoleCommunityPortalMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: { hideTabbar: true, hideShellHeader: true, devPageName: 'Console-门户模板' },
+      },
+      {
         path: 'events/:eventId/manage',
         name: 'ConsoleMobileEventManage',
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
@@ -502,6 +510,14 @@ const routes: RouteRecordRaw[] = [
     component: PaymentCancel,
     meta: {
       devPageName: '支付取消',
+    },
+  },
+  {
+    path: '/console/stripe-return',
+    name: 'console-stripe-return',
+    component: StripeReturn,
+    meta: {
+      devPageName: 'Stripe 返回页',
     },
   },
 ];

@@ -16,6 +16,7 @@ export class CommunitiesService {
         coverImageUrl: true,
         labels: true,
         visibleLevel: true,
+        pricingPlanId: true,
         events: {
           where: {
             visibility: 'public',
@@ -40,6 +41,22 @@ export class CommunitiesService {
       throw new NotFoundException('Community not found');
     }
 
-    return community;
+    const portalConfig = this.extractPortalConfig(community.description);
+
+    return {
+      ...community,
+      portalConfig,
+    };
+  }
+
+  private extractPortalConfig(description: any) {
+    const defaultConfig = { theme: 'immersive', layout: ['hero', 'about', 'upcoming', 'past', 'moments'] };
+    if (description && typeof description === 'object' && description._portalConfig) {
+      const cfg = description._portalConfig as any;
+      const theme = typeof cfg.theme === 'string' ? cfg.theme : defaultConfig.theme;
+      const layout = Array.isArray(cfg.layout) && cfg.layout.length ? cfg.layout : defaultConfig.layout;
+      return { theme, layout };
+    }
+    return defaultConfig;
   }
 }

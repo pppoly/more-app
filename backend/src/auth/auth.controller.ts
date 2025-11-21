@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -7,6 +7,7 @@ import { getLineConfig } from './line.config';
 interface DevLoginDto {
   name: string;
   language?: string;
+  secret?: string;
 }
 
 @Controller('auth')
@@ -16,6 +17,15 @@ export class AuthController {
 
   @Post('dev-login')
   async devLogin(@Body() body: DevLoginDto) {
+    const allowDevLogin =
+      process.env.DEV_LOGIN_ENABLED === 'true' || (process.env.NODE_ENV || '').toLowerCase() !== 'production';
+    if (!allowDevLogin) {
+      throw new ForbiddenException('Dev login is disabled in this environment');
+    }
+    const requiredSecret = process.env.DEV_LOGIN_SECRET;
+    if (requiredSecret && body?.secret !== requiredSecret) {
+      throw new ForbiddenException('Invalid dev login secret');
+    }
     return this.authService.devLogin(body);
   }
 

@@ -55,25 +55,29 @@
                 ></button>
               </div>
             </div>
-            <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
           </div>
           <div class="event-hero-info">
             <h1 class="m-text-event-title-main">{{ detail.title }}</h1>
-            <div class="event-hero-actions">
-              <button class="event-action" type="button" @click="shareEvent">
-                <span class="i-lucide-share-2"></span>
-                共有する
-              </button>
-              <button
-                class="event-action"
-                :class="{ 'is-active': isFavoriteEvent }"
-                type="button"
-                @click="handleFavoriteToggle"
-              >
-                <span class="i-lucide-bookmark"></span>
-                お気に入り
-              </button>
+            <div class="event-hero-meta">
+              <div class="event-hero-meta__left">
+                <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
+                <span class="view-count">{{ viewCountLabel }}</span>
+              </div>
+              <div class="event-hero-actions">
+                <button class="event-action-icon" type="button" @click="shareEvent">
+                  <span class="i-lucide-share-2"></span>
+                </button>
+                <button
+                  class="event-action-icon"
+                  :class="{ 'is-active': isFavoriteEvent }"
+                  type="button"
+                  @click="handleFavoriteToggle"
+                >
+                  <span class="i-lucide-bookmark"></span>
+                </button>
+              </div>
             </div>
+            <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
 
@@ -183,7 +187,7 @@
           <div class="m-event-card event-group-card">
             <div class="group-main">
               <button class="group-info" type="button" @click="openCommunityPortal" :disabled="!detail.communitySlug">
-                <div class="group-avatar"></div>
+                <div class="group-avatar" :style="groupAvatarStyle"></div>
                 <div class="group-text">
                   <div class="group-name">{{ detail.hostName }}</div>
                   <div class="m-text-meta">最新ニュースとイベント情報</div>
@@ -226,23 +230,30 @@
       </footer>
     </template>
 
-    <div v-if="showAllParticipants" class="fixed inset-0 z-40 flex items-center justify-center bg-black/50" @click.self="closeAllParticipants">
-      <div class="max-h-[80vh] w-[90vw] max-w-md overflow-y-auto rounded-3xl bg-white p-4">
-        <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-base font-semibold">参加者一覧</h3>
+    <div v-if="showAllParticipants" class="participant-backdrop" @click.self="closeAllParticipants">
+      <div class="participant-sheet" @click.stop>
+        <div class="participant-sheet__handle"></div>
+        <div class="participant-sheet__header">
+          <h3>参加者一覧</h3>
           <button class="participant-close" type="button" @click="closeAllParticipants">
             <span class="i-lucide-x text-lg"></span>
           </button>
         </div>
-        <ul class="participant-list">
-          <li v-for="participant in participantsList" :key="participant.id || participant.name" class="participant-list__item">
-            <div class="participant-list__avatar">
-              <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
-              <span v-else>{{ participantInitial(participant.name) }}</span>
-            </div>
-            <div class="participant-list__name">{{ participant.name || 'ゲスト' }}</div>
-          </li>
-        </ul>
+        <div class="participant-sheet__body">
+          <ul class="participant-list">
+            <li
+              v-for="participant in participantsList"
+              :key="participant.id || participant.name"
+              class="participant-list__item"
+            >
+              <div class="participant-list__avatar">
+                <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
+                <span v-else>{{ participantInitial(participant.name) }}</span>
+              </div>
+              <div class="participant-list__name">{{ participant.name || 'ゲスト' }}</div>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -267,6 +278,7 @@ import type {
   RegistrationFormField,
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
@@ -330,6 +342,42 @@ const detail = computed(() => {
   if (!event.value) return null;
   const start = formatDate(event.value.startTime);
   const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
+  const config = (event.value.config as Record<string, any>) ?? {};
+  const DEFAULT_COMMUNITY_AVATAR =
+    'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+  const currentParticipants = Math.max(
+    0,
+    Number(config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0),
+  );
+  const capacity = typeof event.value.maxParticipants === 'number' ? event.value.maxParticipants : config.capacity ?? null;
+  const regSummary =
+    typeof config.regSummary === 'string' && config.regSummary.trim().length
+      ? config.regSummary
+      : `${currentParticipants}名が参加予定`;
+  const regProgress =
+    capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : 0;
+  const attendeeAvatars: string[] = Array.isArray(config.attendeeAvatars) ? config.attendeeAvatars : [];
+  const participantsRaw: Array<{ id?: string; name?: string; avatarUrl?: string }> = Array.isArray(config.participants)
+    ? config.participants
+    : [];
+  const participants =
+    participantsRaw.length > 0
+      ? participantsRaw
+      : attendeeAvatars.map((url: string, index: number) => ({
+          id: `avatar-${index}`,
+          name: `参加者${index + 1}`,
+          avatarUrl: url,
+        }));
+  const normalizedParticipants = participants.map((p, index) => ({
+    id: p.id ?? `participant-${index}`,
+    name: p.name ?? 'ゲスト',
+    avatarUrl: p.avatarUrl ? resolveAssetUrl(p.avatarUrl) : '',
+  }));
+  const participantCount =
+    config.participantCount ??
+    config.participants?.length ??
+    attendeeAvatars.length ??
+    (capacity ? Math.min(currentParticipants, capacity) : currentParticipants);
   return {
     id: event.value.id,
     status: event.value.status,
@@ -338,12 +386,19 @@ const detail = computed(() => {
     timeFullText: `${start} 〜 ${end}`,
     locationText: event.value.locationText,
     coverUrl: gallery.value[0]?.imageUrl ?? 'https://placehold.co/640x360?text=Event',
-    regSummary: event.value.config?.regSummary ?? '参加状況を確認中',
-    capacityText: event.value.maxParticipants ? `定員 ${event.value.maxParticipants}名` : '定員未設定',
-    regProgress: event.value.config?.regProgress ?? 40,
+    regSummary,
+    capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
+    regProgress,
     priceText: event.value.config?.priceText ?? '無料 / 未定',
     hostName: event.value.community?.name ?? 'SOCIALMORE Community',
     communitySlug: event.value.community?.slug ?? null,
+    communityAvatar:
+      resolveAssetUrl(
+        config.communityLogoUrl ||
+          (event.value.community as any)?.coverImageUrl ||
+          config.communityLogo ||
+          config.communityAvatar,
+      ) || DEFAULT_COMMUNITY_AVATAR,
     descriptionHtml:
       event.value.descriptionHtml ??
       `<p>${getLocalizedText(event.value.description ?? event.value.title)}</p>`,
@@ -351,12 +406,10 @@ const detail = computed(() => {
       typeof event.value.locationLat === 'number' && typeof event.value.locationLng === 'number'
         ? `https://www.google.com/maps/dir/?api=1&destination=${event.value.locationLat},${event.value.locationLng}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`,
-    participants:
-      Array.isArray(event.value.config?.participants) && event.value.config?.participants?.length
-        ? (event.value.config?.participants as Array<{ id?: string; name?: string; avatarUrl?: string }>)
-        : [],
-    participantCount: event.value.config?.participantCount ?? event.value.config?.participants?.length ?? null,
-    showParticipants: event.value.config?.showRegistrationStatus !== false,
+    participantCount,
+    showParticipants: config.showRegistrationStatus !== false,
+    config,
+    participants: normalizedParticipants,
   };
 });
 
@@ -463,6 +516,12 @@ const statusBadge = computed(() => {
   return map[status] ?? { label: 'ステータス未設定', variant: 'is-closed' };
 });
 
+const viewCountLabel = computed(() => {
+  const raw = detail.value?.config?.viewCount ?? detail.value?.config?.views ?? 0;
+  const value = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
+  return `${value}人想去`;
+});
+
 const shouldShowParticipants = computed(() => Boolean(detail.value?.showParticipants));
 const participantsList = computed(() => detail.value?.participants ?? []);
 const participantsTotal = computed(() => detail.value?.participantCount ?? participantsList.value.length ?? 0);
@@ -516,10 +575,47 @@ const goBack = () => {
   router.back();
 };
 
-const shareEvent = () => {
-  if (navigator.share && detail.value) {
-    navigator.share({ title: detail.value.title, url: window.location.href }).catch(() => undefined);
+const shareEvent = async () => {
+  if (!detail.value) return;
+  const payload = { title: detail.value.title, url: window.location.href };
+
+  // 1) 原生分享（优先）
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      showUiMessage('已分享');
+      return;
+    } catch {
+      // ignore and fallback to LINE
+    }
   }
+
+  // 2) LINE 分享页面（Web）
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  window.open(lineShareUrl, '_blank');
+  showUiMessage('已打开 LINE 分享');
+
+  // 3) 额外兜底复制
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(payload.url);
+    }
+  } catch {
+    // ignore
+  }
+};
+
+let uiMessageTimer: number | null = null;
+const uiMessage = ref('');
+
+const showUiMessage = (text: string) => {
+  uiMessage.value = text;
+  if (uiMessageTimer) {
+    window.clearTimeout(uiMessageTimer);
+  }
+  uiMessageTimer = window.setTimeout(() => {
+    uiMessage.value = '';
+  }, 2000);
 };
 
 const handleFavoriteToggle = () => {
@@ -533,6 +629,7 @@ const handleFavoriteToggle = () => {
     return;
   }
   favoritesStore.toggleFavorite(favoritePayload.value);
+  showUiMessage(isFavoriteEvent.value ? '已收藏' : '已取消收藏');
 };
 
 const setSlide = (index: number) => {
@@ -556,10 +653,21 @@ const openCalendar = () => {
 };
 
 const isFollowingCommunity = ref(false);
-
 const toggleFollow = () => {
   isFollowingCommunity.value = !isFollowingCommunity.value;
+  showUiMessage(isFollowingCommunity.value ? '已关注' : '已取消关注');
 };
+
+const groupAvatarStyle = computed(() => {
+  const url = detail.value?.communityAvatar;
+  if (!url) return {};
+  return {
+    backgroundImage: `url(${url})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundColor: '#f8fafc',
+  };
+});
 
 const openCommunityPortal = () => {
   if (!detail.value?.communitySlug) return;
@@ -1012,29 +1120,25 @@ watch(
 .event-carousel {
   position: relative;
   overflow: hidden;
-  background: #050505;
-  min-height: clamp(220px, 55vw, 320px);
+  background: transparent;
 }
 
 .event-carousel__slide {
-  position: absolute;
-  inset: 0;
+  position: relative;
   opacity: 0;
   transition: opacity 0.25s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: none;
 }
 
 .event-carousel__slide.is-active {
   opacity: 1;
-  position: relative;
+  display: block;
 }
 
 .event-cover {
   width: 100%;
-  height: clamp(220px, 55vw, 320px);
-  object-fit: contain;
+  height: auto;
+  object-fit: cover;
   background-color: transparent;
   display: block;
 }
@@ -1086,9 +1190,6 @@ watch(
 }
 
 .event-status-badge {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 12px;
@@ -1119,36 +1220,82 @@ watch(
 }
 
 .event-hero-info {
-  padding: 0 16px 8px;
+  padding: 12px 16px 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.event-hero-actions {
-  margin-top: 8px;
-  display: flex;
-  gap: 8px;
+.event-hero-info .m-text-event-title-main {
+  margin: 0;
+  line-height: 1.2;
 }
 
-.event-action {
-  flex: 1;
-  border: none;
-  border-radius: 999px;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
+.event-hero-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0;
+}
+
+.event-hero-meta__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.event-hero-meta .event-hero-actions {
+  margin-top: 0;
+}
+
+.event-hero-actions {
+  margin-top: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.event-action-icon {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--m-color-border);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff, #f5f7ff);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: rgba(15, 23, 42, 0.05);
   color: var(--m-color-text-primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 
-.event-action.is-active {
-  background: rgba(0, 144, 217, 0.15);
-  color: var(--m-color-primary);
+.event-action-icon .i-lucide-share-2,
+.event-action-icon .i-lucide-bookmark {
+  font-size: 1rem;
+}
+
+.event-action-icon.is-active {
+  background: linear-gradient(135deg, #2563eb, #60a5fa);
+  color: #fff;
+  border-color: #1d4ed8;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
+}
+
+.view-count {
+  font-size: 13px;
+  color: var(--m-color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-hero-toast {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.9);
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--m-color-border);
 }
 
 .event-section {
@@ -1183,6 +1330,11 @@ watch(
   height: 40px;
   border-radius: 12px;
   background-color: var(--m-color-chip-bg);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
 }
 
 .group-name {
@@ -1294,9 +1446,11 @@ watch(
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  border: none;
-  background: #fff;
-  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  background: #f8fafc;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.35);
+  padding: 0;
+  margin: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1310,6 +1464,7 @@ watch(
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .participant-more {
@@ -1373,6 +1528,54 @@ watch(
   font-size: 14px;
   font-weight: 500;
   color: var(--m-color-text-primary);
+}
+
+.participant-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.participant-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  padding: 8px 16px 16px;
+  max-height: 75vh;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.participant-sheet__handle {
+  width: 48px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.12);
+  margin: 6px auto 10px;
+}
+
+.participant-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.participant-sheet__header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.participant-sheet__body {
+  overflow-y: auto;
+  max-height: calc(75vh - 60px);
+  padding-right: 4px;
 }
 
 .sr-only {

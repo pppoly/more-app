@@ -90,13 +90,23 @@
       <section class="form-card">
         <div class="card-head">
           <p class="card-label">社群紹介</p>
-          <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
+          <div class="card-head__right">
+            <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
+            <button class="link-btn" type="button" :disabled="stripeOnboardLoading" @click="startStripeOnboard">
+              <span class="i-lucide-credit-card"></span>
+              {{ stripeOnboardLoading ? '接続中…' : 'Stripe収款を連携' }}
+            </button>
+          </div>
         </div>
         <textarea
           v-model="form.description"
           rows="6"
           placeholder="社群のビジョン・活動内容・歓迎する人などを記載してください。"
         ></textarea>
+        <p v-if="stripeOnboardLink" class="stripe-hint">
+          リンクを開けない場合はこちら:
+          <a :href="stripeOnboardLink" target="_blank">Stripe Onboard</a>
+        </p>
       </section>
 
       <p v-if="error" class="form-error">{{ error }}</p>
@@ -114,7 +124,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchConsoleCommunity, updateConsoleCommunity, uploadCommunityAsset } from '../../../api/client';
+import {
+  fetchConsoleCommunity,
+  startCommunityStripeOnboarding,
+  updateConsoleCommunity,
+  uploadCommunityAsset,
+} from '../../../api/client';
 import type { ConsoleCommunityDetail } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
@@ -173,6 +188,7 @@ const loadCommunity = async () => {
     form.description = getLocalizedText(detail.description);
     form.logoImageUrl = descriptionObj?.logoImageUrl ?? '';
     logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
+    stripeOnboardLink.value = descriptionObj?._stripeOnboardLink ?? null;
   } catch (err) {
     error.value = err instanceof Error ? err.message : '社群情報の取得に失敗しました';
   }
@@ -183,10 +199,28 @@ const buildDescription = () => ({
   lang: 'ja',
   translations: {},
   logoImageUrl: form.logoImageUrl || null,
+  _stripeOnboardLink: stripeOnboardLink.value || null,
 });
 
 const triggerCoverUpload = () => coverInput.value?.click();
 const triggerLogoUpload = () => logoInput.value?.click();
+
+const stripeOnboardLoading = ref(false);
+const stripeOnboardLink = ref<string | null>(null);
+
+const startStripeOnboard = async () => {
+  stripeOnboardLoading.value = true;
+  error.value = null;
+  try {
+    const { url } = await startCommunityStripeOnboarding(communityId);
+    stripeOnboardLink.value = url;
+    window.open(url, '_blank');
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Stripe 連携リンクの取得に失敗しました';
+  } finally {
+    stripeOnboardLoading.value = false;
+  }
+};
 
 const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
   new Promise<string>((resolve, reject) => {
@@ -377,6 +411,23 @@ onMounted(loadCommunity);
   margin: 0;
   font-size: 12px;
   color: #64748b;
+}
+.card-head__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.link-btn {
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #60a5fa);
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13px;
 }
 .ios-field {
   display: flex;

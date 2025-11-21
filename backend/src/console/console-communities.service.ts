@@ -18,6 +18,11 @@ export class ConsoleCommunitiesService {
     private readonly stripeService: StripeService,
   ) {}
 
+  private readonly defaultPortalConfig = {
+    theme: 'immersive',
+    layout: ['hero', 'about', 'upcoming', 'past', 'moments'],
+  };
+
   async listManagedCommunities(userId: string) {
     const communities = await this.prisma.community.findMany({
       where: {
@@ -132,6 +137,76 @@ export class ConsoleCommunitiesService {
     return this.prisma.community.update({ where: { id: communityId }, data });
   }
 
+  async getPortalConfig(userId: string, communityId: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { id: true, pricingPlanId: true, description: true },
+    });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+    this.assertPortalAllowed(community);
+    const config = this.extractPortalConfig(community.description);
+    return { communityId, config };
+  }
+
+  async updatePortalConfig(
+    userId: string,
+    communityId: string,
+    payload: Partial<{ theme: string; layout: string[] }>,
+  ) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { id: true, pricingPlanId: true, description: true },
+    });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+    this.assertPortalAllowed(community);
+    const current = this.extractPortalConfig(community.description);
+    const nextTheme = payload.theme || current.theme;
+    const nextLayout = Array.isArray(payload.layout) && payload.layout.length ? payload.layout : current.layout;
+    const nextConfig = { theme: nextTheme, layout: nextLayout };
+    const mergedDescription = this.mergePortalConfig(community.description, nextConfig);
+    await this.prisma.community.update({
+      where: { id: communityId },
+      data: { description: mergedDescription },
+    });
+    return { communityId, config: nextConfig };
+  }
+
+  private assertPortalAllowed(community: { pricingPlanId: string | null }) {
+    if (!community.pricingPlanId) {
+      throw new BadRequestException('门户模板为订阅功能，请升级后使用');
+    }
+  }
+
+  private extractPortalConfig(description: Prisma.InputJsonValue | null | undefined) {
+    if (description && typeof description === 'object') {
+      const record = description as Record<string, any>;
+      if (record._portalConfig && typeof record._portalConfig === 'object') {
+        const cfg = record._portalConfig as Record<string, any>;
+        const theme = typeof cfg.theme === 'string' ? cfg.theme : this.defaultPortalConfig.theme;
+        const layout = Array.isArray(cfg.layout) && cfg.layout.length ? cfg.layout : this.defaultPortalConfig.layout;
+        return { theme, layout };
+      }
+    }
+    return this.defaultPortalConfig;
+  }
+
+  private mergePortalConfig(description: Prisma.InputJsonValue | null | undefined, config: { theme: string; layout: string[] }) {
+    let base: Record<string, any> = {};
+    if (description && typeof description === 'object') {
+      base = { ...(description as Record<string, any>) };
+    } else if (description) {
+      base = { original: description };
+    }
+    base._portalConfig = config;
+    return base as Prisma.InputJsonValue;
+  }
+
   async uploadCommunityAsset(userId: string, communityId: string, file: Express.Multer.File | undefined, type?: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
     if (!file) {
@@ -224,6 +299,9 @@ export class ConsoleCommunitiesService {
     if (!this.stripeService.enabled) {
       throw new BadRequestException('Stripe連携が無効です');
     }
+    if (!this.stripeService.publishableKey) {
+      throw new BadRequestException('Stripeの公開鍵が設定されていません');
+    }
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       include: { owner: { select: { email: true, name: true } } },
@@ -262,13 +340,28 @@ export class ConsoleCommunitiesService {
       });
     }
 
-    const link = await this.stripeService.client.accountLinks.create({
-      account: stripeAccountId,
-      refresh_url: this.consoleReturnUrl(communityId),
-      return_url: this.consoleReturnUrl(communityId),
-      type: 'account_onboarding',
-    });
-    return { url: link.url };
+    const refreshUrl = this.consoleReturnUrl(communityId);
+    const returnUrl = this.consoleReturnUrl(communityId);
+    this.logger.log(
+      `Stripe account link create: account=${stripeAccountId}, refresh_url=${refreshUrl}, return_url=${returnUrl}, frontendBase=${this.stripeService.frontendBaseUrl}`,
+    );
+
+    try {
+      const link = await this.stripeService.client.accountLinks.create({
+        account: stripeAccountId,
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
+        type: 'account_onboarding',
+        collect: 'eventually_due',
+      });
+      return { url: link.url };
+    } catch (error: any) {
+      const msg = `Stripe accountLinks.create failed: message=${error?.message}, param=${error?.raw?.param}, raw=${JSON.stringify(
+        error?.raw || {},
+      )}, refresh_url=${refreshUrl}, return_url=${returnUrl}`;
+      this.logger.error(msg);
+      throw new BadRequestException(msg);
+    }
   }
 
   async subscribeCommunityPlan(userId: string, communityId: string, planId: string) {
@@ -286,7 +379,7 @@ export class ConsoleCommunitiesService {
     }
 
     // Free plans without Stripe price simply update the reference and cancel any active subscription.
-    if (!plan.stripePriceId) {
+    if (plan.monthlyFee <= 0) {
       if (community.stripeSubscriptionId && this.stripeService.enabled) {
         try {
           await this.stripeService.client.subscriptions.cancel(community.stripeSubscriptionId);
@@ -301,14 +394,14 @@ export class ConsoleCommunitiesService {
           stripeSubscriptionId: null,
         },
       });
-      return { planId: plan.id, subscriptionId: null };
+      return { planId: plan.id, subscriptionId: null, checkoutUrl: null, sessionId: null };
     }
 
     if (!this.stripeService.enabled) {
       throw new BadRequestException('Stripe連携が無効です');
     }
-    if (!community.stripeAccountOnboarded || !community.stripeAccountId) {
-      throw new BadRequestException('先にStripeアカウント連携を完了してください');
+    if (!this.stripeService.publishableKey) {
+      throw new BadRequestException('Stripeの公開鍵が設定されていません');
     }
 
     let customerId = community.stripeCustomerId;
@@ -325,40 +418,42 @@ export class ConsoleCommunitiesService {
       });
     }
 
-    let subscriptionId = community.stripeSubscriptionId;
-    if (subscriptionId) {
-      const subscription = await this.stripeService.client.subscriptions.retrieve(subscriptionId);
-      const itemId = subscription.items.data[0]?.id;
-      if (!itemId) {
-        throw new BadRequestException('Stripeサブスクリプションの更新に失敗しました');
-      }
-      const updated = await this.stripeService.client.subscriptions.update(subscriptionId, {
-        cancel_at_period_end: false,
-        proration_behavior: 'none',
-        items: [{ id: itemId, price: plan.stripePriceId }],
-        metadata: { communityId, planId },
-      });
-      subscriptionId = updated.id;
-    } else {
-      const subscription = await this.stripeService.client.subscriptions.create({
-        customer: customerId,
-        items: [{ price: plan.stripePriceId }],
-        collection_method: 'send_invoice',
-        days_until_due: 30,
-        metadata: { communityId, planId },
-      });
-      subscriptionId = subscription.id;
+    const priceId = await this.ensureStripePrice(plan);
+    this.logger.log(
+      `Creating subscription via Payment Element: community=${communityId}, plan=${planId}, price=${priceId}`,
+    );
+    const subscription = await this.stripeService.client.subscriptions.create({
+      customer: customerId,
+      items: [{ price: priceId }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+        payment_method_types: ['card'],
+      },
+      metadata: { communityId, planId, context: 'community_subscription' },
+      expand: ['latest_invoice.payment_intent'],
+    });
+    const paymentIntent =
+      subscription.latest_invoice &&
+      typeof subscription.latest_invoice !== 'string' &&
+      subscription.latest_invoice.payment_intent &&
+      typeof subscription.latest_invoice.payment_intent !== 'string'
+        ? subscription.latest_invoice.payment_intent
+        : null;
+    const clientSecret = paymentIntent?.client_secret ?? null;
+    if (!clientSecret) {
+      throw new BadRequestException('Stripe支払いの初期化に失敗しました');
     }
 
-    await this.prisma.community.update({
-      where: { id: communityId },
-      data: {
-        pricingPlanId: plan.id,
-        stripeSubscriptionId: subscriptionId,
-      },
-    });
-
-    return { planId: plan.id, subscriptionId };
+    return {
+      planId: plan.id,
+      subscriptionId: subscription.id,
+      checkoutUrl: null,
+      sessionId: null,
+      clientSecret,
+      publishableKey: this.stripeService.publishableKey,
+      customerId,
+    };
   }
 
   private async syncStripeAccountStatus(community: Community) {
@@ -383,6 +478,101 @@ export class ConsoleCommunitiesService {
   }
 
   private consoleReturnUrl(communityId: string) {
-    return `${this.stripeService.frontendBaseUrl}/console/communities/${communityId}/events`;
+    const override = process.env.STRIPE_ONBOARD_RETURN_URL ?? '';
+    const fallback = 'https://example.com/console/stripe-return';
+    const base = (override || fallback).trim();
+    try {
+      const url = new URL(base);
+      if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+        this.logger.warn(
+          `Onboard return URL must be https or localhost; got ${base}, using fallback ${fallback}`,
+        );
+        return fallback;
+      }
+      return url.toString();
+    } catch (err) {
+      this.logger.warn(`Invalid STRIPE_ONBOARD_RETURN_URL "${override}", using fallback ${fallback}`);
+      return fallback;
+    }
+  }
+
+  private subscriptionReturnUrls(communityId: string) {
+    const successBase = this.normalizeBaseUrl(this.stripeService.successUrlBase);
+    const cancelBase = this.normalizeBaseUrl(this.stripeService.cancelUrlBase);
+    const successUrl = `${successBase}?context=community_subscription&communityId=${communityId}&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${cancelBase}?context=community_subscription&communityId=${communityId}`;
+    return { successUrl, cancelUrl };
+  }
+
+  private normalizeBaseUrl(base?: string | null) {
+    const fallback = 'http://localhost:5173';
+    const cleaned = (base || '').trim().replace(/\/$/, '');
+    if (!cleaned) return fallback;
+    try {
+      // Validate absolute URL; Stripe requires a full URL here.
+      const parsed = new URL(cleaned);
+      // Stripe only permits http for localhost. If the host is not localhost and protocol is http, fall back.
+      if (parsed.protocol === 'http:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+        return fallback;
+      }
+      return parsed.toString().replace(/\/$/, '');
+    } catch (err) {
+      // If protocol is missing, try http://
+      try {
+        const withProtocol = `http://${cleaned}`;
+        const parsed = new URL(withProtocol);
+        if (parsed.protocol === 'http:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+          return fallback;
+        }
+        return parsed.toString().replace(/\/$/, '');
+      } catch {
+        return fallback;
+      }
+    }
+  }
+
+  private async ensureStripePrice(plan: {
+    id: string;
+    name: string;
+    monthlyFee: number;
+    stripePriceId?: string | null;
+  }) {
+    if (!this.stripeService.enabled) {
+      throw new BadRequestException('Stripe連携が無効です');
+    }
+
+    // If a price already exists, verify the amount matches; otherwise create a fresh one.
+    if (plan.stripePriceId) {
+      try {
+        const existing = await this.stripeService.client.prices.retrieve(plan.stripePriceId);
+        const desiredAmount = Math.max(0, Math.round(plan.monthlyFee ?? 0));
+        const existingAmount = existing.unit_amount ?? 0;
+        const isMonthly = existing.recurring?.interval === 'month';
+        if (existing.active && isMonthly && existingAmount === desiredAmount) {
+          return existing.id;
+        }
+        // If mismatched, deactivate old price and create a new one.
+        await this.stripeService.client.prices.update(existing.id, { active: false }).catch(() => {});
+      } catch (err) {
+        this.logger.warn(`Failed to retrieve existing Stripe price ${plan.stripePriceId}: ${err}`);
+      }
+    }
+
+    const product = await this.stripeService.client.products.create({
+      name: plan.name,
+      metadata: { planId: plan.id },
+    });
+    const price = await this.stripeService.client.prices.create({
+      product: product.id,
+      currency: 'jpy',
+      unit_amount: Math.max(0, Math.round(plan.monthlyFee ?? 0)),
+      recurring: { interval: 'month' },
+      metadata: { planId: plan.id },
+    });
+    await this.prisma.pricingPlan.update({
+      where: { id: plan.id },
+      data: { stripePriceId: price.id },
+    });
+    return price.id;
   }
 }

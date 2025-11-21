@@ -137,18 +137,10 @@ export class PaymentsService {
       throw new BadRequestException('Stripe決済が現在利用できません');
     }
 
-    const planId = community.pricingPlanId ?? 'starter';
-    const plan = await this.prisma.pricingPlan.findUnique({ where: { id: planId } });
-    const policy = await this.prisma.feePolicy.findFirst({
-      where: {
-        pricingPlanId: planId,
-        startAt: { lte: new Date() },
-        OR: [{ endAt: null }, { endAt: { gt: new Date() } }],
-      },
-      orderBy: { startAt: 'desc' },
-    });
-    const percent = policy?.percent ?? plan?.transactionFeePercent ?? 5;
-    const fixed = policy?.fixed ?? plan?.transactionFeeFixed ?? 0;
+    const platformPercent = Number(process.env.PLATFORM_FEE_PERCENT ?? '1');
+    const platformFixed = Number(process.env.PLATFORM_FEE_FIXED ?? '0');
+    const percent = isNaN(platformPercent) ? 1 : platformPercent;
+    const fixed = isNaN(platformFixed) ? 0 : platformFixed;
     const platformFee = Math.min(amount, Math.round((amount * percent) / 100) + fixed);
     const eventTitle = this.getLocalizedText(event.title) || 'MORE Event';
 
@@ -244,6 +236,9 @@ export class PaymentsService {
       case 'checkout.session.async_payment_succeeded':
         await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
         break;
+      case 'invoice.payment_succeeded':
+        await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        break;
       case 'charge.refunded':
         await this.handleChargeRefunded(event.data.object as Stripe.Charge);
         break;
@@ -310,6 +305,30 @@ export class PaymentsService {
       where: { OR: whereClauses },
     });
     if (!payment) {
+      const communityId = session.metadata?.communityId;
+      const planId = session.metadata?.planId;
+      const subscriptionId =
+        typeof session.subscription === 'string'
+          ? session.subscription
+          : session.subscription?.id ?? null;
+      if (communityId && planId && session.mode === 'subscription' && subscriptionId) {
+        const customerId =
+          typeof session.customer === 'string'
+            ? session.customer
+            : session.customer?.id ?? null;
+        await this.prisma.community.update({
+          where: { id: communityId },
+          data: {
+            pricingPlanId: planId,
+            stripeSubscriptionId: subscriptionId,
+            stripeCustomerId: customerId ?? undefined,
+          },
+        });
+        this.logger.log(
+          `Community ${communityId} subscribed to plan ${planId} via checkout session ${session.id}`,
+        );
+        return;
+      }
       this.logger.warn(`No payment found for checkout session ${session.id}`);
       return;
     }
@@ -338,6 +357,47 @@ export class PaymentsService {
         },
       });
     }
+  }
+
+  private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+    const subscriptionId =
+      typeof invoice.subscription === 'string'
+        ? invoice.subscription
+        : invoice.subscription?.id ?? null;
+    const customerId =
+      typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id ?? null;
+    let communityId = invoice.metadata?.communityId;
+    let planId = invoice.metadata?.planId;
+
+    if ((!communityId || !planId) && subscriptionId) {
+      try {
+        const subscription = await this.stripeService.client.subscriptions.retrieve(subscriptionId);
+        communityId = (subscription.metadata as any)?.communityId ?? communityId;
+        planId = (subscription.metadata as any)?.planId ?? planId;
+      } catch (err) {
+        this.logger.warn(`Failed to retrieve subscription ${subscriptionId} for invoice metadata: ${err}`);
+      }
+    }
+
+    if (!communityId || !planId || !subscriptionId) {
+      this.logger.warn(
+        `invoice.payment_succeeded missing metadata: communityId=${communityId}, planId=${planId}, subscriptionId=${subscriptionId}`,
+      );
+      return;
+    }
+
+    await this.prisma.community.update({
+      where: { id: communityId },
+      data: {
+        pricingPlanId: planId,
+        stripeSubscriptionId: subscriptionId,
+        stripeCustomerId: customerId ?? undefined,
+      },
+    });
+
+    this.logger.log(
+      `Community ${communityId} subscribed to plan ${planId} via invoice ${invoice.id} (subscription ${subscriptionId})`,
+    );
   }
 
   private async handleChargeRefunded(charge: Stripe.Charge) {

@@ -110,6 +110,10 @@ export interface CommunityPortal {
   labels: string[];
   visibleLevel: string;
   events: CommunityPortalEvent[];
+  portalConfig?: {
+    theme?: string;
+    layout?: string[];
+  };
 }
 
 export interface DevLoginResponse {
@@ -157,6 +161,16 @@ export interface MockPaymentResponse {
 
 export interface StripeCheckoutResponse {
   checkoutUrl: string;
+}
+
+export interface SubscriptionResponse {
+  planId: string;
+  subscriptionId: string | null;
+  checkoutUrl?: string | null;
+  sessionId?: string | null;
+  clientSecret?: string | null;
+  publishableKey?: string | null;
+  customerId?: string | null;
 }
 
 export interface PricingPlan {
