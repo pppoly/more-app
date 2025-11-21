@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue';
 import { devLogin as apiDevLogin, fetchMe, setAccessToken as applyClientToken } from '../api/client';
 import type { UserProfile } from '../types/api';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface AuthState {
   user: UserProfile | null;
@@ -75,7 +76,7 @@ export function useAuth() {
   };
 
   const setUserProfile = (profile: UserProfile | null) => {
-    state.user = profile;
+    state.user = normalizeUser(profile);
   };
 
   const logout = () => {
@@ -97,9 +98,13 @@ export function useAuth() {
 
 function normalizeUser(user: UserProfile | null): UserProfile | null {
   if (!user) return null;
-  const isAdminAlias = user.name?.toLowerCase() === 'admin';
-  if (isAdminAlias) {
-    return { ...user, isAdmin: true, isOrganizer: true };
+  const normalized: UserProfile = {
+    ...user,
+    avatarUrl: user.avatarUrl ? resolveAssetUrl(user.avatarUrl) : undefined,
+  };
+  if (user.name?.toLowerCase() === 'admin') {
+    normalized.isAdmin = true;
+    normalized.isOrganizer = true;
   }
-  return user;
+  return normalized;
 }

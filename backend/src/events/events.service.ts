@@ -15,6 +15,7 @@ export class EventsService {
     const events = await this.prisma.event.findMany({
       where: {
         visibility: 'public',
+        status: 'open',
       },
       orderBy: {
         startTime: 'asc',
@@ -31,16 +32,43 @@ export class EventsService {
         description: true,
         descriptionHtml: true,
         category: true,
+        maxParticipants: true,
+        config: true,
         community: {
           select: {
             id: true,
             name: true,
             slug: true,
+            coverImageUrl: true,
+            description: true,
           },
         },
         ticketTypes: {
           select: {
             price: true,
+          },
+        },
+        registrations: {
+          where: {
+            status: {
+              in: ['paid', 'approved'],
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+          select: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            registrations: true,
           },
         },
         galleries: {
@@ -51,10 +79,20 @@ export class EventsService {
       },
     });
 
+    const DEFAULT_AVATAR =
+      'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+
     return events.map((event) => {
       const prices = event.ticketTypes.map((tt) => tt.price ?? 0);
       const min = prices.length ? Math.min(...prices) : 0;
       const max = prices.length ? Math.max(...prices) : 0;
+      const attendeeAvatars = event.registrations.map(
+        (registration) => registration.user?.avatarUrl ?? DEFAULT_AVATAR,
+      );
+      const communityLogo = this.extractCommunityLogo(event.community?.description) ?? null;
+      const currentParticipants = event._count?.registrations ?? 0;
+      const capacityFromConfig =
+        (event.config as any)?.capacity ?? (event.config as any)?.maxParticipants ?? event.maxParticipants ?? null;
       return {
         id: event.id,
         status: event.status,
@@ -65,9 +103,20 @@ export class EventsService {
         locationLng: event.locationLng,
         title: event.title,
         description: event.description,
-        community: event.community,
+        community: {
+          id: event.community.id,
+          name: event.community.name,
+          slug: event.community.slug,
+        },
+        communityLogoUrl: communityLogo,
         priceRange: { min, max },
         coverImageUrl: event.galleries[0]?.imageUrl ?? null,
+        config: {
+          ...(event.config as Record<string, any>),
+          attendeeAvatars,
+          currentParticipants,
+          capacity: capacityFromConfig,
+        },
       };
     });
   }
@@ -78,6 +127,7 @@ export class EventsService {
       select: {
         id: true,
         status: true,
+        visibility: true,
         startTime: true,
         endTime: true,
         regStartTime: true,
@@ -99,6 +149,15 @@ export class EventsService {
             id: true,
             name: true,
             slug: true,
+          },
+        },
+        ticketTypes: {
+          select: {
+            id: true,
+            type: true,
+            price: true,
+            name: true,
+            quota: true,
           },
         },
       },
@@ -130,13 +189,7 @@ export class EventsService {
     }
 
     const now = new Date();
-    if (event.regStartTime && now < event.regStartTime) {
-      throw new BadRequestException('Registration has not started yet');
-    }
-    const regClose = event.regEndTime ?? event.regDeadline;
-    if (regClose && regClose < now) {
-      throw new BadRequestException('Registration deadline has passed');
-    }
+    // 注册截止时间暂时不阻止用户报名，保持开放体验
 
     await this.ensureActiveMembership(event.communityId, userId);
 
@@ -146,20 +199,62 @@ export class EventsService {
         userId,
         NOT: { status: 'cancelled' },
       },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            locationText: true,
+            community: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (existing) {
-      throw new BadRequestException('You have already registered for this event');
+      return {
+        registrationId: existing.id,
+        status: existing.status,
+        paymentStatus: existing.paymentStatus ?? 'paid',
+        paymentRequired: existing.paymentStatus !== 'paid',
+        amount: existing.amount ?? 0,
+        eventId: existing.eventId,
+        ticketTypeId: existing.ticketTypeId ?? undefined,
+        event: existing.event,
+      };
+    }
+
+    let eventTicketTypes = event.ticketTypes;
+    if (!eventTicketTypes.length) {
+      const fallbackName = this.getLocalizedText(event.title) || '参加チケット';
+      const fallbackTicket = await this.prisma.eventTicketType.create({
+        data: {
+          eventId,
+          name: { original: fallbackName },
+          type: 'free',
+          price: 0,
+          quota: event.maxParticipants ?? 100,
+        },
+      });
+      eventTicketTypes = [fallbackTicket];
     }
 
     let ticketType =
       dto.ticketTypeId &&
-      event.ticketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
+      eventTicketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
 
     if (!ticketType) {
       ticketType =
-        event.ticketTypes.find((ticket) => ticket.type === 'free') ||
-        event.ticketTypes[0];
+        eventTicketTypes.find((ticket) => ticket.type === 'free') ||
+        eventTicketTypes[0];
     }
 
     if (!ticketType) {
@@ -250,5 +345,28 @@ export class EventsService {
         order: true,
       },
     });
+  }
+  private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (typeof content === 'object') {
+      const record = content as Record<string, any>;
+      if (typeof record.original === 'string') {
+        return record.original;
+      }
+    }
+    return '';
+  }
+
+  private extractCommunityLogo(description: Prisma.JsonValue | null | undefined) {
+    if (!description || typeof description !== 'object') return null;
+    const record = description as Record<string, any>;
+    if (record.logoImageUrl && typeof record.logoImageUrl === 'string') {
+      return record.logoImageUrl;
+    }
+    if (typeof record.original === 'object' && record.original?.logoImageUrl) {
+      return record.original.logoImageUrl;
+    }
+    return null;
   }
 }

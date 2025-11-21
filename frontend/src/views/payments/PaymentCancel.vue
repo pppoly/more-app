@@ -12,6 +12,12 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
+
+onMounted(() => {
+  sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+});
 </script>
 
 <style scoped>

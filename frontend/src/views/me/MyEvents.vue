@@ -1,39 +1,141 @@
 <template>
-  <section class="my-events-page">
-    <header>
-      <h2>参加予定のイベント</h2>
-      <p class="subtext">Dev Login で登録したイベントの一覧です。</p>
+  <div class="my-events-page">
+    <header class="page-header">
+      <div class="page-header__text">
+        <p class="page-eyebrow">我的活动</p>
+        <h1>轻松掌握报名行程</h1>
+        <p class="page-subtext">AI 已同步你的报名记录，用下方筛选快速切换状态。</p>
+      </div>
+      <div class="segmented-control" role="tablist">
+        <button
+          v-for="tab in filterTabs"
+          :key="tab.id"
+          type="button"
+          class="segmented-button"
+          :class="{ 'segmented-button--active': tab.id === activeTab }"
+          @click="activeTab = tab.id"
+        >
+          <span>{{ tab.label }}</span>
+          <span class="segmented-button__count">{{ tab.count }}</span>
+        </button>
+      </div>
     </header>
 
-    <p v-if="loading" class="status">Loading...</p>
-    <p v-else-if="error" class="status error">{{ error }}</p>
+    <section class="events-section">
+      <p v-if="banner" class="feedback" :class="`feedback--${banner.type}`">{{ banner.message }}</p>
 
-    <ul v-else-if="events.length" class="event-list">
-      <li v-for="item in events" :key="item.registrationId" class="event-card">
-        <RouterLink :to="`/events/${item.event.id}`">
-          <h3>{{ titleFor(item.event) }}</h3>
-        </RouterLink>
-        <p class="community">{{ item.event.community.name }}</p>
-        <p class="time">{{ formatDate(item.event.startTime) }}</p>
-        <div class="badge-row">
-          <span class="status-pill" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
-          <span class="payment-pill" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
+      <article v-if="loading" class="ticket-card ticket-card--skeleton" v-for="n in 3" :key="`s-${n}`"></article>
+
+      <article v-else-if="error" class="state-card">
+        <p class="state-card__title">无法加载活动</p>
+        <p class="state-card__message">{{ error }}</p>
+        <button type="button" class="ghost-btn" @click="loadEvents">重新加载</button>
+      </article>
+
+      <template v-else>
+        <article v-if="!filteredEvents.length" class="state-card">
+          <p class="state-card__title">{{ emptyStateTitle }}</p>
+          <p class="state-card__message">{{ emptyStateMessage }}</p>
+          <RouterLink class="ghost-btn" to="/events">去看看活动</RouterLink>
+        </article>
+
+        <div v-for="item in filteredEvents" :key="item.registrationId" class="ticket-card-wrapper">
+          <article
+            class="ticket-card ticket-card--with-cover"
+            :class="{
+              'ticket-card--validated': isTicketValidated(item),
+              'ticket-card--void': isVoidTicket(item),
+            }"
+            :style="ticketCoverStyle(item)"
+          >
+            <div v-if="isTicketValidated(item) && !isVoidTicket(item)" class="ticket-card__tear">
+              <span>已验票</span>
+            </div>
+            <div class="ticket-card__top">
+              <div>
+                <p class="ticket-card__date">{{ formatDate(item.event.startTime) }}</p>
+                <p class="ticket-card__community">{{ item.event.community.name }}</p>
+              </div>
+              <div class="ticket-card__qr">
+                <button
+                  v-if="isUpcoming(item)"
+                  type="button"
+                  class="ticket-card__cancel"
+                  @click="cancelRegistration(item)"
+                  :disabled="cancelingId === item.registrationId"
+                >
+                  {{ cancelingId === item.registrationId ? '处理中…' : '取消' }}
+                </button>
+                <span class="ticket-card__code">#{{ item.registrationId.slice(0, 8).toUpperCase() }}</span>
+              </div>
+            </div>
+            <div class="ticket-card__body">
+              <h2 class="ticket-card__title">{{ titleFor(item.event) }}</h2>
+              <p class="ticket-card__meta">{{ item.event.locationText }}</p>
+              <div class="ticket-card__badges">
+                <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
+                <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
+              </div>
+            </div>
+            <footer class="ticket-card__footer">
+              <button
+                v-if="!isVoidTicket(item)"
+                type="button"
+                class="ticket-btn"
+                @click="openTicketQr(item)"
+              >
+                出示二维码
+              </button>
+              <div v-else class="ticket-card__void-footer">票券已作废</div>
+            </footer>
+          </article>
+          <div v-if="isVoidTicket(item)" class="ticket-card__void-stamp">已作废</div>
         </div>
-      </li>
-    </ul>
-    <p v-else class="status muted">まだ参加予定のイベントがありません。</p>
-  </section>
+      </template>
+    </section>
+
+    <Transition name="qr-fade">
+      <section v-if="qrVisible && qrTicket" class="ticket-qr-overlay" @click.self="closeTicketQr">
+        <article class="ticket-qr-modal">
+          <button type="button" class="qr-close" @click="closeTicketQr">
+            <span class="i-lucide-x"></span>
+          </button>
+          <p class="qr-title">出示二维码</p>
+          <p class="qr-subtitle">{{ getLocalizedText(qrTicket.event.title) }}</p>
+          <canvas ref="qrCanvas" class="qr-canvas"></canvas>
+          <p class="qr-code">#{{ qrTicket.registrationId.slice(0, 8).toUpperCase() }}</p>
+          <p class="qr-hint">请让社群工作人员扫描此券以完成验票</p>
+          <p v-if="qrError" class="qr-error">{{ qrError }}</p>
+          <button type="button" class="qr-primary" @click="markTicketValidated">验票完成</button>
+        </article>
+      </section>
+    </Transition>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { fetchMyEvents } from '../../api/client';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { cancelMyRegistration, fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveAssetUrl } from '../../utils/assetUrl';
+import QRCode from 'qrcode';
 
+type FilterTabId = 'upcoming' | 'past' | 'all';
+
+const router = useRouter();
 const events = ref<MyEventItem[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const banner = ref<{ type: 'success' | 'error'; message: string } | null>(null);
+const cancelingId = ref<string | null>(null);
+const activeTab = ref<FilterTabId>('upcoming');
+const qrVisible = ref(false);
+const qrTicket = ref<MyEventItem | null>(null);
+const qrCanvas = ref<HTMLCanvasElement | null>(null);
+const qrError = ref<string | null>(null);
+const validatedRegistrationIds = ref<string[]>([]);
 
 const loadEvents = async () => {
   loading.value = true;
@@ -41,7 +143,7 @@ const loadEvents = async () => {
   try {
     events.value = await fetchMyEvents();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load events';
+    error.value = err instanceof Error ? err.message : '网络异常，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -51,139 +153,806 @@ onMounted(() => {
   loadEvents();
 });
 
+const isVoidTicket = (item: MyEventItem) => item.status === 'cancelled';
+
+const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && new Date(item.event.startTime) > new Date();
+
+const sortedEvents = computed(() =>
+  [...events.value].sort(
+    (a, b) => new Date(b.event.startTime).getTime() - new Date(a.event.startTime).getTime(),
+  ),
+);
+
+const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
+  { id: 'upcoming', label: '即将开始', matcher: (item) => isUpcoming(item) },
+  { id: 'past', label: '历史记录', matcher: (item) => !isUpcoming(item) },
+  { id: 'all', label: '全部', matcher: () => true },
+];
+
+const filterCounts = computed(() => ({
+  upcoming: sortedEvents.value.filter((item) => isUpcoming(item)).length,
+  past: sortedEvents.value.filter((item) => !isUpcoming(item)).length,
+  all: sortedEvents.value.length,
+}));
+
+const filterTabs = computed(() =>
+  filterDefinitions.map((tab) => ({
+    ...tab,
+    count: filterCounts.value[tab.id],
+  })),
+);
+
+const filteredEvents = computed(() => {
+  const active = filterDefinitions.find((tab) => tab.id === activeTab.value);
+  if (!active) return sortedEvents.value;
+  return sortedEvents.value.filter((item) => active.matcher(item));
+});
+
 const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
 
 const formatDate = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+  new Date(value).toLocaleString('ja-JP', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 
 const paymentLabel = (item: MyEventItem) => {
-  if ((item.amount ?? 0) === 0) {
-    return '無料';
-  }
-  return item.paymentStatus === 'paid' ? '済' : '未';
+  if ((item.amount ?? 0) === 0) return '免費';
+  return item.paymentStatus === 'paid' ? '已付款' : '待付款';
 };
 
 const paymentClass = (item: MyEventItem) => {
-  if ((item.amount ?? 0) === 0) {
-    return 'free';
-  }
-  return item.paymentStatus === 'paid' ? 'paid' : 'unpaid';
+  if ((item.amount ?? 0) === 0) return 'badge--free';
+  return item.paymentStatus === 'paid' ? 'badge--paid' : 'badge--pending';
 };
 
 const attendanceLabel = (item: MyEventItem) => {
-  if (item.attended) return '出席済み';
-  if (item.noShow) return '無断欠席';
-  if (new Date(item.event.startTime) > new Date()) return '参加予定';
-  return '記録なし';
+  if (item.status === 'cancelled') return '已取消';
+  if (item.attended) return '已出席';
+  if (item.noShow) return '未到場';
+  if (isUpcoming(item)) return '待参加';
+  return '记录中';
 };
 
 const attendanceClass = (item: MyEventItem) => {
-  if (item.attended) return 'attended';
-  if (item.noShow) return 'no-show';
-  if (new Date(item.event.startTime) > new Date()) return 'upcoming';
-  return 'pending';
+  if (item.status === 'cancelled') return 'badge--void';
+  if (item.attended) return 'badge--attended';
+  if (item.noShow) return 'badge--noshow';
+  if (isUpcoming(item)) return 'badge--upcoming';
+  return 'badge--pending';
+};
+
+const emptyStateTitle = computed(() => {
+  if (activeTab.value === 'upcoming') return '还没有报名计划';
+  if (activeTab.value === 'past') return '还没有历史记录';
+  return '暂无报名记录';
+});
+
+const emptyStateMessage = computed(() => {
+  if (activeTab.value === 'upcoming') return '报名一个活动后，就能在这里追踪状态。';
+  if (activeTab.value === 'past') return '参加过的活动会自动出现在这里。';
+  return '去探索活动，挑一个喜欢的吧。';
+});
+
+const showBanner = (type: 'success' | 'error', message: string) => {
+  banner.value = { type, message };
+  window.setTimeout(() => {
+    banner.value = null;
+  }, 3000);
+};
+
+const openTicketQr = (item: MyEventItem) => {
+  if (isVoidTicket(item)) return;
+  qrTicket.value = item;
+  qrVisible.value = true;
+};
+
+const closeTicketQr = () => {
+  qrVisible.value = false;
+  qrTicket.value = null;
+  qrError.value = null;
+};
+
+const generateQr = async () => {
+  if (!qrVisible.value || !qrTicket.value || !qrCanvas.value) return;
+  qrError.value = null;
+  const payload = JSON.stringify({
+    registrationId: qrTicket.value.registrationId,
+    eventId: qrTicket.value.event.id,
+  });
+  try {
+    await QRCode.toCanvas(qrCanvas.value, payload, {
+      width: 240,
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    });
+  } catch (err) {
+    qrError.value = err instanceof Error ? err.message : '二维码生成失败';
+  }
+};
+
+watch([qrVisible, qrTicket], async ([visible, ticket]) => {
+  if (visible && ticket) {
+    await nextTick();
+    await generateQr();
+  }
+});
+
+const markTicketValidated = () => {
+  if (!qrTicket.value) return;
+  if (!validatedRegistrationIds.value.includes(qrTicket.value.registrationId)) {
+    validatedRegistrationIds.value = [...validatedRegistrationIds.value, qrTicket.value.registrationId];
+  }
+  showBanner('success', '已完成验票');
+  closeTicketQr();
+};
+
+const isTicketValidated = (item: MyEventItem) => validatedRegistrationIds.value.includes(item.registrationId);
+
+const cancelRegistration = async (item: MyEventItem) => {
+  if (cancelingId.value) return;
+  const confirmed = window.confirm('確定要取消這個活動的报名吗？');
+  if (!confirmed) return;
+  cancelingId.value = item.registrationId;
+  try {
+    await cancelMyRegistration(item.registrationId);
+    events.value = events.value.map((event) =>
+      event.registrationId === item.registrationId ? { ...event, status: 'cancelled' } : event,
+    );
+    showBanner('success', '已取消报名。');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '取消失败，请稍后重试。';
+    showBanner('error', message);
+  } finally {
+    cancelingId.value = null;
+  }
+};
+
+const fallbackCoverImages = [
+  'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1515168833906-d2a3b82b302a?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1448932223592-d1fc686e76ea?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=1200&q=80',
+];
+
+const hashToIndex = (value: string, length: number) => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % length;
+};
+
+const coverUrlFor = (item: MyEventItem) => {
+  if (item.event.coverImageUrl) return item.event.coverImageUrl;
+  const index = hashToIndex(item.event.id, fallbackCoverImages.length);
+  return fallbackCoverImages[index];
+};
+
+const ticketCoverStyle = (item: MyEventItem) => {
+  const cover = coverUrlFor(item);
+  const resolved = resolveAssetUrl(cover);
+  return {
+    backgroundImage: `linear-gradient(135deg, rgba(5, 9, 23, 0.9), rgba(9, 14, 34, 0.65)), url(${resolved})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  };
 };
 </script>
 
 <style scoped>
 .my-events-page {
+  min-height: 100vh;
+  background: #f5f7fb;
+  padding: 0 16px calc(48px + env(safe-area-inset-bottom, 0px)) 16px;
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  width: min(100%, 480px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  overscroll-behavior-x: none;
+}
+
+.page-header {
+  width: 100%;
+  padding: 24px 0 8px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
-.subtext {
-  color: #475569;
-}
-
-.status {
-  margin: 0.5rem 0;
-}
-
-.event-list {
-  list-style: none;
-  padding: 0;
+.page-header__text {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 4px;
 }
 
-.event-card {
-  background: #fff;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+.page-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
-.event-card h3 {
-  margin: 0 0 0.5rem;
+.page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #0f172a;
+  font-weight: 700;
 }
 
-.community,
-.time {
-  margin: 0.2rem 0;
+.page-subtext {
+  margin: 0;
   color: #475569;
+  font-size: 14px;
 }
 
-.badge-row {
-  margin-top: 0.4rem;
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.status-pill,
-.payment-pill {
-  padding: 0.2rem 0.7rem;
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  background: #e2e8f0;
+  padding: 6px;
   border-radius: 999px;
-  font-size: 0.8rem;
+}
+
+.segmented-button {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.segmented-button__count {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.segmented-button--active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+}
+
+.events-section {
+  width: 100%;
+  padding: 8px 0 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.feedback {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 14px;
   font-weight: 600;
 }
 
-.payment-pill.free {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.payment-pill.paid {
+.feedback--success {
   background: #dcfce7;
-  color: #15803d;
+  color: #166534;
 }
 
-.payment-pill.unpaid {
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.status-pill.attended {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.status-pill.no-show {
+.feedback--error {
   background: #fee2e2;
   color: #b91c1c;
 }
 
-.status-pill.upcoming {
-  background: #dbeafe;
-  color: #1d4ed8;
+.ticket-card-wrapper {
+  position: relative;
 }
 
-.status-pill.pending {
-  background: #e2e8f0;
+.ticket-card {
+  position: relative;
+  background: #fff;
+  border-radius: 24px;
+  padding: 20px 18px 18px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.ticket-card--with-cover {
+  color: #f8fafc;
+}
+
+.ticket-card--validated {
+  filter: saturate(0.8);
+}
+
+.ticket-card--void {
+  filter: grayscale(0.85);
+  opacity: 0.7;
+}
+
+.ticket-card__void-stamp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-11deg);
+  padding: 12px 36px;
+  border: 2px solid #ff1e1e;
+  color: #ff1e1e;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.32rem;
+  text-transform: uppercase;
+  border-radius: 10px;
+  background: transparent;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.ticket-card::before,
+.ticket-card::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f5f7fb;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ticket-card__tear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 90px;
+  height: 90px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 10px;
+  pointer-events: none;
+}
+
+.ticket-card__tear span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ea580c;
+  transform: rotate(-15deg);
+}
+
+.ticket-card::before {
+  left: -12px;
+}
+
+.ticket-card::after {
+  right: -12px;
+}
+
+.ticket-card--skeleton {
+  min-height: 160px;
+  background: linear-gradient(90deg, #eef1f6 25%, #e2e6ef 37%, #eef1f6 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.ticket-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #64748b;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.5);
+  position: relative;
+  z-index: 1;
+}
+
+.ticket-card--with-cover .ticket-card__top {
+  color: rgba(248, 250, 252, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.3);
+}
+
+.ticket-card__date,
+.ticket-card__code {
+  margin: 0;
+}
+
+.ticket-card--with-cover .ticket-card__date,
+.ticket-card--with-cover .ticket-card__code {
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.ticket-card__qr {
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticket-card--with-cover .ticket-card__qr {
+  border-color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.ticket-card__cancel {
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: rgba(15, 23, 42, 0.05);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.7);
+  cursor: pointer;
+}
+
+.ticket-card__cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ticket-card--with-cover .ticket-card__cancel {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.ticket-qr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 17, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.ticket-qr-modal {
+  width: min(360px, 90vw);
+  background: #fff;
+  border-radius: 24px;
+  padding: 24px 20px 28px;
+  position: relative;
+  text-align: center;
+  box-shadow: 0 25px 60px rgba(3, 7, 18, 0.45);
+}
+
+.qr-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: none;
+  background: rgba(15, 23, 42, 0.05);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.qr-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.qr-subtitle {
+  margin: 4px 0 14px;
+  font-size: 14px;
   color: #475569;
 }
 
-.error {
-  color: #b91c1c;
+.qr-canvas {
+  width: 240px;
+  height: 240px;
+  margin: 0 auto 12px;
+  display: block;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 12px;
+  box-sizing: border-box;
 }
 
-.muted {
-  color: #94a3b8;
+.qr-code {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #0f172a;
+}
+
+.qr-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.qr-error {
+  margin-top: 12px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.qr-primary {
+  margin-top: 16px;
+  width: 100%;
+  border: none;
+  border-radius: 16px;
+  padding: 12px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 18px 30px rgba(14, 165, 233, 0.35);
+}
+
+.qr-fade-enter-active,
+.qr-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.qr-fade-enter-from,
+.qr-fade-leave-to {
+  opacity: 0;
+}
+
+.ticket-card__title {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.ticket-card--with-cover .ticket-card__title {
+  color: #fff;
+}
+
+.ticket-card__community {
+  margin: 0;
+  font-size: 15px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.ticket-card--with-cover .ticket-card__community {
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.ticket-card--void .ticket-card__community {
+  color: rgba(248, 250, 252, 0.72);
+}
+
+.ticket-card__meta {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ticket-card--with-cover .ticket-card__meta {
+  color: rgba(248, 250, 252, 0.8);
+}
+
+.ticket-card--void .ticket-card__title,
+.ticket-card--void .ticket-card__meta,
+.ticket-card--void .ticket-card__date {
+  color: rgba(248, 250, 252, 0.75);
+}
+
+.ticket-card__badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ticket-card__badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ticket-card--with-cover .ticket-card__badge {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.ticket-card--void .ticket-card__badge {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.badge--free {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.badge--paid {
+  background: #dcfce7;
+  color: #15803d;
+}
+.badge--pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+.badge--attended {
+  background: #bbf7d0;
+  color: #15803d;
+}
+.badge--noshow {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.badge--upcoming {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.badge--void {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.ticket-card__footer {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px dashed rgba(148, 163, 184, 0.5);
+  padding-top: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.ticket-card--with-cover .ticket-card__footer {
+  border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+.ticket-card__void-footer {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.8);
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  border-radius: 12px;
+}
+
+.ticket-card--with-cover .ticket-card__void-footer {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.ghost-btn,
+.ticket-btn {
+  flex: 1;
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #0f172a;
+}
+
+.ticket-btn {
+  background: #ea580c;
+  color: #fff;
+  border: none;
+  box-shadow: 0 12px 25px rgba(234, 88, 12, 0.25);
+}
+
+.ghost-btn--muted {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+}
+
+.ticket-card--with-cover .ghost-btn,
+.ticket-card--with-cover .ticket-btn {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.ticket-card--with-cover .ghost-btn {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ticket-card--with-cover .ticket-btn {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: none;
+}
+
+.ticket-btn:disabled {
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+.ticket-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.state-card {
+  padding: 24px;
+  border-radius: 20px;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+}
+
+.state-card__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.state-card__message {
+  margin: 8px 0 16px;
+  color: #475569;
+  font-size: 14px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 </style>
+<style scoped>
+.ticket-card__void-mask {
+  display: none;
+}
+</style>
+.ticket-card__void-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  background: rgba(9, 12, 24, 0.65);
+  pointer-events: none;
+}

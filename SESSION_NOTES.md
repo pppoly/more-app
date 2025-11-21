@@ -15,3 +15,29 @@
 - 复制活动同时会把原活动的封面下载为本地 File，生成缩略图并加入上传队列；活动详情中的图片在复制时也会被保留在富文本 HTML 中。
 - Console 端活动列表/API 现已返回真实封面 URL，移动端 Console 首页/活动列表、桌面 Console 活动列表都会优先显示实际封面，只有没有封面时才回退到默认占位图。
 - 公共活动列表（桌面 `/events` + 移动 `/events`）以及 `GET /events` API 同步支持真实封面：后端 `listPublicOpenEvents` 会返回 `coverImageUrl`，前端统一通过 `resolveAssetUrl` 转成可访问的 `/uploads/...` 完整地址。
+- 为解决“刷新时先看到空导航”问题，`/events/:eventId` 的路由改为 `defineAsyncComponent` 包裹，加载阶段由 `EventDetailSkeleton` 组件兜底；即使还在拉取页面 chunk，也能立即显示完整骨架。
+- 后续发现 vue-router 不建议 `defineAsyncComponent` 直接用于路由组件，于是恢复为标准 `() => import(...)` 的写法并删掉临时 Skeleton 组件，避免控制台 warn。
+- 移动端报名流重构：免费活动直接创建报名并进入 `MobileEventSuccess`，收费活动进入确认页并生成 30 分钟名额锁定（sessionStorage 持有、Stripe 成功回调 `PaymentSuccess` 会转跳至成功页）。新增 `MOBILE_EVENT_PENDING_PAYMENT_KEY` / `MOBILE_EVENT_SUCCESS_KEY` 统一管理跨页面状态。
+- Console/移动报名流的页面参数改为通过 `defineProps` 接收，避免 `<Transition>` 包裹时出现 “Extraneous non-props attributes (eventId)” 与根节点 fragment warn；`watch(eventId)` 确保路由切换时自动重新加载详情。
+- 后端 `getEventById` 现在返回 `visibility` + 票种列表，并在前端 `EventDetail` 类型中补齐 `ticketTypes`，移动报名页可以据此正确判断是否需要付款并携带 `ticketTypeId`。
+- `MobileEventRegister/MobileEventCheckout` 统一封装价格文案（根据票种计算免费/区间），并将 Axios 错误信息向用户展示，免费报名 API 再返回 400 时能给出具体原因而不是只显示状态码。
+- 去掉活动报名接口中“报名开始时间”限制（之前默认等于活动开始时间，导致所有活动在正式开始前都报 400），并让 Console 创建活动时默认把 `regStartTime` 设为 `new Date()`。现在活动一旦处于 `open` 状态就可以立即对外开放报名。
+- 同时移除了 `regDeadline/regEndTime` 的硬性校验，避免因时间设置不一致导致 400。只要活动仍然是 `open` 状态，就允许报名通过，后续再根据产品需求引入更细的报名截止逻辑。
+- 报名接口支持幂等：若同一用户已报名同一活动，不再抛 400，而是返回已有报名记录（含 event 信息），方便多次调试或重复提交。
+- Console 社群创建/设定页改成 App 风格 UI，并加入 logo/封面上传区域：前端会居中裁切（logo 1:1、封面 16:9）后上传到后端 `/console/communities/uploads`，后端保存到 `/uploads/communities/...` 并返回可访问 URL，彻底解决 base64 过大导致的 413。
+
+### 2025-11-21
+- 修复移动端路由在 `<Transition>` 下重复报 “Extraneous non-props attributes (eventId)” 的问题：`App.vue` 现在根据当前 `route.matched` 解析并传递正确的 `props`，同时为每个页面注入唯一 key，避免过渡容器把参数当成 attrs。
+- 活动报名页新增“可报名状态”校验，如果后台 `status !== 'open'` 或 `visibility` 限制为非公开，将在 UI 中提示“受付終了/限定公開”，并禁用 CTA 按钮，阻止继续调用报名接口。
+- 免费报名流程在前端拦截这些状态后，再也不会直接打到 API 返回 400；同样的可报名校验也应用在“信息确认”入口，文案保持 iOS 风格提示。
+- 前端 `npm run build` 验证通过，仅保留 router 对 `EventForm` 动态导入的既有提示。
+- Console 首页的英雄区背景恢复为固定渐变，不再铺设用户上传的封面，避免素材色调干扰上层内容。
+- AI 活动助手的使用说明改为可折叠：首次进入时显示卡片，开始对话或点击“收起说明”后腾出更多聊天空间，并可通过“查看使用说明”按钮随时再展开。
+- AI 助手对话区继续收敛左右溢出，并把“AI 思考过程”改为默认折叠的全宽卡片；“下一步灵感”“草稿摘要”也统一加大字号和 padding，突出重点输出并提升手机端可读性。
+- “AI 思考过程”折叠现在针对每条消息独立展开，避免一处点击影响全部；需要补充/确认、草案摘要卡片也统一成 iOS 风格大字号，以提升可读性。
+- 只有进入 Writer 阶段时才会渲染草案摘要，防止初始欢迎消息就出现空白的 Writer 卡片。
+- 发送按钮会主动 blur 输入框并重置键盘偏移，解决长文本发送后输入区无法回到原位的问题。
+- 会话历史改为真正的列表+预览：点“查看”只在面板内展开预览，用户确认后再选择“载入对话”或“送到表单”，不会再把卡片直接插入聊天且无法关闭。
+- 历史草案抽屉支持默认选中最新一条，载入操作会自动滚动并关闭面板，同时在预览中提示“载入/送出”的具体行为，缓解用户对操作结果的焦虑。
+- Mobile 我的页面增加原生风格的头像裁剪弹层：选择照片后可拖动/缩放并预览，确认才上传，失败会提示原因，提升交互体验。
+- 报名成功页改成简单提示卡，只显示成功 icon、文案和两个跳转按钮，减少干扰。

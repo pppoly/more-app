@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Community, Prisma } from '@prisma/client';
+import { promises as fs } from 'fs';
+import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
@@ -7,6 +10,7 @@ import { StripeService } from '../stripe/stripe.service';
 @Injectable()
 export class ConsoleCommunitiesService {
   private readonly logger = new Logger(ConsoleCommunitiesService.name);
+  private readonly uploadRoot = join(process.cwd(), 'uploads');
 
   constructor(
     private readonly prisma: PrismaService,
@@ -114,6 +118,7 @@ export class ConsoleCommunitiesService {
       labels: string[];
       visibleLevel: string;
       coverImageUrl?: string | null;
+      logoImageUrl?: string | null;
     }>,
   ) {
     await this.permissions.assertCommunityManager(userId, communityId);
@@ -125,6 +130,29 @@ export class ConsoleCommunitiesService {
     if (payload.coverImageUrl !== undefined) data.coverImageUrl = payload.coverImageUrl;
 
     return this.prisma.community.update({ where: { id: communityId }, data });
+  }
+
+  async uploadCommunityAsset(userId: string, communityId: string, file: Express.Multer.File | undefined, type?: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    if (!file) {
+      throw new BadRequestException('ファイルが必要です');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('画像のみアップロードできます');
+    }
+    const folder = type === 'logo' ? 'logos' : 'covers';
+    const targetDir = join(this.uploadRoot, 'communities', communityId, folder);
+    await fs.mkdir(targetDir, { recursive: true });
+    const ext = this.getExtension(file.originalname) || 'jpg';
+    const filename = `${randomUUID()}.${ext}`;
+    await fs.writeFile(join(targetDir, filename), file.buffer);
+    const imageUrl = `/uploads/communities/${communityId}/${folder}/${filename}`;
+    return { imageUrl };
+  }
+
+  private getExtension(filename: string) {
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts.pop()?.toLowerCase() : null;
   }
 
   async listBlacklist(communityId: string, userId: string) {

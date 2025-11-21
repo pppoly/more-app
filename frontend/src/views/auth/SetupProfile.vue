@@ -512,7 +512,7 @@ onUnmounted(() => {
 .avatar-circle {
   width: 210px;
   height: 210px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: transparent;
   position: relative;
@@ -529,7 +529,7 @@ onUnmounted(() => {
 .avatar-image {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 10px;
   object-fit: cover;
   display: block;
 }

@@ -4,9 +4,13 @@
       {{ currentPageName }}
     </div>
     <template v-if="isMobile">
-      <RouterView v-slot="{ Component }">
+      <RouterView v-slot="{ Component, route }">
         <MobileShell>
-          <component :is="Component" />
+          <component
+            :is="Component"
+            v-bind="resolveRouteProps(route)"
+            :key="route.fullPath"
+          />
         </MobileShell>
       </RouterView>
     </template>
@@ -58,6 +62,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
 import { useAuth } from './composables/useAuth';
 
@@ -98,6 +103,21 @@ onUnmounted(() => {
 const goToLogin = () => {
   const redirect = currentRoute.fullPath || '/';
   router.push({ name: 'auth-login', query: { redirect } });
+};
+
+const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
+  const matched = route.matched[route.matched.length - 1];
+  if (!matched || !matched.props || !matched.props.default) {
+    return {};
+  }
+  const config = matched.props.default;
+  if (config === true) {
+    return route.params;
+  }
+  if (typeof config === 'function') {
+    return config(route);
+  }
+  return config ?? {};
 };
 </script>
 

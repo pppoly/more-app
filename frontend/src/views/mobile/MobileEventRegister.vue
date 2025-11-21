@@ -6,142 +6,171 @@
       </button>
       <div class="header-info">
         <p class="header-label">イベント申込</p>
-        <h1>{{ detail?.title }}</h1>
+        <h1>{{ detail?.title ?? '読み込み中…' }}</h1>
       </div>
     </header>
 
-    <section v-if="loading" class="state-card">読み込み中...</section>
+    <section v-if="loading" class="register-skeleton">
+      <div class="skeleton-hero shimmer"></div>
+      <div class="skeleton-card shimmer"></div>
+      <div class="skeleton-card shimmer"></div>
+    </section>
+
     <section v-else-if="error" class="state-card state-card--error">
       {{ error }}
-      <button @click="loadEvent">再試行</button>
+      <button type="button" class="retry-btn" @click="loadEvent">再試行</button>
     </section>
 
-    <section v-else-if="detail" class="register-content">
-      <div class="summary-card">
-        <p class="summary-title">{{ detail.title }}</p>
-        <p class="summary-time">{{ detail.timeText }}</p>
-        <p class="summary-location">{{ detail.locationText }}</p>
-        <p class="summary-price">{{ detail.priceText }}</p>
-      </div>
+    <section v-else-if="detail" class="register-body">
+      <article class="hero-card">
+        <p class="hero-label">対象イベント</p>
+        <h2 class="hero-title">{{ detail.title }}</h2>
+        <p class="hero-meta">{{ detail.timeText }}</p>
+        <p class="hero-meta">{{ detail.locationText }}</p>
+        <p class="hero-price">{{ detail.priceText }}</p>
+      </article>
 
-      <div class="steps">
-        <div class="step" :class="{ 'is-active': step === 1 }">1. 情報入力</div>
-        <div class="step" :class="{ 'is-active': step === 2 }">2. 確認・決済</div>
-      </div>
+      <p v-if="registrationUnavailableReason" class="ios-notice">
+        {{ registrationUnavailableReason }}
+      </p>
 
-      <div v-if="step === 1" class="form-card">
-        <p v-if="!formFields.length" class="form-hint">追加の入力は不要です。「次へ」をタップしてください。</p>
-        <div v-else class="form-fields">
-          <label v-for="(field, index) in formFields" :key="fieldKey(field, index)" class="field">
-            <span class="field-label">
+      <article class="ios-panel">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">参加者情報</p>
+          </div>
+          <span class="badge">{{ formFields.length ? `${formFields.length}項目` : '入力不要' }}</span>
+        </header>
+        <div v-if="formFields.length" class="ios-section">
+          <div v-for="(field, index) in formFields" :key="fieldKey(field, index)" class="ios-row">
+            <div class="ios-label">
               {{ field.label }}
               <span v-if="field.required" class="required">*</span>
-            </span>
-            <template v-if="['text', 'email', 'phone', 'number', 'date'].includes(field.type)">
-              <input
-                :type="inputType(field.type)"
-                class="field-input"
-                :required="field.required"
-                v-model="formValues[fieldKey(field, index)]"
-              />
-            </template>
-            <textarea
-              v-else-if="field.type === 'textarea'"
-              rows="3"
-              class="field-input"
-              :required="field.required"
-              v-model="formValues[fieldKey(field, index)]"
-            ></textarea>
-            <select
-              v-else-if="field.type === 'select'"
-              class="field-input"
-              :required="field.required"
-              v-model="formValues[fieldKey(field, index)]"
-            >
-              <option value="">選択してください</option>
-              <option v-for="option in getOptions(field)" :key="option" :value="option">{{ option }}</option>
-            </select>
-            <div v-else-if="field.type === 'singleChoice'" class="choice-list">
-              <label v-for="option in getOptions(field)" :key="option" class="choice-item">
-                <input
-                  type="radio"
-                  :name="fieldKey(field, index)"
-                  :value="option"
-                  v-model="formValues[fieldKey(field, index)]"
-                  :required="field.required"
-                />
-                <span>{{ option }}</span>
-              </label>
             </div>
-            <div v-else-if="field.type === 'multiChoice'" class="choice-list">
-              <label v-for="option in getOptions(field)" :key="option" class="choice-item">
+            <div class="ios-input">
+              <template v-if="['text', 'email', 'phone', 'number', 'date'].includes(field.type)">
+                <input
+                  :type="inputType(field.type)"
+                  :placeholder="field.placeholder || '请输入...'"
+                  v-model="formValues[fieldKey(field, index)]"
+                  class="ios-input-control"
+                />
+              </template>
+              <textarea
+                v-else-if="field.type === 'textarea'"
+                rows="3"
+                :placeholder="field.placeholder || '请输入...'"
+                v-model="formValues[fieldKey(field, index)]"
+                class="ios-input-control"
+              ></textarea>
+              <select
+                v-else-if="field.type === 'select'"
+                v-model="formValues[fieldKey(field, index)]"
+                class="ios-input-control"
+              >
+                <option value="">選択してください</option>
+                <option v-for="option in getOptions(field)" :key="option" :value="option">
+                  {{ option }}
+                </option>
+              </select>
+              <div v-else-if="field.type === 'singleChoice'" class="ios-choice">
+                <label v-for="option in getOptions(field)" :key="option">
+                  <input
+                    type="radio"
+                    :name="fieldKey(field, index)"
+                    :value="option"
+                    v-model="formValues[fieldKey(field, index)]"
+                  />
+                  <span>{{ option }}</span>
+                </label>
+              </div>
+              <div v-else-if="field.type === 'multiChoice'" class="ios-choice">
+                <label v-for="option in getOptions(field)" :key="option">
+                  <input
+                    type="checkbox"
+                    :checked="Array.isArray(formValues[fieldKey(field, index)]) && formValues[fieldKey(field, index)].includes(option)"
+                    @change="toggleMulti(field, index, option, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <span>{{ option }}</span>
+                </label>
+              </div>
+              <label v-else-if="field.type === 'checkbox'" class="ios-checkbox">
                 <input
                   type="checkbox"
-                  :checked="Array.isArray(formValues[fieldKey(field, index)]) && formValues[fieldKey(field, index)].includes(option)"
-                  @change="toggleMulti(field, index, option, ($event.target as HTMLInputElement).checked)"
+                  :checked="Boolean(formValues[fieldKey(field, index)])"
+                  @change="formValues[fieldKey(field, index)] = ($event.target as HTMLInputElement).checked"
                 />
-                <span>{{ option }}</span>
+                <span>{{ field.label }}</span>
               </label>
+              <p class="ios-placeholder" v-else>この項目は現在対応していません。</p>
+              <p v-if="fieldErrors[fieldKey(field, index)]" class="ios-field-error">
+                {{ fieldErrors[fieldKey(field, index)] }}
+              </p>
             </div>
-            <label v-else-if="field.type === 'checkbox'" class="checkbox-row">
-              <input
-                type="checkbox"
-                :checked="Boolean(formValues[fieldKey(field, index)])"
-                @change="formValues[fieldKey(field, index)] = ($event.target as HTMLInputElement).checked"
-              />
-              <span>{{ field.label }}</span>
-            </label>
-          </label>
-        </div>
-        <div class="form-actions">
-          <Button variant="primary" size="lg" class="w-full justify-center" @click="goNextStep">
-            次へ
-          </Button>
-        </div>
-      </div>
-
-      <div v-else class="confirm-card">
-        <h2>入力内容の確認</h2>
-        <ul class="confirm-list" v-if="formFields.length">
-          <li v-for="(field, index) in formFields" :key="fieldKey(field, index)">
-            <span class="confirm-label">{{ field.label }}</span>
-            <span class="confirm-value">{{ displayValue(field, index) }}</span>
-          </li>
-        </ul>
-        <p v-else class="form-hint">特別な入力はありません。</p>
-        <div class="confirm-actions">
-          <Button variant="ghost" size="md" class="flex-1 justify-center" @click="step = 1">戻る</Button>
-          <Button variant="primary" size="md" class="flex-1 justify-center" :disabled="submitting" @click="submitRegistration">
-            {{ submitting ? '送信中…' : '申込を確定' }}
-          </Button>
-        </div>
-
-        <div class="payment-card" v-if="paymentMessage">
-          <p>{{ paymentMessage }}</p>
-          <div v-if="pendingPayment" class="payment-actions">
-            <Button variant="primary" size="md" class="flex-1 justify-center" :disabled="isRedirecting" @click="handleStripeCheckout">
-              {{ isRedirecting ? 'Stripeへ移動中…' : 'Stripeで支払う' }}
-            </Button>
-            <Button variant="outline" size="md" class="flex-1 justify-center" :disabled="isPaying" @click="handleMockPayment">
-              {{ isPaying ? 'Mock 決済中…' : 'Mock 支払い（デモ）' }}
-            </Button>
           </div>
         </div>
-        <p v-if="registrationError" class="state-card state-card--error">{{ registrationError }}</p>
-      </div>
+        <div class="ios-consent">
+          <p v-if="formFields.length === 0">このイベントでは追加情報の入力は必要ありません。</p>
+          <p>
+            お客様の個人情報は、日本の個人情報保護法およびSOCIALMOREのプライバシーポリシーに基づき適切に管理します。
+            提供いただいた内容はイベント運営および緊急連絡の目的に限って利用されます。
+          </p>
+          <label class="ios-consent__row">
+            <input type="checkbox" v-model="hasAgreedTerms" />
+            <span>上記内容に同意し、個人情報の取扱いに同意します。</span>
+          </label>
+        </div>
+      </article>
+
+      <article class="ios-panel">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">注意事項</p>
+            <p class="panel-hint">申し込み前に必ずお読みください。</p>
+          </div>
+        </header>
+        <ul class="ios-guideline">
+          <li>キャンセルは開催前日までにご連絡ください。</li>
+          <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
+          <li>次の画面で内容を確認後、決済（必要な場合）へ進みます。</li>
+          <li>お客様の個人情報は日本の個人情報保護法に基づき厳重に管理されます。</li>
+        </ul>
+      </article>
+
+      <p v-if="registrationError" class="ios-error">{{ registrationError }}</p>
+
+      <div class="mobile-register__spacer"></div>
     </section>
+
+    <nav class="ios-tabbar">
+      <button
+        type="button"
+        class="rails-cta"
+        :class="{ 'is-disabled': isCtaDisabled }"
+        :disabled="isCtaDisabled"
+        @click="proceedToCheckout"
+      >
+        <span class="i-lucide-check-circle"></span>
+        {{ ctaLabel }}
+      </button>
+    </nav>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { isAxiosError } from 'axios';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { createMockPayment, createRegistration, createStripeCheckout, fetchEventById } from '../../api/client';
-import type { EventDetail, EventRegistrationSummary, RegistrationFormField } from '../../types/api';
+import { createRegistration, fetchEventById } from '../../api/client';
+import type { EventDetail, RegistrationFormField } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
-import Button from '../../components/ui/Button.vue';
 import { useAuth } from '../../composables/useAuth';
+import {
+  MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
+  MOBILE_EVENT_SUCCESS_KEY,
+} from '../../constants/mobile';
 
+const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
@@ -149,16 +178,121 @@ const { user } = useAuth();
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const step = ref(1);
-const formValues = reactive<Record<string, any>>({});
-const submitting = ref(false);
 const registrationError = ref<string | null>(null);
-const pendingPayment = ref<{ registrationId: string; amount?: number } | null>(null);
-const paymentMessage = ref<string | null>(null);
-const isPaying = ref(false);
-const isRedirecting = ref(false);
+const hasAgreedTerms = ref(false);
+const submittingInline = ref(false);
 
-const eventId = computed(() => route.params.eventId as string);
+const formValues = reactive<Record<string, any>>({});
+const fieldErrors = reactive<Record<string, string | null>>({});
+
+const eventId = computed(() => props.eventId ?? (route.params.eventId as string));
+
+const currencyFormatter = new Intl.NumberFormat('ja-JP', {
+  style: 'currency',
+  currency: 'JPY',
+  maximumFractionDigits: 0,
+});
+
+const derivePriceText = (target: EventDetail | null) => {
+  if (!target?.ticketTypes?.length) return '無料 / 未定';
+  const prices = target.ticketTypes.map((ticket) => ticket.price ?? 0);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  if (max === 0) return '無料';
+  if (min === max) return currencyFormatter.format(max);
+  return `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
+};
+
+const resolveErrorMessage = (err: unknown, fallback: string) => {
+  if (isAxiosError(err)) {
+    const message = err.response?.data?.message;
+    if (typeof message === 'string') {
+      return message;
+    }
+    if (Array.isArray(message) && message.length) {
+      const first = message[0];
+      if (typeof first === 'string') {
+        return first;
+      }
+    }
+    return err.message;
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return fallback;
+};
+
+const detail = computed(() => {
+  if (!event.value) return null;
+  const start = formatDate(event.value.startTime);
+  const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
+  return {
+    id: event.value.id,
+    title: getLocalizedText(event.value.title),
+    timeText: `${start} 〜 ${end}`,
+    locationText: event.value.locationText || '場所未定',
+    priceText: event.value.config?.priceText ?? derivePriceText(event.value),
+  };
+});
+
+const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
+const defaultTicketId = computed(() => {
+  if (!event.value?.ticketTypes?.length) return null;
+  const freeTicket = event.value.ticketTypes.find((ticket) => (ticket.price ?? 0) === 0);
+  return freeTicket?.id ?? event.value.ticketTypes[0].id;
+});
+const requiresPayment = computed(() =>
+  event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
+);
+const registrationUnavailableReason = computed(() => {
+  if (!event.value) return null;
+  if (event.value.status !== 'open') {
+    return '現在このイベントは申込受付を行っていません。';
+  }
+  if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
+    return '公開範囲の制限により申し込みできません。';
+  }
+  return null;
+});
+const ctaLabel = computed(() => {
+  if (registrationUnavailableReason.value) return '受付終了';
+  if (submittingInline.value) return '処理中…';
+  return requiresPayment.value ? '情報を確認' : '無料で申込む';
+});
+const isCtaDisabled = computed(
+  () => Boolean(registrationUnavailableReason.value) || !hasAgreedTerms.value || submittingInline.value,
+);
+
+type SuccessPayload = {
+  eventId: string;
+  title: string;
+  timeText: string;
+  locationText: string;
+  priceText?: string;
+  paymentStatus: 'free' | 'paid';
+  holdExpiresAt: string;
+};
+
+const HOLD_DURATION_MS = 30 * 60 * 1000;
+
+const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => {
+  if (!detail.value) return null;
+  return {
+    eventId: detail.value.id,
+    title: detail.value.title,
+    timeText: detail.value.timeText,
+    locationText: detail.value.locationText,
+    priceText: detail.value.priceText,
+    paymentStatus: status,
+    holdExpiresAt: status === 'paid' ? new Date(Date.now() + HOLD_DURATION_MS).toISOString() : new Date().toISOString(),
+  };
+};
+
+const goToSuccessPage = (payload: SuccessPayload) => {
+  sessionStorage.setItem(MOBILE_EVENT_SUCCESS_KEY, JSON.stringify(payload));
+  router.replace({ name: 'MobileEventSuccess', params: { eventId: payload.eventId } });
+};
 
 const loadEvent = async () => {
   if (!eventId.value) {
@@ -170,12 +304,22 @@ const loadEvent = async () => {
   try {
     event.value = await fetchEventById(eventId.value);
     initializeFormValues();
+    applyDraftAnswers();
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'イベント情報の取得に失敗しました';
   } finally {
     loading.value = false;
   }
 };
+
+watch(
+  () => eventId.value,
+  (newId, oldId) => {
+    if (newId && newId !== oldId && user.value) {
+      loadEvent();
+    }
+  },
+);
 
 onMounted(() => {
   if (!user.value) {
@@ -185,23 +329,9 @@ onMounted(() => {
   loadEvent();
 });
 
-const detail = computed(() => {
-  if (!event.value) return null;
-  const start = formatDate(event.value.startTime);
-  const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
-  return {
-    id: event.value.id,
-    title: getLocalizedText(event.value.title),
-    timeText: `${start} 〜 ${end}`,
-    locationText: event.value.locationText,
-    priceText: event.value.config?.priceText ?? '無料 / 未定',
-  };
-});
-
-const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
-
 const initializeFormValues = () => {
   Object.keys(formValues).forEach((key) => delete formValues[key]);
+  Object.keys(fieldErrors).forEach((key) => delete fieldErrors[key]);
   formFields.value.forEach((field, index) => {
     const key = fieldKey(field, index);
     if (field.type === 'checkbox') {
@@ -211,94 +341,105 @@ const initializeFormValues = () => {
     } else {
       formValues[key] = '';
     }
+    fieldErrors[key] = null;
   });
+  hasAgreedTerms.value = false;
 };
 
-const goNextStep = () => {
+const applyDraftAnswers = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    if (stored?.eventId !== eventId.value || !stored?.answers) return;
+    formFields.value.forEach((field, index) => {
+      const key = fieldKey(field, index);
+      if (stored.answers[key] !== undefined) {
+        formValues[key] = stored.answers[key];
+      }
+    });
+  } catch {
+    // ignore parse errors
+  }
+};
+
+const proceedToCheckout = () => {
+  if (registrationUnavailableReason.value) {
+    registrationError.value = registrationUnavailableReason.value;
+    return;
+  }
   if (!validateForm()) return;
-  step.value = 2;
+  if (!hasAgreedTerms.value) {
+    registrationError.value = '個人情報の取扱いに関する同意が必要です。';
+    return;
+  }
+  if (!requiresPayment.value) {
+    submitFreeRegistration();
+    return;
+  }
+  const payload = {
+    eventId: eventId.value,
+    answers: { ...formValues },
+    savedAt: Date.now(),
+  };
+  sessionStorage.setItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));
+  router.push({ name: 'MobileEventCheckout', params: { eventId: eventId.value } });
+};
+
+const submitFreeRegistration = async () => {
+  if (!eventId.value) return;
+  if (registrationUnavailableReason.value) {
+    registrationError.value = registrationUnavailableReason.value;
+    return;
+  }
+  submittingInline.value = true;
+  registrationError.value = null;
+  try {
+    await createRegistration(eventId.value, {
+      ticketTypeId: defaultTicketId.value ?? undefined,
+      formAnswers: { ...formValues },
+    });
+    sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    const payload = buildSuccessPayload('free');
+    if (payload) {
+      goToSuccessPage(payload);
+    }
+  } catch (err) {
+    registrationError.value = resolveErrorMessage(err, '申込に失敗しました');
+  } finally {
+    submittingInline.value = false;
+  }
 };
 
 const validateForm = () => {
   registrationError.value = null;
-  for (let i = 0; i < formFields.value.length; i += 1) {
-    const field = formFields.value[i];
-    const key = fieldKey(field, i);
+  let valid = true;
+  formFields.value.forEach((field, index) => {
+    const key = fieldKey(field, index);
     const value = formValues[key];
-    if (field.required) {
-      if (field.type === 'multiChoice') {
-        if (!Array.isArray(value) || !value.length) {
-          registrationError.value = `${field.label} を入力してください`;
-          return false;
-        }
-      } else if (!value) {
-        registrationError.value = `${field.label} を入力してください`;
-        return false;
+    fieldErrors[key] = null;
+    if (!field.required) return;
+    if (field.type === 'multiChoice') {
+      if (!Array.isArray(value) || !value.length) {
+        fieldErrors[key] = `${field.label} を入力してください`;
+        valid = false;
       }
+    } else if (field.type === 'checkbox') {
+      if (!value) {
+        fieldErrors[key] = `${field.label} を入力してください`;
+        valid = false;
+      }
+    } else if (!value) {
+      fieldErrors[key] = `${field.label} を入力してください`;
+      valid = false;
     }
-  }
-  return true;
-};
-
-const submitRegistration = async () => {
-  if (!eventId.value) return;
-  submitting.value = true;
-  registrationError.value = null;
-  try {
-    const registration = await createRegistration(eventId.value, { formAnswers: { ...formValues } });
-    handleRegistrationResult(registration);
-  } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '申込に失敗しました';
-  } finally {
-    submitting.value = false;
-  }
-};
-
-const handleRegistrationResult = (registration: EventRegistrationSummary) => {
-  if (registration.paymentRequired) {
-    pendingPayment.value = {
-      registrationId: registration.registrationId,
-      amount: registration.amount,
-    };
-    paymentMessage.value = 'お支払いを完了すると参加が確定します。';
-  } else {
-    pendingPayment.value = null;
-    paymentMessage.value = 'お申込みありがとうございます！このまま最新情報をお待ちください。';
-  }
-};
-
-const handleMockPayment = async () => {
-  if (!pendingPayment.value) return;
-  isPaying.value = true;
-  registrationError.value = null;
-  try {
-    await createMockPayment(pendingPayment.value.registrationId);
-    pendingPayment.value = null;
-    paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
-  } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '決済処理に失敗しました';
-  } finally {
-    isPaying.value = false;
-  }
-};
-
-const handleStripeCheckout = async () => {
-  if (!pendingPayment.value) return;
-  isRedirecting.value = true;
-  registrationError.value = null;
-  try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
-    window.location.href = checkoutUrl;
-  } catch (err: any) {
-    const message =
-      err?.response?.data?.message ?? (err instanceof Error ? err.message : 'Stripe Checkoutの開始に失敗しました');
-    registrationError.value = message;
-    isRedirecting.value = false;
-  }
+  });
+  return valid;
 };
 
 const fieldKey = (field: RegistrationFormField, index: number) => field.id ?? `${field.label ?? 'field'}-${index}`;
 const getOptions = (field: RegistrationFormField) => (Array.isArray(field.options) ? field.options : []);
+
 const toggleMulti = (field: RegistrationFormField, index: number, option: string, checked: boolean) => {
   const key = fieldKey(field, index);
   if (!Array.isArray(formValues[key])) {
@@ -328,252 +469,364 @@ const inputType = (type: string) => {
   }
 };
 
-const displayValue = (field: RegistrationFormField, index: number) => {
-  const value = formValues[fieldKey(field, index)];
-  if (Array.isArray(value)) {
-    return value.join(', ');
-  }
-  if (typeof value === 'boolean') {
-    return value ? 'はい' : 'いいえ';
-  }
-  return value || '未入力';
-};
-
 const formatDate = (value: string) =>
-  new Date(value).toLocaleString('ja-JP', {
+  new Date(value).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     weekday: 'short',
     hour: '2-digit',
-    minute: '2-digit',
   });
 </script>
 
 <style scoped>
 .mobile-register {
+  background: #f8fafc;
   min-height: 100vh;
-  background: var(--m-color-bg, #f5f7fb);
-  display: flex;
-  flex-direction: column;
 }
 
 .register-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-  background: #fff;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  padding: 18px 16px 6px;
 }
 
 .back-button {
-  border: none;
-  background: rgba(15, 23, 42, 0.05);
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border: none;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
 .header-info h1 {
-  margin: 4px 0 0;
   font-size: 18px;
-  font-weight: 700;
-  color: var(--m-color-text-primary);
+  margin: 2px 0 0;
+  font-weight: 600;
 }
 
 .header-label {
   font-size: 12px;
-  color: var(--m-color-text-tertiary);
+  color: rgba(15, 23, 42, 0.6);
   margin: 0;
+  letter-spacing: 0.1em;
 }
 
-.register-content {
-  padding: 16px;
+.register-body {
+  padding: 0 16px 80px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.summary-card {
+.hero-card {
+  background: linear-gradient(135deg, #0f3057, #2ba7b4);
+  color: #f0faff;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: translateY(0);
+  animation: heroReveal 0.5s ease;
+}
+
+.hero-title {
+  font-size: 24px;
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hero-meta {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  opacity: 0.95;
+}
+
+.hero-price {
+  margin: 10px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+@keyframes heroReveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ios-panel {
   background: #fff;
-  border-radius: 18px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-}
-
-.summary-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.summary-time,
-.summary-location,
-.summary-price {
-  margin: 0;
-  font-size: 13px;
-  color: var(--m-color-text-secondary);
-}
-
-.steps {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.step {
-  border-radius: 999px;
-  padding: 10px 12px;
-  font-size: 13px;
-  text-align: center;
-  font-weight: 600;
-  background: rgba(15, 23, 42, 0.05);
-  color: var(--m-color-text-tertiary);
-}
-
-.step.is-active {
-  background: #0090d9;
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
-}
-.form-card,
-.form-card,
-.confirm-card {
-  background: #fff;
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.field-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
-}
-
-.required {
-  color: #ef4444;
-  margin-left: 4px;
-}
-
-.field-input {
-  margin-top: 6px;
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  padding: 10px 12px;
-  font-size: 14px;
-}
-
-.choice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.choice-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  padding: 8px 10px;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.form-actions {
-  margin-top: 8px;
-}
-
-.form-hint {
-  font-size: 13px;
-  color: var(--m-color-text-tertiary);
-  margin: 0;
-}
-
-.confirm-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.confirm-label {
-  font-size: 12px;
-  color: var(--m-color-text-tertiary);
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.confirm-value {
-  font-size: 14px;
+.panel-label {
+  margin: 0;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--m-color-text-primary);
 }
 
-.confirm-actions {
+.panel-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.05);
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.ios-section {
+  border-top: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.ios-row {
   display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.ios-row:last-child {
+  border-bottom: none;
+}
+
+.ios-label {
+  flex: 0 0 120px;
+  font-weight: 700;
+  font-size: 16px;
+  color: rgba(15, 23, 42, 0.95);
+}
+
+.ios-label .required {
+  margin-left: 4px;
+  color: #e11d48;
+}
+
+.ios-input {
+  flex: 1;
+  font-size: 15px;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.ios-input-control {
+  width: 100%;
+  border: none;
+  padding: 0;
+  font-size: 15px;
+  background: transparent;
+  color: rgba(15, 23, 42, 0.95);
+  font-family: inherit;
+  text-align: right;
+}
+
+.ios-input-control:focus {
+  outline: none;
+}
+
+.ios-input select {
+  appearance: none;
+}
+
+.ios-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ios-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ios-checkbox {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.payment-card {
-  margin-top: 12px;
-  border-radius: 18px;
-  background: #fff9eb;
-  color: #92400e;
-  padding: 14px;
+.ios-field-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.ios-guideline {
+  margin: 0;
+  padding-left: 18px;
   font-size: 13px;
+  color: rgba(15, 23, 42, 0.75);
+  line-height: 1.5;
 }
 
-.payment-actions {
+.ios-consent {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.ios-consent__row {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
+}
+.ios-consent__row input {
+  width: 18px;
+  height: 18px;
 }
 
+.ios-error {
+  font-size: 13px;
+  color: #dc2626;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.ios-notice {
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.08);
+  color: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.ios-actions {
+  margin-top: 8px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+}
+.mobile-register__spacer {
+  height: 140px;
+}
+
+.ios-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  background: rgba(248, 250, 252, 0.95);
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.15);
+}
+
+.rails-cta {
+  flex: 1;
+  border: none;
+  border-radius: 999px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #0090d9;
+  color: #fff;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.rails-cta:active:not(.is-disabled) {
+  transform: scale(0.98);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
+}
+
+.rails-cta.is-disabled {
+  background: #92d0f5;
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: none;
+  transform: none;
+}
 .state-card {
+  padding: 18px;
+  margin: 24px 16px;
   border-radius: 16px;
-  padding: 1rem;
-  margin: 16px;
-  background: #e2e8f0;
-  font-size: 0.9rem;
-  color: #475569;
+  background: #fff;
+  text-align: center;
 }
 
 .state-card--error {
-  background: #fee2e2;
-  color: #b91c1c;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  color: #dc2626;
 }
 
-.state-card--error button {
+.retry-btn {
+  margin-top: 8px;
   border: none;
   background: transparent;
-  font-weight: 600;
-  color: inherit;
-  text-decoration: underline;
+  color: var(--color-primary, #0ea5e9);
+  font-size: 14px;
+}
+
+.register-skeleton {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skeleton-hero,
+.skeleton-card {
+  width: 100%;
+  border-radius: 20px;
+  height: 120px;
+}
+
+.skeleton-hero {
+  height: 200px;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, #edf2ff 25%, #e2e8f8 37%, #edf2ff 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 </style>

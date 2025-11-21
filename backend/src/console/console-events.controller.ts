@@ -51,6 +51,18 @@ export class ConsoleEventsController {
     return this.consoleEventsService.closeEvent(eventId, req.user.id);
   }
 
+  @Post(':eventId/checkins')
+  checkinRegistration(
+    @Param('eventId') eventId: string,
+    @Body('registrationId') registrationId: string,
+    @Req() req: any,
+  ) {
+    if (!registrationId) {
+      throw new BadRequestException('registrationId is required');
+    }
+    return this.consoleEventsService.checkinRegistration(req.user.id, eventId, registrationId);
+  }
+
   @Post(':eventId/covers')
   @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
   uploadCovers(

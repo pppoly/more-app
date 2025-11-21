@@ -17,6 +17,7 @@ export interface CommunitySummary {
   id: string;
   name: string;
   slug: string;
+  logoImageUrl?: string | null;
 }
 
 export interface EventSummary {
@@ -32,16 +33,19 @@ export interface EventSummary {
   locationLng?: number | null;
   community: CommunitySummary;
   category?: string | null;
+  maxParticipants?: number | null;
   priceRange?: {
     min: number;
     max: number;
   };
   coverImageUrl?: string | null;
+  communityLogoUrl?: string | null;
   ticketTypes?: Array<{
     id: string;
     name: LocalizedContent;
     price: number;
   }>;
+  config?: Record<string, any> | null;
 }
 
 export interface RegistrationFormField {
@@ -62,6 +66,7 @@ export interface EventGalleryItem {
 export interface EventDetail {
   id: string;
   status: string;
+  visibility?: string;
   title: LocalizedContent;
   description?: LocalizedContent;
   descriptionHtml?: string | null;
@@ -78,6 +83,13 @@ export interface EventDetail {
   maxParticipants?: number | null;
   registrationFormSchema?: RegistrationFormField[] | null;
   config?: Record<string, any> | null;
+  ticketTypes?: Array<{
+    id: string;
+    type: string;
+    price?: number | null;
+    name?: LocalizedContent | null;
+    quota?: number | null;
+  }>;
   community: CommunitySummary;
 }
 
@@ -112,6 +124,7 @@ export interface EventWithCommunity {
   endTime?: string;
   locationText: string;
   community: CommunitySummary;
+  coverImageUrl?: string | null;
 }
 
 export interface EventRegistrationSummary {
@@ -166,6 +179,7 @@ export interface ManagedCommunity {
   visibleLevel?: string;
   createdAt?: string;
   coverImageUrl?: string | null;
+  logoImageUrl?: string | null;
   role?: string | null;
 }
 

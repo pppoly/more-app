@@ -205,3 +205,46 @@ const submit = async () => {
 };
 
 </script>
+
+<style scoped>
+.apply-page {
+  padding: 32px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  background: #f7f9fc;
+  min-height: 100vh;
+}
+
+.hero {
+  background: linear-gradient(135deg, #0f3057, #2ba7b4);
+  color: #fff;
+  border-radius: 24px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.primary {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #f97316, #f43f5e);
+}
+
+.secondary {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 10px 20px;
+  color: #fff;
+  text-decoration: none;
+}
+</style>

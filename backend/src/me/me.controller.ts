@@ -1,4 +1,15 @@
-import { BadRequestException, Body, Controller, Get, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MeService } from './me.service';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -27,5 +38,13 @@ export class MeController {
   @Post('profile')
   async updateProfile(@Body('name') name: string | undefined, @Req() req: any) {
     return this.meService.updateProfile(req.user.id, { name });
+  }
+
+  @Post('events/:registrationId/cancel')
+  cancelMyEvent(@Param('registrationId') registrationId: string, @Req() req: any) {
+    if (!registrationId) {
+      throw new BadRequestException('registrationId is required');
+    }
+    return this.meService.cancelEventRegistration(req.user.id, registrationId);
   }
 }

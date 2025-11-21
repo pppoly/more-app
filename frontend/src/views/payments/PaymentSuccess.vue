@@ -12,6 +12,27 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
+
+const router = useRouter();
+const route = useRoute();
+
+onMounted(() => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+    if (raw) {
+      const pending = JSON.parse(raw);
+      sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+      sessionStorage.setItem(MOBILE_EVENT_SUCCESS_KEY, JSON.stringify(pending));
+      router.replace({ name: 'MobileEventSuccess', params: { eventId: pending.eventId } });
+      return;
+    }
+  } catch {
+    // ignore and fall back to default screen
+  }
+});
 </script>
 
 <style scoped>

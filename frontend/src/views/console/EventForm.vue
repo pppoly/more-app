@@ -1934,7 +1934,7 @@ select {
   position: absolute;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #fff;
   top: 2px;
   left: 2px;
@@ -2216,7 +2216,7 @@ select {
   left: 4px;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #fff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   transition: transform 0.2s ease;
@@ -2582,7 +2582,7 @@ select {
   height: 16px;
   border: 2px solid rgba(15, 23, 42, 0.15);
   border-top-color: #0f172a;
-  border-radius: 50%;
+  border-radius: 10px;
   animation: spin 1s linear infinite;
 }
 
@@ -2707,7 +2707,7 @@ select {
   right: 6px;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
@@ -2803,7 +2803,7 @@ select {
   height: 18px;
   border: 2px solid rgba(248, 250, 252, 0.3);
   border-top-color: #f8fafc;
-  border-radius: 50%;
+  border-radius: 10px;
   animation: spin 1s linear infinite;
 }
 

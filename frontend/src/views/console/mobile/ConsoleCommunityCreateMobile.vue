@@ -1,76 +1,129 @@
 <template>
-  <div class="community-create">
-    <header class="create-header">
-      <button class="back-button" type="button" @click="router.back()">
-        <span class="i-lucide-chevron-left text-lg"></span>
+  <div class="community-form">
+    <header class="hero-card">
+      <button class="hero-back" type="button" @click="goBack">
+        <span class="i-lucide-chevron-left"></span>
       </button>
-      <div>
-        <p class="header-label">コミュニティ登録</p>
-        <h1>新しいコミュニティ</h1>
+      <div class="hero-text">
+        <p class="hero-eyebrow">{{ isEdit ? '社群設定' : '新しい社群' }}</p>
+        <h1>{{ isEdit ? '社群資料を更新' : '社群を登録' }}</h1>
+        <p class="hero-subtext">
+          AI が社群情報を参照しながら活動助手を最適化します。ベーシックな情報から入力しましょう。
+        </p>
       </div>
+      <span class="hero-status">{{ isEdit ? '編集中' : '草稿' }}</span>
     </header>
 
-    <main class="create-content">
-      <section class="info-card">
-        <p>コミュニティ名と基本情報を入力してください。</p>
+    <form class="form-sections" @submit.prevent="handleSubmit">
+      <section class="form-card">
+        <p class="card-label">基本情報</p>
+        <div class="ios-field">
+          <label>社群名称</label>
+          <input v-model="form.name" type="text" placeholder="Tokyo Community..." required />
+        </div>
+        <div class="ios-field">
+          <label>Slug</label>
+          <input v-model="form.slug" type="text" :disabled="isEdit" placeholder="tokyo-community" required />
+        </div>
       </section>
 
       <section class="form-card">
-        <label class="form-field">
-          <span>コミュニティ名 <span class="required">*</span></span>
-          <input v-model="form.name" type="text" placeholder="創翔コミュニティ" required />
-        </label>
+        <div class="card-head">
+          <p class="card-label">ラベル</p>
+          <p class="card-hint">カンマ区切りで入力 / ワンタップで編集</p>
+        </div>
+        <div class="ios-field">
+          <label>キーワード</label>
+          <input v-model="form.labels" type="text" placeholder="親子, 多文化, NPO" />
+        </div>
+        <div v-if="labelChips.length" class="chip-row">
+          <span v-for="chip in labelChips" :key="chip" class="chip">{{ chip }}</span>
+        </div>
+      </section>
 
-        <label class="form-field">
-          <span>識別子（slug） <span class="required">*</span></span>
-          <input v-model="form.slug" type="text" placeholder="socialmore" required />
-          <small>URL に使用されます。例: /communities/<strong>socialmore</strong></small>
-        </label>
+      <section class="form-card">
+        <div class="card-head">
+          <p class="card-label">公開範囲</p>
+          <p class="card-hint">ユーザー側にどこまで公開するかを決めます</p>
+        </div>
+        <div class="radio-group">
+          <label v-for="option in visibleOptions" :key="option.value" class="radio-tile">
+            <input v-model="form.visibleLevel" :value="option.value" type="radio" />
+            <div class="radio-content">
+              <p class="radio-title">{{ option.label }}</p>
+              <p class="radio-desc">{{ option.desc }}</p>
+            </div>
+          </label>
+        </div>
+      </section>
 
-        <label class="form-field">
-          <span>紹介ラベル</span>
-          <input v-model="form.labels" type="text" placeholder="親子, 多文化, 教育" />
-          <small>カンマ区切りで入力してください。</small>
-        </label>
+      <section class="form-card">
+        <p class="card-label">ビジュアル</p>
+        <div class="upload-grid">
+          <div class="upload-card">
+            <p class="upload-title">ロゴ画像</p>
+            <div class="upload-drop" @click="triggerLogoUpload">
+              <input ref="logoInput" type="file" accept="image/*" class="hidden-input" @change="handleLogoUpload" />
+              <div v-if="logoPreview" class="upload-preview">
+                <img :src="logoPreview" alt="logo preview" />
+              </div>
+              <div v-else class="upload-empty">
+                <span class="i-lucide-image-plus"></span>
+                <p>タップしてアップロード</p>
+              </div>
+            </div>
+          </div>
+          <div class="upload-card">
+            <p class="upload-title">カバー画像</p>
+            <div class="upload-drop" @click="triggerCoverUpload">
+              <input ref="coverInput" type="file" accept="image/*" class="hidden-input" @change="handleCoverUpload" />
+              <div v-if="coverPreview" class="upload-preview">
+                <img :src="coverPreview" alt="cover preview" />
+              </div>
+              <div v-else class="upload-empty">
+                <span class="i-lucide-image-plus"></span>
+                <p>タップしてアップロード</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <label class="form-field">
-          <span>公開範囲</span>
-          <select v-model="form.visibleLevel">
-            <option value="public">Public</option>
-            <option value="semi-public">Semi-public</option>
-            <option value="private">Private</option>
-          </select>
-        </label>
-
-        <label class="form-field">
-          <span>カバー画像 URL</span>
-          <input v-model="form.coverImageUrl" type="text" placeholder="https://example.com/banner.jpg" />
-        </label>
-
-        <label class="form-field">
-          <span>紹介文</span>
-          <textarea v-model="form.description" rows="4" placeholder="コミュニティの概要や活動内容を記入してください"></textarea>
-        </label>
+      <section class="form-card">
+        <div class="card-head">
+          <p class="card-label">紹介文</p>
+          <p class="card-hint">AI に渡る原稿です。ミッション・活動内容・対象者などを書きましょう。</p>
+        </div>
+        <textarea
+          v-model="form.description"
+          rows="6"
+          placeholder="例：Tokyo Community Organizations Meetup Group は..."
+        ></textarea>
       </section>
 
       <p v-if="error" class="form-error">{{ error }}</p>
-    </main>
+    </form>
 
-    <footer class="create-footer">
-      <Button variant="primary" size="lg" class="w-full justify-center" :disabled="submitting" @click="submit">
-        {{ submitting ? '登録中…' : 'コミュニティを作成' }}
-      </Button>
+    <footer class="form-footer">
+      <button type="button" class="ghost-btn" @click="goBack">キャンセル</button>
+      <button type="button" class="primary-btn" :disabled="submitting" @click="handleSubmit">
+        {{ submitting ? '保存中…' : '保存する' }}
+      </button>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import Button from '../../../components/ui/Button.vue';
-import { createConsoleCommunity } from '../../../api/client';
+import { computed, reactive, ref, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { createConsoleCommunity, fetchConsoleCommunity, updateConsoleCommunity, uploadCommunityAsset } from '../../../api/client';
+import type { ConsoleCommunityDetail } from '../../../types/api';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
 
+const route = useRoute();
 const router = useRouter();
+const communityId = computed(() => route.params.communityId as string | undefined);
+const isEdit = computed(() => Boolean(communityId.value));
 
 const form = reactive({
   name: '',
@@ -78,148 +131,442 @@ const form = reactive({
   labels: '',
   visibleLevel: 'public',
   coverImageUrl: '',
+  logoImageUrl: '',
   description: '',
 });
+const logoInput = ref<HTMLInputElement | null>(null);
+const coverInput = ref<HTMLInputElement | null>(null);
+const logoPreview = ref<string | null>(null);
+const coverPreview = ref<string | null>(null);
+const uploadingLogo = ref(false);
+const uploadingCover = ref(false);
 
 const submitting = ref(false);
 const error = ref<string | null>(null);
+
+const visibleOptions = [
+  { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
+  { value: 'semi-public', label: '社群内公開', desc: 'Console / 既存メンバーのみ' },
+  { value: 'private', label: '非公開', desc: '運営メモ用・外部非公開' },
+];
+
+const labelChips = computed(() =>
+  form.labels
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean),
+);
+
+const load = async () => {
+  if (!communityId.value) return;
+  try {
+    const data = await fetchConsoleCommunity(communityId.value);
+    form.name = data.name;
+    form.slug = data.slug;
+    form.visibleLevel = data.visibleLevel || 'public';
+    form.labels = (data.labels || []).join(', ');
+    form.coverImageUrl = data.coverImageUrl || '';
+    coverPreview.value = form.coverImageUrl ? resolveAssetUrl(form.coverImageUrl) : null;
+    const descriptionObj =
+      typeof data.description === 'object' && data.description
+        ? (data.description as ConsoleCommunityDetail['description'])
+        : null;
+    form.description = descriptionObj?.original ?? '';
+    form.logoImageUrl = (descriptionObj as any)?.logoImageUrl ?? '';
+    logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '読み込みに失敗しました';
+  }
+};
 
 const buildDescription = () => ({
   original: form.description,
   lang: 'ja',
   translations: {},
+  logoImageUrl: form.logoImageUrl || null,
 });
 
-const submit = async () => {
-  if (!form.name.trim() || !form.slug.trim()) {
-    error.value = 'コミュニティ名と Slug を入力してください';
-    return;
+const triggerLogoUpload = () => {
+  logoInput.value?.click();
+};
+
+const triggerCoverUpload = () => {
+  coverInput.value?.click();
+};
+
+const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const { width, height } = img;
+        let cropWidth = width;
+        let cropHeight = cropWidth / aspectRatio;
+        if (cropHeight > height) {
+          cropHeight = height;
+          cropWidth = cropHeight * aspectRatio;
+        }
+        const startX = (width - cropWidth) / 2;
+        const startY = (height - cropHeight) / 2;
+        const outputWidth = Math.min(targetWidth, cropWidth);
+        const outputHeight = outputWidth / aspectRatio;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas not supported'));
+          return;
+        }
+        ctx.drawImage(img, startX, startY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+
+const dataUrlToFile = async (dataUrl: string, filename: string) => {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+};
+
+const handleLogoUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file || uploadingLogo.value) return;
+  uploadingLogo.value = true;
+  try {
+    const dataUrl = await cropImage(file, 1, 512);
+    logoPreview.value = dataUrl;
+    const uploadFile = await dataUrlToFile(dataUrl, `logo-${Date.now()}.jpg`);
+    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'logo');
+    form.logoImageUrl = imageUrl;
+    logoPreview.value = resolveAssetUrl(imageUrl);
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    uploadingLogo.value = false;
   }
+};
+
+const handleCoverUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file || uploadingCover.value) return;
+  uploadingCover.value = true;
+  try {
+    const dataUrl = await cropImage(file, 16 / 9, 1280);
+    coverPreview.value = dataUrl;
+    const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
+    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'cover');
+    form.coverImageUrl = imageUrl;
+    coverPreview.value = resolveAssetUrl(imageUrl);
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    uploadingCover.value = false;
+  }
+};
+
+const handleSubmit = async () => {
   submitting.value = true;
   error.value = null;
+  const payload = {
+    name: form.name,
+    slug: form.slug,
+    labels: labelChips.value,
+    visibleLevel: form.visibleLevel,
+    coverImageUrl: form.coverImageUrl || null,
+    logoImageUrl: form.logoImageUrl || null,
+    description: buildDescription(),
+  };
   try {
-    await createConsoleCommunity({
-      name: form.name.trim(),
-      slug: form.slug.trim(),
-      labels: form.labels
-        .split(',')
-        .map((label) => label.trim())
-        .filter(Boolean),
-      visibleLevel: form.visibleLevel,
-      coverImageUrl: form.coverImageUrl || null,
-      description: buildDescription(),
-    });
-    router.replace('/console');
+    if (isEdit.value && communityId.value) {
+      await updateConsoleCommunity(communityId.value, payload);
+    } else {
+      await createConsoleCommunity(payload);
+    }
+    router.replace({ name: 'console-communities' });
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '登録に失敗しました';
+    error.value = err instanceof Error ? err.message : '保存に失敗しました';
   } finally {
     submitting.value = false;
   }
 };
+
+const goBack = () => {
+  router.back();
+};
+
+onMounted(load);
 </script>
 
 <style scoped>
-.community-create {
+/* same styles as previous mobile version */
+.community-form {
   min-height: 100vh;
-  background: var(--m-color-bg, #f5f7fb);
-  display: flex;
-  flex-direction: column;
+  background: #f4f6fb;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
 }
-
-.create-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-  background: #fff;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+.hero-card {
+  margin: 16px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #0f3057, #45aee2);
+  color: #f0f9ff;
+  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.2);
+  position: relative;
+  overflow: hidden;
 }
-
-.back-button {
+.hero-back {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   border: none;
-  background: rgba(15, 23, 42, 0.05);
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  margin-bottom: 12px;
 }
-
-.header-label {
-  margin: 0;
-  font-size: 12px;
-  color: var(--m-color-text-tertiary);
-}
-
-.create-header h1 {
-  margin: 2px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--m-color-text-primary);
-}
-
-.create-content {
-  flex: 1;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.info-card,
-.form-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
-}
-
-.form-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-field {
+.hero-text {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
-  color: var(--m-color-text-primary);
 }
-
-.form-field input,
-.form-field textarea,
-.form-field select {
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  padding: 10px 12px;
+.hero-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.hero-text h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+.hero-subtext {
+  margin: 0;
+  opacity: 0.9;
   font-size: 14px;
 }
-
-.form-field small {
-  font-size: 11px;
-  color: var(--m-color-text-tertiary);
+.hero-status {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 12px;
 }
-
-.required {
-  color: #ef4444;
-  margin-left: 4px;
+.form-sections {
+  padding: 0 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-
-.form-error {
-  margin: 0 16px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #fee2e2;
-  color: #b91c1c;
+.form-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.card-label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.card-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.upload-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.upload-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+.upload-drop {
+  border-radius: 16px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.03);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.upload-empty {
+  text-align: center;
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
 }
-
-.create-footer {
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+.upload-empty span {
+  font-size: 28px;
+  color: #0f172a;
+}
+.upload-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ios-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ios-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+.ios-field input {
+  border: none;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 15px;
+}
+.ios-field input:disabled {
+  opacity: 0.6;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  font-size: 12px;
+  color: #0f172a;
+}
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.radio-tile {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.04);
+}
+.radio-tile input {
+  width: 18px;
+  height: 18px;
+}
+.radio-content {
+  flex: 1;
+}
+.radio-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.radio-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+.cover-preview {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+.cover-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.form-card textarea {
+  border: none;
+  border-radius: 16px;
+  padding: 14px;
+  font-size: 15px;
+  background: rgba(15, 23, 42, 0.04);
+  resize: vertical;
+}
+.form-error {
+  color: #dc2626;
+  margin: 0 16px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(220, 38, 38, 0.1);
+}
+.form-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: rgba(244, 246, 251, 0.95);
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.12);
+  display: flex;
+  gap: 12px;
+}
+.ghost-btn,
+.primary-btn {
+  flex: 1;
+  border-radius: 999px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+}
+.ghost-btn {
   background: #fff;
-  border-top: 1px solid rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+.primary-btn {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  color: #fff;
+  box-shadow: 0 12px 25px rgba(37, 99, 235, 0.25);
+}
+.primary-btn:disabled {
+  opacity: 0.6;
+  box-shadow: none;
 }
 </style>

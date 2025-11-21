@@ -86,9 +86,10 @@ const load = async () => {
     form.visibleLevel = data.visibleLevel || 'public';
     form.labels = (data.labels || []).join(', ');
     form.coverImageUrl = data.coverImageUrl || '';
-    form.description = typeof data.description === 'object' && data.description
-      ? String((data.description as ConsoleCommunityDetail['description']).original ?? '')
-      : '';
+    form.description =
+      typeof data.description === 'object' && data.description
+        ? String((data.description as ConsoleCommunityDetail['description']).original ?? '')
+        : '';
   } catch (err) {
     error.value = err instanceof Error ? err.message : '読み込みに失敗しました';
   }

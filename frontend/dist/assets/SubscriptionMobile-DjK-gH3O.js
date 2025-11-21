@@ -1,0 +1,1 @@
+import{_ as e,b as t,e as o}from"./index-CT-XDF2b.js";const c={},s={class:"p-4 text-center text-slate-500"};function n(r,a){return o(),t("div",s," Console Mobile Subscription Placeholder ")}const l=e(c,[["render",n]]);export{l as default};

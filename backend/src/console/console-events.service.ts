@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
@@ -268,6 +268,42 @@ export class ConsoleEventsService {
     };
   }
 
+  async checkinRegistration(userId: string, eventId: string, registrationId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registration = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      select: {
+        id: true,
+        eventId: true,
+        status: true,
+        userId: true,
+      },
+    });
+    if (!registration || registration.eventId !== eventId) {
+      throw new NotFoundException('Registration not found');
+    }
+    if (registration.status === 'cancelled') {
+      throw new BadRequestException('Registration was cancelled');
+    }
+    const existingCheckin = await this.prisma.eventCheckin.findFirst({
+      where: { eventId, registrationId },
+    });
+    if (!existingCheckin) {
+      await this.prisma.eventCheckin.create({
+        data: {
+          eventId,
+          registrationId,
+          checkinType: 'qr_scan',
+        },
+      });
+    }
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { attended: true, noShow: false },
+    });
+    return { registrationId, status: 'checked_in' };
+  }
+
   async listRegistrations(userId: string, eventId: string) {
     return this.listRegistrationsDetailed(userId, eventId);
   }
@@ -494,7 +530,7 @@ export class ConsoleEventsService {
     if (payload.regStartTime !== undefined) {
       assign('regStartTime', payload.regStartTime);
     } else if (!isUpdate) {
-      assign('regStartTime', payload.startTime ?? new Date());
+      assign('regStartTime', new Date());
     }
 
     assign('locationText', payload.locationText);

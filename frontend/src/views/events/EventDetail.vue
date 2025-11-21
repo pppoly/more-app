@@ -497,7 +497,7 @@ const openMap = () => {
 .dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.5);
 }

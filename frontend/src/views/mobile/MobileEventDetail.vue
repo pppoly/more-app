@@ -220,8 +220,8 @@
         <div class="price-block">
           <p class="price">{{ detail.priceText }}</p>
         </div>
-        <button class="rails-cta" type="button" :disabled="detail.status !== 'open'" @click="handleCtaClick">
-          <span>{{ detail.status === 'open' ? 'イベントに申し込む' : '受付終了' }}</span>
+        <button class="rails-cta" type="button" :disabled="isCtaDisabled" @click="handleCtaClick">
+          <span>{{ ctaLabel }}</span>
         </button>
       </footer>
     </template>
@@ -257,11 +257,13 @@ import {
   createStripeCheckout,
   fetchEventById,
   fetchEventGallery,
+  fetchMyEvents,
 } from '../../api/client';
 import type {
   EventDetail,
   EventGalleryItem,
   EventRegistrationSummary,
+  MyEventItem,
   RegistrationFormField,
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
@@ -289,6 +291,8 @@ const isRedirecting = ref(false);
 const formValues = reactive<Record<string, any>>({});
 const selectedDateId = ref<string | null>(null);
 const activeSlide = ref(0);
+const registrationItem = ref<MyEventItem | null>(null);
+const checkingRegistration = ref(false);
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
@@ -298,6 +302,28 @@ const isFavoriteEvent = computed(() => {
   const currentId = detail.value?.id;
   if (!currentId) return false;
   return favoritesStore.isFavorite(currentId);
+});
+const hasRegistration = computed(() => Boolean(registrationItem.value));
+const ctaLabel = computed(() => {
+  if (checkingRegistration.value && !hasRegistration.value) {
+    return '読み込み中…';
+  }
+  if (hasRegistration.value) {
+    return '申込済み・チケットを見る';
+  }
+  if (detail.value?.status === 'open') {
+    return 'イベントに申し込む';
+  }
+  return '受付終了';
+});
+const isCtaDisabled = computed(() => {
+  if (hasRegistration.value) {
+    return false;
+  }
+  if (!detail.value) {
+    return true;
+  }
+  return detail.value.status !== 'open' || checkingRegistration.value;
 });
 
 const detail = computed(() => {
@@ -463,6 +489,22 @@ const loadEvent = async () => {
   }
 };
 
+const checkRegistrationStatus = async () => {
+  if (!user.value || !eventId.value) {
+    registrationItem.value = null;
+    return;
+  }
+  checkingRegistration.value = true;
+  try {
+    const myEvents = await fetchMyEvents();
+    registrationItem.value = myEvents.find((item) => item.event.id === eventId.value) ?? null;
+  } catch {
+    registrationItem.value = null;
+  } finally {
+    checkingRegistration.value = false;
+  }
+};
+
 watch(
   () => heroSlides.value.length,
   () => {
@@ -555,19 +597,12 @@ const closeBookingSheet = () => {
 
 const handleCtaClick = () => {
   if (!detail.value) return;
-  const targetRoute = { name: 'MobileEventRegister', params: { eventId: detail.value.id } };
-  const registerPath = router.resolve(targetRoute).href;
-  if (detail.value.status !== 'open') {
+  if (hasRegistration.value) {
+    router.push({ name: 'my-events' });
     return;
   }
-  if (!isLoggedIn.value) {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('booking:redirect', registerPath);
-    }
-    router.push({ name: 'organizer-apply', query: { redirect: registerPath } });
-    return;
-  }
-  router.push(targetRoute);
+  if (detail.value.status !== 'open') return;
+  router.push({ name: 'MobileEventRegister', params: { eventId: detail.value.id } });
 };
 
 const submitBooking = async () => {
@@ -720,6 +755,18 @@ const formatCalendarDate = (value?: string) => {
 };
 
 onMounted(loadEvent);
+
+watch(
+  () => [user.value?.id, eventId.value],
+  () => {
+    if (user.value && eventId.value) {
+      checkRegistrationStatus();
+    } else {
+      registrationItem.value = null;
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => [isLoggedIn.value, detail.value?.id],
@@ -998,7 +1045,7 @@ watch(
   transform: translateY(-50%);
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
@@ -1027,7 +1074,7 @@ watch(
 .carousel-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.4);
 }
@@ -1361,11 +1408,10 @@ watch(
   flex: 1;
   border: none;
   border-radius: 999px;
-  padding: 14px;
+  padding: 14px 20px;
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   background: #0090d9;
   color: #fff;
   box-shadow: 0 15px 30px rgba(0, 144, 217, 0.35);
@@ -1374,6 +1420,14 @@ watch(
   justify-content: center;
   gap: 6px;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  line-height: 1.25;
+  white-space: normal;
+  text-align: center;
+}
+
+.rails-cta span {
+  display: inline-block;
+  white-space: normal;
 }
 
 .rails-cta:active:not(:disabled) {

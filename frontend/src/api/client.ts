@@ -74,6 +74,15 @@ export async function fetchCommunityBySlug(slug: string): Promise<CommunityPorta
   return data;
 }
 
+export async function uploadCommunityAsset(file: File, type: 'cover' | 'logo'): Promise<{ imageUrl: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<{ imageUrl: string }>(`/console/communities/uploads?type=${type}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 export async function devLogin(name: string, language?: string): Promise<DevLoginResponse> {
   const { data } = await apiClient.post<DevLoginResponse>('/auth/dev-login', { name, language });
   return data;
@@ -95,8 +104,27 @@ export async function createRegistration(
   return data;
 }
 
+export async function checkinRegistration(
+  eventId: string,
+  registrationId: string,
+): Promise<{ registrationId: string; status: string }> {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/console/events/${eventId}/checkins`,
+    { registrationId },
+  );
+  return data;
+}
+
 export async function fetchMyEvents(): Promise<MyEventItem[]> {
   const { data } = await apiClient.get<MyEventItem[]>('/me/events');
+  return data;
+}
+
+export async function cancelMyRegistration(registrationId: string): Promise<{ registrationId: string; status: string }> {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/me/events/${registrationId}/cancel`,
+    {},
+  );
   return data;
 }
 

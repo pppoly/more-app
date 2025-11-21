@@ -149,6 +149,22 @@
           </div>
         </div>
       </button>
+      <button
+        class="action-card"
+        type="button"
+        :class="{ 'is-disabled': !hasCommunity }"
+        @click="goTicketScanner"
+      >
+        <div class="action-entry">
+          <div class="action-icon">
+            <img :src="defaultActionIcon" alt="" />
+          </div>
+          <div>
+            <p class="action-title">验票扫码</p>
+            <p class="action-desc">ストアフロントでQRを読み取る</p>
+          </div>
+        </div>
+      </button>
     </section>
 
     <section class="events-section">
@@ -179,6 +195,41 @@
         </div>
       </div>
     </section>
+
+    <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
+      <div class="picker-sheet">
+        <header class="picker-head">
+          <p class="picker-title">社群を切り替え</p>
+          <button type="button" class="picker-close" @click="closeCommunityPicker">
+            <span class="i-lucide-x"></span>
+          </button>
+        </header>
+        <div class="picker-list">
+          <div v-if="pickerLoading" class="picker-empty">読み込み中…</div>
+          <template v-else>
+            <button
+              v-for="item in managedCommunities"
+              :key="item.id"
+              class="picker-item"
+              :class="{ 'is-active': item.id === activeCommunityId }"
+              type="button"
+              @click="selectCommunity(item.id)"
+            >
+              <div>
+                <p class="picker-name">{{ item.name }}</p>
+                <p class="picker-slug">@{{ item.slug }}</p>
+              </div>
+              <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
+            </button>
+            <p v-if="!managedCommunities.length" class="picker-empty">まだ社群がありません。</p>
+            <RouterLink class="picker-add" :to="{ name: 'ConsoleMobileCommunityCreate' }" @click="closeCommunityPicker">
+              <span class="i-lucide-plus"></span>
+              新しい社群を登録
+            </RouterLink>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -186,8 +237,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import { fetchConsoleCommunityEvents } from '../../../api/client';
-import type { ConsoleEventSummary } from '../../../types/api';
+import { fetchConsoleCommunity, fetchConsoleCommunityEvents } from '../../../api/client';
+import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
 
@@ -195,16 +246,26 @@ const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
+const showCommunityPicker = ref(false);
+const pickerLoading = ref(false);
+const heroLogoUrl = ref<string | null>(null);
 
 const community = computed(() => communityStore.getActiveCommunity());
+const managedCommunities = computed(() => communityStore.communities.value);
+const activeCommunityId = computed(() => communityStore.activeCommunityId.value);
 const communityName = computed(() => community.value?.name ?? '');
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const hasCommunity = computed(() => Boolean(communityId.value));
-const communityAvatar = computed(
-  () =>
-    community.value?.avatarUrl ||
-    'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-community.png',
-);
+const communityAvatar = computed(() => {
+  if (heroLogoUrl.value) {
+    return heroLogoUrl.value;
+  }
+  if (community.value?.coverImageUrl) {
+    return resolveAssetUrl(community.value.coverImageUrl);
+  }
+  return 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-community.png';
+});
+
 const roleLabel = computed(() => {
   const role = community.value?.role;
   switch (role) {
@@ -256,8 +317,23 @@ watch(communityId, () => {
   }
 });
 
-const openCommunityPicker = () => {
-  window.dispatchEvent(new CustomEvent('console:open-community-picker'));
+const openCommunityPicker = async () => {
+  showCommunityPicker.value = true;
+  if (!communityStore.loaded.value && !communityStore.loading.value) {
+    pickerLoading.value = true;
+    await communityStore.loadCommunities(true);
+    pickerLoading.value = false;
+  }
+};
+
+const selectCommunity = (id: string) => {
+  communityStore.setActiveCommunity(id);
+  showCommunityPicker.value = false;
+  loadActiveCommunityDetail();
+};
+
+const closeCommunityPicker = () => {
+  showCommunityPicker.value = false;
 };
 
 const goCreateCommunity = () => {
@@ -280,6 +356,10 @@ const goCommunitySettings = () => {
 const goPublicPortal = () => {
   if (!community.value?.slug) return;
   router.push({ name: 'community-portal', params: { slug: community.value.slug } });
+};
+
+const goTicketScanner = () => {
+  router.push({ name: 'ConsoleTicketScanner' });
 };
 
 const goAllEvents = () => {
@@ -345,8 +425,40 @@ onMounted(async () => {
   }
   if (communityId.value) {
     loadEvents();
+    loadActiveCommunityDetail();
   }
 });
+
+watch(
+  () => communityId.value,
+  (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      loadEvents();
+      loadActiveCommunityDetail();
+    }
+    if (!newId) {
+      heroLogoUrl.value = null;
+    }
+  },
+);
+
+const loadActiveCommunityDetail = async () => {
+  if (!communityId.value) {
+    heroLogoUrl.value = null;
+    return;
+  }
+  try {
+    const detail: ConsoleCommunityDetail = await fetchConsoleCommunity(communityId.value);
+    const descriptionObj =
+      typeof detail.description === 'object' && detail.description
+        ? (detail.description as ConsoleCommunityDetail['description'])
+        : null;
+    const logo = (descriptionObj as any)?.logoImageUrl || detail.coverImageUrl || null;
+    heroLogoUrl.value = logo ? resolveAssetUrl(logo) : null;
+  } catch (err) {
+    heroLogoUrl.value = null;
+  }
+};
 </script>
 
 <style scoped>
@@ -589,5 +701,85 @@ onMounted(async () => {
   text-align: center;
   font-size: 12px;
   color: var(--m-color-text-tertiary);
+}
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 60;
+}
+.picker-sheet {
+  width: 100%;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  padding: 16px;
+  box-shadow: 0 -18px 30px rgba(15, 23, 42, 0.2);
+}
+.picker-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.picker-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.picker-close {
+  border: none;
+  background: rgba(15, 23, 42, 0.05);
+  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+}
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.picker-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid transparent;
+}
+.picker-item.is-active {
+  border-color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.15);
+}
+.picker-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.picker-slug {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.picker-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 16px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  padding: 12px;
+  color: #0f172a;
+  text-decoration: none;
+}
+.picker-add span {
+  font-size: 18px;
+}
+.picker-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
 }
 </style>

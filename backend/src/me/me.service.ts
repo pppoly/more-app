@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { extname, join } from 'path';
 import { promises as fs } from 'fs';
@@ -14,7 +14,6 @@ export class MeService {
     const registrations = await this.prisma.eventRegistration.findMany({
       where: {
         userId,
-        NOT: { status: 'cancelled' },
       },
       orderBy: {
         event: {
@@ -42,20 +41,38 @@ export class MeService {
                 slug: true,
               },
             },
+            galleries: {
+              orderBy: { order: 'asc' },
+              take: 1,
+              select: {
+                imageUrl: true,
+              },
+            },
           },
         },
       },
     });
 
-    return registrations.map((registration) => ({
-      registrationId: registration.id,
-      status: registration.status,
-      paymentStatus: registration.paymentStatus,
-      amount: registration.amount,
-      attended: registration.attended,
-      noShow: registration.noShow,
-      event: registration.event,
-    }));
+    return registrations.map((registration) => {
+      const { event, ...rest } = registration;
+      const galleries = (event as any)?.galleries ?? [];
+      const coverImageUrl = galleries[0]?.imageUrl ?? null;
+      const { galleries: _omit, ...eventData } = event as typeof event & {
+        galleries?: { imageUrl: string | null }[];
+      };
+      return {
+        registrationId: rest.id,
+        status: rest.status,
+        paymentStatus: rest.paymentStatus,
+        amount: rest.amount,
+        attended: rest.attended,
+        noShow: rest.noShow,
+        event: {
+          ...eventData,
+          coverImageUrl,
+        },
+      };
+    });
   }
 
   async updateAvatar(userId: string, file: Express.Multer.File) {
@@ -110,5 +127,42 @@ export class MeService {
         isAdmin: true,
       },
     });
+  }
+
+  async cancelEventRegistration(userId: string, registrationId: string) {
+    const registration = await this.prisma.eventRegistration.findFirst({
+      where: {
+        id: registrationId,
+        userId,
+        status: { not: 'cancelled' },
+      },
+      select: {
+        id: true,
+        amount: true,
+        paymentStatus: true,
+        event: {
+          select: { startTime: true },
+        },
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('キャンセル可能な申込が見つかりません');
+    }
+
+    if (new Date(registration.event.startTime) <= new Date()) {
+      throw new BadRequestException('イベント開始後はキャンセルできません');
+    }
+
+    if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
+      throw new BadRequestException('有料イベントのキャンセルはサポートにお問い合わせください');
+    }
+
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { status: 'cancelled' },
+    });
+
+    return { registrationId, status: 'cancelled' };
   }
 }

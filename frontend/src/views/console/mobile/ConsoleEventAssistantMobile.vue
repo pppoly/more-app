@@ -4,39 +4,78 @@
       <div class="chat-tools">
         <span class="status-chip">{{ assistantStatusText }}</span>
         <span class="mode-chip">{{ stageLabels[currentStage] }}</span>
-        <span class="prompt-chip">Prompt {{ lastPromptVersion }}</span>
+        <span class="prompt-chip" v-if="aiResult">Prompt {{ lastPromptVersion }}</span>
         <button type="button" class="history-toggle" @click="toggleHistory">
           <span class="i-lucide-clock-4"></span>
-          会话历史
+          {{ historyPreview ? '收起历史' : '会话历史' }}
         </button>
       </div>
-      <section class="assistant-guide">
+      <section v-if="shouldShowGuide" class="assistant-guide">
         <p class="guide-title">SOCIALMORE AI 使用说明</p>
         <ol>
           <li><strong>Speak</strong>：随便说出你的想法或需求。</li>
           <li><strong>Guide</strong>：AI Coach/Editor 会提问，逐条回答即可。</li>
           <li><strong>Write</strong>：完成提问后，AI 会生成方案，并可一键送表单或存草案。</li>
         </ol>
+        <button v-if="chatMessages.length" type="button" class="guide-dismiss" @click="toggleGuide">
+          收起说明
+        </button>
       </section>
-      <div v-if="showHistory" class="history-panel">
-        <div class="history-head">
-          <p>历史草案</p>
-          <button type="button" class="history-close" @click="toggleHistory">关闭</button>
-        </div>
-        <div v-if="!historyEntries.length" class="history-empty">まだ保存された履歴がありません</div>
-        <div v-else class="history-list">
-          <article v-for="entry in historyEntries" :key="entry.id" class="history-item">
-            <h4>{{ entry.title || '無題の案' }}</h4>
-            <p>{{ entry.summary }}</p>
-            <div class="history-meta">
-              <span>{{ new Date(entry.createdAt).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
-              <div class="history-actions">
-                <button type="button" @click="loadHistoryEntry(entry)">查看</button>
-                <button type="button" @click="applyProposalToForm(entry.raw)">送到表单</button>
-              </div>
+      <button
+        v-else
+        type="button"
+        class="guide-inline-toggle"
+        @click="toggleGuide"
+      >
+        <span class="i-lucide-info"></span>
+        查看使用说明
+      </button>
+      <div v-if="showHistory" class="history-overlay" @click.self="toggleHistory">
+        <section class="history-sheet">
+          <header class="history-head">
+            <div>
+              <p class="history-title">历史草案</p>
+              <p class="history-subtitle">最近 10 条保存的 AI 方案</p>
             </div>
-          </article>
-        </div>
+            <button type="button" class="history-close" @click="toggleHistory">关闭</button>
+          </header>
+          <div v-if="!historyEntries.length" class="history-empty">まだ保存された履歴がありません</div>
+          <div v-else class="history-list">
+            <article
+              v-for="entry in historyEntries"
+              :key="entry.id"
+              :class="['history-item', historyPreview?.id === entry.id ? 'is-active' : '']"
+              @click="previewHistoryEntry(entry)"
+            >
+              <div class="history-item-body">
+                <h4>{{ entry.title || '無題の案' }}</h4>
+                <p>{{ entry.summary }}</p>
+              </div>
+              <span class="history-item-time">
+                {{ new Date(entry.createdAt).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+              </span>
+            </article>
+          </div>
+          <div v-if="historyPreview" class="history-preview">
+            <h4>{{ historyPreview.title || '無題の案' }}</h4>
+            <p class="history-preview-summary">{{ historyPreview.summary || '暂无摘要' }}</p>
+            <p class="history-preview-desc" v-if="historyPreview.description">{{ historyPreview.description }}</p>
+            <p class="history-preview-note">载入将把该草案插入当前对话；送到表单则直接打开活动编辑页并填入 AI 提案。</p>
+            <div class="history-preview-links">
+              <button type="button" class="history-preview-link" @click="openPlanPreview(historyPreview.raw)">
+                方案预览
+              </button>
+            </div>
+            <div class="history-preview-actions">
+              <button type="button" class="primary ghost" @click="restoreHistoryToChat(historyPreview)">
+                载入到对话
+              </button>
+              <button type="button" class="primary gradient" @click="applyProposalToForm(historyPreview.raw)">
+                送到表单
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
       <div class="chat-log" ref="chatLogRef">
         <div
@@ -61,14 +100,20 @@
                 还有其他问题，将在你回答完这一条后继续提出。
               </p>
             </div>
-            <div v-if="msg.thinkingSteps?.length" class="thinking-inline">
-              <p class="thinking-inline-title">AI 思考过程</p>
-              <ol>
-                <li v-for="(step, idx) in msg.thinkingSteps" :key="`${msg.id}-thinking-${idx}`">
-                  <span class="thinking-inline-index">{{ idx + 1 }}</span>
-                  <span class="thinking-inline-text">{{ step }}</span>
-                </li>
-              </ol>
+            <div v-if="msg.thinkingSteps?.length" class="thinking-collapsible">
+              <button type="button" class="thinking-toggle" @click="toggleThinking(msg.id)">
+                <span>AI 思考过程</span>
+                <span class="thinking-toggle__action">{{ expandedThinkingId === msg.id ? '收起' : '展开' }}</span>
+              </button>
+              <div v-show="expandedThinkingId === msg.id" class="thinking-inline">
+                <p class="thinking-inline-title">AI 思考过程</p>
+                <ol>
+                  <li v-for="(step, idx) in msg.thinkingSteps" :key="`${msg.id}-thinking-${idx}`">
+                    <span class="thinking-inline-index">{{ idx + 1 }}</span>
+                    <span class="thinking-inline-text">{{ step }}</span>
+                  </li>
+                </ol>
+              </div>
             </div>
             <div v-if="msg.coachPrompts?.length" class="coach-prompts">
               <p class="coach-prompts-title">下一步灵感（Coach）</p>
@@ -108,9 +153,15 @@
               </div>
             </div>
           </div>
-         <div v-else class="proposal-card">
+          <div
+            v-else
+            class="proposal-card"
+            :class="{ 'proposal-card--clickable': Boolean(msg.payload?.raw) }"
+            @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)"
+          >
             <p class="proposal-title">{{ msg.payload?.title }}</p>
             <p class="proposal-desc">{{ msg.payload?.description }}</p>
+            <p class="proposal-hint" v-if="msg.payload?.raw">点击查看完整草案</p>
           </div>
           <span class="chat-meta">{{ msg.createdAt }}</span>
         </div>
@@ -123,9 +174,12 @@
     </section>
 
     <section v-if="aiResult" class="final-plan-card">
-      <header>
-        <p class="final-plan-label">AI 活动方案</p>
-        <p class="final-plan-title">{{ finalPlanTitle }}</p>
+      <header class="final-plan-header">
+        <div>
+          <p class="final-plan-label">AI 活动方案</p>
+          <p class="final-plan-title">{{ finalPlanTitle }}</p>
+        </div>
+        <button type="button" class="plan-preview-link" @click="openPlanPreview(aiResult)">方案预览</button>
       </header>
       <div class="final-plan-section" v-if="extractText(aiResult.description)">
         <p class="final-plan-subtitle">活动亮点</p>
@@ -179,16 +233,17 @@
     <div class="assistant-bottom">
       <div class="chat-input-row">
         <input
+          ref="chatInputRef"
           v-model="chatDraft"
           class="chat-input"
           type="text"
           :placeholder="currentPrompt"
-          @keyup.enter="handleSend"
+          @keyup.enter="handleSend('enter')"
         />
         <button class="chat-voice" type="button">
           <span class="chat-button-label">语音</span>
         </button>
-        <button class="chat-send" type="button" @click="handleSend" :disabled="!chatDraft.trim()">
+        <button class="chat-send" type="button" @click="handleSend('button')" :disabled="!chatDraft.trim()">
           <span class="chat-button-label">发送</span>
         </button>
       </div>
@@ -201,6 +256,72 @@
       </section>
     </div>
   </div>
+  <teleport to="body">
+    <transition name="fade">
+      <div v-if="planPreview" class="plan-preview-overlay" @click.self="closePlanPreview">
+        <section class="plan-preview-panel">
+          <header class="plan-preview-head">
+            <div>
+              <p class="plan-preview-label">AI 草案</p>
+              <p class="plan-preview-title">{{ previewPlanTitle }}</p>
+            </div>
+            <button type="button" class="plan-preview-close" @click="closePlanPreview">
+              <span class="i-lucide-x"></span>
+            </button>
+          </header>
+          <div class="plan-preview-scroll">
+            <article class="plan-preview-section" v-if="previewPlanDescription">
+              <p class="plan-preview-subtitle">活动亮点</p>
+              <p class="plan-preview-text">{{ previewPlanDescription }}</p>
+            </article>
+            <div class="plan-preview-grid">
+              <article v-if="previewPlanNotes">
+                <p class="plan-preview-subtitle">备注/准备</p>
+                <p class="plan-preview-text">{{ previewPlanNotes }}</p>
+              </article>
+              <article v-if="previewPlanRisk">
+                <p class="plan-preview-subtitle">风险提示</p>
+                <p class="plan-preview-text">{{ previewPlanRisk }}</p>
+              </article>
+            </div>
+            <article class="plan-preview-section" v-if="previewPlanLogistics.length">
+              <p class="plan-preview-subtitle">时间 & 地点</p>
+              <ul class="plan-preview-list">
+                <li v-for="item in previewPlanLogistics" :key="`preview-logistics-${item.label}`">
+                  <strong>{{ item.label }}：</strong>{{ item.value }}
+                </li>
+              </ul>
+            </article>
+            <article class="plan-preview-section" v-if="previewPlanTickets.length">
+              <p class="plan-preview-subtitle">票务设置</p>
+              <ul class="plan-preview-ticket-list">
+                <li v-for="(ticket, idx) in previewPlanTickets" :key="`preview-ticket-${idx}`">
+                  <span>{{ ticket.name }}</span>
+                  <span>{{ formatTicketPrice(ticket.price) }}</span>
+                </li>
+              </ul>
+            </article>
+            <article class="plan-preview-section" v-if="previewPlanRequirements.length">
+              <p class="plan-preview-subtitle">参加要求</p>
+              <ul class="plan-preview-list">
+                <li v-for="(req, idx) in previewPlanRequirements" :key="`preview-req-${idx}`">
+                  {{ req.label }}{{ req.type === 'must' ? '（必需）' : '' }}
+                </li>
+              </ul>
+            </article>
+            <article class="plan-preview-section" v-if="previewPlanFormFields.length">
+              <p class="plan-preview-subtitle">报名表字段</p>
+              <ul class="plan-preview-list">
+                <li v-for="(field, idx) in previewPlanFormFields" :key="`preview-form-${idx}`">
+                  {{ field.label }} · {{ field.type }}{{ field.required ? '（必填）' : '' }}
+                </li>
+              </ul>
+            </article>
+          </div>
+        </section>
+      </div>
+    </transition>
+  </teleport>
 </template>
 
 <script setup lang="ts">
@@ -308,13 +429,18 @@ const screenStyle = computed(() => ({
   '--keyboard-offset': `${keyboardOffset.value}px`,
 }));
 const chatDraft = ref('');
+const chatInputRef = ref<HTMLInputElement | null>(null);
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
 const aiResult = ref<(GeneratedEventContent & { summary: string }) | null>(null);
+const planPreview = ref<(GeneratedEventContent & { summary?: string }) | null>(null);
 const currentQuestionIndex = ref(0);
 const savingLog = ref(false);
 const historyEntries = ref<AssistantHistoryEntry[]>([]);
+const historyPreview = ref<AssistantHistoryEntry | null>(null);
 const showHistory = ref(false);
+const showGuide = ref(true);
+const expandedThinkingId = ref<string | null>(null);
 const lastAssistantStatus = ref<EventAssistantStatus>('collecting');
 const lastPromptVersion = ref('coach-v2');
 const currentStage = ref<EventAssistantStage>('coach');
@@ -355,13 +481,18 @@ const latestCoachPrompts = computed(() => {
 });
 const latestChecklist = ref<string[]>([]);
 const latestConfirmQuestions = ref<string[]>([]);
-const finalPlanTitle = computed(() => {
-  if (!aiResult.value) return '';
-  const title = extractText(aiResult.value.title);
-  return title || qaState.topic || 'AI 提案';
-});
-const finalPlanLogistics = computed(() => {
-  const logistics = aiResult.value?.logistics;
+
+const getPlanTitle = (
+  plan?: (GeneratedEventContent & { summary?: string }) | null,
+  fallbackTopic?: string,
+) => {
+  if (!plan) return '';
+  const title = extractText(plan.title);
+  return title || fallbackTopic || 'AI 提案';
+};
+
+const buildPlanLogistics = (plan?: (GeneratedEventContent & { summary?: string }) | null) => {
+  const logistics = plan?.logistics;
   if (!logistics) return [];
   const entries: Array<{ label: string; value: string }> = [];
   if (logistics.startTime) {
@@ -377,10 +508,28 @@ const finalPlanLogistics = computed(() => {
     entries.push({ label: '地点备注', value: logistics.locationNote });
   }
   return entries;
-});
-const finalPlanTickets = computed(() => aiResult.value?.ticketTypes ?? []);
-const finalPlanRequirements = computed(() => aiResult.value?.requirements ?? []);
-const finalPlanFormFields = computed(() => aiResult.value?.registrationForm ?? []);
+};
+
+const getPlanTickets = (plan?: (GeneratedEventContent & { summary?: string }) | null) =>
+  plan?.ticketTypes ?? [];
+const getPlanRequirements = (plan?: (GeneratedEventContent & { summary?: string }) | null) =>
+  plan?.requirements ?? [];
+const getPlanFormFields = (plan?: (GeneratedEventContent & { summary?: string }) | null) =>
+  plan?.registrationForm ?? [];
+
+const finalPlanTitle = computed(() => getPlanTitle(aiResult.value, qaState.topic));
+const finalPlanLogistics = computed(() => buildPlanLogistics(aiResult.value));
+const finalPlanTickets = computed(() => getPlanTickets(aiResult.value));
+const finalPlanRequirements = computed(() => getPlanRequirements(aiResult.value));
+const finalPlanFormFields = computed(() => getPlanFormFields(aiResult.value));
+const previewPlanTitle = computed(() => getPlanTitle(planPreview.value));
+const previewPlanDescription = computed(() => extractText(planPreview.value?.description));
+const previewPlanNotes = computed(() => extractText(planPreview.value?.notes));
+const previewPlanRisk = computed(() => extractText(planPreview.value?.riskNotice));
+const previewPlanLogistics = computed(() => buildPlanLogistics(planPreview.value));
+const previewPlanTickets = computed(() => getPlanTickets(planPreview.value));
+const previewPlanRequirements = computed(() => getPlanRequirements(planPreview.value));
+const previewPlanFormFields = computed(() => getPlanFormFields(planPreview.value));
 const formatTicketPrice = (price?: number) => {
   if (price == null) return '免费';
   return `¥${price.toLocaleString('ja-JP')}`;
@@ -395,6 +544,7 @@ const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   ticketTypes: [],
   registrationFormSchema: [],
 }));
+const shouldShowGuide = computed(() => showGuide.value);
 
 const currentPrompt = computed(() => {
   if (pendingQuestion.value) {
@@ -414,6 +564,26 @@ watch(
   () => {
     introConversationStarted.value = false;
     loadActiveCommunityDetail();
+  },
+);
+
+watch(
+  () => chatMessages.value.length,
+  (len, prev) => {
+    if (prev === 0 && len > 0) {
+      showGuide.value = false;
+    }
+  },
+);
+
+watch(
+  () => showHistory.value,
+  (visible) => {
+    if (visible) {
+      historyPreview.value = historyEntries.value[0] ?? null;
+    } else {
+      historyPreview.value = null;
+    }
   },
 );
 
@@ -492,10 +662,14 @@ const startIntroConversation = async () => {
   });
 };
 
-const handleSend = async () => {
+const handleSend = async (source: 'button' | 'enter' = 'button') => {
   if (!chatDraft.value.trim() || aiLoading.value) return;
   const content = chatDraft.value.trim();
   chatDraft.value = '';
+  if (source === 'button') {
+    chatInputRef.value?.blur();
+    keyboardOffset.value = 0;
+  }
   pushMessage('user', 'text', content);
   await handleChatAnswer(content);
 };
@@ -559,19 +733,20 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
     }
     latestChecklist.value = result.editorChecklist ?? [];
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
-    pushMessage(
-      'assistant',
-      'text',
-      result.message,
-      undefined,
-      undefined,
-      result.options,
-      steps,
-      result.coachPrompts,
-      result.editorChecklist,
-      result.writerSummary,
-      result.confirmQuestions,
-    );
+  const stageIsWriter = result.stage === 'writer';
+  pushMessage(
+    'assistant',
+    'text',
+    result.message,
+    undefined,
+    undefined,
+    result.options,
+    steps,
+    result.coachPrompts,
+    result.editorChecklist,
+    stageIsWriter ? result.writerSummary : undefined,
+    result.confirmQuestions,
+  );
     pendingQuestion.value = result.options?.[0] ?? null;
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
     const shouldPrepareProposal =
@@ -608,7 +783,7 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
       options: result.options ?? [],
       coachPrompts: result.coachPrompts ?? [],
       editorChecklist: result.editorChecklist ?? [],
-      writerSummary: result.writerSummary ?? null,
+      writerSummary: stageIsWriter ? result.writerSummary ?? null : null,
     });
     if (preparedProposal) {
       addHistoryEntry(preparedProposal);
@@ -739,9 +914,16 @@ const applyProposalToForm = (raw?: GeneratedEventContent & { summary?: string })
   if (!raw) return;
   aiResult.value = { ...raw, summary: raw.summary || buildQaSummary() };
   goToForm(true);
+  showHistory.value = false;
+  historyPreview.value = null;
 };
 
-const loadHistoryEntry = (entry: AssistantHistoryEntry) => {
+const previewHistoryEntry = (entry: AssistantHistoryEntry) => {
+  historyPreview.value = entry;
+};
+
+const restoreHistoryToChat = (entry: AssistantHistoryEntry | null) => {
+  if (!entry) return;
   aiResult.value = { ...entry.raw, summary: entry.summary };
   pushMessage('assistant', 'proposal', '', {
     title: entry.title,
@@ -749,10 +931,32 @@ const loadHistoryEntry = (entry: AssistantHistoryEntry) => {
     raw: aiResult.value,
   });
   showHistory.value = false;
+  historyPreview.value = null;
+  scrollChatToBottom();
 };
 
 const toggleHistory = () => {
   showHistory.value = !showHistory.value;
+  if (!showHistory.value) {
+    historyPreview.value = null;
+  }
+};
+
+const toggleGuide = () => {
+  showGuide.value = !showGuide.value;
+};
+
+const toggleThinking = (messageId: string) => {
+  expandedThinkingId.value = expandedThinkingId.value === messageId ? null : messageId;
+};
+
+const openPlanPreview = (plan?: (GeneratedEventContent & { summary?: string }) | null) => {
+  if (!plan) return;
+  planPreview.value = plan;
+};
+
+const closePlanPreview = () => {
+  planPreview.value = null;
 };
 
 const loadProfileDefaults = async () => {
@@ -892,6 +1096,7 @@ onMounted(async () => {
   color: #0f172a;
   background: var(--m-color-bg, #f8fafc);
   --keyboard-offset: 0px;
+  overflow-x: hidden;
 }
 
 @supports (height: 100dvh) {
@@ -907,6 +1112,9 @@ onMounted(async () => {
   gap: 14px;
   padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px 8px;
   overflow: hidden;
+  touch-action: pan-y;
+  box-sizing: border-box;
+  max-width: 100vw;
 }
 
 .chat-tools {
@@ -953,26 +1161,49 @@ onMounted(async () => {
   gap: 4px;
 }
 
-.history-panel {
-  margin: 0 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: var(--app-border-radius);
-  background: rgba(255, 255, 255, 0.95);
-  padding: 12px;
-  max-height: 240px;
+.history-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 40;
+}
+
+.history-sheet {
+  width: min(640px, 100%);
+  border-radius: 28px 28px 0 0;
+  background: #fff;
+  box-shadow: 0 -20px 50px rgba(2, 6, 23, 0.35);
+  padding: 18px 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  max-height: calc(80vh);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .history-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .history-head p {
   margin: 0;
   font-weight: 600;
   color: #0f172a;
+}
+.history-title {
+  font-size: 16px;
+}
+.history-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
 }
 .history-close {
   border: none;
@@ -989,25 +1220,34 @@ onMounted(async () => {
 .history-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .history-item {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 8px 10px;
-  background: #fdfefe;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+.history-item.is-active {
+  border-color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.08);
 }
 .history-item h4 {
-  margin: 0 0 4px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 14px;
   font-weight: 600;
   color: #0f172a;
 }
 .history-item p {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: #475569;
+  line-height: 1.5;
 }
 .history-meta {
   display: flex;
@@ -1021,17 +1261,73 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
 }
-.history-actions button {
-  border: none;
-  border-radius: var(--app-border-radius);
-  padding: 4px 10px;
+.history-item-time {
   font-size: 11px;
-  font-weight: 600;
-  color: #0ea5e9;
-  background: rgba(14, 165, 233, 0.08);
+  color: #94a3b8;
 }
 
- .chat-log {
+.history-preview {
+  margin-top: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(248, 250, 252, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-preview-summary {
+  margin: 0;
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.history-preview-desc {
+  margin: 0;
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.6;
+}
+
+.history-preview-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.history-preview-links {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.history-preview-link {
+  border: none;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.history-preview-link:active {
+  opacity: 0.7;
+}
+
+.history-preview-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.history-preview-actions .primary {
+  flex: 1;
+  justify-content: center;
+}
+
+.chat-log {
   flex: 1;
   overflow-y: auto;
   display: flex;
@@ -1039,6 +1335,7 @@ onMounted(async () => {
   gap: 18px;
   padding: 0 4px 8px;
   align-items: stretch;
+  overflow-x: hidden;
 }
 
 .chat-bubble {
@@ -1071,6 +1368,7 @@ onMounted(async () => {
   margin: 0;
   white-space: pre-line;
   width: 100%;
+  word-break: break-word;
 }
 .chat-bubble--user .chat-text-block {
   align-items: flex-end;
@@ -1092,31 +1390,34 @@ onMounted(async () => {
 
 .chat-options {
   width: 100%;
-  margin-top: 8px;
-  border-radius: 12px;
-  background: rgba(224, 231, 255, 0.45);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  padding: 10px 12px;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  border-radius: 16px;
+  background: rgba(224, 231, 255, 0.85);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  padding: 12px 14px;
 }
 
 .chat-options-title {
-  margin: 0 0 6px;
-  font-size: 12px;
+  margin: 0 0 8px;
+  font-size: 14px;
   color: #4338ca;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .chat-options-question {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   color: #1e1b4b;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .chat-options-note {
-  margin: 8px 0 0;
-  font-size: 12px;
+  margin: 10px 0 0;
+  font-size: 13px;
   color: #57534e;
 }
 
@@ -1129,6 +1430,15 @@ onMounted(async () => {
   border: 1px solid rgba(148, 163, 184, 0.15);
   max-height: 320px;
   overflow-y: auto;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+}
+
+.final-plan-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .final-plan-label {
@@ -1207,20 +1517,163 @@ onMounted(async () => {
   font-size: 13px;
 }
 
+.plan-preview-link {
+  border: none;
+  background: rgba(15, 23, 42, 0.07);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.plan-preview-link:active {
+  opacity: 0.7;
+}
+
+.plan-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 90;
+}
+
+.plan-preview-panel {
+  width: min(620px, 92vw);
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 28px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plan-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.plan-preview-label {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.plan-preview-title {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.plan-preview-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: #0f172a;
+  font-size: 1.1rem;
+}
+
+.plan-preview-scroll {
+  overflow-y: auto;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plan-preview-section {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.6);
+}
+
+.plan-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.plan-preview-grid article {
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.6);
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.plan-preview-subtitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.plan-preview-text {
+  margin: 0;
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.plan-preview-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.plan-preview-ticket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan-preview-ticket-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  font-size: 13px;
+}
+
 .thinking-inline {
   width: 100%;
-  margin-top: 6px;
-  border-radius: 12px;
-  background: rgba(226, 232, 240, 0.4);
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  max-width: 100%;
+  box-sizing: border-box;
+  align-self: stretch;
+  margin-top: 10px;
+  border-radius: 16px;
+  background: rgba(244, 247, 255, 0.92);
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
 .thinking-inline-title {
-  margin: 0 0 4px;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: #64748b;
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #475569;
+  text-transform: uppercase;
 }
 
 .thinking-inline ol {
@@ -1229,7 +1682,7 @@ onMounted(async () => {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .thinking-inline li {
@@ -1243,10 +1696,11 @@ onMounted(async () => {
 .thinking-inline-index {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
-  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #2563eb;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1254,48 +1708,82 @@ onMounted(async () => {
 
 .thinking-inline-text {
   flex: 1;
+  line-height: 1.55;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.thinking-collapsible {
+  width: 100%;
+}
+
+.thinking-toggle {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(226, 232, 240, 0.4);
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.thinking-toggle__action {
+  font-size: 12px;
+  color: #2563eb;
 }
 
 .coach-prompts {
   width: 100%;
-  margin-top: 8px;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: rgba(219, 234, 254, 0.6);
+  max-width: 100%;
+  box-sizing: border-box;
+  align-self: stretch;
+  margin-top: 10px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(219, 234, 254, 0.9);
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .coach-prompts-title {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 14px;
   color: #1d4ed8;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .coach-prompts ol {
   margin: 0;
-  padding-left: 1.2rem;
+  padding-left: 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 4px;
   color: #1e3a8a;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .editor-checklist {
   width: 100%;
-  margin-top: 8px;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px dashed rgba(15, 118, 110, 0.3);
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(240, 253, 250, 0.95);
+  border: 1px dashed rgba(15, 118, 110, 0.5);
 }
 
 .editor-checklist-title {
-  margin: 0 0 6px;
-  font-size: 12px;
+  margin: 0 0 8px;
+  font-size: 14px;
   color: #0f766e;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .editor-checklist ul {
@@ -1304,43 +1792,48 @@ onMounted(async () => {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .editor-checklist li label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #115e59;
+  gap: 10px;
+  font-size: 14px;
+  color: #0f766e;
 }
 
 .editor-checklist input {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .writer-summary {
   width: 100%;
-  margin-top: 8px;
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: rgba(255, 247, 237, 0.8);
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: 12px;
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: rgba(255, 247, 237, 0.95);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  align-self: stretch;
 }
 
 .writer-summary-title {
-  margin: 0 0 8px;
-  font-size: 12px;
+  margin: 0 0 12px;
+  font-size: 15px;
   color: #a16207;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .writer-summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 6px;
-  font-size: 13px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .writer-summary-grid p {
@@ -1350,7 +1843,7 @@ onMounted(async () => {
 
 .writer-summary-grid strong {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
   color: #b45309;
 }
@@ -1398,7 +1891,7 @@ onMounted(async () => {
 .typing-dots span {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #94a3b8;
   animation: dotPulse 1s infinite ease-in-out;
 }
@@ -1431,6 +1924,13 @@ onMounted(async () => {
   border-radius: 12px;
   padding: 12px;
   border: 1px solid rgba(148, 163, 184, 0.35);
+  transition: background 0.2s ease;
+}
+.proposal-card--clickable {
+  cursor: pointer;
+}
+.proposal-card--clickable:active {
+  background: rgba(148, 163, 184, 0.25);
 }
 .proposal-title {
   margin: 0 0 4px;
@@ -1443,6 +1943,13 @@ onMounted(async () => {
   font-size: 13px;
   color: #1f2937;
   white-space: pre-line;
+}
+.proposal-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #475569;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .assistant-bottom {
@@ -1544,6 +2051,33 @@ onMounted(async () => {
   color: #2563eb;
 }
 
+.guide-dismiss {
+  margin-top: 8px;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  align-self: flex-start;
+}
+
+.guide-inline-toggle {
+  margin: 8px 16px 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px dashed rgba(37, 99, 235, 0.4);
+  background: rgba(15, 23, 42, 0.02);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
 .assistant-error {
   font-size: 12px;
   color: #f87171;
@@ -1565,7 +2099,7 @@ onMounted(async () => {
   height: 16px;
   border: 2px solid rgba(71, 85, 105, 0.3);
   border-top-color: #475569;
-  border-radius: 50%;
+  border-radius: 10px;
   animation: spin 1s linear infinite;
 }
 
@@ -1591,6 +2125,11 @@ onMounted(async () => {
   background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
   color: #fff;
   border: none;
+}
+.primary.ghost {
+  background: rgba(15, 23, 42, 0.05);
+  border: 1px dashed #cbd5f5;
+  color: #0f172a;
 }
 .primary:disabled {
   opacity: 0.4;

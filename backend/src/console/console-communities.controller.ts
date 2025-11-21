@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ConsoleCommunitiesService } from './console-communities.service';
 import { ConsoleEventsService } from './console-events.service';
@@ -38,6 +39,22 @@ export class ConsoleCommunitiesController {
   @Patch(':communityId')
   updateCommunity(@Param('communityId') communityId: string, @Req() req: any, @Body() body: any) {
     return this.service.updateCommunity(req.user.id, communityId, body);
+  }
+
+  @Post('uploads')
+  @UseGuards(RolesGuard)
+  @Roles('organizer')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadCommunityAsset(
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Query('type') type?: string,
+    @Query('communityId') communityId?: string,
+  ) {
+    if (!communityId) {
+      throw new BadRequestException('communityId is required');
+    }
+    return this.service.uploadCommunityAsset(req.user.id, communityId, file, type);
   }
 
   @Get(':communityId/events')

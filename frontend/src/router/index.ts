@@ -110,6 +110,36 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    path: '/events/:eventId/register/confirm',
+    name: 'MobileEventCheckout',
+    component: () => import('../views/mobile/MobileEventCheckout.vue'),
+    meta: {
+      title: '申込確認',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: '活动报名确认',
+    },
+    props: true,
+  },
+  {
+    path: '/events/:eventId/register/success',
+    name: 'MobileEventSuccess',
+    component: () => import('../views/mobile/MobileEventSuccess.vue'),
+    meta: {
+      title: '参加完了',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: '活动报名成功',
+    },
+    props: true,
+  },
+  {
     path: '/auth/login',
     name: 'auth-login',
     component: () => import('../views/auth/Login.vue'),
@@ -209,6 +239,17 @@ const routes: RouteRecordRaw[] = [
         meta: { devPageName: 'Console-社区活动' },
       },
       {
+        path: 'communities/new',
+        name: 'ConsoleMobileCommunityCreate',
+        component: () => import('../views/console/mobile/ConsoleCommunityCreateMobile.vue'),
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-创建社群',
+        },
+      },
+      {
         path: 'communities/:communityId/events/create',
         name: 'ConsoleMobileEventCreate',
         component: () => import('../views/console/mobile/ConsoleEventAssistantMobile.vue'),
@@ -287,6 +328,17 @@ const routes: RouteRecordRaw[] = [
         name: 'ConsoleMobileSubscription',
         component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
         meta: { devPageName: 'Console-订阅管理' },
+      },
+      {
+        path: 'tickets/scanner',
+        name: 'ConsoleTicketScanner',
+        component: () => import('../views/console/mobile/ConsoleTicketScannerMobile.vue'),
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-验票扫码',
+        },
       },
     ],
   },
@@ -413,6 +465,19 @@ const routes: RouteRecordRaw[] = [
     component: MyEvents,
     meta: {
       devPageName: '我的活动',
+      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
+    },
+  },
+  {
+    path: '/favorites',
+    name: 'favorites',
+    component: () => import('../views/favorites/FavoritesList.vue'),
+    meta: {
+      devPageName: 'お気に入り',
+      hideTabbar: true,
+      hideShellHeader: true,
     },
   },
   {

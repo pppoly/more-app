@@ -213,7 +213,7 @@ onMounted(() => {
   left: 16px;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.2);
   color: #fff;

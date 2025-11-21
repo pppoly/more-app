@@ -361,7 +361,7 @@ onMounted(load);
 .avatar-fallback {
   width: 56px;
   height: 56px;
-  border-radius: 50%;
+  border-radius: 10px;
   object-fit: cover;
   background: #e2e8f0;
   display: flex;
@@ -405,7 +405,7 @@ onMounted(load);
 .user-cell .avatar-fallback {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 10px;
   object-fit: cover;
   background: #e2e8f0;
   display: flex;

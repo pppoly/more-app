@@ -169,7 +169,7 @@ onMounted(loadEvents);
 .logo-circle {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--color-primary);
   color: #fff;
   font-weight: 700;
@@ -181,7 +181,7 @@ onMounted(loadEvents);
 .user-avatar {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #d6f5db;
   color: var(--color-primary);
   font-weight: 600;

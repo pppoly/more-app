@@ -31,24 +31,57 @@
     </section>
 
     <section class="m-section-title">マイサービス</section>
-    <div class="service-form-group">
-      <form
+    <div class="service-sheet">
+      <button
         v-for="entry in serviceEntries"
         :key="entry.title"
-        class="service-form"
-        @submit.prevent="entry.action()"
+        type="button"
+        class="service-row"
+        @click="entry.action()"
       >
-        <div class="service-form__body">
-          <p class="service-form__label">{{ entry.title }}</p>
-          <p class="service-form__meta">{{ entry.description }}</p>
+        <span class="service-row__icon" :class="entry.icon"></span>
+        <div class="service-row__info">
+          <p class="service-row__title">{{ entry.title }}</p>
+          <p class="service-row__desc">{{ entry.description }}</p>
         </div>
-        <button type="submit" class="service-form__submit">
-          {{ entry.cta }}
-          <span class="i-lucide-arrow-right"></span>
-        </button>
-      </form>
+        <div class="service-row__trailing">
+          <span class="service-row__cta">{{ entry.cta }}</span>
+          <span class="service-row__chevron i-lucide-chevron-right"></span>
+        </div>
+      </button>
     </div>
-
+    <teleport to="body">
+      <transition name="fade">
+        <div v-if="showCropper" class="me-overlay">
+          <div class="me-overlay__panel">
+            <p class="me-overlay__title">调整头像</p>
+            <div
+              class="me-cropper"
+              @pointerdown.prevent="startDrag"
+              @pointermove.prevent="onDrag"
+              @pointerup="endDrag"
+              @pointerleave="endDrag"
+            >
+              <div class="me-cropper__image">
+                <div class="me-cropper__shift" :style="cropShiftStyle">
+                  <img v-if="cropSource" :src="cropSource" :style="cropImageStyle" draggable="false" />
+                </div>
+              </div>
+              <div class="me-cropper__mask"></div>
+            </div>
+            <div class="me-cropper__slider">
+              <input type="range" min="1" max="3" step="0.01" v-model.number="cropScale" @input="clampOffsets" />
+            </div>
+            <div class="me-overlay__actions">
+              <button type="button" class="ghost" @click="cancelCropper">取消</button>
+              <button type="button" class="primary" :disabled="avatarUploading" @click="applyCropper">
+                {{ avatarUploading ? '上传中…' : '使用此头像' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
   </div>
 </template>
 
@@ -99,25 +132,29 @@ const serviceEntries = [
   {
     title: '参加したイベント',
     description: '予約・チケット',
-    cta: '確認する',
+    cta: '見る',
+    icon: 'i-lucide-ticket',
     action: () => goMyEvents(),
   },
   {
     title: '支払い履歴',
     description: 'お支払い記録',
     cta: '見る',
+    icon: 'i-lucide-receipt-japanese-yen',
     action: () => goMyPayments(),
   },
   {
     title: 'お気に入りイベント',
     description: 'お気に入り',
-    cta: '開く',
+    cta: '見る',
+    icon: 'i-lucide-heart',
     action: () => goFavorites(),
   },
   {
     title: '設定',
     description: 'アプリ環境',
-    cta: '設定する',
+    cta: '開く',
+    icon: 'i-lucide-settings',
     action: () => goSettings(),
   },
 ];
@@ -158,109 +195,185 @@ const handleAvatarTap = () => {
 };
 
 const MAX_AVATAR_SIZE = 200 * 1024;
+const CROPPER_VIEWPORT = 280;
+const CROPPER_RESULT = 400;
 
-const cropImageToSquare = (file: File) =>
-  new Promise<File>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const minSide = Math.min(img.width, img.height);
-        const startX = (img.width - minSide) / 2;
-        const startY = (img.height - minSide) / 2;
+const cropSource = ref<string | null>(null);
+const cropImage = ref<HTMLImageElement | null>(null);
+const cropScale = ref(1.2);
+const cropOffset = ref({ x: 0, y: 0 });
+const cropBaseWidth = ref(0);
+const cropBaseHeight = ref(0);
+const showCropper = ref(false);
+const dragging = ref(false);
+const dragStart = ref({ x: 0, y: 0 });
+const dragOrigin = ref({ x: 0, y: 0 });
 
-        const createCanvas = (size: number) => {
-          const canvas = document.createElement('canvas');
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            return null;
-          }
-          ctx.drawImage(img, startX, startY, minSide, minSide, 0, 0, size, size);
-          return canvas;
-        };
+const cropShiftStyle = computed(() => ({
+  width: `${cropBaseWidth.value}px`,
+  height: `${cropBaseHeight.value}px`,
+  transform: `translate(${cropOffset.value.x}px, ${cropOffset.value.y}px)`,
+}));
 
-        const exportWithConstraints = (initialSize: number): Promise<File> =>
-          new Promise((innerResolve, innerReject) => {
-            let size = initialSize;
-            let canvas = createCanvas(size);
-            if (!canvas) {
-              innerReject(new Error('Failed to init canvas'));
-              return;
-            }
-            const qualities = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+const cropImageStyle = computed(() => ({
+  width: `${cropBaseWidth.value}px`,
+  height: `${cropBaseHeight.value}px`,
+  transform: `scale(${cropScale.value})`,
+}));
 
-            const attemptQuality = (index: number) => {
-              if (!canvas) {
-                innerReject(new Error('Failed to init canvas'));
-                return;
-              }
-              if (index >= qualities.length) {
-                if (size <= 256) {
-                  innerReject(new Error('画像を圧縮できませんでした'));
-                  return;
-                }
-                size = Math.floor(size * 0.85);
-                canvas = createCanvas(size);
-                attemptQuality(0);
-                return;
-              }
-              canvas.toBlob(
-                (blob) => {
-                  if (!blob) {
-                    innerReject(new Error('画像変換に失敗しました'));
-                    return;
-                  }
-                  if (blob.size <= MAX_AVATAR_SIZE) {
-                    const cropped = new File([blob], `avatar-${Date.now()}.jpg`, {
-                      type: 'image/jpeg',
-                    });
-                    innerResolve(cropped);
-                  } else {
-                    attemptQuality(index + 1);
-                  }
-                },
-                'image/jpeg',
-                qualities[index],
-              );
-            };
-
-            attemptQuality(0);
-          });
-
-        exportWithConstraints(512).then(resolve).catch(reject);
-      };
-      img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
-      img.src = reader.result as string;
-    };
-    reader.onerror = () => reject(new Error('画像を読み込めませんでした'));
-    reader.readAsDataURL(file);
-  });
-
-const onAvatarSelected = async (event: Event) => {
+const onAvatarSelected = (event: Event) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+  loadCropImage(file);
+  if (input) {
+    input.value = '';
+  }
+};
+
+const loadCropImage = (file: File) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      cropSource.value = reader.result as string;
+      cropImage.value = img;
+      const coverScale = Math.max(CROPPER_VIEWPORT / img.naturalWidth, CROPPER_VIEWPORT / img.naturalHeight);
+      cropBaseWidth.value = img.naturalWidth * coverScale;
+      cropBaseHeight.value = img.naturalHeight * coverScale;
+      cropScale.value = 1.2;
+      cropOffset.value = { x: 0, y: 0 };
+      clampOffsets();
+      showCropper.value = true;
+    };
+    img.onerror = () => {
+      avatarStatus.value = '图片加载失败';
+      avatarStatusType.value = 'error';
+    };
+    img.src = reader.result as string;
+  };
+  reader.onerror = () => {
+    avatarStatus.value = '无法读取图片';
+    avatarStatusType.value = 'error';
+  };
+  reader.readAsDataURL(file);
+};
+
+const startDrag = (event: PointerEvent) => {
+  if (!showCropper.value) return;
+  dragging.value = true;
+  dragStart.value = { x: event.clientX, y: event.clientY };
+  dragOrigin.value = { ...cropOffset.value };
+  (event.currentTarget as HTMLElement | null)?.setPointerCapture(event.pointerId);
+};
+
+const onDrag = (event: PointerEvent) => {
+  if (!dragging.value) return;
+  const deltaX = event.clientX - dragStart.value.x;
+  const deltaY = event.clientY - dragStart.value.y;
+  cropOffset.value = {
+    x: dragOrigin.value.x + deltaX,
+    y: dragOrigin.value.y + deltaY,
+  };
+  clampOffsets();
+};
+
+const endDrag = (event: PointerEvent) => {
+  if (!dragging.value) return;
+  dragging.value = false;
+  (event.currentTarget as HTMLElement | null)?.releasePointerCapture(event.pointerId);
+};
+
+const clampOffsets = () => {
+  const maxX = Math.max(0, (cropBaseWidth.value * cropScale.value - CROPPER_VIEWPORT) / 2);
+  const maxY = Math.max(0, (cropBaseHeight.value * cropScale.value - CROPPER_VIEWPORT) / 2);
+  cropOffset.value = {
+    x: Math.min(maxX, Math.max(-maxX, cropOffset.value.x)),
+    y: Math.min(maxY, Math.max(-maxY, cropOffset.value.y)),
+  };
+};
+
+const cancelCropper = () => {
+  showCropper.value = false;
+  cropSource.value = null;
+  cropImage.value = null;
+};
+
+const applyCropper = async () => {
+  if (!cropImage.value) return;
   avatarUploading.value = true;
   avatarStatus.value = '';
   try {
-    const cropped = await cropImageToSquare(file);
-    const profile = await uploadMyAvatar(cropped);
+    const blob = await createCroppedBlob();
+    if (blob.size > MAX_AVATAR_SIZE) {
+      avatarStatus.value = '图片过大，请重新选择';
+      avatarStatusType.value = 'error';
+      avatarUploading.value = false;
+      return;
+    }
+    const file = new File([blob], `avatar-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+    const profile = await uploadMyAvatar(file);
     setUserProfile(profile);
-    avatarStatus.value = 'プロフィール写真を更新しました';
+    avatarStatus.value = '头像已更新';
     avatarStatusType.value = 'success';
+    cancelCropper();
   } catch (error) {
     console.error('Failed to upload avatar', error);
-    avatarStatus.value = '写真の更新に失敗しました';
+    avatarStatus.value = '头像上传失败';
     avatarStatusType.value = 'error';
   } finally {
     avatarUploading.value = false;
-    if (input) {
-      input.value = '';
-    }
   }
 };
+
+const createCroppedBlob = () =>
+  new Promise<Blob>((resolve, reject) => {
+    const image = cropImage.value;
+    if (!image) {
+      reject(new Error('未找到图片'));
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = CROPPER_RESULT;
+    canvas.height = CROPPER_RESULT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      reject(new Error('无法创建画布'));
+      return;
+    }
+    const coverScale = Math.max(CROPPER_VIEWPORT / image.naturalWidth, CROPPER_VIEWPORT / image.naturalHeight);
+    const effectiveScale = coverScale * cropScale.value;
+    const cropNaturalWidth = CROPPER_VIEWPORT / effectiveScale;
+    const cropNaturalHeight = CROPPER_VIEWPORT / effectiveScale;
+    const centerX = image.naturalWidth / 2 - cropOffset.value.x / effectiveScale;
+    const centerY = image.naturalHeight / 2 - cropOffset.value.y / effectiveScale;
+    let sourceX = centerX - cropNaturalWidth / 2;
+    let sourceY = centerY - cropNaturalHeight / 2;
+    sourceX = Math.max(0, Math.min(image.naturalWidth - cropNaturalWidth, sourceX));
+    sourceY = Math.max(0, Math.min(image.naturalHeight - cropNaturalHeight, sourceY));
+    ctx.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      cropNaturalWidth,
+      cropNaturalHeight,
+      0,
+      0,
+      CROPPER_RESULT,
+      CROPPER_RESULT,
+    );
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('无法生成头像'));
+          return;
+        }
+        resolve(blob);
+      },
+      'image/jpeg',
+      0.92,
+    );
+  });
 </script>
 
 <style scoped>
@@ -292,13 +405,15 @@ const onAvatarSelected = async (event: Event) => {
   border: none;
   width: 64px;
   height: 64px;
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
   font-weight: 600;
+  padding: 0;
+  line-height: 0;
   overflow: hidden;
   cursor: pointer;
   position: relative;
@@ -308,6 +423,8 @@ const onAvatarSelected = async (event: Event) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
+  border-radius: inherit;
 }
 
 .me-hero__avatar-spinner {
@@ -412,54 +529,81 @@ const onAvatarSelected = async (event: Event) => {
   border: 0;
 }
 
-.service-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+.service-sheet {
+  margin: 0 -12px;
+  border-radius: 26px;
+  background: #fff;
+  padding: 8px 4px;
+  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-.service-form {
+.service-row {
+  width: 100%;
   border: none;
-  border-radius: 12px;
-  background: #fff;
-  padding: 1rem 1.25rem;
+  background: transparent;
+  padding: 14px 24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  box-shadow: 0 12px 25px rgba(15, 23, 42, 0.08);
-  gap: 1rem;
+  gap: 12px;
 }
 
-.service-form__body {
+.service-row + .service-row {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.service-row__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.service-row__info {
+  flex: 1;
+  text-align: left;
+}
+
+.service-row__trailing {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 10px;
 }
 
-.service-form__label {
+.service-row__title {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--m-color-text-primary, #111);
+  color: var(--m-color-text-primary, #0f172a);
 }
 
-.service-form__meta {
-  margin: 0;
+.service-row__desc {
+  margin: 2px 0 0;
   font-size: 0.8rem;
-  color: var(--m-color-text-tertiary, #666);
+  color: var(--m-color-text-tertiary, #64748b);
 }
 
-.service-form__submit {
-  border: none;
-  border-radius: 999px;
-  padding: 0.55rem 1.2rem;
+.service-row__cta {
+  font-size: 0.75rem;
   font-weight: 600;
-  font-size: 0.85rem;
-  background: linear-gradient(120deg, #0a7aff, #3b82f6);
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.service-row__chevron {
+  color: #94a3b8;
+  font-size: 1.1rem;
+}
+
+.service-row:active {
+  background: rgba(15, 23, 42, 0.04);
 }
 
 .me-stack {
@@ -498,5 +642,101 @@ const onAvatarSelected = async (event: Event) => {
 
 .settings-inline-logout {
   margin-top: 1rem;
+}
+
+.me-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.me-overlay__panel {
+  width: min(360px, 92vw);
+  background: #fff;
+  border-radius: 24px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.35);
+}
+
+.me-overlay__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.me-cropper {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  max-width: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  margin: 0 auto;
+  background: #0f172a;
+}
+
+.me-cropper__image,
+.me-cropper__shift {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.me-cropper__shift img {
+  pointer-events: none;
+  user-select: none;
+}
+
+.me-cropper__mask {
+  position: absolute;
+  inset: 0;
+  box-shadow: 0 0 0 999px rgba(2, 6, 23, 0.55);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+}
+
+.me-cropper__slider {
+  padding: 0 12px;
+}
+
+.me-cropper__slider input[type='range'] {
+  width: 100%;
+}
+
+.me-overlay__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.me-overlay__actions .ghost,
+.me-overlay__actions .primary {
+  flex: 1;
+  padding: 12px 0;
+  border-radius: 16px;
+  font-weight: 600;
+  border: none;
+}
+
+.me-overlay__actions .ghost {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+.me-overlay__actions .primary {
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+  color: #fff;
 }
 </style>
