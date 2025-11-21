@@ -1,66 +1,53 @@
 <template>
   <section class="console-feed" v-if="community">
-    <header class="feed-header">
-      <div class="title-block">
-        <p class="label">{{ community.slug }}</p>
+    <div class="toolbar">
+      <div>
+        <p class="eyebrow">社群 · {{ community.slug }}</p>
         <h2>{{ community.name }}</h2>
+        <p class="sub">集中管理活动，随时创建和更新。</p>
       </div>
-      <div class="header-actions">
+      <div class="toolbar-actions">
         <RouterLink
           :to="{ name: 'console-community-finance', params: { communityId: community.id } }"
-          class="link-btn"
+          class="ghost"
         >
-          決済/プラン
+          收款设置
         </RouterLink>
         <RouterLink
           :to="{ name: 'console-event-create', params: { communityId: community.id } }"
-          class="fab small"
+          class="primary"
         >
-          ＋ 新規
+          ＋ 新建活动
         </RouterLink>
       </div>
-    </header>
+    </div>
 
-    <p v-if="loading" class="status">イベント読み込み中...</p>
+    <p v-if="loading" class="status">活动加载中...</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
-    <div v-else>
+    <div v-else class="body">
       <div v-if="!events.length" class="empty-state">
-        まだイベントがありません。右下のボタンから作成しましょう。
+        还没有活动，点击右上“新建活动”开始。
       </div>
-      <ul v-else class="chat-feed">
-        <li v-for="event in events" :key="event.id" class="feed-card">
-          <div class="thumb" :class="{ 'thumb--image': Boolean(coverImageUrl(event)) }">
-            <img v-if="coverImageUrl(event)" :src="coverImageUrl(event)" alt="cover" />
-            <span v-else>{{ coverInitial(event) }}</span>
+      <ul v-else class="event-grid">
+        <li v-for="event in events" :key="event.id" class="event-card">
+          <div class="event-thumb" :style="coverStyle(event)">
+            <span class="badge" :class="event.status === 'open' ? 'open' : 'closed'">
+              {{ event.status === 'open' ? '报名中' : '已结束' }}
+            </span>
           </div>
-          <div class="feed-info">
-            <p class="feed-title">{{ getTitle(event) }}</p>
-            <p class="feed-sub">{{ formatDate(event.startTime) }} · {{ event.status }}</p>
-            <div class="feed-meta">
-              <span class="status-pill" :class="event.status === 'open' ? 'open' : 'closed'">
-                {{ event.status === 'open' ? '受付中' : '終了' }}
-              </span>
-              <div class="actions">
-                <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">
-                  編集
-                </RouterLink>
-                <RouterLink :to="{ name: 'console-event-registrations', params: { eventId: event.id } }">
-                  参加者
-                </RouterLink>
-              </div>
+          <div class="event-body">
+            <p class="event-date">{{ formatDate(event.startTime) }}</p>
+            <h3 class="event-title">{{ getTitle(event) }}</h3>
+            <div class="event-actions">
+              <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">编辑</RouterLink>
+              <RouterLink :to="{ name: 'event-detail', params: { eventId: event.id } }">预览</RouterLink>
+              <RouterLink :to="{ name: 'console-event-registrations', params: { eventId: event.id } }">报名</RouterLink>
             </div>
           </div>
         </li>
       </ul>
     </div>
-
-    <RouterLink
-      :to="{ name: 'console-event-create', params: { communityId: community.id } }"
-      class="fab"
-    >
-      ＋ 新しいイベント
-    </RouterLink>
   </section>
 </template>
 
@@ -101,139 +88,100 @@ const formatDate = (value: string) =>
     weekday: 'short',
     hour: '2-digit',
   });
-const coverInitial = (event: ConsoleEventSummary) => getTitle(event).charAt(0).toUpperCase();
 const coverImageUrl = (event: ConsoleEventSummary) =>
   event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : null;
+const coverStyle = (event: ConsoleEventSummary) => {
+  const url = coverImageUrl(event);
+  if (url) {
+    return {
+      backgroundImage: `linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 100%), url(${url})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    };
+  }
+  return {
+    background: 'linear-gradient(135deg, #0ea5e9, #22c55e)',
+  };
+};
 
 onMounted(load);
 </script>
 
 <style scoped>
 .console-feed {
-  position: relative;
-  padding-bottom: 80px;
-}
-
-.feed-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  gap: 1rem;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.link-btn {
-  border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  color: var(--color-primary);
-}
-
-.title-block .label {
-  margin: 0;
-  color: var(--color-subtext);
-  font-size: 0.85rem;
-}
-
-.title-block h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.chat-feed {
-  list-style: none;
-  padding: 0;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-.feed-card {
-  display: flex;
-  gap: 0.75rem;
-  background: #fff;
-  padding: 0.75rem;
-  border-radius: 14px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
-}
-
-.thumb {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, var(--color-primary), #6dda8b);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 1.3rem;
-}
-
-.thumb--image {
-  background: transparent;
-  padding: 0;
-}
-
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 16px;
-  display: block;
-}
-
-.feed-info {
-  flex: 1;
-}
-
-.feed-title {
-  margin: 0;
-  font-weight: 600;
-}
-
-.feed-sub {
-  margin: 0.2rem 0;
-  color: var(--color-subtext);
-  font-size: 0.85rem;
-}
-
-.feed-meta {
+.toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: #fff;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 25px rgba(15, 23, 42, 0.06);
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.status-pill {
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
+.eyebrow {
+  margin: 0;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
 }
 
-.status-pill.open {
-  background: rgba(0, 185, 0, 0.15);
-  color: var(--color-primary);
+.toolbar h2 {
+  margin: 2px 0 4px;
+  font-size: 22px;
 }
 
-.status-pill.closed {
-  background: #ffe1e1;
-  color: #c53030;
+.sub {
+  margin: 0;
+  color: #475569;
 }
 
-.actions a {
-  margin-left: 0.5rem;
-  color: var(--color-primary);
+.toolbar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.primary,
+.ghost {
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.primary {
+  background: linear-gradient(135deg, #2563eb, #22c55e);
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2);
+}
+
+.ghost {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.body {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .status {
-  color: var(--color-subtext);
+  color: #94a3b8;
 }
 
 .error {
@@ -241,26 +189,81 @@ onMounted(load);
 }
 
 .empty-state {
-  background: #fff;
-  border: 1px dashed var(--color-border);
+  background: rgba(226, 232, 240, 0.4);
+  border: 1px dashed #cbd5e1;
   border-radius: 12px;
   padding: 1rem;
-  color: var(--color-subtext);
+  color: #64748b;
+  text-align: center;
 }
 
-.fab {
-  position: fixed;
-  right: 1.5rem;
-  bottom: 1.5rem;
-  background: var(--color-primary);
-  color: #fff;
+.event-grid {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.event-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.event-thumb {
+  height: 140px;
+  position: relative;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+}
+
+.badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 8px;
   border-radius: 999px;
-  padding: 0.6rem 1.2rem;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
 }
 
-.fab.small {
-  position: static;
-  box-shadow: none;
+.badge.open {
+  background: #22c55e;
+}
+
+.badge.closed {
+  background: #9ca3af;
+}
+
+.event-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.event-date {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.event-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.event-actions {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  flex-wrap: wrap;
 }
 </style>

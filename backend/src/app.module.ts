@@ -10,9 +10,11 @@ import { PaymentsModule } from './payments/payments.module';
 import { ConsoleModule } from './console/console.module';
 import { AiModule } from './ai/ai.module';
 import { OrganizersModule } from './organizers/organizers.module';
+import { StripeModule } from './stripe/stripe.module';
 
 @Module({
   imports: [
+    StripeModule,
     PrismaModule,
     EventsModule,
     CommunitiesModule,

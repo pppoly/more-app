@@ -518,6 +518,9 @@ const routes: RouteRecordRaw[] = [
     component: StripeReturn,
     meta: {
       devPageName: 'Stripe 返回页',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
     },
   },
 ];

@@ -236,8 +236,25 @@ export class PaymentsService {
       case 'checkout.session.async_payment_succeeded':
         await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
         break;
+      case 'checkout.session.expired':
+        await this.handleCheckoutSessionExpired(event.data.object as Stripe.Checkout.Session);
+        break;
       case 'invoice.payment_succeeded':
         await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        break;
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        break;
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed':
+        await this.handleChargeDispute(event.type, event.data.object as Stripe.Dispute);
+        break;
+      case 'payment_intent.payment_failed':
+        await this.handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+        break;
+      case 'customer.subscription.deleted':
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionLifecycle(event.data.object as Stripe.Subscription);
         break;
       case 'charge.refunded':
         await this.handleChargeRefunded(event.data.object as Stripe.Charge);
@@ -395,9 +412,82 @@ export class PaymentsService {
       },
     });
 
+    await this.recordSubscriptionPayment(invoice, communityId, planId);
+
     this.logger.log(
       `Community ${communityId} subscribed to plan ${planId} via invoice ${invoice.id} (subscription ${subscriptionId})`,
     );
+  }
+
+  private async handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+    const subscriptionId =
+      typeof invoice.subscription === 'string'
+        ? invoice.subscription
+        : invoice.subscription?.id ?? null;
+    const communityId = invoice.metadata?.communityId;
+    const planId = invoice.metadata?.planId;
+    this.logger.warn(
+      `Subscription invoice failed: subscription=${subscriptionId}, community=${communityId}, plan=${planId}, invoice=${invoice.id}`,
+    );
+    if (communityId && subscriptionId) {
+      await this.prisma.community.update({
+        where: { id: communityId },
+        data: { stripeSubscriptionId: subscriptionId },
+      });
+    }
+  }
+
+  private async handleSubscriptionLifecycle(subscription: Stripe.Subscription) {
+    const communityId = (subscription.metadata as any)?.communityId ?? null;
+    const planId = (subscription.metadata as any)?.planId ?? null;
+    if (!communityId && !planId) {
+      this.logger.debug(`Subscription lifecycle event missing metadata: ${subscription.id}`);
+      return;
+    }
+
+    if (!communityId) {
+      this.logger.warn(`Subscription lifecycle event missing communityId: ${subscription.id}`);
+      return;
+    }
+
+    if (subscription.status === 'canceled' || subscription.canceled_at) {
+      await this.prisma.community.update({
+        where: { id: communityId },
+        data: { stripeSubscriptionId: null },
+      });
+      this.logger.log(`Subscription cancelled: ${subscription.id}, community=${communityId}`);
+      return;
+    }
+
+    await this.prisma.community.update({
+      where: { id: communityId },
+      data: {
+        pricingPlanId: planId ?? undefined,
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id,
+      },
+    });
+    this.logger.log(`Subscription updated: ${subscription.id}, community=${communityId}, plan=${planId}`);
+  }
+
+  private async handleCheckoutSessionExpired(session: Stripe.Checkout.Session) {
+    const registrationId = session.metadata?.registrationId;
+    const payment = await this.prisma.payment.findFirst({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+    if (payment) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'pending' },
+      });
+    }
+    if (registrationId) {
+      await this.prisma.eventRegistration.updateMany({
+        where: { id: registrationId, paymentStatus: 'pending' },
+        data: { paymentStatus: 'pending', status: 'cancelled' },
+      });
+    }
+    this.logger.log(`Checkout session expired: ${session.id}, registration=${registrationId ?? 'n/a'}`);
   }
 
   private async handleChargeRefunded(charge: Stripe.Charge) {
@@ -419,6 +509,57 @@ export class PaymentsService {
     }
 
     await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id);
+  }
+
+  private async handleChargeDispute(eventType: string, dispute: Stripe.Dispute) {
+    const chargeId = typeof dispute.charge === 'string' ? dispute.charge : dispute.charge?.id ?? null;
+    if (!chargeId) {
+      this.logger.warn(`Dispute event missing charge id: ${dispute.id}`);
+      return;
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { stripeChargeId: chargeId },
+    });
+    if (!payment) {
+      this.logger.warn(`No payment matched disputed charge ${chargeId}`);
+      return;
+    }
+
+    if (eventType === 'charge.dispute.created') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'disputed', metadata: { ...(payment as any).metadata, disputeId: dispute.id } } as any,
+      });
+      this.logger.warn(`Payment ${payment.id} marked disputed (charge=${chargeId})`);
+    } else if (eventType === 'charge.dispute.closed') {
+      const won = dispute.status === 'won';
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: won ? 'paid' : 'refunded', stripeRefundId: won ? payment.stripeRefundId : payment.stripeRefundId },
+      });
+      this.logger.log(`Payment ${payment.id} dispute closed (${won ? 'won' : 'lost'})`);
+    }
+  }
+
+  private async handlePaymentIntentFailed(intent: Stripe.PaymentIntent) {
+    const paymentIntentId = intent.id;
+    const payment = await this.prisma.payment.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+    });
+    if (!payment) return;
+
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'failed' },
+    });
+
+    if (payment.registrationId) {
+      await this.prisma.eventRegistration.update({
+        where: { id: payment.registrationId },
+        data: { paymentStatus: 'failed', status: 'pending' },
+      });
+    }
+    this.logger.warn(`Payment intent failed: ${paymentIntentId}, payment=${payment.id}`);
   }
 
   private async markPaymentRefunded(payment: Payment, refundId?: string | null) {
@@ -443,6 +584,60 @@ export class PaymentsService {
         },
       });
     }
+  }
+
+  private async recordSubscriptionPayment(invoice: Stripe.Invoice, communityId: string, planId: string) {
+    const subscriptionId =
+      typeof invoice.subscription === 'string'
+        ? invoice.subscription
+        : invoice.subscription?.id ?? null;
+    const chargeId =
+      typeof invoice.charge === 'string'
+        ? invoice.charge
+        : invoice.charge?.id ?? null;
+    const amount = invoice.amount_paid ?? 0;
+    const currency = invoice.currency ?? 'jpy';
+
+    if (!subscriptionId) {
+      this.logger.warn(`Cannot record subscription payment without subscriptionId for invoice ${invoice.id}`);
+      return;
+    }
+
+    const existing = await this.prisma.payment.findFirst({
+      where: { stripeChargeId: chargeId ?? undefined },
+    });
+    if (existing) {
+      return;
+    }
+
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { ownerId: true },
+    });
+    const ownerId = community?.ownerId;
+    if (!ownerId) {
+      this.logger.warn(`Cannot record subscription payment; missing owner for community ${communityId}`);
+      return;
+    }
+
+    if (!chargeId) {
+      this.logger.warn(`Cannot record subscription payment without chargeId for invoice ${invoice.id}`);
+      return;
+    }
+
+    await this.prisma.payment.create({
+      data: {
+        userId: ownerId,
+        communityId,
+        amount,
+        platformFee: 0,
+        currency,
+        status: 'paid',
+        method: 'stripe',
+        stripeChargeId: chargeId,
+        metadata: { planId, invoiceId: invoice.id },
+      } as any,
+    });
   }
 
   private async resolvePaymentIntentId(payment: Payment): Promise<string | null> {

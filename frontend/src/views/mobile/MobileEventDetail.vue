@@ -27,7 +27,12 @@
                 class="event-carousel__slide"
                 :class="{ 'is-active': index === activeSlide }"
               >
-                <img :src="slide.imageUrl" class="event-cover" :alt="`event cover ${index + 1}`" />
+                <img
+                  :src="coverSrc(slide, index)"
+                  class="event-cover"
+                  :alt="`event cover ${index + 1}`"
+                  @error="markCoverBroken(slide, index)"
+                />
               </div>
               <button
                 v-if="heroSlides.length > 1"
@@ -290,6 +295,9 @@ const favoritesStore = useFavorites();
 
 const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
+const brokenCovers = ref<Record<string, boolean>>({});
+
+const fallbackCover = 'https://placehold.co/640x360?text=Event';
 const loading = ref(true);
 const error = ref<string | null>(null);
 const registrationError = ref<string | null>(null);
@@ -385,7 +393,10 @@ const detail = computed(() => {
     categoryLabel: event.value.category ?? 'イベント',
     timeFullText: `${start} 〜 ${end}`,
     locationText: event.value.locationText,
-    coverUrl: gallery.value[0]?.imageUrl ?? 'https://placehold.co/640x360?text=Event',
+    coverUrl:
+      gallery.value[0]?.imageUrl ||
+      (event.value.coverImageUrl ? resolveAssetUrl(event.value.coverImageUrl) : null) ||
+      'https://placehold.co/640x360?text=Event',
     regSummary,
     capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
     regProgress,
@@ -413,6 +424,12 @@ const detail = computed(() => {
   };
 });
 
+const slideKey = (slide: { id?: string; imageUrl?: string }, index: number) =>
+  slide.id || slide.imageUrl || `slide-${index}`;
+
+const coverSrc = (slide: { id?: string; imageUrl?: string }, index: number) =>
+  brokenCovers.value[slideKey(slide, index)] ? fallbackCover : slide.imageUrl || fallbackCover;
+
 const heroSlides = computed(() => {
   if (gallery.value.length) {
     return gallery.value.map((item, index) => ({
@@ -425,8 +442,10 @@ const heroSlides = computed(() => {
 });
 
 const activeSlideImage = computed(() => {
-  if (!heroSlides.value.length) return detail.value?.coverUrl ?? '';
-  return heroSlides.value[activeSlide.value]?.imageUrl ?? heroSlides.value[0]?.imageUrl ?? '';
+  if (!heroSlides.value.length) return detail.value?.coverUrl ?? fallbackCover;
+  const slide = heroSlides.value[activeSlide.value] ?? heroSlides.value[0];
+  const index = Math.max(heroSlides.value.indexOf(slide), 0);
+  return coverSrc(slide, index);
 });
 
 const heroBackgroundStyle = computed(() =>
@@ -645,6 +664,13 @@ const goPrevSlide = () => {
 const goNextSlide = () => {
   if (!heroSlides.value.length) return;
   activeSlide.value = (activeSlide.value + 1) % heroSlides.value.length;
+};
+
+const markCoverBroken = (slide: { id?: string; imageUrl?: string }, index: number) => {
+  brokenCovers.value = {
+    ...brokenCovers.value,
+    [slideKey(slide, index)]: true,
+  };
 };
 
 const openCalendar = () => {

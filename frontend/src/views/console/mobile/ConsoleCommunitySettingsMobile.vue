@@ -214,7 +214,7 @@ const startStripeOnboard = async () => {
   try {
     const { url } = await startCommunityStripeOnboarding(communityId);
     stripeOnboardLink.value = url;
-    window.open(url, '_blank');
+    window.location.href = url;
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Stripe 連携リンクの取得に失敗しました';
   } finally {

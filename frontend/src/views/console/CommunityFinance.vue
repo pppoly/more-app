@@ -1,58 +1,65 @@
 <template>
   <section class="finance-page" v-if="community">
-    <header class="page-header">
-      <div>
-        <p class="label">{{ community.slug }}</p>
-        <h2>決済・サブスクリプション設定</h2>
+    <header class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">收银台 · {{ community.slug }}</p>
+        <h2>{{ stripeReady ? '可以收钱啦' : '先把收款开起来' }}</h2>
+        <p class="sub">
+          {{ stripeReady ? '资料正确就能正常打款，信息变了可以随时更新。' : '跟着 Stripe 填信息，很快就能收票款。' }}
+        </p>
+        <div class="hero-actions">
+          <button class="primary" @click="handleOnboarding" :disabled="onboarding">
+            {{ onboarding ? '跳转中...' : stripeReady ? '更新收款信息' : '去开通 Stripe 收款' }}
+          </button>
+          <span :class="stripeReady ? 'pill success' : 'pill warn'">
+            {{ stripeReady ? '已准备' : '待开通' }}
+          </span>
+        </div>
       </div>
-      <RouterLink
-        v-if="community"
-        :to="{ name: 'console-community-events', params: { communityId: community.id } }"
-        class="link-btn"
-      >
-        イベント一覧へ戻る
-      </RouterLink>
+      <div class="hero-meta">
+        <p>Stripe 账户</p>
+        <strong>{{ community.stripeAccountId || '未创建' }}</strong>
+        <small>{{ stripeReady ? '可收款' : '需要完成资料' }}</small>
+      </div>
     </header>
 
     <div class="grid">
       <article class="card">
         <header>
-          <h3>Stripe Connect</h3>
+          <h3>账户状态</h3>
           <span :class="stripeReady ? 'status success' : 'status warn'">
-            {{ stripeReady ? '連携済み' : '未連携' }}
+            {{ stripeReady ? '已联通' : '尚未开通' }}
           </span>
         </header>
-        <p class="muted">Stripeアカウントを連携すると有料イベントの売上を受け取れます。</p>
+        <p class="muted">先把账户开好，活动收入才打得进来。</p>
         <ul class="info-list">
           <li>
-            <span>アカウントID</span>
-            <strong>{{ community.stripeAccountId || '未作成' }}</strong>
+            <span>账户 ID</span>
+            <strong>{{ community.stripeAccountId || '未创建' }}</strong>
           </li>
           <li>
-            <span>連携ステータス</span>
-            <strong>{{ stripeReady ? '情報審査済み' : '要審査' }}</strong>
+            <span>状态</span>
+            <strong>{{ stripeReady ? '已通过审核' : '待提交/审核中' }}</strong>
           </li>
         </ul>
         <button class="primary" @click="handleOnboarding" :disabled="onboarding">
-          {{ onboarding ? 'リンクを作成中...' : stripeReady ? '情報を更新する' : 'Stripe連携を開始' }}
+          {{ onboarding ? '跳转中...' : stripeReady ? '更新资料' : '立即开通收款' }}
         </button>
-        <p class="hint">
-          {{ stripeReady ? '必要に応じて情報更新リンクを開きます。' : 'リンクを開き、Stripeの案内に沿って情報を入力してください。' }}
-        </p>
+        <p class="hint">跳到 Stripe 填完信息，再回来就能继续收钱。</p>
       </article>
 
       <article class="card">
         <header>
-          <h3>MOREプラン</h3>
+          <h3>MORE 收款方案</h3>
           <span class="status info">
             {{
               activePlan
-                ? `${activePlan.name} / 月額¥${activePlan.monthlyFee}`
-                : '未設定'
+                ? `${activePlan.name} / 月¥${activePlan.monthlyFee}`
+                : '未选择'
             }}
           </span>
         </header>
-        <p class="muted">プランを選択すると、適用される決済手数料やサポート範囲が変わります。</p>
+        <p class="muted">挑一个最合适的方案，看看手续费和支持内容。</p>
         <div class="plan-list">
           <label v-for="plan in pricingPlans" :key="plan.id" :class="['plan-card', { selected: selectedPlanId === plan.id }]">
             <input
@@ -64,21 +71,21 @@
             />
             <div>
               <h4>{{ plan.name }}</h4>
-              <p>月額 ¥{{ plan.monthlyFee }} / 決済手数料 {{ plan.transactionFeePercent }}% + ¥{{ plan.transactionFeeFixed }}</p>
-              <small>支払スケジュール: {{ plan.payoutSchedule }}</small>
+              <p>月费 ¥{{ plan.monthlyFee }} ｜ 手续费 {{ plan.transactionFeePercent }}% + ¥{{ plan.transactionFeeFixed }}</p>
+              <small>结算频率: {{ plan.payoutSchedule }}</small>
               <ul class="feature-list" v-if="Array.isArray(plan.features?.items)">
-                <li v-for="item in plan.features.items" :key="item">・{{ item }}</li>
+                <li v-for="item in plan.features.items" :key="item">· {{ item }}</li>
               </ul>
             </div>
           </label>
         </div>
         <div class="actions">
-          <button class="secondary" @click="resetSelection" :disabled="planUpdating || !planChanged">変更を取り消す</button>
+          <button class="secondary" @click="resetSelection" :disabled="planUpdating || !planChanged">撤销修改</button>
           <button class="primary" @click="savePlan" :disabled="planUpdating || !planChanged || pricingPlans.length === 0">
-            {{ planUpdating ? '更新中...' : 'プランを保存' }}
+            {{ planUpdating ? '保存中...' : '保存选择' }}
           </button>
         </div>
-        <p class="hint">プラン変更は即時反映されます。Stripe請求が必要なプランは、連携完了後に課金されます。</p>
+        <p class="hint">选择后立即生效；收费方案会在资料完成后才开始扣款。</p>
       </article>
     </div>
 
@@ -171,24 +178,72 @@ onMounted(load);
   gap: 1.5rem;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
+.hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
+  gap: 1rem;
+  background: linear-gradient(135deg, #2563eb, #10b981);
+  color: #f8fafc;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  box-shadow: 0 18px 45px rgba(37, 99, 235, 0.22);
 }
 
-.label {
+.hero-text h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+}
+
+.eyebrow {
   margin: 0;
-  color: var(--color-subtext);
-  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  opacity: 0.9;
 }
 
-.link-btn {
-  border: 1px solid var(--color-border);
-  padding: 0.4rem 0.9rem;
+.sub {
+  margin: 0 0 0.6rem;
+  color: #e2f3ff;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hero-meta {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: #e2f3ff;
+}
+
+.hero-meta strong {
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.pill {
+  padding: 0.35rem 0.8rem;
   border-radius: 999px;
-  font-size: 0.9rem;
-  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.pill.success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #d1fae5;
+}
+
+.pill.warn {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fef3c7;
 }
 
 .grid {

@@ -90,8 +90,10 @@ import {
 } from '../../../api/client';
 import type { PricingPlan } from '../../../types/api';
 import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
+import { useRouter } from 'vue-router';
 
 const communityStore = useConsoleCommunityStore();
+const router = useRouter();
 const plans = ref<PricingPlan[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -155,8 +157,10 @@ const payingPlan = computed(() => (paymentPlanId.value ? planById(paymentPlanId.
 const reload = async () => {
   await communityStore.loadCommunities(true);
   if (communityId.value) {
-    communityStore.setActiveCommunity(communityId.value);
-    await fetchConsoleCommunity(communityId.value).catch(() => {});
+    const res = await fetchConsoleCommunity(communityId.value).catch(() => null);
+    if (res?.id) {
+      communityStore.setActiveCommunity(res.id);
+    }
   }
   await loadPlans();
 };
@@ -223,22 +227,25 @@ const confirmPayment = async () => {
       elements: elementsInstance,
       clientSecret: paymentClientSecret.value,
       redirect: 'if_required',
-      confirmParams: {
-        return_url: window.location.href,
-      },
+      confirmParams: {},
     });
     if (stripeError) {
       error.value = stripeError.message || '支付失败，请重试';
       return;
     }
-    if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'processing') {
+    if (paymentIntent?.status === 'succeeded') {
+      await reload();
       resetPayment();
-      window.alert('支付提交成功，状态同步中，请稍后刷新查看。');
-      await reload();
-    } else {
-      window.alert('支付处理中，请稍后查看状态。');
-      await reload();
+      window.alert('支付完成，正在刷新套餐状态');
+      return;
     }
+    if (paymentIntent?.status === 'processing') {
+      window.alert('支付处理中，请稍后查看状态');
+      await reload();
+      return;
+    }
+    window.alert('支付未完成，请重试');
+    await reload();
   } catch (err) {
     console.error('confirmPayment failed', err);
     error.value = err instanceof Error ? err.message : '支付失败，请重试';

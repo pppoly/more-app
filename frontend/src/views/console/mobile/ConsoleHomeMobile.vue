@@ -2,7 +2,13 @@
   <div class="console-home">
     <section class="hero-card">
       <div class="hero-heading">
-        <img :src="communityAvatar" alt="avatar" class="hero-avatar" @click="goCommunitySettings" />
+        <img
+          :key="communityId || 'default'"
+          :src="communityAvatar"
+          alt="avatar"
+          class="hero-avatar"
+          @click="goCommunitySettings"
+        />
         <div class="hero-heading-text" @click="goCommunitySettings">
           <h1 class="hero-title">{{ communityName || '未選択のコミュニティ' }}</h1>
           <p class="hero-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
@@ -242,9 +248,16 @@ import {
   fetchConsoleCommunityEvents,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
-import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+// Inline SVG data URIs to avoid network requests and首屏闪现
+const defaultCommunityAvatar =
+  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIxNCIgeTE9IjE0IiB4Mj0iMTA2IiB5Mj0iMTA2IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMyNTYzRUIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjJDNTVFIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSI0IiB5PSI0IiB3aWR0aD0iMTEyIiBoZWlnaHQ9IjExMiIgcng9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgPHJlY3QgeD0iMTgiIHk9IjMyIiB3aWR0aD0iODQiIGhlaWdodD0iNTYiIHJ4PSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4xMiIvPgogIDxjaXJjbGUgY3g9IjQwIiBjeT0iNjAiIHI9IjEyIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8Y2lyY2xlIGN4PSI4MCIgY3k9IjYwIiByPSIxMiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC45Ii8+CiAgPHJlY3QgeD0iMzAiIHk9IjgwIiB3aWR0aD0iNjAiIGhlaWdodD0iNiIgcng9IjMiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNzUiLz4KICA8cGF0aCBkPSJNNjAgMjZjLTggMC0xNC41IDYuNS0xNC41IDE0LjVTNTIgNTUgNjAgNTVzMTQuNS02LjUgMTQuNS0xNC41UzY4IDI2IDYwIDI2WiIgZmlsbD0iIzBFQTVFOSIgZmlsbC1vcGFjaXR5PSIwLjI4Ii8+CiAgPHBhdGggZD0iTTYwIDMyYy01LjUgMC0xMCA0LjUtMTAgMTBzNC41IDEwIDEwIDEwIDEwLTQuNSAxMC0xMC00LjUtMTAtMTAtMTBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KPC9zdmc+Cg==';
+const defaultActionIcon =
+  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjYiIHkxPSI2IiB4Mj0iNDIiIHkyPSI0MiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTIiIGZpbGw9InVybCgjZykiLz4KICA8cGF0aCBkPSJNMjQgMTR2MjBNMTQgMjRoMjAiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPgo=';
+const defaultEventCover =
+  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
+import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../../types/api';
 
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
@@ -253,6 +266,8 @@ const loading = ref(false);
 const showCommunityPicker = ref(false);
 const pickerLoading = ref(false);
 const heroLogoUrl = ref<string | null>(null);
+const heroLoading = ref(true);
+let logoRequestId = 0;
 
 const community = computed(() => communityStore.getActiveCommunity());
 const managedCommunities = computed(() => communityStore.communities.value);
@@ -261,13 +276,7 @@ const communityName = computed(() => community.value?.name ?? '');
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const hasCommunity = computed(() => Boolean(communityId.value));
 const communityAvatar = computed(() => {
-  if (heroLogoUrl.value) {
-    return heroLogoUrl.value;
-  }
-  if (community.value?.coverImageUrl) {
-    return resolveAssetUrl(community.value.coverImageUrl);
-  }
-  return 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-community.png';
+  return heroLogoUrl.value || defaultCommunityAvatar;
 });
 
 const roleLabel = computed(() => {
@@ -287,10 +296,6 @@ const stats = computed(() => ({
   eventCount: events.value.length,
   registrationCount: '--',
 }));
-const defaultActionIcon =
-  'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/icon-action-default.png';
-const defaultEventCover =
-  'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event.png';
 
 const displayEvents = computed(() =>
   events.value.slice(0, 5).map((event) => ({
@@ -428,7 +433,7 @@ const startStripeOnboard = async () => {
   stripeOnboardLoading.value = true;
   try {
     const { url } = await startCommunityStripeOnboarding(communityId.value);
-    window.open(url, '_blank');
+    window.location.href = url;
   } catch (err) {
     console.error('Failed to start Stripe onboarding', err);
     window.alert('Stripe 連携リンクの取得に失敗しました');
@@ -464,18 +469,30 @@ watch(
 const loadActiveCommunityDetail = async () => {
   if (!communityId.value) {
     heroLogoUrl.value = null;
+    heroLoading.value = false;
     return;
   }
+  const currentRequestId = ++logoRequestId;
+  heroLogoUrl.value = null;
+  heroLoading.value = true;
   try {
     const detail: ConsoleCommunityDetail = await fetchConsoleCommunity(communityId.value);
     const descriptionObj =
       typeof detail.description === 'object' && detail.description
         ? (detail.description as ConsoleCommunityDetail['description'])
         : null;
-    const logo = (descriptionObj as any)?.logoImageUrl || detail.coverImageUrl || null;
-    heroLogoUrl.value = logo ? resolveAssetUrl(logo) : null;
+    const logo = (descriptionObj as any)?.logoImageUrl || null;
+    if (currentRequestId === logoRequestId) {
+      heroLogoUrl.value = logo ? resolveAssetUrl(logo) : null;
+    }
   } catch (err) {
-    heroLogoUrl.value = null;
+    if (currentRequestId === logoRequestId) {
+      heroLogoUrl.value = null;
+    }
+  } finally {
+    if (currentRequestId === logoRequestId) {
+      heroLoading.value = false;
+    }
   }
 };
 </script>

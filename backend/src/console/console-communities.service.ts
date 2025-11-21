@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
+import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
 
 @Injectable()
 export class ConsoleCommunitiesService {
@@ -16,6 +17,7 @@ export class ConsoleCommunitiesService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly stripeService: StripeService,
+    private readonly stripeOnboarding: StripeOnboardingService,
   ) {}
 
   private readonly defaultPortalConfig = {
@@ -135,6 +137,16 @@ export class ConsoleCommunitiesService {
     if (payload.coverImageUrl !== undefined) data.coverImageUrl = payload.coverImageUrl;
 
     return this.prisma.community.update({ where: { id: communityId }, data });
+  }
+
+  async refreshStripeStatus(userId: string, communityId: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    const community = await this.prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+    const updated = await this.syncStripeAccountStatus(community);
+    return { stripeAccountId: updated.stripeAccountId, stripeAccountOnboarded: updated.stripeAccountOnboarded };
   }
 
   async getPortalConfig(userId: string, communityId: string) {
@@ -295,13 +307,8 @@ export class ConsoleCommunitiesService {
   }
 
   async startStripeOnboarding(userId: string, communityId: string) {
+    this.logger.log('[ConsoleCommunities] *** startStripeOnboarding HIT', { communityId, userId });
     await this.permissions.assertCommunityManager(userId, communityId);
-    if (!this.stripeService.enabled) {
-      throw new BadRequestException('Stripe連携が無効です');
-    }
-    if (!this.stripeService.publishableKey) {
-      throw new BadRequestException('Stripeの公開鍵が設定されていません');
-    }
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       include: { owner: { select: { email: true, name: true } } },
@@ -310,58 +317,40 @@ export class ConsoleCommunitiesService {
       throw new NotFoundException('Community not found');
     }
 
-    let stripeAccountId = community.stripeAccountId;
-    let onboarded = community.stripeAccountOnboarded;
-    if (!stripeAccountId) {
-      const account = await this.stripeService.client.accounts.create({
-        type: 'express',
-        email: community.owner?.email ?? undefined,
-        country: 'JP',
-        business_profile: {
-          name: community.name,
-          product_description: 'Community events organizer on MORE',
-          support_email: community.owner?.email ?? undefined,
-          url: `${this.stripeService.frontendBaseUrl}/community/${community.slug}`,
-        },
-        metadata: { communityId },
-        capabilities: {
-          transfers: { requested: true },
-          card_payments: { requested: true },
-        },
-      });
-      stripeAccountId = account.id;
-      onboarded = account.details_submitted ?? false;
+    this.logger.log('[ConsoleCommunities] before createOrGetExpressAccount', {
+      communityId: community.id,
+      communitySlug: community.slug,
+      stripeAccountId: community.stripeAccountId ?? null,
+    });
+    const { accountId, created, onboarded } = await this.stripeOnboarding.createOrGetExpressAccount({
+      existingAccountId: community.stripeAccountId,
+      email: community.owner?.email ?? undefined,
+      name: community.name,
+      productDescription: 'Community events organizer on MORE',
+      supportEmail: community.owner?.email ?? undefined,
+      url: `${this.stripeService.frontendBaseUrl}/community/${community.slug}`,
+      metadata: { communityId },
+      country: 'JP',
+    });
+    this.logger.log('[ConsoleCommunities] after createOrGetExpressAccount', {
+      communityId: community.id,
+      communitySlug: community.slug,
+      stripeAccountId: community.stripeAccountId ?? null,
+      created,
+      accountId,
+    });
+    if (created || community.stripeAccountId !== accountId || community.stripeAccountOnboarded !== onboarded) {
       await this.prisma.community.update({
         where: { id: communityId },
         data: {
-          stripeAccountId,
+          stripeAccountId: accountId,
           stripeAccountOnboarded: onboarded,
         },
       });
     }
 
-    const refreshUrl = this.consoleReturnUrl(communityId);
-    const returnUrl = this.consoleReturnUrl(communityId);
-    this.logger.log(
-      `Stripe account link create: account=${stripeAccountId}, refresh_url=${refreshUrl}, return_url=${returnUrl}, frontendBase=${this.stripeService.frontendBaseUrl}`,
-    );
-
-    try {
-      const link = await this.stripeService.client.accountLinks.create({
-        account: stripeAccountId,
-        refresh_url: refreshUrl,
-        return_url: returnUrl,
-        type: 'account_onboarding',
-        collect: 'eventually_due',
-      });
-      return { url: link.url };
-    } catch (error: any) {
-      const msg = `Stripe accountLinks.create failed: message=${error?.message}, param=${error?.raw?.param}, raw=${JSON.stringify(
-        error?.raw || {},
-      )}, refresh_url=${refreshUrl}, return_url=${returnUrl}`;
-      this.logger.error(msg);
-      throw new BadRequestException(msg);
-    }
+    const url = await this.stripeOnboarding.createOnboardingLink(accountId);
+    return { url };
   }
 
   async subscribeCommunityPlan(userId: string, communityId: string, planId: string) {
@@ -477,24 +466,6 @@ export class ConsoleCommunitiesService {
     return community;
   }
 
-  private consoleReturnUrl(communityId: string) {
-    const override = process.env.STRIPE_ONBOARD_RETURN_URL ?? '';
-    const fallback = 'https://example.com/console/stripe-return';
-    const base = (override || fallback).trim();
-    try {
-      const url = new URL(base);
-      if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-        this.logger.warn(
-          `Onboard return URL must be https or localhost; got ${base}, using fallback ${fallback}`,
-        );
-        return fallback;
-      }
-      return url.toString();
-    } catch (err) {
-      this.logger.warn(`Invalid STRIPE_ONBOARD_RETURN_URL "${override}", using fallback ${fallback}`);
-      return fallback;
-    }
-  }
 
   private subscriptionReturnUrls(communityId: string) {
     const successBase = this.normalizeBaseUrl(this.stripeService.successUrlBase);

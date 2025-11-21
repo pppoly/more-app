@@ -9,7 +9,6 @@ export class StripeService {
   readonly cancelUrlBase: string;
   readonly frontendBaseUrl: string;
   readonly publishableKey: string | null;
-  readonly onboardReturnUrl: string;
   readonly enabled: boolean;
 
   constructor() {
@@ -21,7 +20,7 @@ export class StripeService {
       this.enabled = false;
     } else {
       this.stripe = new Stripe(secretKey, {
-        apiVersion: '2025-02-24.acacia',
+        apiVersion: '2024-06-20',
       });
       this.enabled = true;
     }
@@ -31,7 +30,6 @@ export class StripeService {
     this.successUrlBase =
       process.env.STRIPE_SUCCESS_URL_BASE || `${sanitizedFrontend}/payments/success`;
     this.cancelUrlBase = process.env.STRIPE_CANCEL_URL_BASE || `${sanitizedFrontend}/payments/cancel`;
-    this.onboardReturnUrl = process.env.STRIPE_ONBOARD_RETURN_URL || '';
   }
 
   get client() {

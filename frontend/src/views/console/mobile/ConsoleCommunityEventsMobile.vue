@@ -1,64 +1,54 @@
 <template>
-  <div class="px-3 py-3 pb-20">
-    <header class="mb-3">
-      <p class="text-[11px] text-slate-400">コミュニティ</p>
-      <h1 class="text-sm font-semibold text-slate-900">
-        {{ communityName }}
-      </h1>
-      <p class="mt-0.5 text-[11px] text-slate-400">全てのイベント一覧</p>
-      <button v-if="isAdmin" type="button" class="dashboard-link" @click="openDashboard">
-        <span class="i-lucide-activity mr-1"></span>
-        AI助手仪表盘
-      </button>
+  <div class="events-page">
+    <header class="hero-card">
+      <div>
+        <p class="eyebrow">社群 · {{ communityName }}</p>
+        <h1>{{ heroTitle }}</h1>
+        <p class="sub">集中管理活动，随时创建和更新。</p>
+      </div>
+      <div class="hero-actions">
+        <button type="button" class="primary" @click="createEvent">
+          <span class="i-lucide-plus mr-1"></span>
+          新建活动
+        </button>
+        <button v-if="isAdmin" type="button" class="ghost" @click="openDashboard">
+          <span class="i-lucide-activity mr-1"></span>
+          助手仪表盘
+        </button>
+      </div>
     </header>
 
-    <div class="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
-      <button
-        v-for="filter in filters"
-        :key="filter.value"
-        class="px-3 py-1 rounded-full text-xs border whitespace-nowrap"
-        :class="
-          filter.value === activeFilter
-            ? 'bg-[#00B900] border-[#00B900] text-white'
-            : 'bg-white border-slate-200 text-slate-600'
-        "
-        @click="activeFilter = filter.value"
-      >
-        {{ filter.label }}
-      </button>
+    <div class="filter-row">
+      <div class="search-box">
+        <span class="i-lucide-search"></span>
+        <input v-model="keyword" type="search" placeholder="搜索活动名称" />
+      </div>
+      <div class="segmented">
+        <button
+          v-for="filter in filters"
+          :key="filter.value"
+          class="seg-btn"
+          :class="{ active: filter.value === activeFilter }"
+          @click="activeFilter = filter.value"
+        >
+          {{ filter.label }}
+        </button>
+      </div>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-sm divide-y">
-      <button
-        v-for="item in filteredEvents"
-        :key="item.id"
-        class="w-full px-3 py-2 flex items-center active:bg-slate-50"
-        @click="openManage(item.id)"
-      >
-        <img :src="item.coverUrl" class="w-10 h-10 rounded-xl object-cover mr-3 flex-shrink-0" alt="" />
-        <div class="flex-1 min-w-0 text-left">
-          <p class="text-[13px] font-semibold text-slate-900 line-clamp-2">
-            {{ item.title }}
-          </p>
-          <p class="mt-0.5 text-[11px] text-slate-400">
-            {{ item.dateTimeText }} · {{ item.entrySummary }}
-          </p>
-        </div>
-        <span class="ml-2 px-2 py-0.5 rounded-full text-[10px]" :class="statusBadgeClass(item.status)">
-          {{ statusLabel(item.status) }}
-        </span>
-      </button>
-      <div v-if="!filteredEvents.length && !loading" class="px-3 py-4 text-center text-[11px] text-slate-400">
-        条件に合うイベントがありません。
+    <section class="card-list">
+      <article v-for="item in filteredEvents" :key="item.id" class="event-card" @click="openManage(item.id)">
+        <div :class="statusBadgeClass(item.status)">{{ statusLabel(item.status) }}</div>
+        <p class="event-date">{{ item.dateTimeText }}</p>
+        <h3 class="event-title">{{ item.title }}</h3>
+        <p class="event-meta">{{ item.entrySummary }}</p>
+      </article>
+
+      <div v-if="!filteredEvents.length && !loading" class="empty">
+        还没有符合筛选的活动，去创建一个吧。
       </div>
-      <div v-if="loading" class="px-3 py-4 text-center text-[11px] text-slate-400">読み込み中...</div>
-    </div>
-    <div class="mt-4">
-      <button type="button" class="create-event-button" @click="createEvent">
-        <span class="i-lucide-plus mr-2 text-lg"></span>
-        新しいイベントを作成
-      </button>
-    </div>
+      <div v-if="loading" class="empty">加载中...</div>
+    </section>
   </div>
 </template>
 
@@ -70,8 +60,6 @@ import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useAuth } from '../../../composables/useAuth';
-import { resolveAssetUrl } from '../../../utils/assetUrl';
-
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
@@ -79,12 +67,14 @@ const { user } = useAuth();
 
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
-const activeFilter = ref('all');
+// 默认展示「受付中」的事件
+const activeFilter = ref('open');
 const filters = [
   { value: 'all', label: 'すべて' },
   { value: 'open', label: '受付中' },
   { value: 'closed', label: '終了' },
 ];
+const keyword = ref('');
 
 const communityId = computed(() => route.params.communityId as string);
 const communityName = computed(() => {
@@ -92,8 +82,7 @@ const communityName = computed(() => {
   return target?.name ?? '未選択';
 });
 const isAdmin = computed(() => Boolean(user.value?.isAdmin));
-
-const DEFAULT_EVENT_COVER = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event.png';
+const heroTitle = computed(() => (communityName.value ? `${communityName.value} 的活动` : '社群活动'));
 
 const normalizedEvents = computed(() =>
   events.value.map((event) => ({
@@ -102,13 +91,26 @@ const normalizedEvents = computed(() =>
     status: event.status,
     dateTimeText: formatDate(event.startTime, event.endTime),
     entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-    coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : DEFAULT_EVENT_COVER,
   })),
 );
 
 const filteredEvents = computed(() => {
-  if (activeFilter.value === 'all') return normalizedEvents.value;
-  return normalizedEvents.value.filter((event) => event.status === activeFilter.value);
+  const base =
+    activeFilter.value === 'all'
+      ? normalizedEvents.value
+      : normalizedEvents.value.filter((event) => event.status === activeFilter.value);
+  const searched = keyword.value
+    ? base.filter((event) => event.title.toLowerCase().includes(keyword.value.toLowerCase()))
+    : base;
+  // 如果「受付中」为空，自动回落到全部列表
+  if (activeFilter.value === 'open' && searched.length === 0) {
+    return keyword.value
+      ? normalizedEvents.value.filter((event) =>
+          event.title.toLowerCase().includes(keyword.value.toLowerCase()),
+        )
+      : normalizedEvents.value;
+  }
+  return searched;
 });
 
 const loadEvents = async () => {
@@ -173,11 +175,11 @@ const statusLabel = (status: string) => {
 const statusBadgeClass = (status: string) => {
   switch (status) {
     case 'open':
-      return 'bg-emerald-100 text-emerald-700';
+      return 'pill open';
     case 'closed':
-      return 'bg-slate-100 text-slate-500';
+      return 'pill closed';
     default:
-      return 'bg-amber-100 text-amber-700';
+      return 'pill draft';
   }
 };
 
@@ -190,35 +192,169 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+.events-page {
+  min-height: 100vh;
+  padding: 16px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.hero-card {
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2563eb, #22c55e);
+  color: #f8fafc;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  box-shadow: 0 16px 40px rgba(37, 99, 235, 0.22);
 }
-.dashboard-link {
-  margin-top: 8px;
-  border: 1px solid #d4e4ff;
-  color: #2563eb;
-  border-radius: var(--app-border-radius);
-  padding: 4px 10px;
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  opacity: 0.9;
 }
-.create-event-button {
-  width: 100%;
+.hero-card h1 {
+  margin: 2px 0 4px;
+  font-size: 18px;
+  font-weight: 800;
+}
+.sub {
+  margin: 0;
+  color: #e2f3ff;
+  font-size: 13px;
+}
+.hero-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.primary,
+.ghost {
   border: none;
-  border-radius: var(--app-border-radius);
-  padding: 0.75rem;
-  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
-  color: #fff;
-  font-weight: 600;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  box-shadow: 0 15px 25px rgba(14, 165, 233, 0.3);
+  color: #0f172a;
+}
+.primary {
+  background: linear-gradient(135deg, #2563eb, #22c55e);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.25);
+}
+.ghost {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #f8fafc;
+}
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.02);
+}
+.search-box input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 14px;
+  background: transparent;
+}
+.segmented {
+  display: inline-flex;
+  background: #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+  width: 100%;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.seg-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #475569;
+  font-weight: 600;
+}
+.seg-btn.active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+}
+.card-list {
+  display: grid;
+  gap: 10px;
+}
+.event-card {
+  background: rgba(247, 249, 251, 0.95);
+  color: #0f172a;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.02), 0 10px 22px rgba(15, 23, 42, 0.06);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.event-date {
+  color: #475569;
+  font-size: 12px;
+  margin: 0;
+}
+.pill {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.pill.open {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+.pill.closed {
+  background: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+.pill.draft {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fde68a;
+}
+.event-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.event-meta {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+}
+.empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 16px;
+  font-size: 13px;
 }
 </style>

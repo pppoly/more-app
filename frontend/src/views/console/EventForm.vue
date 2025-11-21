@@ -877,8 +877,20 @@ const applyEventDetailToForm = (
     syncCommunity?: boolean;
     setSubtitle?: boolean;
     includeGalleries?: boolean;
+    stripParticipants?: boolean;
   } = {},
 ) => {
+  const sanitizedConfig =
+    options.stripParticipants && event.config
+      ? {
+          ...event.config,
+          attendeeAvatars: [],
+          participants: [],
+          attendeePreview: [],
+          participantCount: null,
+        }
+      : event.config ?? {};
+
   const titleText = getLocalizedText(event.title);
   form.title = titleText;
   form.description = getLocalizedText(event.description);
@@ -898,7 +910,7 @@ const applyEventDetailToForm = (
   form.requireApproval = event.requireApproval ?? form.requireApproval;
   const firstTicket = event.ticketTypes?.[0];
   form.ticketPrice = typeof firstTicket?.price === 'number' ? firstTicket.price : null;
-  form.config = { ...defaultConfig(), ...(event.config ?? {}) };
+  form.config = { ...defaultConfig(), ...sanitizedConfig };
   const schema = Array.isArray(event.registrationFormSchema)
     ? (event.registrationFormSchema as RegistrationFormField[])
     : [];
@@ -1030,7 +1042,8 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
   const gallerySlice = detail.galleries.slice(0, MAX_COVERS);
   const tasks = gallerySlice.map(async (item, index) => {
     try {
-      const response = await fetch(item.imageUrl);
+      const resolvedUrl = resolveAssetUrl(item.imageUrl);
+      const response = await fetch(resolvedUrl, { credentials: 'include' });
       if (!response.ok) return;
       const blob = await response.blob();
       const extension = blob.type.includes('png') ? 'png' : 'jpg';
@@ -1073,6 +1086,7 @@ const handleCopyFromEvent = async (sourceEventId: string) => {
     const detail = await fetchConsoleEvent(sourceEventId);
     applyEventDetailToForm(detail, {
       includeGalleries: Boolean(eventId),
+      stripParticipants: true,
     });
     if (!eventId) {
       await importGalleryToPending(detail);

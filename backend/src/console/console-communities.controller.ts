@@ -106,6 +106,11 @@ export class ConsoleCommunitiesController {
     return this.service.startStripeOnboarding(req.user.id, communityId);
   }
 
+  @Post(':communityId/stripe/sync')
+  refreshStripeStatus(@Param('communityId') communityId: string, @Req() req: any) {
+    return this.service.refreshStripeStatus(req.user.id, communityId);
+  }
+
   @Post(':communityId/subscription')
   updateSubscription(
     @Param('communityId') communityId: string,
