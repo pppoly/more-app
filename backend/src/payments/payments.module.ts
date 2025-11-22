@@ -8,5 +8,6 @@ import { PermissionsService } from '../auth/permissions.service';
   imports: [StripeModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PermissionsService],
+  exports: [PaymentsService],
 })
 export class PaymentsModule {}

@@ -2,7 +2,11 @@
   <div class="mobile-events-page">
 
     <section v-if="loading" class="state-section">
-      <article v-for="n in 3" :key="n" class="event-card event-card--skeleton" />
+      <article v-for="n in 3" :key="n" class="event-card event-card--skeleton">
+        <div class="skeleton block cover"></div>
+        <div class="skeleton block line short"></div>
+        <div class="skeleton block line"></div>
+      </article>
     </section>
 
     <section v-else-if="error" class="state-section">
@@ -276,8 +280,8 @@ onMounted(loadEvents);
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  padding: 0.5rem 0.5rem var(--space-xl);
+  gap: 0.65rem;
+  padding: 0.5rem 0.6rem var(--space-lg);
 }
 
 .event-card {
@@ -285,31 +289,22 @@ onMounted(loadEvents);
   border-radius: 12px;
   box-shadow: var(--shadow-card);
   overflow: hidden;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .event-card--skeleton {
-  height: 240px;
-  animation: card-skeleton 1.6s ease-in-out infinite;
-}
-
-@keyframes card-skeleton {
-  0% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.6;
-  }
+  min-height: 190px;
 }
 
 .event-card__cover {
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: clamp(150px, 44vw, 200px);
   background-size: cover;
   background-position: center;
-  border-radius: 12px 12px 0 0;
+  border-radius: 10px;
   margin: 0;
   position: relative;
 }
@@ -322,11 +317,11 @@ onMounted(loadEvents);
 
 .event-card__cover-meta {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 10px;
+  bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .event-card__avatar-stack {
@@ -336,12 +331,12 @@ onMounted(loadEvents);
 }
 
 .event-card__avatar-stack img {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
   border: 2px solid rgba(255, 255, 255, 0.95);
-  margin-left: -12px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.35);
+  margin-left: -10px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
   object-fit: cover;
   background: #f8fafc;
 }
@@ -351,20 +346,37 @@ onMounted(loadEvents);
 }
 
 .event-card__capacity-pill {
-  padding: 0.28rem 0.6rem;
+  padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.82);
   color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
+.skeleton.block {
+  border-radius: 10px;
+}
+
+.skeleton.block.cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.skeleton.block.line {
+  height: 14px;
+}
+
+.skeleton.block.line.short {
+  width: 60%;
+}
+
 .event-card__details {
-  padding: 1.1rem 1.25rem 1.2rem;
+  padding: 0.9rem 1rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.45rem;
 }
 
 .event-card__meta-row {
@@ -383,9 +395,9 @@ onMounted(loadEvents);
 }
 
 .event-card__title {
-  margin: var(--space-xs) 0 0;
-  font-size: 1.15rem;
-  line-height: 1.4;
+  margin: var(--space-xxs) 0 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
   font-weight: 700;
   color: var(--color-text-main);
   display: -webkit-box;
@@ -399,31 +411,31 @@ onMounted(loadEvents);
 .event-card__location {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-xxs);
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   color: var(--color-text-muted);
 }
 
 .event-card__community-row {
-  margin-top: var(--space-sm);
+  margin-top: var(--space-xs);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: var(--space-xs) 0;
+  gap: 0.4rem;
+  padding: 0;
 }
 
 .event-card__community-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   background: #f8fafc;
   border: 1px solid rgba(15, 23, 42, 0.08);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: var(--font-weight-semibold);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   flex-shrink: 0;
   cursor: pointer;
   overflow: hidden;
@@ -440,8 +452,8 @@ onMounted(loadEvents);
 
 .event-card__community-name {
   margin: 0;
-  padding-left: 0.25rem;
-  font-size: 0.9rem;
+  padding-left: 0.15rem;
+  font-size: 0.82rem;
   color: var(--color-text-main);
   font-weight: var(--font-weight-medium);
 }

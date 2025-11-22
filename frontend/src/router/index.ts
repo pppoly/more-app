@@ -226,7 +226,13 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/console',
     component: ConsoleMobileShell,
-    meta: { requiresAuth: true, requiresOrganizer: true, layout: 'console-mobile', devPageName: 'Console 移动壳' },
+    meta: {
+      requiresAuth: true,
+      requiresOrganizer: true,
+      layout: 'console-mobile',
+      devPageName: 'Console 移动壳',
+      hideTabbar: true,
+    },
     children: [
       {
         path: '',
@@ -239,7 +245,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ConsoleMobileCommunityEvents',
         component: () => import('../views/console/mobile/ConsoleCommunityEventsMobile.vue'),
         beforeEnter: communityRouteGuard,
-        meta: { devPageName: 'Console-社区活动' },
+        meta: { devPageName: 'Console-社区活动', hideShellHeader: true },
       },
       {
         path: 'communities/new',
@@ -314,7 +320,7 @@ const routes: RouteRecordRaw[] = [
         path: 'events/:eventId/manage',
         name: 'ConsoleMobileEventManage',
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
-        meta: { devPageName: 'Console-活动管理' },
+        meta: { devPageName: 'Console-活动管理', hideShellHeader: true, hideTabbar: true },
       },
       {
         path: 'events/:eventId/publish-success',

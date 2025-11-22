@@ -3,6 +3,8 @@
     <div v-if="showDevPageName" class="dev-page-overlay">
       {{ currentPageName }}
     </div>
+    <AppToast />
+    <AppConfirm />
     <template v-if="isMobile">
       <RouterView v-slot="{ Component, route }">
         <MobileShell>
@@ -65,6 +67,8 @@ import { useRoute, useRouter } from 'vue-router';
 import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
 import { useAuth } from './composables/useAuth';
+import AppToast from './components/common/AppToast.vue';
+import AppConfirm from './components/common/AppConfirm.vue';
 
 const { user, initializing, logout } = useAuth();
 const isMobile = ref(false);

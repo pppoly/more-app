@@ -1,5 +1,10 @@
 <template>
   <section class="console-feed" v-if="community">
+    <header class="console-nav">
+      <button type="button" class="back-btn" @click="router.back()">返回</button>
+      <div class="console-nav__spacer"></div>
+    </header>
+
     <div class="toolbar">
       <div>
         <p class="eyebrow">社群 · {{ community.slug }}</p>
@@ -53,6 +58,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useRoute } from 'vue-router';
 import { fetchConsoleCommunity, fetchConsoleCommunityEvents } from '../../api/client';
 import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../types/api';
@@ -60,6 +66,7 @@ import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const route = useRoute();
+const router = useRouter();
 const communityId = route.params.communityId as string;
 
 const community = ref<ConsoleCommunityDetail | null>(null);
@@ -113,6 +120,31 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.console-nav {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  z-index: 5;
+}
+
+.console-nav__spacer {
+  flex: 1;
+}
+
+.back-btn {
+  border: none;
+  background: transparent;
+  font-weight: 600;
+  color: #0f172a;
+  padding: 10px 12px 10px 6px;
 }
 
 .toolbar {

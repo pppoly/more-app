@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div class="note-overlay">
       <section class="note-editor">
-        <header class="note-editor__nav">
+        <header class="note-editor__nav note-editor__nav--sticky">
           <button type="button" class="nav-btn ghost" @click="$emit('close')">取消</button>
           <p>活动详情</p>
           <button type="button" class="nav-btn primary" @click="handleSave">
@@ -90,6 +90,7 @@ const blocks = ref<NoteBlock[]>([]);
 const statusMessage = ref('');
 const saving = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const isHydrating = ref(false);
 
 const todayLabel = new Intl.DateTimeFormat('ja-JP', {
   month: 'long',
@@ -105,6 +106,11 @@ const charCount = computed(() =>
 
 const MAX_IMAGES = 9;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 1600;
+const STORAGE_KEY =
+  typeof window !== 'undefined'
+    ? `console_event_note_draft_${window.location.pathname}`
+    : 'console_event_note_draft';
 
 const createTextBlock = (value = ''): NoteBlock => ({
   id: `text-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -118,7 +124,39 @@ const createImageBlock = (src: string): NoteBlock => ({
   src,
 });
 
+const loadDraftFromStorage = (): NoteBlock[] | null => {
+  if (typeof sessionStorage === 'undefined') return null;
+  const raw = sessionStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { blocks?: NoteBlock[] };
+    if (Array.isArray(parsed.blocks) && parsed.blocks.length) {
+      return parsed.blocks;
+    }
+  } catch {
+    // ignore corrupted drafts
+  }
+  return null;
+};
+
+const persistDraft = () => {
+  if (typeof sessionStorage === 'undefined' || isHydrating.value) return;
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ blocks: blocks.value }));
+};
+
+const clearDraft = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(STORAGE_KEY);
+};
+
 const initBlocks = () => {
+  isHydrating.value = true;
+  const stored = loadDraftFromStorage();
+  if (stored) {
+    blocks.value = stored;
+    isHydrating.value = false;
+    return;
+  }
   const initial: NoteBlock[] = [];
   if (props.context.text) {
     initial.push(createTextBlock(props.context.text));
@@ -129,6 +167,7 @@ const initBlocks = () => {
     initial.push(createImageBlock(image.src));
   });
   blocks.value = initial;
+  isHydrating.value = false;
 };
 
 watch(
@@ -139,12 +178,20 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => blocks.value,
+  () => {
+    persistDraft();
+  },
+  { deep: true },
+);
+
 const triggerImagePicker = (afterBlockId: string | null) => {
   pendingInsertAfterId.value = afterBlockId;
   fileInputRef.value?.click();
 };
 
-const readFileAsDataUrl = (file: File) =>
+const readFileAsDataUrl = (file: Blob | File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -154,26 +201,76 @@ const readFileAsDataUrl = (file: File) =>
 
 const pendingInsertAfterId = ref<string | null>(null);
 
+const downscaleImageFile = (file: File) =>
+  new Promise<Blob>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = Math.max(img.width, img.height);
+        const ratio = maxSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / maxSide : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('无法压缩图片'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('压缩失败'));
+              return;
+            }
+            resolve(blob);
+          },
+          'image/jpeg',
+          0.85,
+        );
+      };
+      img.onerror = () => reject(new Error('无法读取图片'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('无法读取图片'));
+    reader.readAsDataURL(file);
+  });
+
+const ensureDataUrl = async (file: File) => {
+  let candidate: File | Blob = file;
+  // 统一压缩以控制 payload，避免触发后端体积限制
+  candidate = await downscaleImageFile(file);
+  return readFileAsDataUrl(candidate as File);
+};
+
 const handleImagePick = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   if (!input.files?.length) return;
-  if (blocks.value.filter((block) => block.type === 'image').length >= MAX_IMAGES) {
+  const existingImages = blocks.value.filter((block) => block.type === 'image').length;
+  if (existingImages >= MAX_IMAGES) {
     statusMessage.value = '最多上传 9 张图片';
     input.value = '';
     return;
   }
+  let added = 0;
   for (const file of Array.from(input.files)) {
+    if (existingImages + added >= MAX_IMAGES) {
+      statusMessage.value = '已达到 9 张上限';
+      break;
+    }
     if (!file.type?.startsWith('image/')) {
       statusMessage.value = '仅支持图片文件';
       continue;
     }
-    if (file.size > MAX_IMAGE_SIZE) {
-      statusMessage.value = '图片过大，请压缩后重试';
-      continue;
+    try {
+      const src = await ensureDataUrl(file);
+      insertImageBlock(src);
+      added += 1;
+      statusMessage.value = '';
+    } catch (err) {
+      statusMessage.value = err instanceof Error ? err.message : '图片处理失败，请重试';
     }
-    const src = await readFileAsDataUrl(file);
-    insertImageBlock(src);
-    statusMessage.value = '';
   }
   input.value = '';
 };
@@ -244,6 +341,7 @@ const handleSave = () => {
     html: buildHtml(),
     images: buildImages(),
   });
+  clearDraft();
   saving.value = false;
 };
 
@@ -273,6 +371,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   align-items: center;
   padding: 16px;
+  animation: note-fade-in 0.18s ease-out;
 }
 
 .note-editor {
@@ -285,12 +384,26 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 18px;
   overflow-y: auto;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.2);
+  animation: note-pop 0.2s ease-out;
 }
 
 .note-editor__nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+
+.note-editor__nav--sticky {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  padding: 8px 0 10px;
+  margin: -8px 0 4px;
+  background: rgba(253, 249, 240, 0.9);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .nav-btn {
@@ -381,6 +494,16 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 16px;
   line-height: 1;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.note-photo__delete:hover {
+  background: rgba(0, 0, 0, 0.72);
+  transform: scale(1.05);
+}
+
+.note-photo__delete:active {
+  transform: scale(0.95);
 }
 
 .note-block__actions {
@@ -426,5 +549,25 @@ onBeforeUnmount(() => {
 
 .hidden-input {
   display: none;
+}
+
+@keyframes note-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes note-pop {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 </style>

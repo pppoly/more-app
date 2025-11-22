@@ -349,6 +349,7 @@ import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import PageMarker from '../../../components/PageMarker.vue';
+import { useToast } from '../../../composables/useToast';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
@@ -387,6 +388,7 @@ const DRAFT_STORAGE_KEY = 'console-ai-assistant-drafts';
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
+const toast = useToast();
 const communityId = computed(() => route.params.communityId as string | undefined);
 const communityName = computed(() => {
   const id = communityId.value;
@@ -1052,7 +1054,7 @@ const goToForm = (useAi: boolean) => {
   } else {
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   }
-  window.alert('AI案をフォームに送信します。次の画面で各項目を確認してください。');
+  toast.show('AI案をフォームに送信しました。次の画面で項目を確認してください。', 'info');
   router.push({
     name: 'ConsoleMobileEventForm',
     params: { communityId: communityId.value },

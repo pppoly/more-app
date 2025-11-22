@@ -58,7 +58,7 @@
               </div>
               <div class="ticket-card__qr">
                 <button
-                  v-if="isUpcoming(item)"
+                  v-if="isUpcoming(item) && canCancel(item)"
                   type="button"
                   class="ticket-card__cancel"
                   @click="cancelRegistration(item)"
@@ -73,6 +73,7 @@
               <h2 class="ticket-card__title">{{ titleFor(item.event) }}</h2>
               <p class="ticket-card__meta">{{ item.event.locationText }}</p>
               <div class="ticket-card__badges">
+                <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
                 <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
                 <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
               </div>
@@ -122,6 +123,7 @@ import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import QRCode from 'qrcode';
 import { useResourceConfig } from '../../composables/useResourceConfig';
+import { useConfirm } from '../../composables/useConfirm';
 
 type FilterTabId = 'upcoming' | 'past' | 'all';
 
@@ -138,6 +140,7 @@ const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
 const validatedRegistrationIds = ref<string[]>([]);
 const resourceConfigStore = useResourceConfig();
+const { confirm: confirmDialog } = useConfirm();
 const { slotMap } = resourceConfigStore;
 const fallbackCoverImages = computed(() => {
   const list = resourceConfigStore.getListValue('mobile.eventList.cardFallbacks');
@@ -161,7 +164,8 @@ onMounted(() => {
   loadEvents();
 });
 
-const isVoidTicket = (item: MyEventItem) => item.status === 'cancelled';
+const isVoidTicket = (item: MyEventItem) =>
+  ['cancelled', 'refunded', 'pending_refund', 'rejected'].includes(item.status);
 
 const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && new Date(item.event.startTime) > new Date();
 
@@ -197,6 +201,27 @@ const filteredEvents = computed(() => {
 });
 
 const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
+const statusLabel = (item: MyEventItem) => {
+  const map: Record<string, string> = {
+    pending: '待审核',
+    approved: '已确认',
+    rejected: '已拒绝',
+    paid: '已付款',
+    refunded: '已退款',
+    pending_refund: '退款处理中',
+    cancelled: '已取消',
+  };
+  return map[item.status] ?? item.status;
+};
+
+const statusClass = (item: MyEventItem) => {
+  if (item.status === 'pending') return 'badge--pending';
+  if (item.status === 'approved' || item.status === 'paid') return 'badge--paid';
+  if (item.status === 'refunded') return 'badge--info';
+  if (item.status === 'pending_refund') return 'badge--pending';
+  if (item.status === 'cancelled' || item.status === 'rejected') return 'badge--void';
+  return 'badge--pending';
+};
 
 const formatDate = (value: string) =>
   new Date(value).toLocaleString('ja-JP', {
@@ -208,25 +233,30 @@ const formatDate = (value: string) =>
   });
 
 const paymentLabel = (item: MyEventItem) => {
-  if ((item.amount ?? 0) === 0) return '免費';
-  return item.paymentStatus === 'paid' ? '已付款' : '待付款';
+  if ((item.amount ?? 0) === 0) return '免费';
+  if (item.paymentStatus === 'refunded') return '已退款';
+  if (item.paymentStatus === 'paid') return '已付款';
+  return '待付款';
 };
 
 const paymentClass = (item: MyEventItem) => {
   if ((item.amount ?? 0) === 0) return 'badge--free';
+  if (item.paymentStatus === 'refunded') return 'badge--info';
   return item.paymentStatus === 'paid' ? 'badge--paid' : 'badge--pending';
 };
 
 const attendanceLabel = (item: MyEventItem) => {
   if (item.status === 'cancelled') return '已取消';
+  if (item.status === 'refunded' || item.status === 'pending_refund') return '退款处理中';
   if (item.attended) return '已出席';
-  if (item.noShow) return '未到場';
+  if (item.noShow) return '未到场';
   if (isUpcoming(item)) return '待参加';
   return '记录中';
 };
 
 const attendanceClass = (item: MyEventItem) => {
   if (item.status === 'cancelled') return 'badge--void';
+  if (item.status === 'refunded' || item.status === 'pending_refund') return 'badge--info';
   if (item.attended) return 'badge--attended';
   if (item.noShow) return 'badge--noshow';
   if (isUpcoming(item)) return 'badge--upcoming';
@@ -305,8 +335,8 @@ const isTicketValidated = (item: MyEventItem) => validatedRegistrationIds.value.
 
 const cancelRegistration = async (item: MyEventItem) => {
   if (cancelingId.value) return;
-  const confirmed = window.confirm('確定要取消這個活動的报名吗？');
-  if (!confirmed) return;
+  const sure = await confirmDialog('確定要取消這個活動的报名吗？');
+  if (!sure) return;
   cancelingId.value = item.registrationId;
   try {
     await cancelMyRegistration(item.registrationId);
@@ -320,6 +350,12 @@ const cancelRegistration = async (item: MyEventItem) => {
   } finally {
     cancelingId.value = null;
   }
+};
+
+const canCancel = (item: MyEventItem) => {
+  if (isVoidTicket(item)) return false;
+  if (!isUpcoming(item)) return false;
+  return !['refunded', 'pending_refund', 'cancelled', 'rejected'].includes(item.status);
 };
 
 const hashToIndex = (value: string, length: number) => {
@@ -815,6 +851,10 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .badge--pending {
   background: #fef3c7;
   color: #b45309;
+}
+.badge--info {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 .badge--attended {
   background: #bbf7d0;

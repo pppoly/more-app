@@ -1,6 +1,10 @@
 <template>
   <PageMarker label="P7" />
   <div class="page">
+    <header class="nav-bar">
+      <button type="button" class="back-btn" @click="goBack">返回</button>
+    </header>
+
     <div v-if="showSkeleton" class="skeleton-overlay" aria-hidden="true">
       <div class="skeleton-stack">
         <section class="hero-card skeleton-card">
@@ -205,10 +209,22 @@
               </p>
             </div>
           </div>
-          <button class="sheet-action" @click="viewEntryDetail">詳細を見る</button>
-          <button class="sheet-action" @click="markCheckin">チェックインにする</button>
-          <button class="sheet-action" @click="cancelEntry">申込を取消</button>
-          <button class="sheet-action danger" @click="startRefund">返金を開始</button>
+          <button
+            v-if="activeEntry.status === 'pending'"
+            class="sheet-action"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="approveEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '承認する' }}
+          </button>
+          <button
+            v-if="activeEntry.status === 'pending'"
+            class="sheet-action danger"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="rejectEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '拒否する' }}
+          </button>
           <button class="sheet-close" @click="closeEntryAction">閉じる</button>
         </div>
       </div>
@@ -223,6 +239,8 @@ import {
   fetchConsoleEvent,
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
+  approveEventRegistration,
+  rejectEventRegistration,
 } from '../../../api/client';
 import type {
   ConsoleEventDetail,
@@ -236,6 +254,7 @@ import PageMarker from '../../../components/PageMarker.vue';
 const route = useRoute();
 const router = useRouter();
 const eventId = computed(() => route.params.eventId as string);
+const communityId = computed(() => eventDetail.value?.communityId);
 
 const loading = ref(true);
 const error = ref('');
@@ -245,6 +264,7 @@ const summary = ref<EventRegistrationsSummary | null>(null);
 const registrations = ref<ConsoleEventRegistrationItem[]>([]);
 const activeEntry = ref<ReturnType<typeof mapEntry> | null>(null);
 const memberListRef = ref<HTMLElement | null>(null);
+const entryActionLoading = ref<Record<string, boolean>>({});
 
 const eventCard = computed(() => {
   if (!eventDetail.value) return null;
@@ -302,6 +322,7 @@ function mapEntry(reg: ConsoleEventRegistrationItem) {
     avatarUrl: reg.user.avatarUrl ?? undefined,
     initials: reg.user.name?.charAt(0).toUpperCase() ?? 'U',
     ticketName: reg.ticket?.name ?? '未設定',
+    status: reg.status,
     paymentStatus: reg.paymentStatus,
     attended: reg.attended,
     noShow: reg.noShow,
@@ -340,6 +361,17 @@ const openPublicPage = () => {
   window.open(`/events/${eventCard.value.id}`, '_blank');
 };
 
+const goBack = () => {
+  if (communityId.value) {
+    router.push({
+      name: 'ConsoleMobileCommunityEvents',
+      params: { communityId: communityId.value },
+    });
+    return;
+  }
+  router.back();
+};
+
 const editEvent = () => {
   if (!eventCard.value) return;
   router.push({ path: `/console/events/${eventCard.value.id}/edit` });
@@ -370,19 +402,41 @@ const statusBadgeClass = (status: string) => {
 const entryStatusLabel = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.attended) return '出席済み';
   if (entry.noShow) return '無断欠席';
-  switch (entry.paymentStatus) {
+  switch (entry.status) {
+    case 'pending':
+      return '審査待ち';
+    case 'approved':
+      return '承認済み';
+    case 'rejected':
+      return '拒否';
     case 'paid':
       return '支払済み';
-    case 'unpaid':
-      return '未払い';
+    case 'refunded':
+      return '返金済み';
+    case 'pending_refund':
+      return '返金待ち';
+    case 'cancelled':
+      return 'キャンセル';
     default:
-      return entry.paymentStatus;
+      switch (entry.paymentStatus) {
+        case 'paid':
+          return '支払済み';
+        case 'unpaid':
+          return '未払い';
+        default:
+          return entry.paymentStatus;
+      }
   }
 };
 
 const entryStatusBadgeClass = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.attended) return 'bg-emerald-100 text-emerald-700';
   if (entry.noShow) return 'bg-rose-100 text-rose-600';
+  if (entry.status === 'pending') return 'bg-amber-100 text-amber-700';
+  if (entry.status === 'approved' || entry.status === 'paid') return 'bg-slate-800 text-white';
+  if (entry.status === 'refunded') return 'bg-blue-100 text-blue-700';
+  if (entry.status === 'pending_refund') return 'bg-amber-100 text-amber-700';
+  if (entry.status === 'rejected' || entry.status === 'cancelled') return 'bg-slate-100 text-slate-500';
   if (entry.paymentStatus === 'paid') return 'bg-slate-800 text-white';
   return 'bg-slate-100 text-slate-500';
 };
@@ -399,20 +453,36 @@ const closeEntryAction = () => {
   activeEntry.value = null;
 };
 
-const viewEntryDetail = () => {
-  console.log('Viewing entry detail', activeEntry.value);
+const approveEntry = async () => {
+  if (!activeEntry.value) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await approveEventRegistration(eventId.value, activeEntry.value.id);
+    registrations.value = registrations.value.map((reg) =>
+      reg.registrationId === activeEntry.value?.id ? { ...reg, status: 'approved' } : reg,
+    );
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '承認に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
 };
 
-const markCheckin = () => {
-  console.log('Mark check-in', activeEntry.value);
-};
-
-const cancelEntry = () => {
-  console.log('Cancel entry', activeEntry.value);
-};
-
-const startRefund = () => {
-  console.log('Start refund', activeEntry.value);
+const rejectEntry = async () => {
+  if (!activeEntry.value) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await rejectEventRegistration(eventId.value, activeEntry.value.id);
+    registrations.value = registrations.value.map((reg) =>
+      reg.registrationId === activeEntry.value?.id ? { ...reg, status: 'rejected' } : reg,
+    );
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '拒否に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
 };
 
 const formatDate = (start: string, end?: string) => {
@@ -435,12 +505,44 @@ onMounted(() => {
 });
 
 const reload = () => loadData();
+
+const goBack = () => {
+  if (communityId.value) {
+    router.push({
+      name: 'ConsoleMobileCommunityEvents',
+      params: { communityId: communityId.value },
+    });
+  } else {
+    router.back();
+  }
+};
 </script>
 
 <style scoped>
 .page {
-  padding: 12px 12px 96px;
+  padding: calc(env(safe-area-inset-top, 0px) + 64px) 12px 96px;
   background: radial-gradient(circle at 10% 20%, #ecfeff 0, #f8fafc 45%, #f8fafc 100%);
+}
+
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 14px 10px;
+  background: #f8fafc;
+  z-index: 20;
+}
+
+.back-btn {
+  border: none;
+  background: transparent;
+  font-weight: 600;
+  color: #0f172a;
+  padding: 8px 10px 8px 0;
 }
 
 .skeleton-overlay {

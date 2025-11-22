@@ -21,7 +21,6 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^10.3.0",
     "@prisma/client": "^6.19.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.53.3",
     "axios": "^1.13.2",
     "openai": "^6.9.1",
     "passport": "^0.7.0",

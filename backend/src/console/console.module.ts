@@ -5,11 +5,13 @@ import { ConsoleCommunitiesService } from './console-communities.service';
 import { ConsoleCommunitiesController } from './console-communities.controller';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeModule } from '../stripe/stripe.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { NotificationModule } from '../notifications/notification.module';
 import { ConsoleEventAssistantController } from './console-event-assistant.controller';
 import { ConsoleEventAssistantService } from './console-event-assistant.service';
 
 @Module({
-  imports: [StripeModule],
+  imports: [StripeModule, PaymentsModule, NotificationModule],
   controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController],
   providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService],
 })

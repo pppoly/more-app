@@ -1,29 +1,10 @@
 <template>
-  <PageMarker label="P4" />
   <div class="events-page">
-    <header class="hero-card">
-      <div>
-        <p class="eyebrow">社群 · {{ communityName }}</p>
-        <h1>{{ heroTitle }}</h1>
-        <p class="sub">集中管理活动，随时创建和更新。</p>
-      </div>
-      <div class="hero-actions">
-        <button type="button" class="primary" @click="createEvent">
-          <span class="i-lucide-plus mr-1"></span>
-          新建活动
-        </button>
-        <button v-if="isAdmin" type="button" class="ghost" @click="openDashboard">
-          <span class="i-lucide-activity mr-1"></span>
-          助手仪表盘
-        </button>
-      </div>
+    <header class="nav-bar">
+      <button type="button" class="back-btn" @click="goBack">返回</button>
     </header>
 
     <div class="filter-row">
-      <div class="search-box">
-        <span class="i-lucide-search"></span>
-        <input v-model="keyword" type="search" placeholder="搜索活动名称" />
-      </div>
       <div class="segmented">
         <button
           v-for="filter in filters"
@@ -39,14 +20,19 @@
 
     <section class="card-list">
       <article v-for="item in filteredEvents" :key="item.id" class="event-card" @click="openManage(item.id)">
-        <div :class="statusBadgeClass(item.status)">{{ statusLabel(item.status) }}</div>
-        <p class="event-date">{{ item.dateTimeText }}</p>
-        <h3 class="event-title">{{ item.title }}</h3>
-        <p class="event-meta">{{ item.entrySummary }}</p>
+        <figure class="event-cover" :style="item.coverStyle"></figure>
+        <div class="event-body">
+          <div class="event-row">
+            <p class="event-date">{{ item.dateTimeText }}</p>
+            <span :class="statusBadgeClass(item.status)">{{ statusLabel(item.status) }}</span>
+          </div>
+          <h3 class="event-title">{{ item.title }}</h3>
+          <p class="event-meta">{{ item.entrySummary }}</p>
+        </div>
       </article>
 
       <div v-if="!filteredEvents.length && !loading" class="empty">
-        还没有符合筛选的活动，去创建一个吧。
+        没有符合条件的活动。
       </div>
       <div v-if="loading" class="empty">加载中...</div>
     </section>
@@ -61,7 +47,9 @@ import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useAuth } from '../../../composables/useAuth';
-import PageMarker from '../../../components/PageMarker.vue';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
+const defaultEventCover =
+  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
@@ -79,12 +67,7 @@ const filters = [
 const keyword = ref('');
 
 const communityId = computed(() => route.params.communityId as string);
-const communityName = computed(() => {
-  const target = communityStore.communities.value.find((c) => c.id === communityId.value);
-  return target?.name ?? '未選択';
-});
 const isAdmin = computed(() => Boolean(user.value?.isAdmin));
-const heroTitle = computed(() => (communityName.value ? `${communityName.value} 的活动` : '社群活动'));
 
 const normalizedEvents = computed(() =>
   events.value.map((event) => ({
@@ -93,6 +76,11 @@ const normalizedEvents = computed(() =>
     status: event.status,
     dateTimeText: formatDate(event.startTime, event.endTime),
     entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
+    coverStyle: {
+      backgroundImage: `url(${event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    },
   })),
 );
 
@@ -101,18 +89,10 @@ const filteredEvents = computed(() => {
     activeFilter.value === 'all'
       ? normalizedEvents.value
       : normalizedEvents.value.filter((event) => event.status === activeFilter.value);
-  const searched = keyword.value
-    ? base.filter((event) => event.title.toLowerCase().includes(keyword.value.toLowerCase()))
-    : base;
-  // 如果「受付中」为空，自动回落到全部列表
-  if (activeFilter.value === 'open' && searched.length === 0) {
-    return keyword.value
-      ? normalizedEvents.value.filter((event) =>
-          event.title.toLowerCase().includes(keyword.value.toLowerCase()),
-        )
-      : normalizedEvents.value;
+  if (activeFilter.value === 'open' && base.length === 0) {
+    return normalizedEvents.value;
   }
-  return searched;
+  return base;
 });
 
 const loadEvents = async () => {
@@ -138,14 +118,13 @@ const openManage = (eventId: string) => {
   router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
 };
 
-const createEvent = () => {
-  if (!communityId.value) return;
-  router.push({ name: 'ConsoleMobileEventForm', params: { communityId: communityId.value } });
-};
-
 const openDashboard = () => {
   if (!communityId.value) return;
   router.push({ name: 'ConsoleMobileAssistantDashboard', params: { communityId: communityId.value } });
+};
+
+const goBack = () => {
+  router.back();
 };
 
 const formatDate = (start: string, end?: string) => {
@@ -196,88 +175,71 @@ onMounted(async () => {
 <style scoped>
 .events-page {
   min-height: 100vh;
-  padding: 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 64px) 14px 14px;
   background: #f8fafc;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.hero-card {
-  padding: 14px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  color: #f8fafc;
-  display: grid;
-  grid-template-columns: 1fr auto;
   gap: 10px;
-  align-items: center;
-  box-shadow: 0 16px 40px rgba(37, 99, 235, 0.22);
 }
-.eyebrow {
-  margin: 0;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 12px;
-  opacity: 0.9;
-}
-.hero-card h1 {
-  margin: 2px 0 4px;
-  font-size: 18px;
-  font-weight: 800;
-}
-.sub {
-  margin: 0;
-  color: #e2f3ff;
-  font-size: 13px;
-}
-.hero-actions {
+
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  height: 56px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 10px;
+  margin: 0;
+  background: #f8fafc;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  z-index: 20;
 }
-.primary,
-.ghost {
+
+.back-btn {
   border: none;
-  border-radius: 12px;
-  padding: 8px 12px;
-  font-weight: 700;
-  font-size: 13px;
+  background: transparent;
   display: inline-flex;
   align-items: center;
+  padding: 8px 10px 8px 0;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
   color: #0f172a;
 }
-.primary {
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  color: #fff;
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.25);
+.back-btn {
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
 }
-.ghost {
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  color: #f8fafc;
+
+.primary-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #0090d9, #22bbaa);
+  color: #fff;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 12px 24px rgba(0, 144, 217, 0.25);
 }
 .filter-row {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #fff;
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.02);
-}
-.search-box input {
-  border: none;
-  outline: none;
-  flex: 1;
-  font-size: 14px;
-  background: transparent;
+  margin-top: 4px;
 }
 .segmented {
   display: inline-flex;
@@ -303,50 +265,79 @@ onMounted(async () => {
   box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
 }
 .card-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 .event-card {
-  background: rgba(247, 249, 251, 0.95);
+  background: #fff;
   color: #0f172a;
   border-radius: 14px;
   border: 1px solid #e2e8f0;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.02), 0 10px 22px rgba(15, 23, 42, 0.06);
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
   text-align: left;
+  align-items: center;
 }
 .event-date {
   color: #475569;
   font-size: 12px;
   margin: 0;
 }
+.event-cover {
+  margin: 0;
+  width: 100%;
+  height: 80px;
+  border-radius: 12px;
+  background: #e2e8f0;
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+  flex-shrink: 0;
+}
+.event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.event-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .pill {
-  padding: 0.35rem 0.6rem;
+  padding: 0.32rem 0.65rem;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 .pill.open {
-  background: rgba(34, 197, 94, 0.18);
-  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.15);
+  color: #15803d;
 }
 .pill.closed {
   background: rgba(148, 163, 184, 0.18);
-  color: #e2e8f0;
+  color: #475569;
 }
 .pill.draft {
   background: rgba(251, 191, 36, 0.2);
-  color: #fde68a;
+  color: #92400e;
 }
 .event-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #0f172a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .event-meta {
   margin: 0;

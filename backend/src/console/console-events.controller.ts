@@ -51,6 +51,16 @@ export class ConsoleEventsController {
     return this.consoleEventsService.closeEvent(eventId, req.user.id);
   }
 
+  @Post(':eventId/cancel')
+  cancelEvent(
+    @Param('eventId') eventId: string,
+    @Body('reason') reason: string,
+    @Body('notify') notify: boolean,
+    @Req() req: any,
+  ) {
+    return this.consoleEventsService.cancelEvent(eventId, req.user.id, { reason, notify });
+  }
+
   @Post(':eventId/checkins')
   checkinRegistration(
     @Param('eventId') eventId: string,
@@ -81,6 +91,24 @@ export class ConsoleEventsController {
   @Delete(':eventId/covers/:coverId')
   removeCover(@Param('eventId') eventId: string, @Param('coverId') coverId: string, @Req() req: any) {
     return this.consoleEventsService.removeEventCover(req.user.id, eventId, coverId);
+  }
+
+  @Post(':eventId/registrations/:registrationId/approve')
+  approveRegistration(
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Req() req: any,
+  ) {
+    return this.consoleEventsService.approveRegistration(req.user.id, eventId, registrationId);
+  }
+
+  @Post(':eventId/registrations/:registrationId/reject')
+  rejectRegistration(
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Req() req: any,
+  ) {
+    return this.consoleEventsService.rejectRegistration(req.user.id, eventId, registrationId);
   }
 
   @Get(':eventId/registrations/export')

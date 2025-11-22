@@ -1,51 +1,47 @@
 <template>
   <PageMarker label="P1" />
   <div class="console-home">
-    <section class="hero-card">
-      <div class="hero-heading">
-        <img
-          :key="communityId || 'default'"
-          :src="communityAvatar"
-          alt="avatar"
-          class="hero-avatar"
-          @click="goCommunitySettings"
-        />
-        <div class="hero-heading-text" @click="goCommunitySettings">
-          <h1 class="hero-title">{{ communityName || '未選択のコミュニティ' }}</h1>
-          <p class="hero-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
-        </div>
-        <button
-          v-if="hasCommunity"
-          class="hero-switch inline-switch"
-          type="button"
-          @click="openCommunityPicker"
-        >
-          切り替え
-        </button>
-        <button
-          v-else
-          class="hero-switch hero-switch--primary"
-          type="button"
-          @click="goCreateCommunity"
-        >
-          <span class="i-lucide-sparkles"></span>
-          コミュニティを作成
-        </button>
+    <section class="top-bar">
+      <button class="avatar-btn" type="button" @click="goCommunitySettings">
+        <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" />
+      </button>
+      <div class="top-text" @click="goCommunitySettings">
+        <p class="top-label">社群</p>
+        <h1 class="top-title">{{ communityName || '未選択のコミュニティ' }}</h1>
+        <p class="top-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
       </div>
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <p>今月の収入</p>
-          <strong>{{ hasCommunity ? stats.monthRevenueText : '---' }}</strong>
-        </div>
-        <div class="hero-stat">
-          <p>今月のイベント</p>
-          <strong>{{ hasCommunity ? stats.eventCount : '--' }}</strong>
-        </div>
-        <div class="hero-stat">
-          <p>申込数</p>
-          <strong>{{ hasCommunity ? stats.registrationCount : '--' }}</strong>
-        </div>
-      </div>
+      <button
+        v-if="hasCommunity"
+        class="pill-btn"
+        type="button"
+        @click="openCommunityPicker"
+      >
+        切り替え
+      </button>
+      <button
+        v-else
+        class="pill-btn pill-btn--primary"
+        type="button"
+        @click="goCreateCommunity"
+      >
+        <span class="i-lucide-sparkles"></span>
+        新建
+      </button>
+    </section>
+
+    <section class="stat-row">
+      <article class="stat-chip">
+        <p class="stat-label">今月の収入</p>
+        <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '---' }}</p>
+      </article>
+      <article class="stat-chip">
+        <p class="stat-label">今月のイベント</p>
+        <p class="stat-value">{{ hasCommunity ? stats.eventCount : '--' }}</p>
+      </article>
+      <article class="stat-chip">
+        <p class="stat-label">申込数</p>
+        <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
+      </article>
     </section>
 
     <section class="action-grid">
@@ -434,7 +430,7 @@ const startStripeOnboard = async () => {
     window.location.href = url;
   } catch (err) {
     console.error('Failed to start Stripe onboarding', err);
-    window.alert('Stripe 連携リンクの取得に失敗しました');
+    console.error('Stripe 連携リンクの取得に失敗しました');
   } finally {
     stripeOnboardLoading.value = false;
   }
@@ -514,32 +510,35 @@ const loadActiveCommunityDetail = async () => {
   gap: 8px;
 }
 
-.hero-card {
-  position: relative;
-  border-radius: 24px;
-  padding: 20px;
-  background: linear-gradient(135deg, #0090d9, #22bbaa);
-  color: #fff;
-  box-shadow: 0 25px 60px rgba(0, 144, 217, 0.35);
-  overflow: hidden;
-}
-
-.hero-heading {
+.top-bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  background: #fff;
+  border-radius: 18px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
-.hero-avatar {
+.avatar-btn {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  padding: 0;
+  overflow: hidden;
+  background: #f1f5f9;
+  flex-shrink: 0;
 }
 
-.hero-heading-text {
+.avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.top-text {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -547,92 +546,100 @@ const loadActiveCommunityDetail = async () => {
   cursor: pointer;
 }
 
-.hero-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.hero-role {
+.top-label {
   margin: 0;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
+  color: #94a3b8;
 }
 
-.hero-switch {
-  border: none;
-  padding: 8px 12px;
+.top-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.top-role {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pill-btn {
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(15, 23, 42, 0.08);
+  padding: 8px 12px;
+  background: #fff;
   color: #0f172a;
   font-size: 12px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.hero-switch--primary {
-  background: rgba(0, 144, 217, 0.12);
-  color: #0090d9;
+.pill-btn--primary {
+  border: none;
+  background: linear-gradient(135deg, #0090d9, #22bbaa);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
 }
 
-.inline-switch {
-  margin-top: 0;
-}
-
-.hero-stats {
-  margin-top: 16px;
+.stat-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  padding: 0 6px;
 }
 
-.hero-stat {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 18px;
+.stat-chip {
+  background: #fff;
+  border-radius: 14px;
   padding: 10px;
-  font-size: 12px;
-  text-align: left;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
 }
 
-.hero-stat p {
+.stat-label {
   margin: 0;
-  opacity: 0.8;
+  font-size: 12px;
+  color: #94a3b8;
 }
 
-.hero-stat strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 15px;
+.stat-value {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
+  padding: 2px 4px;
 }
 
 .action-card {
   border: none;
-  border-radius: 18px;
+  border-radius: 14px;
   background: #fff;
-  padding: 12px;
+  padding: 12px 10px;
   display: flex;
   text-align: left;
-  box-shadow: 0 15px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
 .action-entry {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .action-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   background: rgba(15, 23, 42, 0.06);
   display: flex;
   align-items: center;
@@ -640,8 +647,8 @@ const loadActiveCommunityDetail = async () => {
 }
 
 .action-icon img {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
 }
 
 .action-title {

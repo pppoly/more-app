@@ -60,14 +60,14 @@ onMounted(() => {
   min-height: 100vh;
   background: #f8fafc;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 32px 20px calc(120px + env(safe-area-inset-bottom, 0px));
+  padding: 32px 20px calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 .success-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   background: #fff;
   border-radius: 24px;
   padding: 28px;
@@ -76,6 +76,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .success-icon {
@@ -111,6 +113,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
 }
 
 .primary-btn,
@@ -124,6 +127,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
 }
 
 .primary-btn {

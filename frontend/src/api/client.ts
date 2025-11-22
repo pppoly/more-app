@@ -365,6 +365,28 @@ export async function exportEventRegistrationsCsv(eventId: string): Promise<Blob
   return data;
 }
 
+export async function approveEventRegistration(eventId: string, registrationId: string) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/console/events/${eventId}/registrations/${registrationId}/approve`,
+  );
+  return data;
+}
+
+export async function rejectEventRegistration(eventId: string, registrationId: string) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/console/events/${eventId}/registrations/${registrationId}/reject`,
+  );
+  return data;
+}
+
+export async function cancelConsoleEvent(eventId: string, payload: { reason?: string; notify?: boolean } = {}) {
+  const { data } = await apiClient.post<{ eventId: string; status: string; refunds?: any }>(
+    `/console/events/${eventId}/cancel`,
+    payload,
+  );
+  return data;
+}
+
 export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicationStatus> {
   const { data } = await apiClient.get<OrganizerApplicationStatus>('/organizers/me/application');
   return data;

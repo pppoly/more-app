@@ -82,6 +82,7 @@
                 </button>
               </div>
             </div>
+            <p v-if="ctaHint" class="event-hero-hint">{{ ctaHint }}</p>
             <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
@@ -232,6 +233,7 @@
         <button class="rails-cta" type="button" :disabled="isCtaDisabled" @click="handleCtaClick">
           <span>{{ ctaLabel }}</span>
         </button>
+        <p v-if="ctaHint" class="cta-hint">{{ ctaHint }}</p>
       </footer>
     </template>
 
@@ -325,6 +327,7 @@ const selectedDateId = ref<string | null>(null);
 const activeSlide = ref(0);
 const registrationItem = ref<MyEventItem | null>(null);
 const checkingRegistration = ref(false);
+const registrationStatus = computed(() => registrationItem.value?.status ?? 'none');
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
@@ -399,6 +402,7 @@ const detail = computed(() => {
   return {
     id: event.value.id,
     status: event.value.status,
+    registrationStatus: registrationStatus.value,
     title: getLocalizedText(event.value.title),
     categoryLabel: event.value.category ?? 'イベント',
     timeFullText: `${start} 〜 ${end}`,
@@ -447,8 +451,8 @@ const heroSlides = computed(() => {
       imageUrl: item.imageUrl,
     }));
   }
-  const fallback = detail.value?.coverUrl;
-  return fallback ? [{ id: 'cover', imageUrl: fallback }] : [];
+  const fallback = detail.value?.coverUrl || fallbackCover.value;
+  return [{ id: 'cover', imageUrl: fallback }];
 });
 
 const activeSlideImage = computed(() => {
@@ -528,19 +532,14 @@ const isMultiDay = computed(() => {
 
 const statusBadge = computed(() => {
   const status = event.value?.status ?? 'draft';
-  const map: Record<
-    string,
-    {
-      label: string;
-      variant: string;
-    }
-  > = {
+  const map: Record<string, { label: string; variant: string }> = {
     open: { label: '受付中', variant: 'is-live' },
     pending: { label: '受付前', variant: 'is-pending' },
     soldout: { label: '満席', variant: 'is-soldout' },
     closed: { label: '受付終了', variant: 'is-closed' },
     ended: { label: '終了', variant: 'is-closed' },
     draft: { label: '準備中', variant: 'is-pending' },
+    cancelled: { label: 'キャンセル', variant: 'is-closed' },
   };
   return map[status] ?? { label: 'ステータス未設定', variant: 'is-closed' };
 });
@@ -557,6 +556,46 @@ const participantsTotal = computed(() => detail.value?.participantCount ?? parti
 const participantPreview = computed(() => participantsList.value.slice(0, 20));
 const hasMoreParticipants = computed(() => participantsList.value.length > participantPreview.value.length);
 const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
+
+const registrationStatusLabel = computed(() => {
+  const map: Record<string, string> = {
+    pending: '審査待ち',
+    approved: '承認済み',
+    rejected: '拒否',
+    paid: '支払済み',
+    refunded: '返金済み',
+    pending_refund: '返金待ち',
+    cancelled: 'キャンセル',
+  };
+  return map[detail.value?.registrationStatus ?? ''] ?? '';
+});
+const ctaHint = computed(() => {
+  if (!detail.value) return '';
+  if (detail.value.status === 'cancelled') {
+    return 'イベントはキャンセルされました。必要に応じて返金が進行します。';
+  }
+  if (registrationItem.value) {
+    switch (registrationItem.value.status) {
+      case 'pending':
+        return '申込済み：主理人の承認をお待ちください。';
+      case 'approved':
+        return '承認済み：参加が確定しました。';
+      case 'rejected':
+        return '申込が拒否されました。内容を確認のうえ再申込してください。';
+      case 'paid':
+        return '支払済み：チケットからQRを提示できます。';
+      case 'refunded':
+        return '返金済み：数日内に口座へ反映されます。';
+      case 'pending_refund':
+        return '返金処理中：完了までお待ちください。';
+      case 'cancelled':
+        return '申込はキャンセルされています。';
+      default:
+        return '';
+    }
+  }
+  return '';
+});
 const participantsTotalLabel = computed(() =>
   participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
 );
@@ -1151,12 +1190,17 @@ watch(
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: #0f172a10;
 }
 
 .event-carousel {
   position: relative;
   overflow: hidden;
   background: transparent;
+  height: 100%;
 }
 
 .event-carousel__slide {
@@ -1173,7 +1217,7 @@ watch(
 
 .event-cover {
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: cover;
   background-color: transparent;
   display: block;
@@ -1233,6 +1277,13 @@ watch(
   color: #fff;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
+}
+
+.event-hero-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.5;
 }
 
 .event-status-badge.is-open {
@@ -1627,7 +1678,8 @@ watch(
 
 .event-footer {
   position: fixed;
-  inset-inline: 0;
+  left: 0;
+  right: 0;
   bottom: 0;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: var(--m-color-surface);
@@ -1635,6 +1687,8 @@ watch(
   align-items: center;
   gap: 12px;
   border-top: 1px solid rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+  z-index: 10;
 }
 
 .price-block .price {
@@ -1662,6 +1716,7 @@ watch(
   line-height: 1.25;
   white-space: normal;
   text-align: center;
+  min-height: 52px;
 }
 
 .rails-cta span {
@@ -1678,6 +1733,23 @@ watch(
   background: #92d0f5;
   color: rgba(255, 255, 255, 0.8);
   box-shadow: none;
+}
+
+.cta-hint {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.75);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 0;
+  line-height: 1.4;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
+  z-index: 9;
 }
 
 </style>

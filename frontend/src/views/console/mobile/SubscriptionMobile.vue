@@ -91,9 +91,11 @@ import {
 import type { PricingPlan } from '../../../types/api';
 import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
 import { useRouter } from 'vue-router';
+import { useToast } from '../../../composables/useToast';
 
 const communityStore = useConsoleCommunityStore();
 const router = useRouter();
+const toast = useToast();
 const plans = ref<PricingPlan[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -142,7 +144,7 @@ const startSubscribe = async (planId: string) => {
       throw new Error('支付配置缺失，请检查后端 Stripe publishable key');
     } else {
       await reload();
-      window.alert('已切换套餐');
+      toast.show('已切换套餐', 'success');
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '订阅失败';
@@ -236,15 +238,15 @@ const confirmPayment = async () => {
     if (paymentIntent?.status === 'succeeded') {
       await reload();
       resetPayment();
-      window.alert('支付完成，正在刷新套餐状态');
+      toast.show('支付完成，正在刷新套餐状态', 'success');
       return;
     }
     if (paymentIntent?.status === 'processing') {
-      window.alert('支付处理中，请稍后查看状态');
+      toast.show('支付处理中，请稍后查看状态', 'warning');
       await reload();
       return;
     }
-    window.alert('支付未完成，请重试');
+    toast.show('支付未完成，请重试', 'warning');
     await reload();
   } catch (err) {
     console.error('confirmPayment failed', err);

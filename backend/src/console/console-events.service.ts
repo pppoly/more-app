@@ -6,12 +6,17 @@ import { extname, join } from 'path';
 import type { Express } from 'express';
 import { PermissionsService } from '../auth/permissions.service';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
+import { PaymentsService } from '../payments/payments.service';
 
 const EVENT_UPLOAD_ROOT = join(UPLOAD_ROOT, 'events');
 
 @Injectable()
 export class ConsoleEventsService {
-  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
@@ -149,6 +154,38 @@ export class ConsoleEventsService {
     };
   }
 
+  async approveRegistration(userId: string, eventId: string, registrationId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registration = await this.prisma.eventRegistration.findUnique({ where: { id: registrationId } });
+    if (!registration || registration.eventId !== eventId) {
+      throw new NotFoundException('Registration not found');
+    }
+    if (registration.status !== 'pending') {
+      throw new BadRequestException('报名已处理或不需要审核');
+    }
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { status: 'approved', paymentStatus: registration.paymentStatus ?? 'unpaid' },
+    });
+    return { registrationId, status: 'approved' };
+  }
+
+  async rejectRegistration(userId: string, eventId: string, registrationId: string) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registration = await this.prisma.eventRegistration.findUnique({ where: { id: registrationId } });
+    if (!registration || registration.eventId !== eventId) {
+      throw new NotFoundException('Registration not found');
+    }
+    if (registration.status !== 'pending') {
+      throw new BadRequestException('报名已处理或不需要审核');
+    }
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { status: 'rejected', paymentStatus: registration.paymentStatus ?? 'unpaid' },
+    });
+    return { registrationId, status: 'rejected' };
+  }
+
   async getRegistrationsSummary(userId: string, eventId: string) {
     const event = await this.permissions.assertEventManager(userId, eventId);
     const fullEvent = await this.prisma.event.findUnique({
@@ -165,19 +202,20 @@ export class ConsoleEventsService {
       include: { user: { select: { id: true, name: true, avatarUrl: true } } },
     });
 
-    const total = registrations.length;
-    const paid = registrations.filter((reg) => reg.paymentStatus === 'paid').length;
-    const attended = registrations.filter((reg) => reg.attended).length;
-    const noShow = registrations.filter((reg) => reg.noShow).length;
+    const activeRegistrations = registrations.filter((reg) => reg.status !== 'rejected');
+    const total = activeRegistrations.length;
+    const paid = activeRegistrations.filter((reg) => reg.paymentStatus === 'paid').length;
+    const attended = activeRegistrations.filter((reg) => reg.attended).length;
+    const noShow = activeRegistrations.filter((reg) => reg.noShow).length;
     const capacity = fullEvent.maxParticipants ?? null;
 
     const groups = fullEvent.ticketTypes.map((ticket) => ({
       label: this.getLocalizedText(ticket.name),
-      count: registrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
+      count: activeRegistrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
       capacity: ticket.quota ?? capacity,
     }));
 
-    const avatars = registrations.slice(0, 20).map((reg) => ({
+    const avatars = activeRegistrations.slice(0, 20).map((reg) => ({
       userId: reg.userId,
       name: reg.user?.name ?? 'ゲスト',
       avatarUrl: reg.user?.avatarUrl ?? null,
@@ -399,6 +437,93 @@ export class ConsoleEventsService {
         attended: attendedCount,
         noShow: noShowCount,
       },
+    };
+  }
+
+  async cancelEvent(eventId: string, userId: string, options: { reason?: string; notify?: boolean }) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: {
+        community: true,
+        registrations: {
+          include: { user: { select: { id: true, name: true, email: true } }, payment: true },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    if (event.status === 'cancelled') {
+      return { eventId: event.id, status: 'cancelled' };
+    }
+
+    const freeRegistrations = event.registrations.filter(
+      (reg) => reg.paymentStatus !== 'paid' && reg.status !== 'rejected',
+    );
+    const paidRegistrations = event.registrations.filter((reg) => reg.paymentStatus === 'paid');
+
+    const refundResults: Array<{ registrationId: string; status: string; error?: string }> = [];
+
+    for (const reg of paidRegistrations) {
+      try {
+        const payment = reg.payment ?? (await this.prisma.payment.findFirst({ where: { registrationId: reg.id } }));
+        if (!payment) {
+          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'No payment found' });
+          continue;
+        }
+        if (payment.method !== 'stripe') {
+          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'Unsupported payment method' });
+          continue;
+        }
+        await this.paymentsService.refundStripePayment(userId, payment.id, options?.reason);
+        await this.prisma.eventRegistration.update({
+          where: { id: reg.id },
+          data: { status: 'refunded', paymentStatus: 'refunded', noShow: false, attended: false },
+        });
+        refundResults.push({ registrationId: reg.id, status: 'refunded' });
+      } catch (err) {
+        refundResults.push({
+          registrationId: reg.id,
+          status: 'refund_failed',
+          error: err instanceof Error ? err.message : 'Refund failed',
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: reg.id },
+          data: { status: 'pending_refund', paymentStatus: reg.paymentStatus },
+        });
+      }
+    }
+
+    if (freeRegistrations.length) {
+      await this.prisma.eventRegistration.updateMany({
+        where: { id: { in: freeRegistrations.map((r) => r.id) } },
+        data: { status: 'cancelled', noShow: false, attended: false },
+      });
+    }
+
+    await this.prisma.event.update({
+      where: { id: eventId },
+      data: {
+        status: 'cancelled',
+        config: {
+          ...(event.config as Record<string, any>),
+          cancelledAt: new Date(),
+          cancelledBy: userId,
+          cancelReason: options?.reason ?? null,
+        },
+      },
+    });
+
+    const failed = refundResults.filter((r) => r.status === 'refund_failed');
+    return {
+      eventId,
+      status: 'cancelled',
+      refunds: refundResults,
+      refundFailed: failed.length,
+      refundTotal: paidRegistrations.length,
     };
   }
 

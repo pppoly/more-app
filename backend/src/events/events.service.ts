@@ -165,6 +165,11 @@ export class EventsService {
       _count: {
         select: { registrations: { where: { status: { in: ['paid', 'approved'] } } } },
       },
+      galleries: {
+        orderBy: { order: 'asc' },
+        take: 1,
+        select: { imageUrl: true },
+      },
       community: {
         select: {
           id: true,
@@ -220,9 +225,10 @@ export class EventsService {
       showRegistrationStatus: true,
     };
 
-    const { registrations, _count, ...rest } = event;
+    const { registrations, _count, galleries, ...rest } = event;
     return {
       ...rest,
+      coverImageUrl: galleries?.[0]?.imageUrl ?? null,
       config: mergedConfig,
     };
   }
@@ -230,7 +236,7 @@ export class EventsService {
   async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
-      include: { ticketTypes: true },
+      include: { ticketTypes: true, community: true },
     });
 
     if (!event) {
@@ -319,16 +325,24 @@ export class EventsService {
     }
 
     const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
+    const requireApproval = Boolean(event.requireApproval);
+    const initialStatus = requireApproval
+      ? 'pending'
+      : isFree
+        ? 'paid'
+        : 'approved';
+    const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
+
     const registration = await this.prisma.eventRegistration.create({
       data: {
         eventId,
         userId,
         ticketTypeId: ticketType.id,
-        status: isFree ? 'paid' : 'approved',
+        status: initialStatus,
         formAnswers: dto.formAnswers ?? Prisma.JsonNull,
         amount: ticketType.price ?? 0,
-        paidAmount: isFree ? ticketType.price ?? 0 : 0,
-        paymentStatus: isFree ? 'paid' : 'unpaid',
+        paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
+        paymentStatus: initialPaymentStatus,
       },
       select: {
         id: true,

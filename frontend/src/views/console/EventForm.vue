@@ -170,6 +170,15 @@
               {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '请设置' }}
             </span>
           </button>
+          <div class="ios-helper-row">
+            <p class="ios-helper-title">快捷设置</p>
+            <div class="ios-chip-row">
+              <button type="button" class="ios-chip" @click="setEndShortcut(1)">结束 +1 小时</button>
+              <button type="button" class="ios-chip" @click="setEndShortcut(2)">结束 +2 小时</button>
+              <button type="button" class="ios-chip" @click="setRegDeadlineShortcut(60)">截止：开始前 1 小时</button>
+              <button type="button" class="ios-chip" @click="setRegDeadlineShortcut(24 * 60)">截止：开始前 1 天</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -270,11 +279,24 @@
       <!-- Rich text -->
       <section class="ios-panel" ref="sectionRichText">
         <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action ios-row--textarea" @click="openRichTextEditor">
-            <span class="ios-label">活动详情</span>
-            <span class="ios-value ios-value--multiline" :class="{ 'ios-value--placeholder': !richTextPreview }">
-              {{ richTextPreview || '点击编辑笔记' }}
-            </span>
+          <button
+            type="button"
+            class="ios-row ios-row--action ios-row--textarea ios-row--rich-note"
+            @click="openRichTextEditor"
+          >
+            <div class="ios-rich-text">
+              <div class="ios-rich-text__head">
+                <span class="ios-label">活动详情</span>
+                <span v-if="richTextImageCount" class="ios-chip">{{ richTextImageCount }} 张图</span>
+              </div>
+              <span
+                class="ios-value ios-value--multiline ios-rich-text__preview"
+                :class="{ 'ios-value--placeholder': !richTextPreview }"
+              >
+                {{ richTextPreview || '点击编辑笔记' }}
+              </span>
+              <p class="ios-helper">支持图文笔记，长按或再次点击可继续编辑</p>
+            </div>
           </button>
         </div>
       </section>
@@ -306,6 +328,14 @@
           <div class="builder-actions">
             <p v-if="!registrationFields.length" class="builder-hint">{{ builderHintText }}</p>
             <button type="button" class="ios-add-btn" @click="addField">＋ 新增项目</button>
+          </div>
+          <div class="builder-quick">
+            <span class="builder-quick__label">常用字段</span>
+            <div class="builder-quick__chips">
+              <button type="button" class="quick-chip" @click="addPresetField('name')">姓名</button>
+              <button type="button" class="quick-chip" @click="addPresetField('phone')">电话</button>
+              <button type="button" class="quick-chip" @click="addPresetField('email')">邮箱</button>
+            </div>
           </div>
         </div>
         <article
@@ -396,6 +426,7 @@
           {{ submitting ? '保存中…' : '保存' }}
         </button>
       </div>
+      <p v-if="saveStatus" class="status success">{{ saveStatus }}</p>
       <p v-if="error" class="status error">{{ error }}</p>
     </form>
 
@@ -537,6 +568,7 @@ import {
   fetchEventGallery,
   deleteEventCover,
 } from '../../api/client';
+import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
 import type {
   RegistrationFormField,
@@ -577,6 +609,7 @@ type NoteOverlayContext = {
 
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 const communityId = route.params.communityId as string | undefined;
 const eventId = route.params.eventId as string | undefined;
 const eventCommunityId = ref<string | null>(communityId ?? null);
@@ -651,9 +684,12 @@ const builderHintText = '设置报名表里需要填写的问题，顺序即为�
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const MAX_COVERS = 9;
-const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_COVER_DIMENSION = 1600;
-const COVER_RULES_TEXT = '尺寸 750×X，最多上传 9 张，默认第一张为主图';
+const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (server limit)
+const MAX_COVER_UPLOAD_SIZE = 4 * 1024 * 1024; // 提前压缩到更安全的体积
+const MAX_COVER_DIMENSION = 1200;
+const COVER_COMPRESS_QUALITY = 0.72;
+const COVER_FALLBACK_QUALITY = 0.6;
+const COVER_RULES_TEXT = '推荐 1200px 宽，最多上传 9 张，默认第一张为主图';
 const coverDisplayItems = computed(() =>
   eventId ? galleries.value : localCoverPreviews.value,
 );
@@ -663,6 +699,8 @@ const editingField = ref<FieldKey | null>(null);
 const fieldDraft = ref('');
 const richNoteImages = ref<Array<{ id: string; src: string }>>([]);
 const actionLoading = ref<'draft' | 'publish' | null>(null);
+const saveStatus = ref<string | null>(null);
+let saveStatusTimer: number | null = null;
 const uploadingCover = ref(false);
 const titleInputRef = ref<HTMLInputElement | null>(null);
 const locationInputRef = ref<HTMLInputElement | null>(null);
@@ -743,13 +781,9 @@ const stripHtml = (value: string) => value.replace(/<[^>]*>/g, '');
 const richTextPreview = computed(() => {
   const text = stripHtml(form.descriptionHtml || '') || form.description;
   const base = text ? text.slice(0, 80) : '';
-  if (richNoteImages.value.length) {
-    return base
-      ? `${base} · ${richNoteImages.value.length} 张图`
-      : `${richNoteImages.value.length} 张图`;
-  }
   return base;
 });
+const richTextImageCount = computed(() => richNoteImages.value.length);
 
 const formatDisplayDate = (value: string) => {
   if (!value) return '请设置';
@@ -797,6 +831,12 @@ const confirmFieldEditor = () => {
     (form as any)[editingField.value] = fieldDraft.value;
   } else {
     (form as any)[editingField.value] = fieldDraft.value;
+  }
+  if (editingField.value === 'startTime') {
+    autoFillEndTime();
+  }
+  if (editingField.value === 'regStartTime') {
+    autoFillRegEnd();
   }
   closeFieldEditor();
 };
@@ -965,9 +1005,95 @@ const getLocalizedText = (field: any) => {
   return String(field ?? '');
 };
 
-const toLocalInput = (value?: string | null) => {
+const toLocalInput = (value?: string | Date | null) => {
   if (!value) return '';
-  return new Date(value).toISOString().slice(0, 16);
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (num: number) => String(num).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+const toIso = (value?: string | null) => (value ? new Date(value).toISOString() : null);
+
+const autoFillEndTime = () => {
+  if (!form.startTime) return;
+  const start = new Date(form.startTime);
+  const desiredEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  if (!form.endTime || new Date(form.endTime) <= start) {
+    form.endTime = toLocalInput(desiredEnd);
+  }
+  if (form.regEndTime && new Date(form.regEndTime) > start) {
+    const fallback = new Date(start.getTime() - 60 * 60 * 1000);
+    form.regEndTime = toLocalInput(fallback);
+  }
+};
+
+const autoFillRegEnd = () => {
+  if (!form.regStartTime) return;
+  if (form.regEndTime && new Date(form.regEndTime) >= new Date(form.regStartTime)) return;
+  const start = new Date(form.startTime || form.regStartTime);
+  const fallback = new Date(start.getTime() - 60 * 60 * 1000);
+  form.regEndTime = toLocalInput(fallback);
+};
+
+watch(
+  () => form.startTime,
+  (value) => {
+    if (value) {
+      autoFillEndTime();
+    }
+  },
+);
+
+const setEndShortcut = (hours: number) => {
+  if (!form.startTime) {
+    error.value = '请先设置开始时间';
+    return;
+  }
+  const start = new Date(form.startTime);
+  const target = new Date(start.getTime() + hours * 60 * 60 * 1000);
+  form.endTime = toLocalInput(target);
+};
+
+const setRegDeadlineShortcut = (minutesBeforeStart: number) => {
+  if (!form.startTime) {
+    error.value = '请先设置开始时间';
+    return;
+  }
+  const start = new Date(form.startTime);
+  const target = new Date(start.getTime() - minutesBeforeStart * 60 * 1000);
+  form.regEndTime = toLocalInput(target);
+  if (!form.regStartTime || new Date(form.regStartTime) > target) {
+    const safeStart = new Date(target.getTime() - 30 * 60 * 1000);
+    form.regStartTime = toLocalInput(safeStart);
+  }
+};
+
+const presetFields: Record<
+  'name' | 'phone' | 'email',
+  { label: string; type: string; placeholder: string }
+> = {
+  name: { label: '姓名', type: 'text', placeholder: '请填写姓名' },
+  phone: { label: '电话', type: 'phone', placeholder: '例：09012345678' },
+  email: { label: '邮箱', type: 'email', placeholder: 'example@example.com' },
+};
+
+const addPresetField = (key: keyof typeof presetFields) => {
+  const preset = presetFields[key];
+  if (!preset) return;
+  registrationFields.value.push({
+    uuid: Math.random().toString(36).slice(2),
+    label: preset.label,
+    type: preset.type,
+    required: true,
+    placeholder: preset.placeholder,
+    optionsText: '',
+  });
 };
 
 const scrollToSection = (section: string) => {
@@ -1023,37 +1149,76 @@ const triggerCoverPicker = () => {
   }
 };
 
+const parseCoverUploadError = (err: unknown) => {
+  const status = (err as any)?.response?.status;
+  if (status === 413) {
+    return '封面图片过大，请选择更小的图片或继续压缩后再试';
+  }
+  const isNetwork = (err as any)?.message === 'Network Error';
+  const isCors =
+    (err as any)?.message?.includes?.('CORS') ||
+    (err as any)?.message?.includes?.('Failed to fetch') ||
+    (err as any)?.message?.includes?.('ERR_FAILED');
+  if (isCors) {
+    return '封面上传被跨域限制拦截，请改用同域 API（或本地代理）后重试';
+  }
+  if (isNetwork) {
+    return '封面上传失败，请检查网络或稍后重试';
+  }
+  return err instanceof Error ? err.message : '封面上传失败，请重试';
+};
+
+const showCoverError = (message: string, type: 'error' | 'warning' = 'error') => {
+  coverError.value = message;
+  toast.show(message, type);
+};
+
+const toJpegBlob = (canvas: HTMLCanvasElement, quality: number) =>
+  new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error('压缩失败'));
+          return;
+        }
+        resolve(blob);
+      },
+      'image/jpeg',
+      quality,
+    );
+  });
+
 const downscaleImageFile = (file: File) =>
   new Promise<File>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => {
-        const maxSide = Math.max(img.width, img.height);
-        const ratio = maxSide > MAX_COVER_DIMENSION ? MAX_COVER_DIMENSION / maxSide : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('无法压缩图片'));
-          return;
+      img.onload = async () => {
+        try {
+          const maxSide = Math.max(img.width, img.height);
+          const ratio = maxSide > MAX_COVER_DIMENSION ? MAX_COVER_DIMENSION / maxSide : 1;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * ratio);
+          canvas.height = Math.round(img.height * ratio);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('无法压缩图片'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          let blob = await toJpegBlob(canvas, COVER_COMPRESS_QUALITY);
+          if (blob.size > MAX_COVER_UPLOAD_SIZE) {
+            blob = await toJpegBlob(canvas, COVER_FALLBACK_QUALITY);
+          }
+
+          const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
+            type: blob.type || 'image/jpeg',
+          });
+          resolve(compressed);
+        } catch (err) {
+          reject(err);
         }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error('压缩失败'));
-              return;
-            }
-            const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
-              type: blob.type || 'image/jpeg',
-            });
-            resolve(compressed);
-          },
-          'image/jpeg',
-          0.85,
-        );
       };
       img.onerror = () => reject(new Error('无法读取图片'));
       img.src = reader.result as string;
@@ -1174,8 +1339,6 @@ const buildContent = (text: string) => ({
   lang: 'ja',
   translations: {},
 });
-
-const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined);
 
 function buildRegistrationSchema() {
   return registrationFields.value
@@ -1345,6 +1508,17 @@ const closeNoteOverlay = () => {
   showNoteOverlay.value = false;
 };
 
+const flashSaveStatus = (text: string) => {
+  saveStatus.value = text;
+  if (saveStatusTimer) {
+    window.clearTimeout(saveStatusTimer);
+  }
+  saveStatusTimer = window.setTimeout(() => {
+    saveStatus.value = null;
+    saveStatusTimer = null;
+  }, 1800);
+};
+
 const restoreScrollPosition = () => {
   const raw = sessionStorage.getItem(CONSOLE_EVENT_SCROLL_KEY);
   if (!raw) return;
@@ -1402,8 +1576,87 @@ const persistEvent = async (status: 'draft' | 'open') => {
   actionLoading.value = status;
   error.value = null;
 
-  if (new Date(form.endTime) < new Date(form.startTime)) {
+  const now = new Date();
+  const start = form.startTime ? new Date(form.startTime) : null;
+  const end = form.endTime ? new Date(form.endTime) : null;
+  let regStart = form.regStartTime ? new Date(form.regStartTime) : null;
+  let regEnd = form.regEndTime ? new Date(form.regEndTime) : null;
+
+  if (!start || !end) {
+    if (start && !end) {
+      autoFillEndTime();
+      if (form.endTime) {
+        return persistEvent(status);
+      }
+    }
+    error.value = '请先设置开始和结束时间';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
+  if (start.getTime() < now.getTime() - 5 * 60 * 1000) {
+    error.value = '开始时间需要晚于当前时间';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
+  if (end <= start) {
     error.value = '終了時間は開始より後に設定してください';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
+  if (!regStart) {
+    regStart = new Date(Math.min(start.getTime(), now.getTime()));
+    form.regStartTime = toLocalInput(regStart.toISOString());
+  }
+
+  if (!regEnd) {
+    const fallback = new Date(start.getTime() - 60 * 60 * 1000);
+    regEnd = fallback;
+    form.regEndTime = toLocalInput(regEnd.toISOString());
+  }
+
+  if (regStart && regStart > start) {
+    error.value = '报名开始时间不能晚于活动开始';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
+  if (regEnd) {
+    if (regStart && regEnd < regStart) {
+      error.value = '报名截止需晚于报名开始时间';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+    if (regEnd > start) {
+      error.value = '报名截止应早于活动开始';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+  }
+
+  if (form.ticketPrice != null && form.ticketPrice < 0) {
+    form.ticketPrice = 0;
+  }
+
+  const descriptionText = stripHtml(form.descriptionHtml || '').trim() || form.description.trim();
+  if (!descriptionText) {
+    error.value = '请填写活动详情';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
+  const htmlSize = form.descriptionHtml?.length ?? 0;
+  if (htmlSize > 400_000) {
+    error.value = '活动详情内嵌图片过大，请删除部分图片或缩短内容后再试';
     submitting.value = false;
     actionLoading.value = null;
     return;
@@ -1443,27 +1696,31 @@ const persistEvent = async (status: 'draft' | 'open') => {
           },
         ],
       });
+      flashSaveStatus(status === 'open' ? '已发布' : '已保存');
       if (status === 'open') {
         goToPublishSuccess(eventId, 'list');
       }
     } else if (communityId) {
-      const event = await createConsoleEvent(communityId, {
-        ...payload,
-        ticketTypes: [
-          {
-            name: buildContent(`${form.title} チケット`),
-            type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
-            price: form.ticketPrice ?? 0,
-          },
-        ],
-      });
-      if (pendingCoverFiles.value.length) {
-        await uploadPendingCovers(event.id);
+    const event = await createConsoleEvent(communityId, {
+      ...payload,
+      ticketTypes: [
+        {
+          name: buildContent(`${form.title} チケット`),
+          type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
+          price: form.ticketPrice ?? 0,
+        },
+      ],
+    });
+    if (pendingCoverFiles.value.length) {
+      const uploaded = await uploadPendingCovers(event.id);
+      if (!uploaded) {
+        showCoverError('活动已保存，但封面未能上传，请稍后在编辑页重新添加。', 'warning');
       }
-      if (status === 'open') {
-        goToPublishSuccess(event.id, 'edit');
-      } else {
-        router.replace({ name: 'console-event-edit', params: { eventId: event.id } });
+    }
+    if (status === 'open') {
+      goToPublishSuccess(event.id, 'edit');
+    } else {
+      router.replace({ name: 'console-event-edit', params: { eventId: event.id } });
       }
       return;
     } else {
@@ -1500,7 +1757,7 @@ const handleCoverUpload = async (ev: Event) => {
   if (!input.files || !input.files.length) return;
   const existing = coverDisplayItems.value.length;
   if (existing >= MAX_COVERS) {
-    coverError.value = '最多可上传 9 张图片';
+    showCoverError('最多可上传 9 张图片');
     input.value = '';
     return;
   }
@@ -1508,7 +1765,7 @@ const handleCoverUpload = async (ev: Event) => {
   const valid: File[] = [];
   for (const file of files) {
     if (!file.type?.startsWith('image/')) {
-      coverError.value = '仅支持上传 jpg/png 等图片文件';
+      showCoverError('仅支持上传 jpg/png 等图片文件');
       continue;
     }
     let candidate = file;
@@ -1516,13 +1773,12 @@ const handleCoverUpload = async (ev: Event) => {
       try {
         candidate = await downscaleImageFile(file);
       } catch (err) {
-        coverError.value =
-          err instanceof Error ? err.message : '图片过大，请压缩后重新上传';
+        showCoverError(err instanceof Error ? err.message : '图片过大，请压缩后重新上传');
         continue;
       }
     }
     if (candidate.size > MAX_COVER_SIZE) {
-      coverError.value = '图片过大，请压缩后重新上传';
+      showCoverError('图片过大，请压缩后重新上传');
       continue;
     }
     valid.push(candidate);
@@ -1546,7 +1802,7 @@ const handleCoverUpload = async (ev: Event) => {
     await reloadGallery();
     input.value = '';
   } catch (err) {
-    coverError.value = err instanceof Error ? err.message : '画像アップロードに失敗しました';
+    showCoverError(parseCoverUploadError(err));
   } finally {
     uploadingCover.value = false;
   }
@@ -1562,14 +1818,14 @@ const handleDeleteCover = async (coverId: string) => {
   try {
     galleries.value = await deleteEventCover(eventId, coverId);
   } catch (err) {
-    coverError.value = err instanceof Error ? err.message : '封面删除失败，请重试';
+    showCoverError(err instanceof Error ? err.message : '封面删除失败，请重试');
   } finally {
     uploadingCover.value = false;
   }
 };
 
 const uploadPendingCovers = async (targetEventId: string) => {
-  if (!pendingCoverFiles.value.length) return;
+  if (!pendingCoverFiles.value.length) return true;
   uploadingCover.value = true;
   try {
     while (pendingCoverFiles.value.length) {
@@ -1581,8 +1837,11 @@ const uploadPendingCovers = async (targetEventId: string) => {
     }
     await reloadGallery();
     revokeLocalCoverPreviews();
+    return true;
   } catch (err) {
-    coverError.value = err instanceof Error ? err.message : '封面上传失败，请检查网络';
+    const message = parseCoverUploadError(err);
+    showCoverError(message, 'warning');
+    return false;
   } finally {
     uploadingCover.value = false;
   }
@@ -1639,6 +1898,10 @@ watch(
 onUnmounted(() => {
   revokeLocalCoverPreviews();
   teardownMobileMediaQuery();
+  if (saveStatusTimer) {
+    window.clearTimeout(saveStatusTimer);
+    saveStatusTimer = null;
+  }
 });
 
 onActivated(() => {
@@ -1836,6 +2099,34 @@ select {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.builder-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.builder-quick__label {
+  font-size: 12px;
+  color: #475569;
+}
+
+.builder-quick__chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-chip {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .builder-eyebrow {
@@ -2307,6 +2598,68 @@ select {
   align-items: flex-start;
 }
 
+.ios-row--rich-note {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.ios-helper-row {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ios-helper-title {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.ios-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ios-chip {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ios-rich-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.ios-rich-text__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.ios-rich-text__preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.ios-helper {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 .ios-textarea {
   flex: 1;
   border: none;
@@ -2521,6 +2874,20 @@ select {
   align-items: center;
   gap: 4px;
   box-shadow: 0 12px 30px rgba(0, 144, 217, 0.25);
+}
+
+.status {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.status.success {
+  color: #16a34a;
+}
+
+.status.error {
+  color: #dc2626;
 }
 
 .copy-overlay {
