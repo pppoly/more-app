@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { COACHING_PROMPT_CONFIG, PromptDefaultsProfile } from './prompt.config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -139,10 +140,32 @@ export interface AiUsageDetailResponse {
   }>;
 }
 
+export interface TranslateTextItem {
+  key: string;
+  text: string;
+  preserveFormat?: 'plain' | 'markdown' | 'html';
+}
+
+export interface TranslateTextDto {
+  sourceLang: string;
+  targetLangs: string[];
+  items: TranslateTextItem[];
+}
+
+export interface TranslateTextResult {
+  translations: Array<{
+    key: string;
+    source: string;
+    translated: Record<string, string>;
+  }>;
+}
+
 @Injectable()
 export class AiService {
   private readonly client: OpenAI | null;
   private readonly model: string;
+   // simple in-memory cache: key => { [targetLang]: translated }
+  private readonly translationCache = new Map<string, Record<string, string>>();
 
   constructor(private readonly prisma: PrismaService) {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -274,6 +297,206 @@ export class AiService {
         throw error;
       }
       throw new HttpException('Failed to generate assistant reply', HttpStatus.INTERNAL_SERVER_ERROR, {
+        cause: error,
+      });
+    }
+  }
+
+  async translateText(payload: TranslateTextDto): Promise<TranslateTextResult> {
+    if (!this.client) {
+      throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
+    }
+
+    const sourceLang = payload.sourceLang?.trim();
+    const targetLangs = Array.isArray(payload.targetLangs)
+      ? payload.targetLangs.map((lang) => String(lang).trim()).filter(Boolean)
+      : [];
+    const items = Array.isArray(payload.items)
+      ? payload.items
+          .filter((item) => Boolean(item) && typeof item.key === 'string' && typeof item.text === 'string')
+          .map((item) => ({
+            key: item.key,
+            text: item.text,
+            preserveFormat: item.preserveFormat ?? 'plain',
+          }))
+      : [];
+
+    if (!sourceLang) {
+      throw new HttpException('sourceLang is required', HttpStatus.BAD_REQUEST);
+    }
+    if (!targetLangs.length) {
+      throw new HttpException('targetLangs is required', HttpStatus.BAD_REQUEST);
+    }
+    if (!items.length) {
+      throw new HttpException('items is required', HttpStatus.BAD_REQUEST);
+    }
+    if (items.length > 20) {
+      throw new HttpException('Too many items in one request (max 20)', HttpStatus.BAD_REQUEST);
+    }
+
+    const jsonSchema = {
+      name: 'MoreAppTranslations',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          translations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                key: { type: 'string' },
+                source: { type: 'string' },
+                translated: {
+                  type: 'object',
+                  additionalProperties: { type: 'string' },
+                },
+              },
+              required: ['key', 'source', 'translated'],
+            },
+          },
+        },
+        required: ['translations'],
+      },
+    };
+
+    const systemPrompt =
+      'You are a professional translator for product UI and event content. ' +
+      'Translate only the text while keeping placeholders, HTML/Markdown structure, and variables unchanged. ' +
+      'Do not invent new information. Keep tone natural and concise for mobile UI. ' +
+      'If the text is too short or not translatable, return it as-is.';
+
+    const preserveFormats = Array.from(new Set(items.map((item) => item.preserveFormat ?? 'plain')));
+
+    const cachedTranslations: TranslateTextResult['translations'] = [];
+    const missingItems: TranslateTextDto['items'] = [];
+    for (const item of items) {
+      const translated: Record<string, string> = {};
+      for (const target of targetLangs) {
+        const cacheKey = this.buildTranslationCacheKey(sourceLang, target, item.text);
+        const cached = this.translationCache.get(cacheKey)?.[target];
+        if (cached) {
+          translated[target] = cached;
+        }
+      }
+      if (Object.keys(translated).length === targetLangs.length) {
+        cachedTranslations.push({ key: item.key, source: item.text, translated });
+      } else {
+        missingItems.push(item);
+      }
+    }
+
+    try {
+      if (!missingItems.length) {
+        return { translations: cachedTranslations };
+      }
+
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        temperature: 0.2,
+        response_format: { type: 'json_schema', json_schema: jsonSchema },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              source_language: sourceLang,
+              target_languages: targetLangs,
+              preserve_format: preserveFormats,
+              instructions:
+                'Keep placeholders such as {name}, {{count}}, <br>, markdown links intact. ' +
+                'Do not translate brand names, URLs, or variables. ' +
+                'Return a JSON array with translations for each target language.',
+              items: items.map((item) => ({
+                key: item.key,
+                text: item.text,
+                format: item.preserveFormat ?? 'plain',
+              })),
+            }),
+          },
+        ],
+      });
+
+      const raw = this.extractMessageContent(completion);
+      if (!raw) {
+        throw new Error('Empty response from AI');
+      }
+      const parsed = JSON.parse(raw) as TranslateTextResult;
+
+      // write-through cache
+      for (const item of parsed.translations ?? []) {
+        for (const target of Object.keys(item.translated ?? {})) {
+          const translatedText = item.translated?.[target];
+          if (!translatedText) continue;
+          const cacheKey = this.buildTranslationCacheKey(sourceLang, target, item.source);
+          const existing = this.translationCache.get(cacheKey) ?? {};
+          existing[target] = translatedText;
+          this.translationCache.set(cacheKey, existing);
+        }
+      }
+
+      // merge cached + new
+      const merged: TranslateTextResult['translations'] = [...cachedTranslations];
+      for (const item of parsed.translations ?? []) {
+        const cached = merged.find((m) => m.key === item.key);
+        if (cached) {
+          cached.translated = { ...cached.translated, ...(item.translated ?? {}) };
+        } else {
+          merged.push(item);
+        }
+      }
+
+      return { translations: merged };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to translate text', HttpStatus.INTERNAL_SERVER_ERROR, {
+        cause: error,
+      });
+    }
+  }
+
+  async completeWithPrompt(payload: {
+    prompt: { system: string };
+    messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+    model?: string;
+    temperature?: number;
+    promptId?: string;
+    userId?: string;
+    tenantId?: string;
+  }) {
+    if (!this.client) {
+      throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
+    }
+    const messages = this.sanitizeMessages([
+      { role: 'system' as const, content: payload.prompt.system },
+      ...payload.messages,
+    ]);
+    const startedAt = Date.now();
+    try {
+      const completion = await this.client.chat.completions.create({
+        model: payload.model || this.model,
+        temperature: payload.temperature ?? 0.3,
+        messages,
+      });
+      const content = this.extractMessageContent(completion);
+      await this.logCompletion({
+        promptId: payload.promptId,
+        model: payload.model || this.model,
+        durationMs: Date.now() - startedAt,
+        messages,
+        userId: payload.userId,
+        tenantId: payload.tenantId,
+        usage: completion.usage as any,
+      });
+      return { content, raw: completion };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to complete with prompt', HttpStatus.INTERNAL_SERVER_ERROR, {
         cause: error,
       });
     }
@@ -420,6 +643,53 @@ export class AiService {
       name: 'MoreAppEventContent',
       schema: this.getEventContentSchema(),
     };
+  }
+
+  private sanitizeMessages(messages: Array<{ role: string; content: string }>): ChatCompletionMessageParam[] {
+    return messages.map((m) => ({
+      role: m.role as ChatCompletionMessageParam['role'],
+      content: this.maskSensitive(m.content ?? ''),
+    })) as unknown as ChatCompletionMessageParam[];
+  }
+
+  private maskSensitive(text: string) {
+    if (!text) return text;
+    let masked = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]');
+    masked = masked.replace(/\b\d{3,4}[-\s]?\d{3,4}[-\s]?\d{3,4}\b/g, '[phone]');
+    return masked;
+  }
+
+  private async logCompletion(entry: {
+    promptId?: string;
+    model?: string;
+    durationMs?: number;
+    messages: Array<any>;
+    userId?: string;
+    tenantId?: string;
+    usage?: { completion_tokens?: number; prompt_tokens?: number; total_tokens?: number };
+  }) {
+    try {
+      const line = JSON.stringify({
+        at: new Date().toISOString(),
+        promptId: entry.promptId,
+        model: entry.model,
+        durationMs: entry.durationMs,
+        userId: entry.userId,
+        tenantId: entry.tenantId,
+        tokens: entry.usage,
+      });
+      const fs = await import('fs');
+      const path = await import('path');
+      const dir = path.join(process.cwd(), 'generated');
+      await fs.promises.mkdir(dir, { recursive: true });
+      await fs.promises.appendFile(path.join(dir, 'ai-calls.log'), line + '\n', 'utf8');
+    } catch {
+      // logging best-effort
+    }
+  }
+
+  private buildTranslationCacheKey(sourceLang: string, targetLang: string, text: string) {
+    return `${sourceLang.trim().toLowerCase()}|${targetLang.trim().toLowerCase()}|${text}`;
   }
 
   private buildAssistantReplySchema() {

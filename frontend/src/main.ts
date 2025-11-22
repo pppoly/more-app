@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
 import './assets/main.css';
+import { i18n } from './i18n';
 
 // Prevent pinch-zoom / double-tap zoom so mobile layouts stay fixed-scale.
 let lastTouchEnd = 0;
@@ -32,4 +33,5 @@ document.addEventListener(
 const app = createApp(App);
 
 app.use(router);
+app.use(i18n);
 app.mount('#app');

@@ -480,6 +480,28 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, devPageName: 'AI 使用概览' },
   },
   {
+    path: '/admin/ai/console',
+    name: 'admin-ai-console',
+    component: () => import('../views/admin/AdminAiConsole.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideTabbar: true,
+      devPageName: 'AI 控制台',
+    },
+  },
+  {
+    path: '/admin/ai/prompts',
+    name: 'admin-ai-prompts',
+    component: () => import('../views/admin/AdminAiPrompts.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideTabbar: true,
+      devPageName: 'AI Prompt 管理',
+    },
+  },
+  {
     path: '/admin/ai/:moduleId',
     name: 'admin-ai-detail',
     component: () => import('../views/admin/AdminAiModuleDetail.vue'),

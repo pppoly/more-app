@@ -6,6 +6,7 @@ import type { Express } from 'express';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
 const AVATAR_UPLOAD_ROOT = join(UPLOAD_ROOT, 'avatars');
+const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
 
 @Injectable()
 export class MeService {
@@ -95,6 +96,7 @@ export class MeService {
         id: true,
         name: true,
         language: true,
+        preferredLocale: true,
         prefecture: true,
         avatarUrl: true,
         isOrganizer: true,
@@ -103,7 +105,7 @@ export class MeService {
     });
   }
 
-  async updateProfile(userId: string, payload: { name?: string | undefined }) {
+  async updateProfile(userId: string, payload: { name?: string | undefined; preferredLocale?: string | undefined }) {
     const data: Record<string, any> = {};
     if (payload.name !== undefined) {
       const trimmed = payload.name.trim();
@@ -111,6 +113,14 @@ export class MeService {
         throw new BadRequestException('表示名を入力してください');
       }
       data.name = trimmed;
+    }
+    if (payload.preferredLocale !== undefined) {
+      const supported = this.getSupportedLocales();
+      const normalized = payload.preferredLocale.trim().toLowerCase();
+      if (!supported.includes(normalized)) {
+        throw new BadRequestException('サポートされていない言語です');
+      }
+      data.preferredLocale = normalized;
     }
     if (!Object.keys(data).length) {
       throw new BadRequestException('更新する項目が未指定です');
@@ -122,6 +132,7 @@ export class MeService {
         id: true,
         name: true,
         language: true,
+        preferredLocale: true,
         prefecture: true,
         avatarUrl: true,
         isOrganizer: true,
@@ -165,5 +176,16 @@ export class MeService {
     });
 
     return { registrationId, status: 'cancelled' };
+  }
+
+  private getSupportedLocales() {
+    const configured = process.env.SUPPORTED_LANGUAGES;
+    const list = configured
+      ? configured
+          .split(',')
+          .map((l) => l.trim().toLowerCase())
+          .filter(Boolean)
+      : DEFAULT_SUPPORTED_LANGS;
+    return Array.from(new Set(list));
   }
 }

@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.53.3",
     "@stripe/stripe-js": "^4.3.0",
     "@vueup/vue-quill": "^1.2.0",
     "@zxing/browser": "^0.1.5",
     "axios": "^1.13.2",
     "qrcode": "^1.5.4",
     "vue": "^3.4.21",
+    "vue-i18n": "^9.14.5",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {

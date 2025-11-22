@@ -505,17 +505,6 @@ onMounted(() => {
 });
 
 const reload = () => loadData();
-
-const goBack = () => {
-  if (communityId.value) {
-    router.push({
-      name: 'ConsoleMobileCommunityEvents',
-      params: { communityId: communityId.value },
-    });
-  } else {
-    router.back();
-  }
-};
 </script>
 
 <style scoped>

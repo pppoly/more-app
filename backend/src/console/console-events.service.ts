@@ -7,8 +7,16 @@ import type { Express } from 'express';
 import { PermissionsService } from '../auth/permissions.service';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
 import { PaymentsService } from '../payments/payments.service';
+import { AiService, TranslateTextDto } from '../ai/ai.service';
 
 const EVENT_UPLOAD_ROOT = join(UPLOAD_ROOT, 'events');
+
+interface LocalizedField {
+  original?: string;
+  lang?: string;
+  translations?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 @Injectable()
 export class ConsoleEventsService {
@@ -16,6 +24,7 @@ export class ConsoleEventsService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly paymentsService: PaymentsService,
+    private readonly aiService: AiService,
   ) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
@@ -53,7 +62,8 @@ export class ConsoleEventsService {
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
-    return this.prisma.event.create({
+    const targetLangs = this.getTranslationTargets(rest.originalLanguage);
+    const created = await this.prisma.event.create({
       data: {
         ...eventData,
         community: { connect: { id: communityId } },
@@ -68,6 +78,12 @@ export class ConsoleEventsService {
       },
       include: { ticketTypes: true },
     });
+    await this.translateEventIfNeeded(created.id, created.originalLanguage, targetLangs, {
+      title: created.title,
+      description: created.description,
+      descriptionHtml: created.descriptionHtml,
+    });
+    return this.prisma.event.findUnique({ where: { id: created.id }, include: { ticketTypes: true } });
   }
 
   async getEvent(userId: string, eventId: string) {
@@ -84,6 +100,7 @@ export class ConsoleEventsService {
     await this.permissions.assertEventManager(userId, eventId);
     const { ticketTypes = [], ...rest } = data;
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
+    const targetLangs = this.getTranslationTargets(rest.originalLanguage);
     const updated = await this.prisma.event.update({
       where: { id: eventId },
       data: eventData,
@@ -113,7 +130,13 @@ export class ConsoleEventsService {
       }
     }
 
-    return updated;
+    await this.translateEventIfNeeded(eventId, updated.originalLanguage, targetLangs, {
+      title: updated.title,
+      description: updated.description,
+      descriptionHtml: updated.descriptionHtml,
+    });
+
+    return this.prisma.event.findUnique({ where: { id: eventId }, include: { ticketTypes: true } });
   }
 
   async listRegistrationsDetailed(userId: string, eventId: string) {
@@ -636,10 +659,12 @@ export class ConsoleEventsService {
       }
     };
 
-    assign('title', payload.title);
-    assign('description', payload.description);
+    const originalLang = payload.originalLanguage ?? (isUpdate ? undefined : 'ja');
+
+    assign('title', this.ensureLocalizedField(payload.title, originalLang));
+    assign('description', this.ensureLocalizedField(payload.description, originalLang));
     assign('descriptionHtml', payload.descriptionHtml ?? null);
-    assign('originalLanguage', payload.originalLanguage ?? (isUpdate ? undefined : 'ja'));
+    assign('originalLanguage', originalLang);
     assign('category', payload.category ?? null);
     assign('startTime', payload.startTime);
     assign('endTime', payload.endTime);
@@ -688,6 +713,129 @@ export class ConsoleEventsService {
     }
     assign('coverType', payload.coverType ?? null);
     return data;
+  }
+
+  private ensureLocalizedField(value: any, lang?: string): LocalizedField | null {
+    if (value === undefined) return null;
+    if (value === null) return null;
+    const normalizedLang = typeof lang === 'string' ? lang : undefined;
+    if (typeof value === 'string') {
+      return { original: value, lang: normalizedLang, translations: {} };
+    }
+    if (typeof value === 'object') {
+      const existing = value as LocalizedField;
+      return {
+        ...existing,
+        lang: existing.lang ?? normalizedLang,
+        translations: existing.translations ?? {},
+      };
+    }
+    return { original: String(value), lang: normalizedLang, translations: {} };
+  }
+
+  private extractOriginalText(field: any): { text: string | null; lang: string | null } {
+    if (!field) return { text: null, lang: null };
+    if (typeof field === 'string') return { text: field, lang: null };
+    if (typeof field === 'object') {
+      const obj = field as LocalizedField;
+      const text = typeof obj.original === 'string' ? obj.original : null;
+      const lang = typeof obj.lang === 'string' ? obj.lang : null;
+      return { text, lang };
+    }
+    return { text: String(field), lang: null };
+  }
+
+  private async translateEventIfNeeded(
+    eventId: string,
+    originalLanguage: string | null | undefined,
+    targetLangs: string[],
+    fields?: { title?: any; description?: any; descriptionHtml?: string | null },
+  ) {
+    const sourceLang = (originalLanguage ?? '').toLowerCase() || 'ja';
+    const targets = targetLangs
+      .map((l) => l.toLowerCase())
+      .filter((l) => l && l !== sourceLang);
+    if (!targets.length || !fields) return;
+
+    const items: TranslateTextDto['items'] = [];
+    const titleInfo = this.extractOriginalText(fields.title);
+    if (titleInfo.text) {
+      items.push({ key: 'title', text: titleInfo.text, preserveFormat: 'plain' });
+    }
+    const descText =
+      typeof fields.descriptionHtml === 'string' && fields.descriptionHtml.trim().length
+        ? fields.descriptionHtml
+        : this.extractOriginalText(fields.description).text;
+    if (descText) {
+      items.push({ key: 'description', text: descText, preserveFormat: 'html' });
+    }
+
+    if (!items.length) return;
+
+    // 如果已有目标语言的翻译则跳过对应目标
+    const existingTitle = this.ensureLocalizedField(fields.title, sourceLang);
+    const existingDesc = this.ensureLocalizedField(fields.description, sourceLang);
+    const pendingTargets = targets.filter((lang) => {
+      const hasTitle = existingTitle?.translations?.[lang];
+      const hasDesc = existingDesc?.translations?.[lang];
+      return !(hasTitle && hasDesc);
+    });
+    if (!pendingTargets.length) return;
+
+    try {
+      const result = await this.aiService.translateText({
+        sourceLang,
+        targetLangs: pendingTargets,
+        items,
+      });
+      const updateData: Record<string, any> = {};
+
+      for (const translation of result.translations ?? []) {
+        for (const lang of pendingTargets) {
+          const translatedText = translation.translated?.[lang];
+          if (!translatedText) continue;
+          if (translation.key === 'title') {
+            const existing = existingTitle ?? { translations: {} };
+            updateData.title = {
+              ...existing,
+              translations: { ...(existing.translations ?? {}), [lang]: translatedText },
+            };
+          }
+          if (translation.key === 'description') {
+            const existing = existingDesc ?? { translations: {} };
+            updateData.description = {
+              ...existing,
+              translations: { ...(existing.translations ?? {}), [lang]: translatedText },
+            };
+          }
+        }
+      }
+
+      if (Object.keys(updateData).length) {
+        await this.prisma.event.update({
+          where: { id: eventId },
+          data: updateData,
+        });
+      }
+    } catch (err) {
+      // 翻译失败不阻塞主流程，记录日志便于排查
+      // eslint-disable-next-line no-console
+      console.warn('translateEventIfNeeded failed', { eventId, error: err });
+    }
+  }
+
+  private getTranslationTargets(originalLanguage?: string) {
+    const envTargets = process.env.TRANSLATION_TARGET_LANGUAGES;
+    const defaults = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
+    const list = envTargets
+      ? envTargets
+          .split(',')
+          .map((l) => l.trim().toLowerCase())
+          .filter(Boolean)
+      : defaults;
+    const unique = Array.from(new Set(list));
+    const source = (originalLanguage ?? '').toLowerCase();
+    return source ? unique.filter((l) => l !== source) : unique;
   }
 
   private async buildSummary(eventId: string) {

@@ -28,6 +28,11 @@ import type {
   MyEventItem,
   OrganizerApplicationStatus,
   PricingPlan,
+  PromptDefinition,
+  SupportedLanguagesResponse,
+  RenderPromptRequest,
+  CompletePromptRequest,
+  EvalPromptRequest,
   StripeCheckoutResponse,
   SubscriptionResponse,
   UserProfile,
@@ -404,5 +409,40 @@ export async function fetchAiUsageSummary(): Promise<AiUsageSummaryResponse> {
 
 export async function fetchAiUsageDetail(moduleId: string): Promise<AiUsageDetailResponse> {
   const { data } = await apiClient.get<AiUsageDetailResponse>(`/admin/ai/usage/${moduleId}`);
+  return data;
+}
+
+export async function fetchAiPrompts() {
+  const { data } = await apiClient.get<PromptDefinition[]>('/ai/prompts');
+  return data;
+}
+
+export async function saveAiPrompts(prompts: PromptDefinition[]) {
+  const { data } = await apiClient.post<PromptDefinition[]>('/ai/prompts', prompts);
+  return data;
+}
+
+export async function fetchSupportedLanguages() {
+  const { data } = await apiClient.get<SupportedLanguagesResponse>('/ai/languages');
+  return data;
+}
+
+export async function renderPrompt(payload: RenderPromptRequest) {
+  const { data } = await apiClient.post('/ai/render', payload);
+  return data;
+}
+
+export async function completePrompt(payload: CompletePromptRequest) {
+  const { data } = await apiClient.post('/ai/complete', payload);
+  return data;
+}
+
+export async function translateText(payload: { sourceLang: string; targetLangs: string[]; items: any[] }) {
+  const { data } = await apiClient.post('/ai/translate', payload);
+  return data;
+}
+
+export async function evalPrompt(payload: EvalPromptRequest) {
+  const { data } = await apiClient.post('/ai/eval', payload);
   return data;
 }

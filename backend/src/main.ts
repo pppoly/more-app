@@ -15,7 +15,7 @@ async function bootstrap() {
   const globalPrefix = 'api/v1';
   app.setGlobalPrefix(globalPrefix);
   app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
-  const allowedOrigins = (process.env.FRONTEND_ORIGINS ?? 'http://localhost:5173')
+  const allowedOrigins = (process.env.FRONTEND_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);

@@ -9,9 +9,10 @@ import { PaymentsModule } from '../payments/payments.module';
 import { NotificationModule } from '../notifications/notification.module';
 import { ConsoleEventAssistantController } from './console-event-assistant.controller';
 import { ConsoleEventAssistantService } from './console-event-assistant.service';
+import { AiModule } from '../ai/ai.module';
 
 @Module({
-  imports: [StripeModule, PaymentsModule, NotificationModule],
+  imports: [StripeModule, PaymentsModule, NotificationModule, AiModule],
   controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController],
   providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService],
 })

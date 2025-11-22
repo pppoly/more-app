@@ -1,0 +1,12 @@
+[
+  {
+    "id": "translation-event-basic",
+    "promptId": "translation-event",
+    "params": {
+      "source_lang": "en",
+      "target_lang": "ja",
+      "content": "Hello"
+    },
+    "expectContains": "Hello"
+  }
+]

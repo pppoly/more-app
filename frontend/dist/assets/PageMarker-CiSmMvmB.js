@@ -1,1 +1,0 @@
-import{d as a,e as s,t,f as r,_ as o}from"./index-D9GuT0xz.js";const c={class:"page-marker"},n=a({__name:"PageMarker",props:{label:{}},setup(e){return(_,p)=>(r(),s("div",c,t(e.label),1))}}),i=o(n,[["__scopeId","data-v-20f49418"]]);export{i as P};

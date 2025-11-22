@@ -7,6 +7,9 @@
         这里可以看到所有 AI 助手的运行概况、关键指标，并进入各模块的详细使用记录。
       </p>
       <p class="hero-meta">上次拉取：{{ formatDate(summary?.generatedAt) }}</p>
+      <div class="hero-actions">
+        <button type="button" class="outline-button" @click="goPrompts">Prompt 管理</button>
+      </div>
     </section>
 
     <section v-if="error" class="error-card">
@@ -94,6 +97,10 @@ const goDetail = (moduleId: string) => {
   router.push({ name: 'admin-ai-detail', params: { moduleId } });
 };
 
+const goPrompts = () => {
+  router.push({ name: 'admin-ai-prompts' });
+};
+
 const loadSummary = async () => {
   loading.value = true;
   error.value = null;
@@ -152,6 +159,12 @@ onMounted(() => {
   margin: 0;
   font-size: 0.9rem;
   opacity: 0.8;
+}
+
+.hero-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
 }
 
 .error-card {

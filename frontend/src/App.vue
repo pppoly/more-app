@@ -35,6 +35,18 @@
           </nav>
         </div>
         <div class="auth-panel">
+          <div class="locale-switcher">
+            <label for="locale-select">Lang</label>
+            <select
+              id="locale-select"
+              :value="currentLocale"
+              @change="(e) => setLocale((e.target as HTMLSelectElement).value)"
+            >
+              <option v-for="loc in supportedLocales" :key="loc" :value="loc">
+                {{ loc }}
+              </option>
+            </select>
+          </div>
           <span v-if="initializing">Checking session...</span>
           <template v-else>
             <div v-if="user" class="logged-in">
@@ -69,6 +81,7 @@ import MobileShell from './layouts/MobileShell.vue';
 import { useAuth } from './composables/useAuth';
 import AppToast from './components/common/AppToast.vue';
 import AppConfirm from './components/common/AppConfirm.vue';
+import { useLocale } from './composables/useLocale';
 
 const { user, initializing, logout } = useAuth();
 const isMobile = ref(false);
@@ -77,6 +90,7 @@ const mediaQuery =
 const router = useRouter();
 const currentRoute = useRoute();
 const showDevPageName = computed(() => import.meta.env.DEV);
+const { currentLocale, supportedLocales, setLocale } = useLocale();
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;
@@ -185,6 +199,21 @@ nav a {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.locale-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.locale-switcher select {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 .logged-in {

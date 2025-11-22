@@ -565,3 +565,55 @@ export interface AiUsageDetailResponse {
   };
   recentSessions: AiAssistantSessionSummary[];
 }
+
+export interface PromptDefinition {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  system: string;
+  instructions?: string;
+  params?: string[];
+  tags?: string[];
+  meta?: Record<string, any>;
+  status?: string;
+  approvedById?: string | null;
+  approvedAt?: string | null;
+}
+
+export interface SupportedLanguagesResponse {
+  default: string;
+  supported: string[];
+}
+
+export interface RenderPromptRequest {
+  promptId: string;
+  params?: Record<string, string>;
+  messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  model?: string;
+}
+
+export interface CompletePromptRequest extends RenderPromptRequest {
+  temperature?: number;
+}
+
+export interface EvalPromptRequest {
+  promptId?: string;
+  cases?: Array<{ params?: Record<string, string>; expectContains?: string }>;
+}
+
+export interface RenderPromptRequest {
+  promptId: string;
+  params?: Record<string, string>;
+  messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  model?: string;
+}
+
+export interface CompletePromptRequest extends RenderPromptRequest {
+  temperature?: number;
+}
+
+export interface EvalPromptRequest {
+  promptId?: string;
+  cases?: Array<{ params?: Record<string, string>; expectContains?: string }>;
+}

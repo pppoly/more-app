@@ -8,6 +8,7 @@ import { getLineConfig } from './line.config';
 interface DevLoginPayload {
   name: string;
   language?: string;
+  preferredLocale?: string;
 }
 
 interface EmailCodeEntry {
@@ -44,6 +45,7 @@ export class AuthService {
         data: {
           name,
           language: payload.language || 'ja',
+          preferredLocale: payload.preferredLocale || payload.language || 'ja',
           prefecture: 'Tokyo',
           isAdmin: isAdminName,
           isOrganizer: true,
@@ -78,12 +80,13 @@ export class AuthService {
       select: {
         id: true,
         name: true,
-        language: true,
-        prefecture: true,
-        avatarUrl: true,
-        isOrganizer: true,
-        isAdmin: true,
-      },
+      language: true,
+        preferredLocale: true,
+      prefecture: true,
+      avatarUrl: true,
+      isOrganizer: true,
+      isAdmin: true,
+    },
     });
   }
 
@@ -127,6 +130,7 @@ export class AuthService {
           email: normalized,
           name: normalized.split('@')[0],
           language: 'ja',
+          preferredLocale: 'ja',
         },
       });
     }
@@ -189,6 +193,7 @@ export class AuthService {
           name: profile.displayName || 'LINE User',
           avatarUrl: profile.pictureUrl,
           language: 'ja',
+          preferredLocale: 'ja',
         },
       });
     }

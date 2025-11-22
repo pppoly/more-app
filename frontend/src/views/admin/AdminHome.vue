@@ -1,103 +1,130 @@
 <template>
   <main class="admin-home">
-    <section class="hero">
-      <p class="hero-chip">SOCIALMORE · 管理端</p>
-      <h1>AI 宪法驾驶舱</h1>
-      <p class="hero-desc">
-        这里是老板与核心员工的总控面板：随时掌握宪法版本、运行中的 AI 模块，并进入需要验证的功能。
-      </p>
-      <div class="hero-tags">
-        <div class="hero-tag">
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">SOCIALMORE · 管理台</p>
+        <h1>控制中心</h1>
+        <p class="subhead">快捷进入 AI 与资源管理，查看运行状态与测试工具。</p>
+      </div>
+      <div class="head-meta">
+        <div class="meta-item">
           <p>宪法版本</p>
           <strong>{{ constitutionMeta.version }}</strong>
         </div>
-        <div class="hero-tag">
-          <p>发布年份</p>
-          <strong>{{ constitutionMeta.releaseDate }}</strong>
-        </div>
-        <div class="hero-tag">
-          <p>制定者</p>
-          <strong>{{ constitutionMeta.author }}</strong>
+        <div class="meta-item">
+          <p>最后更新</p>
+          <strong>{{ constitutionMeta.lastUpdated }}</strong>
         </div>
       </div>
-    </section>
+    </header>
 
-    <section class="quick-actions">
-      <button
-        v-for="action in quickActions"
-        :key="action.id"
-        type="button"
-        class="quick-card"
-        @click="handleQuickAction(action.id)"
+    <section class="grid">
+      <article
+        v-for="item in navCards"
+        :key="item.id"
+        class="card tile"
+        @click="handleNav(item)"
+        role="button"
+        tabindex="0"
       >
-        <span :class="['quick-icon', action.icon]"></span>
-        <div>
-          <p class="quick-title">{{ action.title }}</p>
-          <p class="quick-desc">{{ action.description }}</p>
+        <div class="tile-head">
+          <div>
+            <p class="tile-eyebrow">{{ item.category }}</p>
+            <h2>{{ item.title }}</h2>
+            <p class="tile-desc">{{ item.description }}</p>
+          </div>
+          <span class="tile-icon" :class="item.icon"></span>
         </div>
-        <span class="quick-arrow i-lucide-chevron-right"></span>
-      </button>
-    </section>
-
-    <section class="card constitution-card">
-      <header>
-        <div>
-          <p class="section-eyebrow">SOCIALMORE AI 宪法</p>
-          <h2>核心规则摘要</h2>
-        </div>
-        <p class="section-time">最后更新 {{ constitutionMeta.lastUpdated }}</p>
-      </header>
-      <p class="card-summary">
-        {{ constitutionSummary }}
-      </p>
-      <button class="link-button" type="button" @click="openConstitutionSheet">
-        查看全文
-        <span class="i-lucide-arrow-up-right"></span>
-      </button>
-    </section>
-
-    <section class="card module-card">
-      <header>
-        <div>
-          <p class="section-eyebrow">AI 模块</p>
-          <h2>运行状态</h2>
-        </div>
-        <p class="section-tip">验证：确认 Coach/Editor 标签 + Speak → Guide → Write → Confirm 四步</p>
-      </header>
-      <article v-for="module in aiModules" :key="module.id" class="module-row">
-        <div class="module-text">
-          <p class="module-name">{{ module.name }}</p>
-          <p class="module-desc">{{ module.description }}</p>
-          <p class="module-mode">{{ module.modes }}</p>
-        </div>
-        <div class="module-meta">
-          <span :class="['status-pill', module.enabled ? 'is-enabled' : 'is-disabled']">
-            {{ module.enabled ? '运行中' : '建设中' }}
+        <footer class="tile-footer">
+          <span class="pill" :class="item.status === 'live' ? 'pill-live' : 'pill-draft'">
+            {{ item.statusLabel }}
           </span>
-          <button
-            class="module-action"
-            type="button"
-            :disabled="!module.route"
-            @click="openModule(module)"
-          >
-            {{ module.route ? module.actionLabel : '敬请期待' }}
-          </button>
-        </div>
+          <span class="i-lucide-chevron-right"></span>
+        </footer>
       </article>
     </section>
 
-    <section class="card staff-card">
+    <section class="card list-card">
       <header>
         <div>
-          <p class="section-eyebrow">组织与权限</p>
-          <h2>员工 · 合作伙伴</h2>
+          <p class="section-eyebrow">AI 工具</p>
+          <h2>最近使用</h2>
         </div>
-        <p class="section-tip">所有员工入口统一从此进入，避免桌面式导航。</p>
+        <button type="button" class="ghost" @click="goToAiConsole">打开控制台</button>
       </header>
-      <button type="button" class="primary-button" @click="goToStaff">
-        进入员工管理
-        <span class="i-lucide-users"></span>
-      </button>
+      <ul class="link-list">
+        <li>
+          <div>
+            <p class="link-title">Prompt 管理</p>
+            <p class="link-desc">查看/编辑/发布 Prompt</p>
+          </div>
+          <button type="button" class="link-button" @click="goToPrompts">
+            进入
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+        <li>
+          <div>
+            <p class="link-title">AI 控制台</p>
+            <p class="link-desc">渲染/调用/翻译/评测</p>
+          </div>
+          <button type="button" class="link-button" @click="goToAiConsole">
+            进入
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+        <li>
+          <div>
+            <p class="link-title">使用概览</p>
+            <p class="link-desc">各模块使用数据</p>
+          </div>
+          <button type="button" class="link-button" @click="goToUsage">
+            查看
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <section class="card list-card">
+      <header>
+        <div>
+          <p class="section-eyebrow">资源与权限</p>
+          <h2>管理入口</h2>
+        </div>
+      </header>
+      <ul class="link-list">
+        <li>
+          <div>
+            <p class="link-title">资源配置</p>
+            <p class="link-desc">Logo/图标/占位图维护</p>
+          </div>
+          <button type="button" class="link-button" @click="goToAssets">
+            进入
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+        <li>
+          <div>
+            <p class="link-title">员工与权限</p>
+            <p class="link-desc">内部成员入口</p>
+          </div>
+          <button type="button" class="link-button" @click="goToStaff">
+            进入
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+        <li>
+          <div>
+            <p class="link-title">AI 宪法</p>
+            <p class="link-desc">{{ constitutionSummary }}</p>
+          </div>
+          <button type="button" class="link-button" @click="openConstitutionSheet">
+            查看
+            <span class="i-lucide-arrow-up-right"></span>
+          </button>
+        </li>
+      </ul>
     </section>
 
     <div v-if="showConstitutionSheet" class="sheet" @click.self="closeConstitutionSheet">
@@ -143,103 +170,84 @@ const constitutionSummary = computed(() => {
   return lines.slice(0, 5).join(' · ');
 });
 
-const quickActions = [
+const navCards = [
   {
-    id: 'console',
-    title: '活动助手',
-    description: '直接进入 AI 对话创建流程',
-    icon: 'i-lucide-bot',
-  },
-  {
-    id: 'staff',
-    title: '员工与权限',
-    description: '管理内部成员与入口',
-    icon: 'i-lucide-users',
-  },
-  {
-    id: 'usage',
-    title: 'AI 使用概览',
-    description: '查看各模块的实时使用数据',
+    id: 'ai-console',
+    title: 'AI 控制台',
+    description: '渲染/调用/翻译/评测一体化工具',
     icon: 'i-lucide-activity',
+    route: { name: 'admin-ai-console' },
+    status: 'live',
+    statusLabel: 'LIVE',
+    category: 'AI',
+  },
+  {
+    id: 'ai-prompts',
+    title: 'Prompt 管理',
+    description: '编辑/发布 Prompt，查看状态',
+    icon: 'i-lucide-wand',
+    route: { name: 'admin-ai-prompts' },
+    status: 'live',
+    statusLabel: 'LIVE',
+    category: 'AI',
+  },
+  {
+    id: 'ai-usage',
+    title: 'AI 使用概览',
+    description: '模块运行数据与日志',
+    icon: 'i-lucide-activity-square',
+    route: { name: 'admin-ai-overview' },
+    status: 'live',
+    statusLabel: 'LIVE',
+    category: '监控',
   },
   {
     id: 'assets',
     title: '资源配置',
-    description: '维护 Logo / 功能图标 / 占位图',
+    description: 'Logo/图标/占位图维护',
     icon: 'i-lucide-images',
+    route: { name: 'admin-resource-manager' },
+    status: 'live',
+    statusLabel: 'LIVE',
+    category: '资源',
+  },
+  {
+    id: 'staff',
+    title: '员工与权限',
+    description: '内部成员与入口',
+    icon: 'i-lucide-users',
+    route: { name: 'MobileStaff' },
+    status: 'live',
+    statusLabel: 'LIVE',
+    category: '权限',
   },
   {
     id: 'constitution',
-    title: '宪法详情',
-    description: '随时复盘最高规则',
+    title: 'AI 宪法',
+    description: '查看规则与版本信息',
     icon: 'i-lucide-shield-check',
+    route: null,
+    status: 'draft',
+    statusLabel: 'INFO',
+    category: '规则',
   },
 ];
 
-const aiModules = [
-  {
-    id: 'event',
-    name: '活动助手（Console）',
-    description: '社群活动从点火到落地的全流程对话式助手',
-    modes: 'Coach → Editor → Writer',
-    enabled: true,
-    actionLabel: '打开模块',
-    route: { path: '/console' },
-  },
-  {
-    id: 'community',
-    name: '社区策略助手',
-    description: '围绕社群定位、增长与多语言内容的智能支持',
-    modes: 'Coach / Editor（筹备中）',
-    enabled: false,
-    actionLabel: '敬请期待',
-    route: null,
-  },
-  {
-    id: 'translator',
-    name: '翻译 · 多语言指南',
-    description: '日本生活语境与官方文本的实时翻译与校对',
-    modes: 'Editor 模式（筹备中）',
-    enabled: false,
-    actionLabel: '敬请期待',
-    route: null,
-  },
-];
-
-const goToConsole = () => {
-  router.push({ path: '/console' });
-};
-
-const goToStaff = () => {
-  router.push({ name: 'MobileStaff' });
-};
-
-const openModule = (module: (typeof aiModules)[number]) => {
-  if (!module.route) return;
-  router.push(module.route);
-};
-
-const handleQuickAction = (actionId: string) => {
-  if (actionId === 'console') {
-    goToConsole();
-    return;
-  }
-  if (actionId === 'staff') {
-    goToStaff();
-    return;
-  }
-  if (actionId === 'usage') {
-    router.push({ name: 'admin-ai-overview' });
-    return;
-  }
-  if (actionId === 'assets') {
-    router.push({ name: 'admin-resource-manager' });
-    return;
-  }
-  if (actionId === 'constitution') {
+const handleNav = (item: (typeof navCards)[number]) => {
+  if (item.id === 'constitution') {
     openConstitutionSheet();
+    return;
+  }
+  if (item.route) {
+    router.push(item.route);
   }
 };
+
+const goToPrompts = () => router.push({ name: 'admin-ai-prompts' });
+const goToAiConsole = () => router.push({ name: 'admin-ai-console' });
+const goToUsage = () => router.push({ name: 'admin-ai-overview' });
+const goToAssets = () => router.push({ name: 'admin-resource-manager' });
+const goToStaff = () => router.push({ name: 'MobileStaff' });
 
 const openConstitutionSheet = () => {
   showConstitutionSheet.value = true;
@@ -254,108 +262,66 @@ const closeConstitutionSheet = () => {
 .admin-home {
   min-height: 100vh;
   padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(80px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 40%, #ffffff 100%);
+  background: #f7f9fc;
   display: flex;
   flex-direction: column;
   gap: 16px;
   color: #0f172a;
 }
 
-.hero {
-  border-radius: 28px;
-  padding: 24px;
-  background: linear-gradient(135deg, #002b5b, #01497c, #00a6fb);
+.page-head {
+  padding: 16px;
+  background: #0f172a;
   color: #fff;
-  box-shadow: 0 25px 60px rgba(1, 46, 91, 0.3);
-}
-
-.hero-chip {
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  opacity: 0.8;
-}
-
-.hero h1 {
-  margin: 0.45rem 0 0.4rem;
-  font-size: 2rem;
-}
-
-.hero-desc {
-  margin: 0 0 1rem;
-  font-size: 1rem;
-  opacity: 0.95;
-}
-
-.hero-tags {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.hero-tag {
-  padding: 0.75rem;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.14);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.hero-tag p {
-  margin: 0;
+.eyebrow {
   font-size: 0.8rem;
+  letter-spacing: 0.15em;
   opacity: 0.85;
 }
 
-.hero-tag strong {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 1.2rem;
+.page-head h1 {
+  margin: 6px 0;
+  font-size: 1.5rem;
 }
 
-.quick-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+.subhead {
+  margin: 4px 0 0;
+  opacity: 0.9;
 }
 
-.quick-card {
-  border: none;
-  border-radius: 12px;
-  padding: 16px;
-  background: #fff;
-  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.08);
+.head-meta {
   display: flex;
-  align-items: center;
   gap: 12px;
-  text-align: left;
 }
 
-.quick-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
-  background: rgba(14, 165, 233, 0.12);
-  color: #0ea5e9;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
+.meta-item {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px 12px;
 }
 
-.quick-title {
+.meta-item p {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
-.quick-desc {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #475569;
+.meta-item strong {
+  display: block;
+  margin-top: 4px;
 }
 
-.quick-arrow {
-  margin-left: auto;
-  color: #94a3b8;
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .card {
@@ -363,6 +329,78 @@ const closeConstitutionSheet = () => {
   padding: 20px;
   background: #fff;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
+.tile {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+}
+
+.tile-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tile-eyebrow {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  letter-spacing: 0.12em;
+}
+
+.tile h2 {
+  margin: 2px 0 4px;
+  font-size: 1.2rem;
+}
+
+.tile-desc {
+  margin: 0;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.tile-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #312e81;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.tile-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.pill-live {
+  background: #ecfeff;
+  color: #0ea5e9;
+}
+
+.pill-draft {
+  background: #f3f4f6;
+  color: #6b7280;
 }
 
 .card header {

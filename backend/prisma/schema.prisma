@@ -16,6 +16,7 @@ model User {
   name          String?
   avatarUrl     String?
   language      String?
+  preferredLocale String?           @default("ja")
   prefecture    String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
@@ -27,6 +28,10 @@ model User {
   payments      Payment[]
   organizerApplications OrganizerApplication[]
   aiEventDraftLogs AiEventDraftLog[]
+  promptAudits  PromptAuditLog[]
+  promptDefinitionsCreated PromptDefinition[] @relation("PromptCreatedBy")
+  promptDefinitionsUpdated PromptDefinition[] @relation("PromptUpdatedBy")
+  promptDefinitionsApproved PromptDefinition[] @relation("PromptApprovedBy")
 }
 
 model Community {
@@ -194,6 +199,39 @@ model PricingPlan {
   active                Boolean     @default(true)
   feePolicies           FeePolicy[]
   communities           Community[]
+}
+
+model PromptAuditLog {
+  id        String   @id @default(cuid())
+  promptId  String
+  version   String?
+  action    String
+  actorId   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id])
+}
+
+model PromptDefinition {
+  id            String   @id
+  name          String
+  description   String?
+  version       String?
+  system        String
+  instructions  String?
+  params        Json?
+  tags          Json?
+  meta          Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdById   String?
+  updatedById   String?
+  createdBy     User?    @relation("PromptCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?    @relation("PromptUpdatedBy", fields: [updatedById], references: [id])
+  status        String   @default("draft")
+  approvedById  String?
+  approvedAt    DateTime?
+  approvedBy    User?    @relation("PromptApprovedBy", fields: [approvedById], references: [id])
 }
 
 model FeePolicy {
