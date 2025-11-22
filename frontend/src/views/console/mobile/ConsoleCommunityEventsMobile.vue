@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P4" />
   <div class="events-page">
     <header class="hero-card">
       <div>
@@ -60,6 +61,7 @@ import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useAuth } from '../../../composables/useAuth';
+import PageMarker from '../../../components/PageMarker.vue';
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();

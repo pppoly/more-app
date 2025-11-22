@@ -1,5 +1,6 @@
 <template>
   <section class="note-editor">
+    <PageMarker label="P5" />
     <header class="note-editor__nav">
       <button type="button" class="nav-btn ghost" @click="handleCancel">取消</button>
       <p>活动详情</p>
@@ -15,21 +16,19 @@
 
     <section class="note-editor__blocks">
       <div v-for="(block, index) in blocks" :key="block.id" class="note-block">
-        <div class="note-block__actions" v-if="shouldShowAction(block, 'before', index)">
-          <button
-            v-if="block.type === 'text'"
-            type="button"
-            class="insert-btn ghost"
-            @click="triggerImagePicker(block.id, 'before')"
-          >
+        <div
+          class="note-block__actions"
+          v-if="block.type === 'text' && shouldShowAction(block, 'before', index)"
+        >
+          <button type="button" class="insert-btn ghost" @click="triggerImagePicker(block.id, 'before')">
             ＋ 在这里插入图片
           </button>
-          <button
-            v-else
-            type="button"
-            class="insert-btn ghost"
-            @click="insertTextBlock(block.id, 'before')"
-          >
+        </div>
+        <div
+          class="note-block__actions"
+          v-if="block.type === 'image'"
+        >
+          <button type="button" class="insert-btn ghost" @click="insertTextBlock(block.id, 'before')">
             ＋ 在这里添加文字
           </button>
         </div>
@@ -48,21 +47,19 @@
           <img :src="block.src" alt="note image" />
           <button type="button" class="note-photo__delete" @click="removeBlock(block.id)">×</button>
         </div>
-        <div class="note-block__actions" v-if="shouldShowAction(block, 'after', index)">
-          <button
-            v-if="block.type === 'text'"
-            type="button"
-            class="insert-btn ghost"
-            @click="triggerImagePicker(block.id, 'after')"
-          >
+        <div
+          class="note-block__actions"
+          v-if="block.type === 'text' && shouldShowAction(block, 'after', index)"
+        >
+          <button type="button" class="insert-btn ghost" @click="triggerImagePicker(block.id, 'after')">
             ＋ 在这里插入图片
           </button>
-          <button
-            v-else
-            type="button"
-            class="insert-btn ghost"
-            @click="insertTextBlock(block.id, 'after')"
-          >
+        </div>
+        <div
+          class="note-block__actions"
+          v-if="block.type === 'image'"
+        >
+          <button type="button" class="insert-btn ghost" @click="insertTextBlock(block.id, 'after')">
             ＋ 在这里添加文字
           </button>
         </div>
@@ -90,6 +87,7 @@ import {
   CONSOLE_EVENT_NOTE_CONTEXT_KEY,
   CONSOLE_EVENT_NOTE_RESULT_KEY,
 } from '../../../constants/console';
+import PageMarker from '../../../components/PageMarker.vue';
 
 type NoteBlock =
   | {
@@ -137,7 +135,6 @@ const pendingInsertTarget = ref<{ blockId: string | null; position: 'before' | '
   blockId: null,
   position: 'after',
 });
-const pendingFocusBlockId = ref<string | null>(null);
 
 const todayLabel = new Intl.DateTimeFormat('ja-JP', {
   month: 'long',
@@ -347,42 +344,25 @@ const insertImageBlock = (src: string) => {
   pendingInsertTarget.value = { blockId: null, position: 'after' };
 };
 
-const removeBlock = (blockId: string) => {
-  blocks.value = blocks.value.filter((block) => block.id !== blockId);
-  ensureTextBlockExists();
-};
-
-const focusTextBlock = (blockId: string) => {
-  const textarea = document.querySelector<HTMLTextAreaElement>(`textarea[data-block-id="${blockId}"]`);
-  if (textarea) {
-    textarea.focus();
-    const length = textarea.value.length;
-    textarea.setSelectionRange(length, length);
-  }
-};
-
 const insertTextBlock = (blockId: string | null, position: 'before' | 'after') => {
   const newBlock = createTextBlock();
   if (!blockId) {
     const insertIndex = position === 'before' ? 0 : blocks.value.length;
     blocks.value.splice(insertIndex, 0, newBlock);
-  } else {
-    const index = blocks.value.findIndex((block) => block.id === blockId);
-    if (index === -1) {
-      const insertIndex = position === 'before' ? 0 : blocks.value.length;
-      blocks.value.splice(insertIndex, 0, newBlock);
-    } else {
-      const offset = position === 'before' ? 0 : 1;
-      blocks.value.splice(index + offset, 0, newBlock);
-    }
+    return;
   }
-  pendingFocusBlockId.value = newBlock.id;
-  nextTick(() => {
-    if (pendingFocusBlockId.value) {
-      focusTextBlock(pendingFocusBlockId.value);
-      pendingFocusBlockId.value = null;
-    }
-  });
+  const index = blocks.value.findIndex((block) => block.id === blockId);
+  if (index === -1) {
+    blocks.value.splice(position === 'before' ? 0 : blocks.value.length, 0, newBlock);
+    return;
+  }
+  const insertIndex = position === 'before' ? index : index + 1;
+  blocks.value.splice(insertIndex, 0, newBlock);
+};
+
+const removeBlock = (blockId: string) => {
+  blocks.value = blocks.value.filter((block) => block.id !== blockId);
+  ensureTextBlockExists();
 };
 
 const shouldShowAction = (block: NoteBlock, position: 'before' | 'after', index: number) => {
@@ -467,6 +447,7 @@ const handleSave = () => {
   saving.value = false;
   navigateBackToForm();
 };
+
 </script>
 
 <style scoped>
@@ -500,7 +481,7 @@ const handleSave = () => {
 }
 
 .nav-btn.primary {
-  background: linear-gradient(135deg, #f7b733, #fc4a1a);
+  background: #0f3057;
   color: #fff;
 }
 

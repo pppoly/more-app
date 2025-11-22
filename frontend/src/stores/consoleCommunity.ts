@@ -10,6 +10,7 @@ interface ConsoleCommunityState {
   loading: boolean;
   loaded: boolean;
   error: string | null;
+  activeCommunityVersion: number;
 }
 
 const state = reactive<ConsoleCommunityState>({
@@ -18,6 +19,7 @@ const state = reactive<ConsoleCommunityState>({
   loading: false,
   loaded: false,
   error: null,
+  activeCommunityVersion: 0,
 });
 
 let loadPromise: Promise<void> | null = null;
@@ -75,12 +77,24 @@ async function loadCommunities(force = false) {
   return loadPromise;
 }
 
+function bumpActiveCommunityVersion() {
+  state.activeCommunityVersion += 1;
+}
+
 function setActiveCommunity(id: string | null) {
   if (id && !state.communities.some((community) => community.id === id)) {
     return;
   }
+  const changed = state.activeCommunityId !== id;
   state.activeCommunityId = id;
   persistActive(id);
+  if (changed) {
+    bumpActiveCommunityVersion();
+  }
+}
+
+function refreshActiveCommunity() {
+  bumpActiveCommunityVersion();
 }
 
 function ensureActiveCommunity() {
@@ -108,6 +122,7 @@ export function useConsoleCommunityStore() {
       get: () => state.activeCommunityId,
       set: (val) => setActiveCommunity(val),
     }),
+    activeCommunityVersion: computed(() => state.activeCommunityVersion),
     loading: computed(() => state.loading),
     loaded: computed(() => state.loaded),
     error: computed(() => state.error),
@@ -116,5 +131,6 @@ export function useConsoleCommunityStore() {
     ensureActiveCommunity,
     hasCommunity,
     getActiveCommunity,
+    refreshActiveCommunity,
   };
 }

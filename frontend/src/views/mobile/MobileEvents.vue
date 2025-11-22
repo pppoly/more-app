@@ -59,6 +59,7 @@ import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { useResourceConfig } from '../../composables/useResourceConfig';
 
 const router = useRouter();
 const events = ref<EventSummary[]>([]);
@@ -99,15 +100,20 @@ const categoryLabel = (category?: string | null) => {
   return labelMap[key] ?? 'イベント';
 };
 
-const fallbackCoverImages = [
-  'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1448932223592-d1fc686e76ea?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1515168833906-d2a3b82b302a?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=1200&q=80',
-];
+const resourceConfig = useResourceConfig();
+const { slotMap } = resourceConfig;
+
+const fallbackCoverImages = computed(() => {
+  const list = resourceConfig.getListValue('mobile.eventList.cardFallbacks');
+  if (list.length) return list;
+  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+});
+
+const defaultAvatarImage = computed(
+  () =>
+    resourceConfig.getStringValue('global.defaultAvatar') ||
+    (slotMap['global.defaultAvatar'].defaultValue as string),
+);
 
 const hashToIndex = (value: string, length: number) => {
   let hash = 0;
@@ -119,6 +125,9 @@ const hashToIndex = (value: string, length: number) => {
 };
 
 const coverStyleForEvent = (event: EventSummary) => {
+  const fallbacks = fallbackCoverImages.value.length
+    ? fallbackCoverImages.value
+    : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
   if (event.coverImageUrl) {
     return {
       backgroundImage: `url(${resolveAssetUrl(event.coverImageUrl)})`,
@@ -126,9 +135,9 @@ const coverStyleForEvent = (event: EventSummary) => {
       backgroundSize: 'cover',
     };
   }
-  const index = hashToIndex(event.id || event.title?.toString() || 'fallback', fallbackCoverImages.length);
+  const index = hashToIndex(event.id || event.title?.toString() || 'fallback', fallbacks.length || 1);
   return {
-    backgroundImage: `url(${fallbackCoverImages[index]})`,
+    backgroundImage: `url(${fallbacks[index]})`,
     backgroundPosition: 'center',
     backgroundSize: 'cover',
   };
@@ -202,9 +211,6 @@ const formatDateTime = (value: string) => {
   });
 };
 
-const DEFAULT_AVATAR =
-  'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
-
 const getEventConfig = (event: EventSummary) => ((event as any).config ?? {}) as Record<string, any>;
 
 const getCurrentParticipants = (event: EventSummary) => {
@@ -239,15 +245,19 @@ const attendeeAvatars = (event: EventSummary) => {
   if (Array.isArray(config.attendeeAvatars) && config.attendeeAvatars.length) {
     avatars = config.attendeeAvatars as string[];
   } else if (Array.isArray(config.participants)) {
-    avatars = config.participants.map((participant: any) => participant?.avatarUrl || DEFAULT_AVATAR);
+    avatars = config.participants.map((participant: any) => participant?.avatarUrl || defaultAvatarImage.value);
   }
   if (!avatars.length && Array.isArray(config.attendeePreview)) {
-    avatars = config.attendeePreview.map((item: any) => item?.avatarUrl || DEFAULT_AVATAR);
+    avatars = config.attendeePreview.map((item: any) => item?.avatarUrl || defaultAvatarImage.value);
   }
   if (!avatars.length) {
-    avatars = [DEFAULT_AVATAR, DEFAULT_AVATAR, DEFAULT_AVATAR];
+    avatars = [
+      defaultAvatarImage.value,
+      defaultAvatarImage.value,
+      defaultAvatarImage.value,
+    ];
   }
-  return avatars.slice(0, 5).map((avatar) => resolveAssetUrl(avatar || DEFAULT_AVATAR));
+  return avatars.slice(0, 5).map((avatar) => resolveAssetUrl(avatar || defaultAvatarImage.value));
 };
 
 onMounted(loadEvents);

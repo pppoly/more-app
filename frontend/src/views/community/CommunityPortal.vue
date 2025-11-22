@@ -125,6 +125,7 @@ import { fetchCommunityBySlug } from '../../api/client';
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { useResourceConfig } from '../../composables/useResourceConfig';
 
 const route = useRoute();
 const slug = computed(() => route.params.slug as string);
@@ -132,6 +133,36 @@ const community = ref<CommunityPortal | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const eventsSection = ref<HTMLElement | null>(null);
+const resourceConfig = useResourceConfig();
+const { slotMap } = resourceConfig;
+
+const heroFallbackImage = computed(
+  () =>
+    resourceConfig.getStringValue('mobile.communityPortal.heroImage') ||
+    (slotMap['mobile.communityPortal.heroImage'].defaultValue as string),
+);
+const highlightFallbackImage = computed(
+  () =>
+    resourceConfig.getStringValue('mobile.communityPortal.highlightImage') ||
+    (slotMap['mobile.communityPortal.highlightImage'].defaultValue as string),
+);
+const heroOverlay = 'linear-gradient(135deg, rgba(15, 23, 42, 0.45), rgba(3, 7, 18, 0.9))';
+
+const composeHeroBackground = (source: string, fallback: string) => {
+  if (!source) {
+    return `${heroOverlay}, url(${fallback})`;
+  }
+  if (/gradient/i.test(source) && source.includes('url(')) {
+    return source;
+  }
+  if (source.includes('url(')) {
+    return `${heroOverlay}, ${source}`;
+  }
+  if (/gradient/i.test(source)) {
+    return source;
+  }
+  return `${heroOverlay}, url(${source})`;
+};
 
 const loadCommunity = async (value: string) => {
   if (!value) {
@@ -169,12 +200,8 @@ watch(community, () => {
 
 const heroStyle = computed(() => {
   const cover = community.value?.coverImageUrl ? resolveAssetUrl(community.value.coverImageUrl) : '';
-  const fallback =
-    'linear-gradient(135deg, rgba(15, 23, 42, 0.5), rgba(3, 7, 18, 0.85)), url("https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1400&q=80")';
   return {
-    backgroundImage: cover
-      ? `linear-gradient(135deg, rgba(15, 23, 42, 0.45), rgba(3, 7, 18, 0.9)), url(${cover})`
-      : fallback,
+    backgroundImage: composeHeroBackground(cover, heroFallbackImage.value),
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
@@ -226,11 +253,15 @@ const activeTab = ref<'upcoming' | 'past' | 'moments'>('upcoming');
 const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.status === 'open'));
 const pastEvents = computed(() => formattedEvents.value.filter((event) => event.status !== 'open'));
 const highlightMoments = computed(() =>
-  pastEvents.value.slice(0, 3).map((event, index) => ({
-    id: `${event.id}-${index}`,
-    title: event.title,
-    image: resolveAssetUrl(community.value?.coverImageUrl) || 'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=800&q=80',
-  })),
+  pastEvents.value.slice(0, 3).map((event, index) => {
+    const eventCover = event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl as string) : '';
+    const communityCover = community.value?.coverImageUrl ? resolveAssetUrl(community.value.coverImageUrl) : '';
+    return {
+      id: `${event.id}-${index}`,
+      title: event.title,
+      image: eventCover || communityCover || highlightFallbackImage.value,
+    };
+  }),
 );
 </script>
 

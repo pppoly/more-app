@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P3" />
   <div class="community-settings">
     <header class="hero-card">
       <button class="hero-back" type="button" @click="router.back()">
@@ -133,9 +134,12 @@ import {
 import type { ConsoleCommunityDetail } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
+import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();
+const communityStore = useConsoleCommunityStore();
 const communityId = route.params.communityId as string;
 
 const form = reactive({
@@ -267,12 +271,16 @@ const handleCoverUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file || uploadingCover.value) return;
+  if (!communityId) {
+    error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
+    return;
+  }
   uploadingCover.value = true;
   try {
     const dataUrl = await cropImage(file, 16 / 9, 1280);
     coverPreview.value = dataUrl;
     const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'cover');
+    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'cover');
     form.coverImageUrl = imageUrl;
     coverPreview.value = resolveAssetUrl(imageUrl);
   } catch (err) {
@@ -286,12 +294,16 @@ const handleLogoUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file || uploadingLogo.value) return;
+  if (!communityId) {
+    error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
+    return;
+  }
   uploadingLogo.value = true;
   try {
     const dataUrl = await cropImage(file, 1, 512);
     logoPreview.value = dataUrl;
     const uploadFile = await dataUrlToFile(dataUrl, `logo-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'logo');
+    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'logo');
     form.logoImageUrl = imageUrl;
     logoPreview.value = resolveAssetUrl(imageUrl);
   } catch (err) {
@@ -315,6 +327,8 @@ const handleSave = async () => {
   try {
     await updateConsoleCommunity(communityId, payload);
     await loadCommunity();
+    await communityStore.loadCommunities(true);
+    communityStore.refreshActiveCommunity();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '更新に失敗しました';
   } finally {

@@ -64,7 +64,12 @@ export class ConsoleEventsController {
   }
 
   @Post(':eventId/covers')
-  @UseInterceptors(FilesInterceptor('files', 10, { storage: memoryStorage() }))
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   uploadCovers(
     @Param('eventId') eventId: string,
     @UploadedFiles() files: Express.Multer.File[],

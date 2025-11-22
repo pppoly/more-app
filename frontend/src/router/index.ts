@@ -12,6 +12,8 @@ import EventRegistrations from '../views/console/EventRegistrations.vue';
 import OrganizerApply from '../views/account/OrganizerApply.vue';
 import ConsoleAccessLayout from '../views/console/ConsoleAccessLayout.vue';
 import AdminHome from '../views/admin/AdminHome.vue';
+import AdminResourceManager from '../views/admin/AdminResourceManager.vue';
+import AdminResourceGroup from '../views/admin/AdminResourceGroup.vue';
 import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
 import StripeReturn from '../views/console/StripeReturn.vue';
@@ -230,7 +232,7 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'ConsoleMobileHome',
         component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
-        meta: { devPageName: 'Console-首页' },
+        meta: { devPageName: 'Console-首页', hideShellHeader: true },
       },
       {
         path: 'communities/:communityId/events',
@@ -440,6 +442,30 @@ const routes: RouteRecordRaw[] = [
     name: 'admin-home',
     component: AdminHome,
     meta: { requiresAuth: true, requiresAdmin: true, devPageName: '管理员后台' },
+  },
+  {
+    path: '/admin/resources',
+    name: 'admin-resource-manager',
+    component: AdminResourceManager,
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideTabbar: true,
+      devPageName: '资源配置',
+    },
+  },
+  {
+    path: '/admin/resources/:groupId',
+    name: 'admin-resource-group',
+    component: AdminResourceGroup,
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideTabbar: true,
+      hideShellHeader: true,
+      devPageName: '资源配置详情',
+    },
+    props: true,
   },
   {
     path: '/admin/ai',

@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P1" />
   <div class="console-home">
     <section class="hero-card">
       <div class="hero-heading">
@@ -250,6 +251,7 @@ import {
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import PageMarker from '../../../components/PageMarker.vue';
 // Inline SVG data URIs to avoid network requests and首屏闪现
 const defaultCommunityAvatar =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIxNCIgeTE9IjE0IiB4Mj0iMTA2IiB5Mj0iMTA2IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMyNTYzRUIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjJDNTVFIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSI0IiB5PSI0IiB3aWR0aD0iMTEyIiBoZWlnaHQ9IjExMiIgcng9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgPHJlY3QgeD0iMTgiIHk9IjMyIiB3aWR0aD0iODQiIGhlaWdodD0iNTYiIHJ4PSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4xMiIvPgogIDxjaXJjbGUgY3g9IjQwIiBjeT0iNjAiIHI9IjEyIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8Y2lyY2xlIGN4PSI4MCIgY3k9IjYwIiByPSIxMiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC45Ii8+CiAgPHJlY3QgeD0iMzAiIHk9IjgwIiB3aWR0aD0iNjAiIGhlaWdodD0iNiIgcng9IjMiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNzUiLz4KICA8cGF0aCBkPSJNNjAgMjZjLTggMC0xNC41IDYuNS0xNC41IDE0LjVTNTIgNTUgNjAgNTVzMTQuNS02LjUgMTQuNS0xNC41UzY4IDI2IDYwIDI2WiIgZmlsbD0iIzBFQTVFOSIgZmlsbC1vcGFjaXR5PSIwLjI4Ii8+CiAgPHBhdGggZD0iTTYwIDMyYy01LjUgMC0xMCA0LjUtMTAgMTBzNC41IDEwIDEwIDEwIDEwLTQuNSAxMC0xMC00LjUtMTAtMTAtMTBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KPC9zdmc+Cg==';
@@ -297,6 +299,8 @@ const stats = computed(() => ({
   registrationCount: '--',
 }));
 
+const activeCommunityVersion = computed(() => communityStore.activeCommunityVersion.value);
+
 const displayEvents = computed(() =>
   events.value.slice(0, 5).map((event) => ({
     id: event.id,
@@ -319,12 +323,6 @@ const loadEvents = async () => {
     loading.value = false;
   }
 };
-
-watch(communityId, () => {
-  if (communityId.value) {
-    loadEvents();
-  }
-});
 
 const openCommunityPicker = async () => {
   showCommunityPicker.value = true;
@@ -462,6 +460,15 @@ watch(
     }
     if (!newId) {
       heroLogoUrl.value = null;
+    }
+  },
+);
+
+watch(
+  () => activeCommunityVersion.value,
+  () => {
+    if (communityId.value) {
+      loadActiveCommunityDetail();
     }
   },
 );

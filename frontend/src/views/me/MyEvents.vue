@@ -121,6 +121,7 @@ import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import QRCode from 'qrcode';
+import { useResourceConfig } from '../../composables/useResourceConfig';
 
 type FilterTabId = 'upcoming' | 'past' | 'all';
 
@@ -136,6 +137,13 @@ const qrTicket = ref<MyEventItem | null>(null);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
 const validatedRegistrationIds = ref<string[]>([]);
+const resourceConfigStore = useResourceConfig();
+const { slotMap } = resourceConfigStore;
+const fallbackCoverImages = computed(() => {
+  const list = resourceConfigStore.getListValue('mobile.eventList.cardFallbacks');
+  if (list.length) return list;
+  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+});
 
 const loadEvents = async () => {
   loading.value = true;
@@ -314,16 +322,6 @@ const cancelRegistration = async (item: MyEventItem) => {
   }
 };
 
-const fallbackCoverImages = [
-  'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1515168833906-d2a3b82b302a?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1448932223592-d1fc686e76ea?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1454165205744-3b78555e5572?auto=format&fit=crop&w=1200&q=80',
-];
-
 const hashToIndex = (value: string, length: number) => {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -335,8 +333,11 @@ const hashToIndex = (value: string, length: number) => {
 
 const coverUrlFor = (item: MyEventItem) => {
   if (item.event.coverImageUrl) return item.event.coverImageUrl;
-  const index = hashToIndex(item.event.id, fallbackCoverImages.length);
-  return fallbackCoverImages[index];
+  const fallbacks = fallbackCoverImages.value.length
+    ? fallbackCoverImages.value
+    : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
+  const index = hashToIndex(item.event.id, fallbacks.length || 1);
+  return fallbacks[index];
 };
 
 const ticketCoverStyle = (item: MyEventItem) => {

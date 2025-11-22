@@ -21,3 +21,40 @@
 - 获取 webhook secret（测试模式）：
   - 终端运行：`stripe listen --forward-to http://localhost:3000/api/v1/payments/stripe/webhook`
   - 监听启动后会打印：`Your webhook signing secret is whsec_...`，复制该值填入 `STRIPE_WEBHOOK_SECRET`
+
+## 文件上传存储
+
+- 环境变量 `UPLOAD_ROOT` 用于指定后端写入与暴露静态文件的根目录，默认值是项目根目录下的 `backend/uploads`。
+- 静态资源同时暴露在 `/uploads/**` 与 `/api/v1/uploads/**`，若前端与后端不在同一主机（或仅反向代理 `/api`），请优先访问 `/api/v1/uploads/**`。
+- 在云端或容器环境中请将 `UPLOAD_ROOT` 指向挂载的持久化卷（例如 `/data/more-app/uploads`），并确保相同卷被所有副本共享，避免图片/文件因实例重启或扩缩容而丢失。
+
+## 本地开发配置步骤
+
+1. 安装依赖：
+   ```bash
+   cd backend && npm install
+   cd ../frontend && npm install
+   ```
+2. 复制并填写环境变量：
+   - 后端：`cp backend/.env backend/.env.local` 或直接修改 `backend/.env`，确保 PostgreSQL `DATABASE_URL`、Stripe、OpenAI、LINE 等字段已经替换为有效值。
+   - 前端：编辑 `frontend/.env.local`，设置 `VITE_API_BASE_URL`（通常指向后端 `http://localhost:3000/api/v1`）以及 `VITE_GOOGLE_MAPS_API_KEY`（若要启用地图选点）。
+3. 初始化数据库（PostgreSQL 需先启动）：
+   ```bash
+   cd backend
+   npx prisma migrate deploy   # 或 npx prisma migrate dev
+   npm run prisma:seed         # 如需示例数据
+   ```
+4. 启动服务：
+   ```bash
+   # 终端 1：后端
+   cd backend
+   npm run start:dev
+
+   # 终端 2：前端
+   cd frontend
+   npm run dev
+   ```
+5. Stripe Webhook（如需测试支付结果）：
+   ```bash
+   stripe listen --forward-to http://localhost:3000/api/v1/payments/stripe/webhook
+   ```

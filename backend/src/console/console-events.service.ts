@@ -5,8 +5,9 @@ import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import type { Express } from 'express';
 import { PermissionsService } from '../auth/permissions.service';
+import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
-const EVENT_UPLOAD_ROOT = join(process.cwd(), 'uploads', 'events');
+const EVENT_UPLOAD_ROOT = join(UPLOAD_ROOT, 'events');
 
 @Injectable()
 export class ConsoleEventsService {

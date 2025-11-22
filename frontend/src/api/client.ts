@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, DEV_LOGIN_SECRET } from '../config';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import type {
   AiUsageDetailResponse,
@@ -96,12 +96,23 @@ export async function updateCommunityPortalConfig(communityId: string, payload: 
   return data;
 }
 
-export async function uploadCommunityAsset(file: File, type: 'cover' | 'logo'): Promise<{ imageUrl: string }> {
+export async function uploadCommunityAsset(
+  communityId: string,
+  file: File,
+  type: 'cover' | 'logo',
+): Promise<{ imageUrl: string }> {
+  if (!communityId) {
+    throw new Error('communityId is required to upload assets');
+  }
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await apiClient.post<{ imageUrl: string }>(`/console/communities/uploads?type=${type}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const { data } = await apiClient.post<{ imageUrl: string }>(
+    `/console/communities/uploads?communityId=${communityId}&type=${type}`,
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    },
+  );
   return data;
 }
 
@@ -111,7 +122,14 @@ export async function startCommunityStripeOnboarding(communityId: string): Promi
 }
 
 export async function devLogin(name: string, language?: string): Promise<DevLoginResponse> {
-  const { data } = await apiClient.post<DevLoginResponse>('/auth/dev-login', { name, language });
+  const payload: { name: string; language?: string; secret?: string } = { name };
+  if (language) {
+    payload.language = language;
+  }
+  if (DEV_LOGIN_SECRET) {
+    payload.secret = DEV_LOGIN_SECRET;
+  }
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/dev-login', payload);
   return data;
 }
 

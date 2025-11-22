@@ -7,11 +7,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
 import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
+import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
 @Injectable()
 export class ConsoleCommunitiesService {
   private readonly logger = new Logger(ConsoleCommunitiesService.name);
-  private readonly uploadRoot = join(process.cwd(), 'uploads');
+  private readonly uploadRoot = UPLOAD_ROOT;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -82,18 +83,29 @@ export class ConsoleCommunitiesService {
     },
   ) {
     await this.permissions.assertOrganizer(userId);
-    const community = await this.prisma.community.create({
-      data: {
-        ownerId: userId,
-        name: payload.name,
-        slug: payload.slug,
-        description: payload.description,
-        labels: payload.labels,
-        visibleLevel: payload.visibleLevel,
-        coverImageUrl: payload.coverImageUrl ?? null,
-        language: 'ja',
-      },
-    });
+    let community: Community;
+    try {
+      community = await this.prisma.community.create({
+        data: {
+          ownerId: userId,
+          name: payload.name,
+          slug: payload.slug,
+          description: payload.description,
+          labels: payload.labels,
+          visibleLevel: payload.visibleLevel,
+          coverImageUrl: payload.coverImageUrl ?? null,
+          language: 'ja',
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = Array.isArray(error.meta?.target) ? error.meta?.target : [error.meta?.target];
+        if (target?.includes('slug')) {
+          throw new BadRequestException('このスラッグは既に使用されています。別のスラッグを指定してください。');
+        }
+      }
+      throw error;
+    }
 
     await this.prisma.communityMember.create({
       data: {

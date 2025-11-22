@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P2" />
   <div class="community-form">
     <header class="hero-card">
       <button class="hero-back" type="button" @click="goBack">
@@ -119,9 +120,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { createConsoleCommunity, fetchConsoleCommunity, updateConsoleCommunity, uploadCommunityAsset } from '../../../api/client';
 import type { ConsoleCommunityDetail } from '../../../types/api';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
+import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();
+const communityStore = useConsoleCommunityStore();
 const communityId = computed(() => route.params.communityId as string | undefined);
 const isEdit = computed(() => Boolean(communityId.value));
 
@@ -140,6 +144,8 @@ const logoPreview = ref<string | null>(null);
 const coverPreview = ref<string | null>(null);
 const uploadingLogo = ref(false);
 const uploadingCover = ref(false);
+const pendingLogoFile = ref<File | null>(null);
+const pendingCoverFile = ref<File | null>(null);
 
 const submitting = ref(false);
 const error = ref<string | null>(null);
@@ -245,9 +251,15 @@ const handleLogoUpload = async (event: Event) => {
     const dataUrl = await cropImage(file, 1, 512);
     logoPreview.value = dataUrl;
     const uploadFile = await dataUrlToFile(dataUrl, `logo-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'logo');
-    form.logoImageUrl = imageUrl;
-    logoPreview.value = resolveAssetUrl(imageUrl);
+    if (isEdit.value && communityId.value) {
+      const { imageUrl } = await uploadCommunityAsset(communityId.value, uploadFile, 'logo');
+      form.logoImageUrl = imageUrl;
+      logoPreview.value = resolveAssetUrl(imageUrl);
+      pendingLogoFile.value = null;
+    } else {
+      pendingLogoFile.value = uploadFile;
+      form.logoImageUrl = '';
+    }
   } catch (err) {
     console.warn(err);
   } finally {
@@ -264,9 +276,15 @@ const handleCoverUpload = async (event: Event) => {
     const dataUrl = await cropImage(file, 16 / 9, 1280);
     coverPreview.value = dataUrl;
     const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(uploadFile, 'cover');
-    form.coverImageUrl = imageUrl;
-    coverPreview.value = resolveAssetUrl(imageUrl);
+    if (isEdit.value && communityId.value) {
+      const { imageUrl } = await uploadCommunityAsset(communityId.value, uploadFile, 'cover');
+      form.coverImageUrl = imageUrl;
+      coverPreview.value = resolveAssetUrl(imageUrl);
+      pendingCoverFile.value = null;
+    } else {
+      pendingCoverFile.value = uploadFile;
+      form.coverImageUrl = '';
+    }
   } catch (err) {
     console.warn(err);
   } finally {
@@ -277,22 +295,54 @@ const handleCoverUpload = async (event: Event) => {
 const handleSubmit = async () => {
   submitting.value = true;
   error.value = null;
-  const payload = {
+  const basePayload = {
     name: form.name,
     slug: form.slug,
     labels: labelChips.value,
     visibleLevel: form.visibleLevel,
-    coverImageUrl: form.coverImageUrl || null,
-    logoImageUrl: form.logoImageUrl || null,
+    coverImageUrl: isEdit.value ? form.coverImageUrl || null : null,
+    logoImageUrl: isEdit.value ? form.logoImageUrl || null : null,
     description: buildDescription(),
+  };
+  const uploadPendingAssets = async (targetId: string) => {
+    const updates: Record<string, any> = {};
+    if (pendingCoverFile.value) {
+      const { imageUrl } = await uploadCommunityAsset(targetId, pendingCoverFile.value, 'cover');
+      form.coverImageUrl = imageUrl;
+      coverPreview.value = resolveAssetUrl(imageUrl);
+      pendingCoverFile.value = null;
+      updates.coverImageUrl = imageUrl;
+    }
+    if (pendingLogoFile.value) {
+      const { imageUrl } = await uploadCommunityAsset(targetId, pendingLogoFile.value, 'logo');
+      form.logoImageUrl = imageUrl;
+      logoPreview.value = resolveAssetUrl(imageUrl);
+      pendingLogoFile.value = null;
+      updates.logoImageUrl = imageUrl;
+    }
+    if (Object.keys(updates).length) {
+      updates.description = buildDescription();
+      await updateConsoleCommunity(targetId, updates);
+    }
   };
   try {
     if (isEdit.value && communityId.value) {
-      await updateConsoleCommunity(communityId.value, payload);
+      await updateConsoleCommunity(communityId.value, basePayload);
+      await uploadPendingAssets(communityId.value);
+      await communityStore.loadCommunities(true);
+      communityStore.refreshActiveCommunity();
     } else {
-      await createConsoleCommunity(payload);
+      const created = await createConsoleCommunity({ ...basePayload, coverImageUrl: null, logoImageUrl: null });
+      const targetId = created?.id;
+      if (targetId) {
+        await uploadPendingAssets(targetId);
+        await communityStore.loadCommunities(true);
+        communityStore.setActiveCommunity(targetId);
+      } else {
+        await communityStore.loadCommunities(true);
+      }
     }
-    router.replace({ name: 'console-communities' });
+    router.replace({ name: 'ConsoleMobileHome' });
   } catch (err) {
     error.value = err instanceof Error ? err.message : '保存に失敗しました';
   } finally {

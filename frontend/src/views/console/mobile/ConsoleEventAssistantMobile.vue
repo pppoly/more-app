@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P6" />
   <div class="assistant-screen" :style="screenStyle">
     <section class="assistant-chat-surface">
       <div class="chat-tools">
@@ -347,6 +348,7 @@ import type {
 import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import PageMarker from '../../../components/PageMarker.vue';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';

@@ -652,6 +652,7 @@ const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_COVER_DIMENSION = 1600;
 const COVER_RULES_TEXT = '尺寸 750×X，最多上传 9 张，默认第一张为主图';
 const coverDisplayItems = computed(() =>
   eventId ? galleries.value : localCoverPreviews.value,
@@ -1021,6 +1022,45 @@ const triggerCoverPicker = () => {
     coverInputRef.value.click();
   }
 };
+
+const downscaleImageFile = (file: File) =>
+  new Promise<File>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = Math.max(img.width, img.height);
+        const ratio = maxSide > MAX_COVER_DIMENSION ? MAX_COVER_DIMENSION / maxSide : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('无法压缩图片'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('压缩失败'));
+              return;
+            }
+            const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
+              type: blob.type || 'image/jpeg',
+            });
+            resolve(compressed);
+          },
+          'image/jpeg',
+          0.85,
+        );
+      };
+      img.onerror = () => reject(new Error('无法读取图片'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('无法读取图片'));
+    reader.readAsDataURL(file);
+  });
 
 const loadCopyEvents = async () => {
   if (!eventCommunityId.value) return;
@@ -1471,11 +1511,21 @@ const handleCoverUpload = async (ev: Event) => {
       coverError.value = '仅支持上传 jpg/png 等图片文件';
       continue;
     }
+    let candidate = file;
     if (file.size > MAX_COVER_SIZE) {
+      try {
+        candidate = await downscaleImageFile(file);
+      } catch (err) {
+        coverError.value =
+          err instanceof Error ? err.message : '图片过大，请压缩后重新上传';
+        continue;
+      }
+    }
+    if (candidate.size > MAX_COVER_SIZE) {
       coverError.value = '图片过大，请压缩后重新上传';
       continue;
     }
-    valid.push(file);
+    valid.push(candidate);
     if (existing + valid.length >= MAX_COVERS) break;
   }
   if (!valid.length) {

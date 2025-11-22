@@ -27,30 +27,17 @@
               <img :src="block.src" alt="note image" />
               <button type="button" class="note-photo__delete" @click="removeBlock(block.id)">×</button>
             </div>
-            <div class="note-block__actions">
+            <div class="note-block__actions" v-if="block.type === 'text'">
               <button
-                v-if="block.type === 'text'"
                 type="button"
                 class="insert-btn ghost"
                 @click="triggerImagePicker(block.id)"
               >
                 ＋ 添加图片
               </button>
-              <button
-                v-else
-                type="button"
-                class="insert-btn ghost"
-                @click="insertTextBlockAfter(block.id)"
-              >
-                ＋ 添加文字
-              </button>
             </div>
           </div>
         </section>
-
-        <button type="button" class="insert-btn primary" @click="triggerImagePicker(null)">
-          ＋ 新增段落
-        </button>
 
         <p class="note-editor__hint">
           尺寸 750×X，最多上传 9 张，默认第一张为详情页主图
@@ -71,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 interface NoteBlock {
   id: string;
@@ -211,11 +198,6 @@ const removeBlock = (id: string) => {
   blocks.value = blocks.value.filter((block) => block.id !== id);
 };
 
-const insertTextBlockAfter = (blockId: string) => {
-  const index = blocks.value.findIndex((block) => block.id === blockId);
-  blocks.value.splice(index + 1, 0, createTextBlock(''));
-};
-
 const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -264,30 +246,45 @@ const handleSave = () => {
   });
   saving.value = false;
 };
+
+const previousBodyOverflow = ref<string | null>(null);
+const previousHtmlOverflow = ref<string | null>(null);
+
+onMounted(() => {
+  previousBodyOverflow.value = document.body.style.overflow;
+  previousHtmlOverflow.value = document.documentElement.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+});
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = previousBodyOverflow.value ?? '';
+  document.documentElement.style.overflow = previousHtmlOverflow.value ?? '';
+});
 </script>
 
 <style scoped>
 .note-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.55);
   z-index: 999;
   display: flex;
   justify-content: center;
-  align-items: flex-end;
+  align-items: center;
+  padding: 16px;
 }
 
 .note-editor {
-  width: 100%;
-  max-width: 480px;
-  min-height: 85vh;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
   background: #fdf9f0;
-  border-top-left-radius: 24px;
-  border-top-right-radius: 24px;
-  padding: 20px 18px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  border-radius: 24px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+  overflow-y: auto;
 }
 
 .note-editor__nav {
@@ -311,7 +308,7 @@ const handleSave = () => {
 }
 
 .nav-btn.primary {
-  background: linear-gradient(135deg, #f7b733, #fc4a1a);
+  background: #0f3057;
   color: #fff;
 }
 

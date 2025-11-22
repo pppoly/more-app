@@ -287,6 +287,7 @@ import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
+import { useResourceConfig } from '../../composables/useResourceConfig';
 
 const route = useRoute();
 const router = useRouter();
@@ -297,7 +298,18 @@ const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
 const brokenCovers = ref<Record<string, boolean>>({});
 
-const fallbackCover = 'https://placehold.co/640x360?text=Event';
+const resourceConfig = useResourceConfig();
+const { slotMap } = resourceConfig;
+const fallbackCover = computed(
+  () =>
+    resourceConfig.getStringValue('mobile.eventDetail.heroFallback') ||
+    (slotMap['mobile.eventDetail.heroFallback'].defaultValue as string),
+);
+const defaultAvatarImage = computed(
+  () =>
+    resourceConfig.getStringValue('global.defaultAvatar') ||
+    (slotMap['global.defaultAvatar'].defaultValue as string),
+);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const registrationError = ref<string | null>(null);
@@ -351,8 +363,6 @@ const detail = computed(() => {
   const start = formatDate(event.value.startTime);
   const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
   const config = (event.value.config as Record<string, any>) ?? {};
-  const DEFAULT_COMMUNITY_AVATAR =
-    'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
   const currentParticipants = Math.max(
     0,
     Number(config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0),
@@ -396,7 +406,7 @@ const detail = computed(() => {
     coverUrl:
       gallery.value[0]?.imageUrl ||
       (event.value.coverImageUrl ? resolveAssetUrl(event.value.coverImageUrl) : null) ||
-      'https://placehold.co/640x360?text=Event',
+      fallbackCover.value,
     regSummary,
     capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
     regProgress,
@@ -409,7 +419,7 @@ const detail = computed(() => {
           (event.value.community as any)?.coverImageUrl ||
           config.communityLogo ||
           config.communityAvatar,
-      ) || DEFAULT_COMMUNITY_AVATAR,
+      ) || defaultAvatarImage.value,
     descriptionHtml:
       event.value.descriptionHtml ??
       `<p>${getLocalizedText(event.value.description ?? event.value.title)}</p>`,
@@ -428,7 +438,7 @@ const slideKey = (slide: { id?: string; imageUrl?: string }, index: number) =>
   slide.id || slide.imageUrl || `slide-${index}`;
 
 const coverSrc = (slide: { id?: string; imageUrl?: string }, index: number) =>
-  brokenCovers.value[slideKey(slide, index)] ? fallbackCover : slide.imageUrl || fallbackCover;
+  brokenCovers.value[slideKey(slide, index)] ? fallbackCover.value : slide.imageUrl || fallbackCover.value;
 
 const heroSlides = computed(() => {
   if (gallery.value.length) {
@@ -442,7 +452,7 @@ const heroSlides = computed(() => {
 });
 
 const activeSlideImage = computed(() => {
-  if (!heroSlides.value.length) return detail.value?.coverUrl ?? fallbackCover;
+  if (!heroSlides.value.length) return detail.value?.coverUrl ?? fallbackCover.value;
   const slide = heroSlides.value[activeSlide.value] ?? heroSlides.value[0];
   const index = Math.max(heroSlides.value.indexOf(slide), 0);
   return coverSrc(slide, index);

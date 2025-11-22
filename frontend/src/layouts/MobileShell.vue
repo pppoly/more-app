@@ -1,9 +1,10 @@
 <template>
-  <div class="mobile-shell">
-    <header v-if="showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
-      <div class="brand-chip">
-        <span>創</span>
-      </div>
+<div class="mobile-shell">
+  <header v-if="showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
+    <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
+      <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
+      <span v-else>創</span>
+    </div>
       <div class="header-title">MORE</div>
       <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
         <span class="i-lucide-shield"></span>
@@ -47,21 +48,36 @@
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
+import { useResourceConfig } from '../composables/useResourceConfig';
 
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
+const resourceConfig = useResourceConfig();
+
+const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
+
+const iconDefaults = computed(() => {
+  const { slotMap } = resourceConfig;
+  return {
+    events: resourceConfig.getStringValue('icon.tab.events') || (slotMap['icon.tab.events'].defaultValue as string),
+    console: resourceConfig.getStringValue('icon.tab.console') || (slotMap['icon.tab.console'].defaultValue as string),
+    me: resourceConfig.getStringValue('icon.tab.me') || (slotMap['icon.tab.me'].defaultValue as string),
+    admin: resourceConfig.getStringValue('icon.tab.admin') || (slotMap['icon.tab.admin'].defaultValue as string),
+  };
+});
 
 const tabs = computed(() => {
+  const icons = iconDefaults.value;
   const base = [
-    { id: 'events', label: '活動', path: '/events', icon: 'i-lucide-calendar-days' },
-    { id: 'me', label: 'マイページ', path: '/me', icon: 'i-lucide-user-round' },
+    { id: 'events', label: '活動', path: '/events', icon: icons.events },
+    { id: 'me', label: 'マイページ', path: '/me', icon: icons.me },
   ];
   if (user.value?.isOrganizer || user.value?.isAdmin) {
-    base.splice(1, 0, { id: 'console', label: 'Console', path: '/console', icon: 'i-lucide-layout-dashboard' });
+    base.splice(1, 0, { id: 'console', label: 'Console', path: '/console', icon: icons.console });
   }
   if (user.value?.isAdmin) {
-    base.splice(base.length - 1, 0, { id: 'admin', label: '管理', path: '/admin', icon: 'i-lucide-shield' });
+    base.splice(base.length - 1, 0, { id: 'admin', label: '管理', path: '/admin', icon: icons.admin });
   }
   return base;
 });
@@ -158,6 +174,19 @@ const tabbarSafeAreaStyle = computed(() => ({
   font-weight: 700;
   font-size: 1.1rem;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+
+.brand-chip--image {
+  padding: 4px;
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4);
+}
+
+.brand-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
 }
 
 .header-title {

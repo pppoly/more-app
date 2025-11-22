@@ -1,4 +1,5 @@
 <template>
+  <PageMarker label="P7" />
   <div class="page">
     <div v-if="showSkeleton" class="skeleton-overlay" aria-hidden="true">
       <div class="skeleton-stack">
@@ -229,6 +230,8 @@ import type {
   EventRegistrationsSummary,
 } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import { useResourceConfig } from '../../../composables/useResourceConfig';
+import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -254,6 +257,14 @@ const eventCard = computed(() => {
   };
 });
 
+const resourceConfig = useResourceConfig();
+const { slotMap } = resourceConfig;
+const memberAvatarFallback = computed(
+  () =>
+    resourceConfig.getStringValue('mobile.console.memberAvatar') ||
+    (slotMap['mobile.console.memberAvatar'].defaultValue as string),
+);
+
 const summaryCard = computed(() => {
   if (!summary.value) return null;
   const total = summary.value.totalRegistrations;
@@ -268,7 +279,7 @@ const summaryCard = computed(() => {
     progressPercent,
     sampleParticipants: avatars.map((avatar) => ({
       id: avatar.userId,
-      avatarUrl: avatar.avatarUrl ?? 'https://placehold.co/64x64?text=Member',
+      avatarUrl: avatar.avatarUrl ?? memberAvatarFallback.value,
     })),
     tickets: groups.map((group) => ({
       id: group.label,

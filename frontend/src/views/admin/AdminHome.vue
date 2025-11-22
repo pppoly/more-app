@@ -163,6 +163,12 @@ const quickActions = [
     icon: 'i-lucide-activity',
   },
   {
+    id: 'assets',
+    title: '资源配置',
+    description: '维护 Logo / 功能图标 / 占位图',
+    icon: 'i-lucide-images',
+  },
+  {
     id: 'constitution',
     title: '宪法详情',
     description: '随时复盘最高规则',
@@ -224,6 +230,10 @@ const handleQuickAction = (actionId: string) => {
   }
   if (actionId === 'usage') {
     router.push({ name: 'admin-ai-overview' });
+    return;
+  }
+  if (actionId === 'assets') {
+    router.push({ name: 'admin-resource-manager' });
     return;
   }
   if (actionId === 'constitution') {

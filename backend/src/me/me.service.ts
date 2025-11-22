@@ -3,8 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { extname, join } from 'path';
 import { promises as fs } from 'fs';
 import type { Express } from 'express';
+import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
-const AVATAR_UPLOAD_ROOT = join(process.cwd(), 'uploads', 'avatars');
+const AVATAR_UPLOAD_ROOT = join(UPLOAD_ROOT, 'avatars');
 
 @Injectable()
 export class MeService {
