@@ -207,20 +207,10 @@ const derivePriceText = (target: EventDetail | null) => {
 
 const resolveErrorMessage = (err: unknown, fallback: string) => {
   if (isAxiosError(err)) {
-    const message = err.response?.data?.message;
-    if (typeof message === 'string') {
-      return message;
-    }
-    if (Array.isArray(message) && message.length) {
-      const first = message[0];
-      if (typeof first === 'string') {
-        return first;
-      }
-    }
-    return err.message;
+    return '提交失败，请稍后再试';
   }
   if (err instanceof Error) {
-    return err.message;
+    return '提交失败，请稍后再试';
   }
   return fallback;
 };
@@ -308,7 +298,7 @@ const loadEvent = async () => {
     initializeFormValues();
     applyDraftAnswers();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'イベント情報の取得に失敗しました';
+    error.value = '活动信息加载失败，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -407,7 +397,7 @@ const submitFreeRegistration = async () => {
       goToSuccessPage(payload);
     }
   } catch (err) {
-    registrationError.value = resolveErrorMessage(err, '申込に失敗しました');
+    registrationError.value = '报名失败，请稍后再试';
   } finally {
     submittingInline.value = false;
   }

@@ -612,7 +612,7 @@ const loadEvent = async () => {
     event.value = detailData;
     gallery.value = galleryData;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'イベント情報の取得に失敗しました';
+    error.value = '活动加载失败，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -799,7 +799,7 @@ const submitBooking = async () => {
     handleRegistrationResult(registration);
     showBooking.value = false;
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '申込に失敗しました';
+    registrationError.value = '报名失败，请稍后再试';
   } finally {
     submitting.value = false;
   }
@@ -827,7 +827,7 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '決済処理に失敗しました';
+    registrationError.value = '支付失败，请稍后再试';
   } finally {
     isPaying.value = false;
   }

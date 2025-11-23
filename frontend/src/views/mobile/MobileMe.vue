@@ -90,6 +90,8 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { uploadMyAvatar } from '../../api/client';
+import { validateAvatarFile } from '../../utils/validateAvatarFile';
+import { processAvatarImage } from '../../utils/processAvatarImage';
 
 const router = useRouter();
 const route = useRoute();
@@ -221,11 +223,20 @@ const cropImageStyle = computed(() => ({
   transform: `scale(${cropScale.value})`,
 }));
 
-const onAvatarSelected = (event: Event) => {
+const onAvatarSelected = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  loadCropImage(file);
+  try {
+    await validateAvatarFile(file, { requireSquare: false });
+    const processed = await processAvatarImage(file, { size: CROPPER_RESULT });
+    loadCropImage(processed);
+  } catch (err) {
+    avatarStatus.value = err instanceof Error ? '这张头像不合适，换一张清晰的照片试试' : '头像上传失败，请换一张照片再试';
+    avatarStatusType.value = 'error';
+    if (input) input.value = '';
+    return;
+  }
   if (input) {
     input.value = '';
   }

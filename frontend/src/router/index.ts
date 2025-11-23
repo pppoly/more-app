@@ -77,6 +77,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'イベント',
       layout: 'mobile-user',
+      hideShellActions: true,
       devPageName: '活动列表',
     },
   },

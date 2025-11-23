@@ -12,6 +12,7 @@ import { AiModule } from './ai/ai.module';
 import { OrganizersModule } from './organizers/organizers.module';
 import { StripeModule } from './stripe/stripe.module';
 import { BillingModule } from './billing/billing.module';
+import { I18nModule } from './i18n/i18n.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BillingModule } from './billing/billing.module';
     ConsoleModule,
     AiModule,
     OrganizersModule,
+    I18nModule,
   ],
   controllers: [HealthController, HelloController],
   providers: [],

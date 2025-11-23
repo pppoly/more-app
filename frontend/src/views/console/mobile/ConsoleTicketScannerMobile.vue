@@ -79,7 +79,7 @@ const startScan = async () => {
       },
     );
   } catch (err) {
-    scanError.value = '无法直接打开相机，请使用拍照扫码（建议使用 HTTPS 环境）';
+    scanError.value = '无法直接打开相机，请拍照后上传二维码扫描（建议使用 HTTPS 网络）';
     stopScan();
   }
 };

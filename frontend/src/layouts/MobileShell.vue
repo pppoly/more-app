@@ -6,15 +6,17 @@
       <span v-else>創</span>
     </div>
       <div class="header-title">MORE</div>
-      <button class="lang-entry" @click="openLocaleSheet">
-        <span class="i-lucide-globe-2 text-lg"></span>
-      </button>
-      <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
-        <span class="i-lucide-shield"></span>
-      </button>
-      <button class="profile-entry" @click="handlePrimaryAction">
-        <span class="i-lucide-user-round text-lg"></span>
-      </button>
+      <div v-if="showHeaderActions" class="header-actions">
+        <button class="lang-entry" @click="openLocaleSheet">
+          <span class="i-lucide-globe-2 text-lg"></span>
+        </button>
+        <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
+          <span class="i-lucide-shield"></span>
+        </button>
+        <button class="profile-entry" @click="handlePrimaryAction">
+          <span class="i-lucide-user-round text-lg"></span>
+        </button>
+      </div>
     </header>
     <main
       :class="[
@@ -158,6 +160,7 @@ const showTabbar = computed(() => {
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const showHeader = computed(() => !route.meta?.hideShellHeader);
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
+const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 
 const handlePrimaryAction = () => {
   if (user.value) {
@@ -258,6 +261,7 @@ const selectLocale = async (locale: string) => {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  position: relative;
 }
 
 .brand-chip {
@@ -290,6 +294,10 @@ const selectLocale = async (locale: string) => {
   font-size: 1rem;
   font-weight: 600;
   color: var(--m-color-text-primary);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
 }
 
 .admin-entry {
@@ -315,6 +323,12 @@ const selectLocale = async (locale: string) => {
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(6px);
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .header-status {
@@ -368,6 +382,7 @@ const selectLocale = async (locale: string) => {
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 10;
   padding: 1rem 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
   background: #ffffff;
   border-top: 1px solid rgba(0, 0, 0, 0.08);

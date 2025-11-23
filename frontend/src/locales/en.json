@@ -1,1 +1,18 @@
-{}
+{
+  "error": {
+    "networkUnstable": "Network is unstable. Please try again later.",
+    "coverTooSmall": "Image is too small. Please pick one at least 1200×675.",
+    "coverTooBig": "Image is too large. Please choose a smaller photo.",
+    "coverUploadFailed": "Could not upload the image. Please try again later.",
+    "activityLoadFailed": "Failed to load events. Please try again later.",
+    "registrationFailed": "Sign-up failed. Please try again later.",
+    "paymentFailed": "Payment failed. Please try again later.",
+    "cameraUnavailable": "Cannot open camera. Take a photo and upload the QR (HTTPS recommended).",
+    "avatarInvalid": "This photo can’t be used. Please pick a clearer photo.",
+    "avatarUploadFailed": "Avatar upload failed. Please try again later.",
+    "importCoverFailed": "Could not import the old cover. Please upload a new cover.",
+    "subscriptionUnavailable": "Payment isn’t available now. Please try again later or contact support.",
+    "stripeLinkFailed": "Could not create the link. Please try again later or contact support.",
+    "qrScanFailed": "Scan failed. Try again or upload a photo of the code."
+  }
+}

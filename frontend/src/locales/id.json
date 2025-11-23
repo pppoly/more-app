@@ -1,1 +1,18 @@
-{}
+{
+  "error": {
+    "networkUnstable": "Jaringan tidak stabil. Coba lagi nanti.",
+    "coverTooSmall": "Gambar terlalu kecil. Pilih yang minimal 1200×675.",
+    "coverTooBig": "Gambar terlalu besar. Gunakan foto yang lebih kecil.",
+    "coverUploadFailed": "Gagal mengunggah gambar. Coba lagi nanti.",
+    "activityLoadFailed": "Gagal memuat acara. Coba lagi nanti.",
+    "registrationFailed": "Pendaftaran gagal. Coba lagi nanti.",
+    "paymentFailed": "Pembayaran gagal. Coba lagi nanti.",
+    "cameraUnavailable": "Kamera tidak bisa dibuka. Ambil foto lalu unggah QR (disarankan HTTPS).",
+    "avatarInvalid": "Foto ini tidak bisa dipakai. Pilih foto yang lebih jelas.",
+    "avatarUploadFailed": "Gagal mengunggah foto. Coba lagi nanti.",
+    "importCoverFailed": "Gagal mengimpor sampul lama. Unggah sampul baru.",
+    "subscriptionUnavailable": "Pembayaran tidak tersedia sekarang. Coba lagi atau hubungi dukungan.",
+    "stripeLinkFailed": "Gagal membuat tautan. Coba lagi atau hubungi dukungan.",
+    "qrScanFailed": "Gagal memindai. Coba lagi atau unggah foto kode."
+  }
+}

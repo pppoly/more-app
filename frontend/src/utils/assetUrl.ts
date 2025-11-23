@@ -15,6 +15,7 @@ const assetBase = getAssetBase();
 
 export const resolveAssetUrl = (path?: string | null) => {
   if (!path) return '';
+  if (/^data:/i.test(path)) return path;
   if (/^https?:\/\//i.test(path)) return path;
   const normalized = path.startsWith('/') ? path : `/${path}`;
   return assetBase ? `${assetBase}${normalized}` : normalized;

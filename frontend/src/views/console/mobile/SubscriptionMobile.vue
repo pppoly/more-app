@@ -141,7 +141,7 @@ const startSubscribe = async (planId: string) => {
       paymentClientSecret.value = res.clientSecret;
       await setupPaymentElement(res.clientSecret, res.publishableKey);
     } else if (planById(planId)?.monthlyFee && planById(planId)!.monthlyFee > 0) {
-      throw new Error('支付配置缺失，请检查后端 Stripe publishable key');
+      throw new Error('支付暂时不可用，请稍后再试或联系支持');
     } else {
       await reload();
       toast.show('已切换套餐', 'success');
@@ -177,11 +177,11 @@ onMounted(async () => {
 
 const setupPaymentElement = async (clientSecret: string, publishableKey: string) => {
   if (!publishableKey) {
-    throw new Error('缺少 Stripe publishable key');
+    throw new Error('支付暂时不可用，请稍后再试或联系支持');
   }
   stripeInstance = await loadStripe(publishableKey);
   if (!stripeInstance) {
-    throw new Error('Stripe 初始化失败');
+    throw new Error('支付暂时不可用，请稍后再试或联系支持');
   }
   elementsInstance = stripeInstance.elements({
     clientSecret,

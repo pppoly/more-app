@@ -768,12 +768,15 @@ const builderHintText = '设置报名表里需要填写的问题，顺序即为�
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const MAX_COVERS = 9;
-const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (server limit)
-const MAX_COVER_UPLOAD_SIZE = 4 * 1024 * 1024; // 提前压缩到更安全的体积
-const MAX_COVER_DIMENSION = 1200;
-const COVER_COMPRESS_QUALITY = 0.72;
-const COVER_FALLBACK_QUALITY = 0.6;
-const COVER_RULES_TEXT = '推荐 1200px 宽，最多上传 9 张，默认第一张为主图';
+const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
+const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 压缩后预期安全值
+const MAX_COVER_DIMENSION = 1920; // 最大长边
+const MIN_COVER_WIDTH = 1200;
+const MIN_COVER_HEIGHT = 675;
+const TARGET_ASPECT = 16 / 9;
+const COVER_COMPRESS_QUALITY = 0.82;
+const COVER_FALLBACK_QUALITY = 0.7;
+const COVER_RULES_TEXT = '封面必填 · 16:9（至少 1200×675），单张 ≤10MB，最多 9 张，第一张为主图';
 const coverDisplayItems = computed(() =>
   eventId ? galleries.value : localCoverPreviews.value,
 );
@@ -1547,7 +1550,7 @@ const triggerCoverPicker = () => {
 const parseCoverUploadError = (err: unknown) => {
   const status = (err as any)?.response?.status;
   if (status === 413) {
-    return '封面图片过大，请选择更小的图片或继续压缩后再试';
+    return '这张图片太大了，换一张更小的照片或截图再试';
   }
   const isNetwork = (err as any)?.message === 'Network Error';
   const isCors =
@@ -1555,10 +1558,10 @@ const parseCoverUploadError = (err: unknown) => {
     (err as any)?.message?.includes?.('Failed to fetch') ||
     (err as any)?.message?.includes?.('ERR_FAILED');
   if (isCors) {
-    return '封面上传被跨域限制拦截，请改用同域 API（或本地代理）后重试';
+    return '网络不稳定，换个网络或稍后再试';
   }
   if (isNetwork) {
-    return '封面上传失败，请检查网络或稍后重试';
+    return '网络不稳定，换个网络或稍后再试';
   }
   return err instanceof Error ? err.message : '封面上传失败，请重试';
 };
@@ -1590,21 +1593,61 @@ const downscaleImageFile = (file: File) =>
       const img = new Image();
       img.onload = async () => {
         try {
-          const maxSide = Math.max(img.width, img.height);
-          const ratio = maxSide > MAX_COVER_DIMENSION ? MAX_COVER_DIMENSION / maxSide : 1;
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * ratio);
-          canvas.height = Math.round(img.height * ratio);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('无法压缩图片'));
+          if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
+            reject(new Error('图片太小了，换一张更清晰的照片（至少 1200×675）'));
             return;
           }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          let blob = await toJpegBlob(canvas, COVER_COMPRESS_QUALITY);
+          const sourceAspect = img.width / img.height;
+          const crop: { sx: number; sy: number; sw: number; sh: number } = {
+            sx: 0,
+            sy: 0,
+            sw: img.width,
+            sh: img.height,
+          };
+          if (sourceAspect > TARGET_ASPECT) {
+            crop.sw = img.height * TARGET_ASPECT;
+            crop.sx = (img.width - crop.sw) / 2;
+          } else if (sourceAspect < TARGET_ASPECT) {
+            crop.sh = img.width / TARGET_ASPECT;
+            crop.sy = (img.height - crop.sh) / 2;
+          }
+
+          let targetWidth = Math.min(MAX_COVER_DIMENSION, crop.sw);
+          let targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+
+          const compressOnce = async (width: number, height: number, quality: number) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(width);
+            canvas.height = Math.round(height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('无法压缩图片');
+            ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
+            return toJpegBlob(canvas, quality);
+          };
+
+          let blob = await compressOnce(targetWidth, targetHeight, COVER_COMPRESS_QUALITY);
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
-            blob = await toJpegBlob(canvas, COVER_FALLBACK_QUALITY);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_UPLOAD_SIZE) {
+            const scale = Math.max(0.7, Math.sqrt(MAX_COVER_UPLOAD_SIZE / blob.size));
+            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * scale));
+            targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_UPLOAD_SIZE) {
+            // 最后一次兜底：进一步缩小分辨率
+            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * 0.75));
+            targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_SIZE) {
+            reject(new Error('这张图片太大，已经帮你压缩过了，再换一张更小的照片试试'));
+            return;
           }
 
           const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
@@ -1648,7 +1691,8 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
       const blob = await response.blob();
       const extension = blob.type.includes('png') ? 'png' : 'jpg';
       const fileName = `copied-${Date.now()}-${index}.${extension}`;
-      const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const rawFile = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const file = await downscaleImageFile(rawFile);
       const id = `${fileName}-${Math.random().toString(36).slice(2)}`;
       pendingCoverFiles.value.push({ id, file });
       const objectUrl = URL.createObjectURL(file);
@@ -1658,7 +1702,7 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
         order: index,
       });
     } catch (err) {
-      console.warn('Failed to import gallery cover', err);
+      showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
     }
   });
   await Promise.all(tasks);
@@ -2072,6 +2116,14 @@ const persistEvent = async (status: 'draft' | 'open') => {
     return;
   }
 
+  if (coverDisplayItems.value.length === 0) {
+    error.value = '请至少上传一张封面，默认第一张为主图';
+    submitting.value = false;
+    actionLoading.value = null;
+    sectionCover.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
   const htmlSize = form.descriptionHtml?.length ?? 0;
   if (htmlSize > 400_000) {
     error.value = '活动详情内嵌图片过大，请删除部分图片或缩短内容后再试';
@@ -2179,23 +2231,20 @@ const handleCoverUpload = async (ev: Event) => {
   const valid: File[] = [];
   for (const file of files) {
     if (!file.type?.startsWith('image/')) {
-      showCoverError('仅支持上传 jpg/png 等图片文件');
+      showCoverError('仅支持上传 jpg/png/webp 图片');
       continue;
     }
-    let candidate = file;
-    if (file.size > MAX_COVER_SIZE) {
-      try {
-        candidate = await downscaleImageFile(file);
-      } catch (err) {
-        showCoverError(err instanceof Error ? err.message : '图片过大，请压缩后重新上传');
-        continue;
-      }
-    }
-    if (candidate.size > MAX_COVER_SIZE) {
-      showCoverError('图片过大，请压缩后重新上传');
+    try {
+      const processed = await downscaleImageFile(file);
+      valid.push(processed);
+    } catch (err) {
+      showCoverError(
+        err instanceof Error
+          ? err.message
+          : '上传失败，这张图太大或不合适，换一张手机照片/截图再试',
+      );
       continue;
     }
-    valid.push(candidate);
     if (existing + valid.length >= MAX_COVERS) break;
   }
   if (!valid.length) {

@@ -1,1 +1,18 @@
-{}
+{
+  "error": {
+    "networkUnstable": "網路不穩定，請稍後再試。",
+    "coverTooSmall": "圖片太小了，請選擇至少 1200×675 的照片。",
+    "coverTooBig": "圖片太大了，換一張更小的照片試試。",
+    "coverUploadFailed": "封面上傳失敗，請稍後再試。",
+    "activityLoadFailed": "活動載入失敗，請稍後再試。",
+    "registrationFailed": "報名失敗，請稍後再試。",
+    "paymentFailed": "支付失敗，請稍後再試。",
+    "cameraUnavailable": "無法開啟相機，請拍照後上傳 QR 碼（建議使用 HTTPS 網路）。",
+    "avatarInvalid": "這張頭像不合適，換一張清晰的照片試試。",
+    "avatarUploadFailed": "頭像上傳失敗，請稍後再試。",
+    "importCoverFailed": "歷史封面匯入失敗，請重新上傳封面。",
+    "subscriptionUnavailable": "支付暫時不可用，請稍後再試或聯絡客服。",
+    "stripeLinkFailed": "開通連結產生失敗，請稍後重試或聯絡客服。",
+    "qrScanFailed": "掃碼失敗，請重試或上傳 QR 碼照片。"
+  }
+}

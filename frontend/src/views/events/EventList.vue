@@ -2,8 +2,6 @@
   <section class="events-mobile">
     <header class="app-bar">
       <div class="logo-circle">M</div>
-      <RouterLink v-if="!user" class="login-chip" to="/organizer/apply">ログイン</RouterLink>
-      <div v-else class="user-avatar">{{ userInitial }}</div>
     </header>
 
     <div class="search-section">
@@ -66,11 +64,9 @@ import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
-import { useAuth } from '../../composables/useAuth';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 
 const router = useRouter();
-const { user } = useAuth();
 
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
@@ -92,7 +88,7 @@ const loadEvents = async () => {
   try {
     events.value = await fetchEvents();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load events';
+    error.value = err instanceof Error ? '活动加载失败，请稍后重试' : '活动加载失败，请稍后重试';
   } finally {
     loading.value = false;
   }
@@ -108,8 +104,6 @@ const filteredEvents = computed(() => {
     return matchesCategory && matchesKeyword;
   });
 });
-
-const userInitial = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?? 'U');
 
 const titleFor = (event: EventSummary) => getLocalizedText(event.title);
 

@@ -527,7 +527,7 @@ const loadActiveCommunityDetail = async () => {
   border: none;
   padding: 0;
   overflow: hidden;
-  background: #f1f5f9;
+  background: transparent;
   flex-shrink: 0;
 }
 
