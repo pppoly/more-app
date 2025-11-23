@@ -13,6 +13,7 @@
     "@vueup/vue-quill": "^1.2.0",
     "@zxing/browser": "^0.1.5",
     "axios": "^1.13.2",
+    "build": "^0.1.4",
     "qrcode": "^1.5.4",
     "vue": "^3.4.21",
     "vue-i18n": "^9.14.5",

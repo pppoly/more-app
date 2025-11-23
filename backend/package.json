@@ -10,8 +10,10 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "prisma:generate": "prisma generate",
     "seed": "ts-node prisma/seed.ts",
-    "prisma:seed": "ts-node prisma/seed.ts"
+    "prisma:seed": "ts-node prisma/seed.ts",
+    "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
     "@nestjs/axios": "^3.0.0",

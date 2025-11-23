@@ -15,10 +15,16 @@ async function bootstrap() {
   const globalPrefix = 'api/v1';
   app.setGlobalPrefix(globalPrefix);
   app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
-  const allowedOrigins = (process.env.FRONTEND_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
+  const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';
+  const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? defaultConfiguredOrigins)
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const defaultDevOrigins =
+    process.env.NODE_ENV === 'production'
+      ? []
+      : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173'];
+  const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultDevOrigins]));
 
   app.enableCors({
     origin: allowedOrigins,

@@ -69,6 +69,7 @@ import { useAuth } from '../../composables/useAuth';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { sendEmailLoginCode, verifyEmailLoginCode } from '../../api/client';
 import { needsProfileSetup } from '../../utils/profileSetup';
+import { API_BASE_URL } from '../../config';
 
 const auth = useAuth();
 const route = useRoute();
@@ -123,8 +124,7 @@ const handleLineLogin = () => {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(LOGIN_FLOW_STORAGE_KEY, 'line');
   window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, redirectTarget.value || '/');
-  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
-  const backendOrigin = base.replace(/\/$/, '').replace(/\/api\/v1$/, '');
+  const backendOrigin = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
   window.location.href = `${backendOrigin}/api/v1/auth/line/redirect`;
 };
 

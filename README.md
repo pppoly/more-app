@@ -38,13 +38,17 @@
 2. 复制并填写环境变量：
    - 后端：`cp backend/.env backend/.env.local` 或直接修改 `backend/.env`，确保 PostgreSQL `DATABASE_URL`、Stripe、OpenAI、LINE 等字段已经替换为有效值。
    - 前端：编辑 `frontend/.env.local`，设置 `VITE_API_BASE_URL`（通常指向后端 `http://localhost:3000/api/v1`）以及 `VITE_GOOGLE_MAPS_API_KEY`（若要启用地图选点）。
-3. 初始化数据库（PostgreSQL 需先启动）：
+3. 启动本地 PostgreSQL（若你没有现成的数据库）：
+   ```bash
+   docker compose up postgres -d   # 首次会自动创建数据卷 pgdata
+   ```
+4. 初始化数据库：
    ```bash
    cd backend
    npx prisma migrate deploy   # 或 npx prisma migrate dev
    npm run prisma:seed         # 如需示例数据
    ```
-4. 启动服务：
+5. 启动服务：
    ```bash
    # 终端 1：后端
    cd backend
@@ -54,7 +58,7 @@
    cd frontend
    npm run dev
    ```
-5. Stripe Webhook（如需测试支付结果）：
+6. Stripe Webhook（如需测试支付结果）：
    ```bash
    stripe listen --forward-to http://localhost:3000/api/v1/payments/stripe/webhook
    ```
