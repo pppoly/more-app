@@ -8,68 +8,121 @@
       <RouterLink :to="backLink">戻る</RouterLink>
     </header>
 
-    <section v-if="isMobileLayout" class="mobile-hero-card">
-      <div class="hero-top" v-if="aiPrefillNotice">
-        <p class="hero-desc">{{ aiPrefillNotice }}</p>
-      </div>
-      <div class="hero-cover-panel" ref="sectionCover">
-        <div v-if="coverDisplayItems.length" class="hero-cover-strip">
-          <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
-            <img :src="item.imageUrl" alt="cover" />
-            <span v-if="index === 0" class="hero-cover-main">主图</span>
-            <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
-          </figure>
-          <button
-            v-if="canAddMoreCovers"
-            type="button"
-            class="hero-cover-add"
-            @click.stop="triggerCoverPicker"
-          >
-            <span>+</span>
-            <p>继续添加</p>
+    <section class="entry-switcher">
+      <article class="entry-card" @click="togglePaste(true)">
+        <div class="entry-icon">🧾</div>
+        <div class="entry-body">
+          <p class="entry-title">貼り付けて体检</p>
+          <p class="entry-desc">既に書いた案を貼り付け、AI で診断・抽出</p>
+        </div>
+        <span class="entry-lang pill light">{{ langLabel(activeContentLang) }}</span>
+      </article>
+      <article class="entry-card" @click="goToEventAssistant">
+        <div class="entry-icon">🗨️</div>
+        <div class="entry-body">
+          <p class="entry-title">まだ未定 · 一緒に相談</p>
+          <p class="entry-desc">対話しながら企画を固める</p>
+        </div>
+      </article>
+      <article class="entry-card" @click="scrollToSection('basic')">
+        <div class="entry-icon">✍️</div>
+        <div class="entry-body">
+          <p class="entry-title">テンプレから自分で入力</p>
+          <p class="entry-desc">そのまま表单で編集・公開</p>
+        </div>
+      </article>
+      <article class="entry-card" @click="openCopyOverlay">
+        <div class="entry-icon">📄</div>
+        <div class="entry-body">
+          <p class="entry-title">コピーして開始</p>
+          <p class="entry-desc">過去のイベントをベースに作成</p>
+        </div>
+      </article>
+    </section>
+
+    <div v-if="showPastePanel" class="paste-overlay" @click.self="togglePaste(false)">
+      <section class="paste-card sheet">
+        <header class="paste-head">
+          <div>
+            <p class="eyebrow">下書き貼り付け · 体检</p>
+            <p class="muted">既に書いた案を貼り付けて、AI にチェック・整理させます</p>
+          </div>
+          <span class="pill light">{{ langLabel(activeContentLang) }}</span>
+        </header>
+      <textarea
+        v-model="pastedDraft"
+        class="paste-input"
+        :placeholder="pastePlaceholder"
+        rows="8"
+      ></textarea>
+        <div class="paste-actions">
+          <button type="button" class="ios-chip" @click="pastedDraft = ''">クリア</button>
+          <button type="button" class="btn ghost small" @click="goToEventAssistant">
+            方向性から相談する
+          </button>
+          <button type="button" class="btn solid small" @click="checkPastedDraft">
+            草案チェック
           </button>
         </div>
+        <p v-if="draftCheckMessage" class="status muted mt-2">{{ draftCheckMessage }}</p>
+        <div v-if="pastedPreview" class="paste-preview">
+          <div class="paste-preview-row">
+            <p class="eyebrow">抽出したタイトル</p>
+            <p class="paste-preview-text">{{ pastedPreview.title || '---' }}</p>
+          </div>
+          <div class="paste-preview-row">
+            <p class="eyebrow">概要</p>
+            <p class="paste-preview-text">{{ pastedPreview.description || '---' }}</p>
+          </div>
+          <div class="paste-preview-row">
+            <p class="eyebrow">注意事項</p>
+            <p class="paste-preview-text">{{ pastedPreview.rules || '---' }}</p>
+          </div>
+          <div class="paste-preview-actions">
+            <button type="button" class="btn ghost small" @click="pastedPreview = null">戻る</button>
+            <button type="button" class="btn solid small" @click="applyPastedPreview">表单に反映</button>
+          </div>
+        </div>
+        <button type="button" class="paste-close" @click="togglePaste(false)">閉じる</button>
+      </section>
+    </div>
+
+    <section class="hero-cover-panel cover-below" ref="sectionCover">
+      <div v-if="coverDisplayItems.length" class="hero-cover-strip">
+        <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
+          <img :src="item.imageUrl" alt="cover" />
+          <span v-if="index === 0" class="hero-cover-main">主图</span>
+          <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
+        </figure>
         <button
-          v-else
+          v-if="canAddMoreCovers"
           type="button"
-          class="hero-cover-add hero-cover-add--solo"
+          class="hero-cover-add"
           @click.stop="triggerCoverPicker"
         >
           <span>+</span>
-          <p>添加优质图片</p>
+          <p>继续添加</p>
         </button>
-        <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
-        <p v-if="coverError" class="status error">{{ coverError }}</p>
-        <input
-          ref="coverInputRef"
-          type="file"
-          multiple
-          accept="image/*"
-          class="hidden-input"
-          @change="handleCoverUpload"
-        />
       </div>
-      <button v-if="communityId" type="button" class="hero-assistant" @click="openAssistant">
-        <span class="i-lucide-bot mr-1.5"></span>
-        用 AI 助手生成草案
+      <button
+        v-else
+        type="button"
+        class="hero-cover-add hero-cover-add--solo"
+        @click.stop="triggerCoverPicker"
+      >
+        <span>+</span>
+        <p>添加优质图片</p>
       </button>
-      <nav class="hero-nav">
-        <button type="button" @click="scrollToSection('basic')">基本</button>
-        <button type="button" @click="scrollToSection('schedule')">人数</button>
-        <button type="button" @click="scrollToSection('config')">设定</button>
-        <button type="button" @click="scrollToSection('form')">表单</button>
-      </nav>
-    </section>
-
-    <section v-if="eventCommunityId" class="copy-card">
-      <div>
-        <p class="copy-title">复制历史活动</p>
-        <p class="copy-desc">快速带入既有活动的标题、时间、报名表等所有内容</p>
-      </div>
-      <button type="button" class="copy-btn" @click="openCopyOverlay">
-        <span class="i-lucide-files mr-1.5"></span>
-        选择活动
-      </button>
+      <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
+      <p v-if="coverError" class="status error">{{ coverError }}</p>
+      <input
+        ref="coverInputRef"
+        type="file"
+        multiple
+        accept="image/*"
+        class="hidden-input"
+        @change="handleCoverUpload"
+      />
     </section>
 
     <div v-if="uploadingCover" class="cover-upload-overlay">
@@ -273,6 +326,16 @@
               rows="2"
             ></textarea>
           </div>
+          <div class="ios-row ios-row--builder-line ios-row--textarea">
+            <span class="ios-label">注意事項 · {{ langLabel(activeContentLang) }}</span>
+            <textarea
+              class="ios-inline-input ios-inline-input--textarea"
+              placeholder="例：安全须知、携带物品、集合规则"
+              v-model="form.config.riskNoticeText"
+              rows="2"
+            ></textarea>
+          </div>
+          <p class="ios-helper mt-2">AI 生成结果会覆盖当前语言的注意事项。</p>
         </div>
       </section>
 
@@ -567,6 +630,7 @@ import {
   uploadEventCovers,
   fetchEventGallery,
   deleteEventCover,
+  generateEventContent,
 } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
@@ -575,10 +639,12 @@ import type {
   EventGalleryItem,
   ConsoleEventSummary,
   ConsoleEventDetail,
+  GeneratedEventContent,
 } from '../../types/api';
 import {
   CONSOLE_AI_EVENT_DRAFT_KEY,
   CONSOLE_EVENT_SCROLL_KEY,
+  CONSOLE_EVENT_LANG_KEY,
 } from '../../constants/console';
 import NoteEditorOverlay from '../../components/console/NoteEditorOverlay.vue';
 
@@ -634,6 +700,10 @@ const defaultConfig = () => ({
   riskNoticeText: '',
 });
 
+type AiTargetKey = 'title' | 'description' | 'rules';
+type ContentLang = 'ja' | 'en' | 'zh';
+const supportedContentLangs: ContentLang[] = ['ja', 'en', 'zh'];
+
 const form = reactive({
   title: '',
   subtitle: '',
@@ -668,6 +738,20 @@ const sectionConfig = ref<HTMLElement | null>(null);
 const sectionRichText = ref<HTMLElement | null>(null);
 const sectionTickets = ref<HTMLElement | null>(null);
 const sectionForm = ref<HTMLElement | null>(null);
+const activeContentLang = ref<ContentLang>('ja');
+const contentByLang = reactive<Record<AiTargetKey, Record<string, string>>>({
+  title: {},
+  description: {},
+  rules: {},
+});
+const descriptionHtmlByLang = reactive<Record<string, string>>({});
+const aiLoading = reactive<Record<AiTargetKey, boolean>>({
+  title: false,
+  description: false,
+  rules: false,
+});
+const aiPreview = ref<{ target: AiTargetKey; text: string; lang: ContentLang } | null>(null);
+const aiError = ref('');
 
 const submitting = ref(false);
 const error = ref<string | null>(null);
@@ -730,6 +814,10 @@ const copyEventItems = computed(() =>
     dateRange: formatCopyRange(event.startTime, event.endTime),
   })),
 );
+const pastedDraft = ref('');
+const draftCheckMessage = ref('');
+const pastedPreview = ref<{ title: string; description: string; rules: string } | null>(null);
+const showPastePanel = ref(false);
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
@@ -784,6 +872,202 @@ const richTextPreview = computed(() => {
   return base;
 });
 const richTextImageCount = computed(() => richNoteImages.value.length);
+const langLabel = (lang: ContentLang) => {
+  switch (lang) {
+    case 'en':
+      return 'EN';
+    case 'zh':
+      return '中文';
+    default:
+      return 'JP';
+  }
+};
+
+const EMPTY_HINTS: Record<ContentLang, string> = {
+  ja: '下書きを入れてから AI に最適化してもらってください。',
+  en: 'Add a draft first, then ask AI to improve it.',
+  zh: '先写点草稿，再让 AI 优化。',
+};
+
+const getLocalizedAiHint = (key: 'empty') => {
+  if (key === 'empty') {
+    return EMPTY_HINTS[activeContentLang.value] ?? EMPTY_HINTS.ja;
+  }
+  return EMPTY_HINTS.ja;
+};
+const setLangContent = (field: AiTargetKey, lang: ContentLang, value: string) => {
+  contentByLang[field][lang] = value ?? '';
+};
+const getLangContent = (field: AiTargetKey, lang: ContentLang) => contentByLang[field][lang] ?? '';
+const syncContentMap = (lang: ContentLang) => {
+  setLangContent('title', lang, form.title || '');
+  setLangContent('description', lang, form.description || '');
+  descriptionHtmlByLang[lang] = form.descriptionHtml || '';
+  setLangContent('rules', lang, form.config.riskNoticeText || '');
+};
+const applyContentFromMap = (lang: ContentLang) => {
+  form.title = getLangContent('title', lang);
+  form.description = getLangContent('description', lang);
+  const mappedHtml = descriptionHtmlByLang[lang];
+  if (mappedHtml) {
+    form.descriptionHtml = mappedHtml;
+  } else if (form.description) {
+    form.descriptionHtml = `<p>${form.description}</p>`;
+  } else {
+    form.descriptionHtml = '';
+  }
+  form.config.riskNoticeText = getLangContent('rules', lang);
+};
+const switchContentLang = (lang: ContentLang) => {
+  if (lang === activeContentLang.value) return;
+  syncContentMap(activeContentLang.value);
+  activeContentLang.value = lang;
+  applyContentFromMap(lang);
+};
+
+const loadStoredLang = () => {
+  try {
+    const stored = sessionStorage.getItem(CONSOLE_EVENT_LANG_KEY);
+    if (!stored) return;
+    if (supportedContentLangs.includes(stored as ContentLang)) {
+      activeContentLang.value = stored as ContentLang;
+      applyContentFromMap(activeContentLang.value);
+    }
+  } catch (err) {
+    console.warn('Failed to load stored lang', err);
+  }
+};
+
+const persistLang = () => {
+  try {
+    sessionStorage.setItem(CONSOLE_EVENT_LANG_KEY, activeContentLang.value);
+  } catch (err) {
+    console.warn('Failed to persist lang', err);
+  }
+};
+watch(
+  () => form.title,
+  (val) => {
+    setLangContent('title', activeContentLang.value, val || '');
+  },
+);
+watch(
+  () => form.description,
+  (val) => {
+    setLangContent('description', activeContentLang.value, val || '');
+  },
+);
+watch(
+  () => form.descriptionHtml,
+  (val) => {
+    descriptionHtmlByLang[activeContentLang.value] = val || '';
+  },
+);
+watch(
+  () => form.config.riskNoticeText,
+  (val) => {
+    setLangContent('rules', activeContentLang.value, val || '');
+  },
+);
+const aiFieldLabel = (target: AiTargetKey) => {
+  switch (target) {
+    case 'title':
+      return '标题';
+    case 'rules':
+      return '注意事项';
+    default:
+      return '详情';
+  }
+};
+const pickLocalized = (field: any, lang: ContentLang) => {
+  if (!field) return '';
+  if (typeof field === 'string') return field;
+  if (typeof field.original === 'string' && field.lang === lang) {
+    return field.original;
+  }
+  const translations = (field.translations ?? {}) as Record<string, string>;
+  if (typeof translations[lang] === 'string') return translations[lang];
+  if (typeof field[lang] === 'string') return field[lang];
+  if (typeof field.original === 'string') return field.original;
+  const fallback = Object.values(field).find((value) => typeof value === 'string');
+  return typeof fallback === 'string' ? fallback : '';
+};
+const buildAiPayload = (lang: ContentLang) => {
+  const lines = [
+    form.title && `Current title: ${form.title}`,
+    form.category && `Category: ${form.category}`,
+    form.locationText && `Location: ${form.locationText}`,
+    form.startTime && `Start: ${formatDisplayDate(form.startTime)}`,
+    form.config.riskNoticeText && `Rules: ${form.config.riskNoticeText}`,
+    registrationFields.value.length && `Questions: ${registrationFields.value.length} required`,
+  ].filter(Boolean);
+  return {
+    baseLanguage: lang,
+    topic: form.title || 'コミュニティイベント',
+    audience: 'community members and new participants',
+    style: 'friendly, concise, mobile-first',
+    details: lines.join('\n') || 'Generate a concise event description and rules.',
+  };
+};
+const requestAiSuggestion = async (target: AiTargetKey) => {
+  aiError.value = '';
+  aiPreview.value = null;
+  aiLoading[target] = true;
+  try {
+    const draftText =
+      target === 'title'
+        ? getLangContent('title', activeContentLang.value)
+        : target === 'rules'
+          ? getLangContent('rules', activeContentLang.value)
+          : getLangContent('description', activeContentLang.value);
+    if (!draftText.trim()) {
+      const emptyMessage = getLocalizedAiHint('empty');
+      aiError.value = emptyMessage;
+      toast.show(emptyMessage);
+      return;
+    }
+    const basePayload = buildAiPayload(activeContentLang.value);
+    const result = await generateEventContent({
+      ...basePayload,
+      details: `${basePayload.details}\n\nDraft to optimize (${activeContentLang.value}):\n${draftText}`,
+      topic: draftText.slice(0, 60) || basePayload.topic,
+    });
+    const field =
+      target === 'title'
+        ? result.title
+        : target === 'rules'
+          ? result.riskNotice ?? result.notes
+          : result.description;
+    const text = pickLocalized(field, activeContentLang.value);
+    if (!text) {
+      throw new Error('AI 没有返回内容，请稍后再试');
+    }
+    aiPreview.value = { target, text, lang: activeContentLang.value };
+  } catch (err) {
+    aiError.value = err instanceof Error ? err.message : 'AI 生成失败，请稍后重试';
+  } finally {
+    aiLoading[target] = false;
+  }
+};
+const applyAiSuggestion = (target: AiTargetKey) => {
+  if (!aiPreview.value || aiPreview.value.target !== target) return;
+  const { text, lang } = aiPreview.value;
+  setLangContent(target, lang, text);
+  if (lang !== activeContentLang.value) {
+    switchContentLang(lang);
+  }
+  if (target === 'title') {
+    form.title = text;
+  } else if (target === 'description') {
+    form.description = text;
+    form.descriptionHtml = `<p>${text}</p>`;
+    richNoteImages.value = [];
+  } else if (target === 'rules') {
+    form.config.riskNoticeEnabled = true;
+    form.config.riskNoticeText = text;
+  }
+  aiPreview.value = null;
+};
 
 const formatDisplayDate = (value: string) => {
   if (!value) return '请设置';
@@ -912,6 +1196,32 @@ const loadAiDraftFromSession = () => {
   }
 };
 
+const hydrateLocalizedField = (key: AiTargetKey, field: any, html?: string | null) => {
+  if (!field) return;
+  const baseLang =
+    typeof field.lang === 'string' && supportedContentLangs.includes(field.lang as ContentLang)
+      ? (field.lang as ContentLang)
+      : ('ja' as ContentLang);
+  if (typeof field.original === 'string') {
+    setLangContent(key, baseLang, field.original);
+  }
+  const translations = (field.translations ?? {}) as Record<string, string>;
+  Object.entries(translations).forEach(([lang, text]) => {
+    if (supportedContentLangs.includes(lang as ContentLang)) {
+      setLangContent(key, lang as ContentLang, text);
+    }
+  });
+  supportedContentLangs.forEach((lang) => {
+    const direct = (field as any)[lang];
+    if (typeof direct === 'string') {
+      setLangContent(key, lang, direct);
+    }
+  });
+  if (key === 'description' && html) {
+    descriptionHtmlByLang[baseLang] = html;
+  }
+};
+
 const applyEventDetailToForm = (
   event: ConsoleEventDetail,
   options: {
@@ -956,6 +1266,16 @@ const applyEventDetailToForm = (
     ? (event.registrationFormSchema as RegistrationFormField[])
     : [];
   registrationFields.value = buildBuilderFields(schema);
+
+  hydrateLocalizedField('title', event.title);
+  hydrateLocalizedField('description', event.description, event.descriptionHtml);
+  hydrateLocalizedField('rules', sanitizedConfig?.riskNoticeText ?? sanitizedConfig?.riskNotice);
+  const localizedLang =
+    typeof event.title?.lang === 'string' && supportedContentLangs.includes(event.title.lang as ContentLang)
+      ? (event.title.lang as ContentLang)
+      : activeContentLang.value;
+  activeContentLang.value = localizedLang;
+  applyContentFromMap(localizedLang);
 
   if (options.syncCommunity && event.communityId) {
     eventCommunityId.value = event.communityId;
@@ -1140,6 +1460,81 @@ const copyStatusLabel = (status: string) => {
       return '已结束';
     default:
       return '草稿';
+  }
+};
+
+const extractFromPastedDraft = (text: string) => {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const title = lines[0] ?? '';
+  const description = lines.slice(1, 4).join(' ').slice(0, 280);
+  const rulesLine = lines.find((line) => /注意|規則|规则|须知|rule/i.test(line)) ?? '';
+  return {
+    title,
+    description,
+    rules: rulesLine || '',
+  };
+};
+
+const checkPastedDraft = () => {
+  draftCheckMessage.value = '';
+  pastedPreview.value = null;
+  const text = pastedDraft.value.trim();
+  const length = text.length;
+  if (!length) {
+    draftCheckMessage.value = getLocalizedAiHint('empty');
+    toast.show(draftCheckMessage.value);
+    return;
+  }
+  if (length < 80) {
+    draftCheckMessage.value = '文字が少ないため、企画相談モードでアイデアを広げてください。';
+    toast.show(draftCheckMessage.value);
+    goToEventAssistant();
+    return;
+  }
+  const preview = extractFromPastedDraft(text);
+  pastedPreview.value = preview;
+  draftCheckMessage.value = '草案を検出しました。確認してから表单に反映できます。';
+};
+
+const applyPastedPreview = () => {
+  if (!pastedPreview.value) return;
+  const confirmed = window.confirm('この草案を表单に反映しますか？(タイトル/详情/注意事項)');
+  if (!confirmed) return;
+  const { title, description, rules } = pastedPreview.value;
+  if (title) {
+    form.title = title;
+    setLangContent('title', activeContentLang.value, title);
+  }
+  if (description) {
+    form.description = description;
+    form.descriptionHtml = `<p>${description}</p>`;
+    setLangContent('description', activeContentLang.value, description);
+    descriptionHtmlByLang[activeContentLang.value] = form.descriptionHtml;
+  }
+  if (rules) {
+    form.config.riskNoticeText = rules;
+    setLangContent('rules', activeContentLang.value, rules);
+  }
+  pastedPreview.value = null;
+  draftCheckMessage.value = '表单に反映しました。内容を確認してください。';
+  toast.show(draftCheckMessage.value);
+};
+
+const togglePaste = (state?: boolean) => {
+  const next = state !== undefined ? state : !showPastePanel.value;
+  showPastePanel.value = next;
+  try {
+    if (next) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  } catch (err) {
+    console.warn('Failed to toggle body overflow', err);
+  }
+  if (!next) {
+    draftCheckMessage.value = '';
+    pastedPreview.value = null;
   }
 };
 
@@ -1334,11 +1729,23 @@ const removeLocalCoverPreview = (coverId: string) => {
   pendingCoverFiles.value = pendingCoverFiles.value.filter((item) => item.id !== coverId);
 };
 
-const buildContent = (text: string) => ({
-  original: text,
-  lang: 'ja',
-  translations: {},
-});
+const buildContent = (text: string, field: AiTargetKey) => {
+  syncContentMap(activeContentLang.value);
+  const translations = { ...(contentByLang[field] || {}) } as Record<string, string>;
+  const baseLang: ContentLang = translations.ja ? 'ja' : activeContentLang.value;
+  const original = translations[baseLang] ?? text;
+  delete translations[baseLang];
+  Object.keys(translations).forEach((lang) => {
+    if (!translations[lang]) {
+      delete translations[lang];
+    }
+  });
+  return {
+    original,
+    lang: baseLang,
+    translations,
+  };
+};
 
 function buildRegistrationSchema() {
   return registrationFields.value
@@ -1413,6 +1820,16 @@ const focusMainInline = (key: 'title' | 'locationText') => {
     if (!target) return;
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
+  });
+};
+
+const goToEventAssistant = () => {
+  if (!communityId) return;
+  persistLang();
+  router.push({
+    name: 'ConsoleMobileEventCreate',
+    params: { communityId },
+    query: { lang: activeContentLang.value },
   });
 };
 
@@ -1646,6 +2063,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
     form.ticketPrice = 0;
   }
 
+  syncContentMap(activeContentLang.value);
   const descriptionText = stripHtml(form.descriptionHtml || '').trim() || form.description.trim();
   if (!descriptionText) {
     error.value = '请填写活动详情';
@@ -1663,9 +2081,10 @@ const persistEvent = async (status: 'draft' | 'open') => {
   }
 
   const payload = {
-    title: buildContent(form.title),
-    description: buildContent(form.description || form.title),
+    title: buildContent(form.title, 'title'),
+    description: buildContent(form.description || form.title, 'description'),
     descriptionHtml: form.descriptionHtml,
+    originalLanguage: activeContentLang.value,
     category: form.category || null,
     locationText: form.locationText,
     locationLat: form.locationLat,
@@ -1690,7 +2109,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
         ...payload,
         ticketTypes: [
           {
-            name: buildContent(`${form.title} チケット`),
+            name: buildContent(`${form.title} チケット`, 'title'),
             type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
             price: form.ticketPrice ?? 0,
           },
@@ -1705,7 +2124,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
       ...payload,
       ticketTypes: [
         {
-          name: buildContent(`${form.title} チケット`),
+          name: buildContent(`${form.title} チケット`, 'title'),
           type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
           price: form.ticketPrice ?? 0,
         },
@@ -1745,11 +2164,6 @@ const handlePreview = () => {
     return;
   }
   router.push({ name: 'event-detail', params: { eventId } });
-};
-
-const openAssistant = () => {
-  if (!communityId) return;
-  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId } });
 };
 
 const handleCoverUpload = async (ev: Event) => {
@@ -1883,6 +2297,7 @@ const applyAssistantDraftFromStorage = () => {
 
 onMounted(async () => {
   setupMobileMediaQuery();
+  loadStoredLang();
   await load();
   applyAssistantDraftFromStorage();
   restoreScrollPosition();
@@ -1951,6 +2366,70 @@ select {
   padding: 0.85rem;
   font-size: 0.9rem;
   color: #0f172a;
+}
+.ai-helper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ai-helper-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+.ai-lang-switch {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.ai-lang-btn {
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #334155;
+}
+.ai-lang-btn.active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+.ai-helper-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.ai-chip {
+  border: 1px dashed #cbd5f5;
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.ai-chip:disabled {
+  opacity: 0.6;
+}
+.ai-preview {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+.ai-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ai-preview-text {
+  white-space: pre-line;
+  color: #0f172a;
+  margin-top: 0.35rem;
+  line-height: 1.45;
 }
 .checklist-card {
   gap: 0.5rem;
@@ -2893,8 +3372,9 @@ select {
 .copy-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  z-index: 80;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 90;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -3192,19 +3672,163 @@ select {
   color: rgba(236, 245, 255, 0.9);
 }
 
-.hero-assistant {
+.assistant-link {
+  margin-top: 8px;
   align-self: flex-start;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(15, 76, 92, 0.2);
-  color: #ecf5ff;
+  border: 1px solid rgba(0, 144, 217, 0.25);
+  background: #fff;
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.entry-switcher {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
   margin-top: 10px;
+}
+.entry-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+}
+.entry-card:active {
+  transform: translateY(1px);
+}
+.entry-icon {
+  font-size: 18px;
+}
+.entry-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.entry-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #475569;
+}
+.entry-lang {
+  justify-self: end;
+}
+
+.cover-below {
+  margin-top: 10px;
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: none;
+}
+.cover-below .hero-cover-rules {
+  color: #475569;
+}
+.cover-below .hero-cover-add {
+  border-color: rgba(15, 23, 42, 0.15);
+  background: #f8fafc;
+  color: #0f172a;
+}
+.paste-card {
+  margin-top: 10px;
+  background: #fff;
+  border: 1px solid rgba(0, 144, 217, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.paste-input {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 200px;
+}
+.paste-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.paste-preview {
+  border: 1px dashed rgba(15, 23, 42, 0.15);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.paste-preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.paste-preview-text {
+  margin: 0;
+  color: #0f172a;
+  line-height: 1.4;
+}
+.paste-preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.paste-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 12px;
+  z-index: 90;
+}
+.paste-card.sheet {
+  width: 100%;
+  max-width: 640px;
+  border-radius: 18px 18px 12px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.25);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.paste-close {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .cover-upload-overlay {
