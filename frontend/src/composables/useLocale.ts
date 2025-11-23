@@ -6,6 +6,11 @@ const STORAGE_KEY = 'app.locale';
 const supportedLocales = Object.keys(messages);
 const defaultLocale = i18n.global.locale.value || 'ja';
 
+const buildPreferredLangs = (locale: string) => {
+  const fallbacks = ['ja', 'zh', 'en'];
+  return Array.from(new Set([locale, ...fallbacks]));
+};
+
 function detectBrowserLocale() {
   if (typeof navigator === 'undefined') return defaultLocale;
   const langs = navigator.languages || [navigator.language];
@@ -27,6 +32,7 @@ function loadLocale() {
 
 export function useLocale() {
   const current = computed(() => i18n.global.locale.value as string);
+  const preferredLangs = computed(() => buildPreferredLangs(current.value));
 
   const setLocale = (locale: string) => {
     if (!supportedLocales.includes(locale)) return;
@@ -44,5 +50,8 @@ export function useLocale() {
     currentLocale: current,
     supportedLocales,
     setLocale,
+    preferredLangs,
   };
 }
+
+export { buildPreferredLangs };

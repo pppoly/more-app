@@ -4,10 +4,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import type { Express } from 'express';
-import { PermissionsService } from '../auth/permissions.service';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
 import { PaymentsService } from '../payments/payments.service';
 import { AiService, TranslateTextDto } from '../ai/ai.service';
+import { PermissionsService } from '../auth/permissions.service';
 
 const EVENT_UPLOAD_ROOT = join(UPLOAD_ROOT, 'events');
 
@@ -78,6 +78,17 @@ export class ConsoleEventsService {
       },
       include: { ticketTypes: true },
     });
+    await this.prisma.event.update({
+      where: { id: created.id },
+      data: {
+        config: this.mergeReviewConfig(created.config, {
+          status: 'pending_review',
+          reviewerId: 'system',
+          reason: null,
+          reviewedAt: null,
+        }),
+      },
+    });
     await this.translateEventIfNeeded(created.id, created.originalLanguage, targetLangs, {
       title: created.title,
       description: created.description,
@@ -98,8 +109,21 @@ export class ConsoleEventsService {
 
   async updateEvent(userId: string, eventId: string, data: any) {
     await this.permissions.assertEventManager(userId, eventId);
+    const existing = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { status: true, config: true },
+    });
     const { ticketTypes = [], ...rest } = data;
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
+    if (!eventData.status && existing?.status === 'rejected') {
+      eventData.status = 'pending_review';
+      eventData.config = this.mergeReviewConfig(existing.config ?? null, {
+        status: 'pending_review',
+        reviewerId: 'system',
+        reason: null,
+        reviewedAt: null,
+      });
+    }
     const targetLangs = this.getTranslationTargets(rest.originalLanguage);
     const updated = await this.prisma.event.update({
       where: { id: eventId },
@@ -550,6 +574,48 @@ export class ConsoleEventsService {
     };
   }
 
+  async approveEvent(eventId: string, userId: string) {
+    await this.permissions.assertAdmin(userId);
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    const updated = await this.prisma.event.update({
+      where: { id: eventId },
+      data: {
+        status: 'open',
+        config: this.mergeReviewConfig(event.config, {
+          status: 'approved',
+          reviewerId: userId,
+          reviewedAt: new Date(),
+          reason: null,
+        }),
+      },
+    });
+    return { eventId: updated.id, status: updated.status };
+  }
+
+  async rejectEvent(eventId: string, userId: string, reason?: string) {
+    await this.permissions.assertAdmin(userId);
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    const updated = await this.prisma.event.update({
+      where: { id: eventId },
+      data: {
+        status: 'rejected',
+        config: this.mergeReviewConfig(event.config, {
+          status: 'rejected',
+          reviewerId: userId,
+          reviewedAt: new Date(),
+          reason: reason ?? '内容未通过审核',
+        }),
+      },
+    });
+    return { eventId: updated.id, status: updated.status, reason: reason ?? null };
+  }
+
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined): string {
     if (!content) return '';
     if (typeof content === 'string') return content;
@@ -700,7 +766,7 @@ export class ConsoleEventsService {
 
     assign('visibility', payload.visibility);
     assign('requireApproval', payload.requireApproval ?? (isUpdate ? undefined : false));
-    assign('status', payload.status ?? (isUpdate ? undefined : 'open'));
+    assign('status', payload.status ?? (isUpdate ? undefined : 'pending_review'));
     if (payload.registrationFormSchema !== undefined) {
       assign('registrationFormSchema', payload.registrationFormSchema ?? Prisma.JsonNull);
     } else if (!isUpdate) {
@@ -731,6 +797,22 @@ export class ConsoleEventsService {
       };
     }
     return { original: String(value), lang: normalizedLang, translations: {} };
+  }
+
+  private mergeReviewConfig(
+    config: Prisma.JsonValue | null | undefined,
+    review: { status: string; reviewerId?: string | null; reviewedAt?: Date | null; reason?: string | null; labels?: string[] },
+  ): Prisma.InputJsonValue {
+    const base = typeof config === 'object' && config !== null ? { ...(config as Record<string, any>) } : {};
+    base.review = {
+      ...(typeof base.review === 'object' ? base.review : {}),
+      status: review.status,
+      reviewerId: review.reviewerId ?? null,
+      reviewedAt: review.reviewedAt === undefined ? new Date() : review.reviewedAt,
+      reason: review.reason ?? null,
+      labels: review.labels ?? [],
+    };
+    return base as Prisma.InputJsonValue;
   }
 
   private extractOriginalText(field: any): { text: string | null; lang: string | null } {

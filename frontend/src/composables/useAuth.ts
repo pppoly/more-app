@@ -2,6 +2,7 @@ import { computed, reactive } from 'vue';
 import { devLogin as apiDevLogin, fetchMe, setAccessToken as applyClientToken } from '../api/client';
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { useLocale } from './useLocale';
 
 interface AuthState {
   user: UserProfile | null;
@@ -18,6 +19,14 @@ const state = reactive<AuthState>({
 });
 
 let initialized = false;
+const { setLocale } = useLocale();
+
+function applyUserLocale(profile: UserProfile | null) {
+  const locale = profile?.preferredLocale;
+  if (locale) {
+    setLocale(locale);
+  }
+}
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
@@ -46,6 +55,7 @@ async function restoreSession() {
   try {
     state.initializing = true;
     state.user = await fetchMe();
+    applyUserLocale(state.user);
   } catch (error) {
     console.error('Failed to restore session', error);
     setToken(null);
@@ -64,6 +74,7 @@ export function useAuth() {
       const response = await apiDevLogin(name, language);
       setToken(response.accessToken);
       state.user = normalizeUser(response.user);
+      applyUserLocale(state.user);
     } finally {
       state.initializing = false;
     }
@@ -73,10 +84,12 @@ export function useAuth() {
     if (!state.accessToken) return;
     const profile = await fetchMe();
     state.user = normalizeUser(profile);
+    applyUserLocale(state.user);
   };
 
   const setUserProfile = (profile: UserProfile | null) => {
     state.user = normalizeUser(profile);
+    applyUserLocale(state.user);
   };
 
   const logout = () => {

@@ -61,6 +61,16 @@ export class ConsoleEventsController {
     return this.consoleEventsService.cancelEvent(eventId, req.user.id, { reason, notify });
   }
 
+  @Post(':eventId/review/approve')
+  approveEvent(@Param('eventId') eventId: string, @Req() req: any) {
+    return this.consoleEventsService.approveEvent(eventId, req.user.id);
+  }
+
+  @Post(':eventId/review/reject')
+  rejectEvent(@Param('eventId') eventId: string, @Body('reason') reason: string, @Req() req: any) {
+    return this.consoleEventsService.rejectEvent(eventId, req.user.id, reason);
+  }
+
   @Post(':eventId/checkins')
   checkinRegistration(
     @Param('eventId') eventId: string,

@@ -7,6 +7,7 @@ export interface UserProfile {
   id: string;
   name: string;
   language?: string | null;
+  preferredLocale?: string | null;
   prefecture?: string | null;
   avatarUrl?: string | null;
   isOrganizer?: boolean;

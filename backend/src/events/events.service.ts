@@ -194,6 +194,9 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException('Event not found');
     }
+    if (['pending_review', 'rejected'].includes(event.status)) {
+      throw new ForbiddenException('Event is not available');
+    }
 
     const currentParticipants = event._count?.registrations ?? 0;
     const capacity = event.maxParticipants ?? null;

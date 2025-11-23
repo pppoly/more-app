@@ -64,11 +64,13 @@ import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useResourceConfig } from '../../composables/useResourceConfig';
+import { useLocale } from '../../composables/useLocale';
 
 const router = useRouter();
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const { preferredLangs } = useLocale();
 
 const retrying = ref(false);
 const loadEvents = async () => {
@@ -158,7 +160,7 @@ const formattedEvents = computed(() =>
       capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : null;
     return {
       id: event.id,
-      title: getLocalizedText(event.title),
+      title: getLocalizedText(event.title, preferredLangs.value),
       categoryLabel: categoryLabel(event.category),
       dateText: formatDateShort(event.startTime),
       timeText: formatDateTime(event.startTime),
