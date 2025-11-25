@@ -160,6 +160,47 @@ export interface MockPaymentResponse {
   amount: number;
 }
 
+export interface ConsolePaymentItem {
+  id: string;
+  user: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  };
+  event: {
+    id: string;
+    title: string;
+  } | null;
+  registrationId?: string | null;
+  amount: number;
+  platformFee: number;
+  status: string;
+  method: string;
+  createdAt: string;
+  stripePaymentIntentId?: string | null;
+  stripeRefundId?: string | null;
+}
+
+export interface ConsolePaymentList {
+  items: ConsolePaymentItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface ConsoleCommunityBalance {
+  communityId: string;
+  currency: string;
+  grossPaid: number;
+  platformFee: number;
+  refunded: number;
+  net: number;
+  stripeBalance?: {
+    available: number;
+    pending: number;
+  } | null;
+}
+
 export interface StripeCheckoutResponse {
   checkoutUrl: string;
 }

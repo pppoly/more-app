@@ -10,10 +10,13 @@ import { NotificationModule } from '../notifications/notification.module';
 import { ConsoleEventAssistantController } from './console-event-assistant.controller';
 import { ConsoleEventAssistantService } from './console-event-assistant.service';
 import { AiModule } from '../ai/ai.module';
+import { ConsolePaymentsController } from './console-payments.controller';
+import { ConsoleEventDraftController } from './console-event-draft.controller';
+import { ConsoleEventDraftService } from './console-event-draft.service';
 
 @Module({
   imports: [StripeModule, PaymentsModule, NotificationModule, AiModule],
-  controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController],
-  providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService],
+  controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController, ConsolePaymentsController, ConsoleEventDraftController],
+  providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService, ConsoleEventDraftService],
 })
 export class ConsoleModule {}

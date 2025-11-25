@@ -41,3 +41,13 @@
 - 历史草案抽屉支持默认选中最新一条，载入操作会自动滚动并关闭面板，同时在预览中提示“载入/送出”的具体行为，缓解用户对操作结果的焦虑。
 - Mobile 我的页面增加原生风格的头像裁剪弹层：选择照片后可拖动/缩放并预览，确认才上传，失败会提示原因，提升交互体验。
 - 报名成功页改成简单提示卡，只显示成功 icon、文案和两个跳转按钮，减少干扰。
+- Console mobile event form:
+  - Shell header uses left text back + centered title; hides generic MORE header on non-console routes.
+  - Category picker now opens a sheet instead of web dropdown; placeholder aligned.
+  - Rich text detail editing moved to dedicated mobile page (ConsoleMobileEventNoteEditor); form state persisted via session storage to avoid clearing on return; helper texts removed.
+  - Layout fixes: aligned cards/padding, removed in-form header, prevented auto-scroll on mount, cover panel width overflow fixes; detail row aligned like other inputs; removed quick date chips.
+  - Draft can be saved without cover; publishing still requires at least one cover.
+  - Persist form draft before opening note editor and restore on return.
+  - Event ID now tracked via query/params; after first create, route is replaced with ?eventId so subsequent saves update same event.
+- Paste flow (ConsoleEventPasteMobile): removed textarea hint; added loading state on “下一步”; calls extractEventDraft before navigating and stores result for the form.
+- Event list/management (mobile): tapping a draft in ConsoleCommunityEventsMobile opens the mobile form with eventId to continue editing; manage page edit button also routes to mobile form with eventId.

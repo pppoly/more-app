@@ -232,14 +232,13 @@ const routes: RouteRecordRaw[] = [
       requiresOrganizer: true,
       layout: 'console-mobile',
       devPageName: 'Console 移动壳',
-      hideTabbar: true,
     },
     children: [
       {
         path: '',
         name: 'ConsoleMobileHome',
         component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
-        meta: { devPageName: 'Console-首页', hideShellHeader: true },
+        meta: { devPageName: 'Console-首页', hideShellHeader: true, flushContent: true },
       },
       {
         path: 'communities/:communityId/events',
@@ -257,6 +256,19 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           devPageName: 'Console-创建社群',
+        },
+      },
+      {
+        path: 'communities/:communityId/events/paste',
+        name: 'ConsoleMobileEventPaste',
+        component: () => import('../views/console/mobile/ConsoleEventPasteMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: {
+          hideTabbar: true,
+          hideShellHeader: true,
+          flushContent: true,
+          layout: 'console-mobile',
+          devPageName: 'Console-粘贴草案',
         },
       },
       {
@@ -286,8 +298,9 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           hideTabbar: true,
-          hideShellHeader: true,
+          hideShellHeader: false,
           layout: 'console-mobile',
+          flushContent: true,
           devPageName: 'Console-活动表单',
         },
       },
@@ -339,6 +352,13 @@ const routes: RouteRecordRaw[] = [
         name: 'ConsoleMobilePayout',
         component: () => import('../views/console/mobile/PayoutSettingsMobile.vue'),
         meta: { devPageName: 'Console-收款设置' },
+      },
+      {
+        path: 'communities/:communityId/payments',
+        name: 'ConsoleMobilePayments',
+        component: () => import('../views/console/mobile/ConsolePaymentsMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: { devPageName: 'Console-收款流水', hideTabbar: true, hideShellHeader: true },
       },
       {
         path: 'subscription',

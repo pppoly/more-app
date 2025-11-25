@@ -98,7 +98,7 @@
         <textarea
           v-model="form.description"
           rows="6"
-          placeholder="例：Tokyo Community Organizations Meetup Group は..."
+          placeholder="例：Tokyo Community Organizations Group は..."
         ></textarea>
       </section>
 

@@ -97,6 +97,9 @@
             <button class="btn ghost" @click="openPublicPage">
               <span class="i-lucide-external-link mr-1.5"></span> 前台ページを見る
             </button>
+            <button class="btn ghost" @click="openPayments" :disabled="!communityId">
+              <span class="i-lucide-credit-card mr-1.5"></span> 收款/交易
+            </button>
             <button class="btn solid" @click="editEvent">
               <span class="i-lucide-pencil mr-1.5"></span> イベントを編集
             </button>
@@ -379,8 +382,21 @@ const goBack = () => {
 };
 
 const editEvent = () => {
-  if (!eventCard.value) return;
-  router.push({ name: 'console-event-edit', params: { eventId: eventCard.value.id } });
+  if (!eventCard.value || !communityId.value) return;
+  router.push({
+    name: 'ConsoleMobileEventForm',
+    params: { communityId: communityId.value },
+    query: { eventId: eventCard.value.id },
+  });
+};
+
+const openPayments = () => {
+  if (!communityId.value || !eventCard.value) return;
+  router.push({
+    name: 'ConsoleMobilePayments',
+    params: { communityId: communityId.value },
+    query: { eventId: eventCard.value.id },
+  });
 };
 
 const cancelEvent = async () => {

@@ -4,50 +4,81 @@
       <header class="sub-header">
         <div>
           <p class="sub-label">订阅计划</p>
-          <h1>选择你的收款能力</h1>
+          <h1>按社群成长阶段挑选方案</h1>
+          <p class="sub-desc">透明收费：平台抽成 + Stripe 通道费分开显示，超额 AI 仅记录不扣费。</p>
         </div>
         <button class="refresh-btn" type="button" @click="reload" :disabled="loading || paying">
           <span class="i-lucide-refresh-ccw" />
         </button>
       </header>
 
-    <div v-if="loading" class="empty">加载中…</div>
-    <div v-else-if="!communityId" class="empty">
-      <p>请先选择一个社群再订阅套餐。</p>
-    </div>
+      <div class="disclaimer">
+        <p class="eyebrow">收费结构</p>
+        <ol>
+          <li>Stripe 通道费：实报实销，单独显示。</li>
+          <li>平台抽佣：Free 5%；Starter 可选 2% 或固定 ¥3,000/月（0% 抽成）；Pro 0%。</li>
+          <li>AI 超额：S1 不计费，只记录 usage（文本/图像 ¥0.5/次，视频审核 ¥3/分钟）。</li>
+        </ol>
+      </div>
 
-    <div v-else class="plan-list">
-      <button
-        v-for="plan in plans"
-        :key="plan.id"
-        class="plan-card"
-        :class="{ active: plan.id === activePlanId, paying: paymentPlanId === plan.id }"
-        type="button"
-        :disabled="submittingId === plan.id || paying"
-        @click="startSubscribe(plan.id)"
-      >
-        <div class="plan-head">
-          <div>
-            <p class="plan-name">{{ plan.name }}</p>
-            <p class="plan-price">
-              <span v-if="plan.monthlyFee > 0">¥{{ plan.monthlyFee }}/月</span>
-              <span v-else>免费</span>
-            </p>
+      <div v-if="loading" class="empty">加载中…</div>
+      <div v-else-if="!communityId" class="empty">
+        <p>请先选择一个社群再订阅套餐。</p>
+      </div>
+
+      <div v-else class="plan-grid">
+        <article
+          v-for="plan in displayPlans"
+          :key="plan.id"
+          class="plan-card"
+          :class="plan.cardClass"
+        >
+          <div class="plan-chip">
+            <span>{{ plan.guide.tone }}</span>
+            <span v-if="plan.id === activePlanId" class="current-chip">当前</span>
           </div>
-          <span v-if="plan.id === activePlanId" class="plan-badge">当前</span>
-        </div>
-        <p class="plan-meta">手续费：{{ plan.transactionFeePercent }}% + ¥{{ plan.transactionFeeFixed }}</p>
-        <p class="plan-meta">结算：{{ plan.payoutSchedule }}</p>
-        <p class="plan-meta">功能：{{ summaryFeatures(plan) }}</p>
-        <div class="plan-action">
-          <span v-if="submittingId === plan.id" class="loading">处理中...</span>
-          <span v-else-if="paymentPlanId === plan.id" class="loading">填写支付信息</span>
-          <span v-else-if="plan.id === activePlanId" class="current">已订阅</span>
-          <span v-else class="action-cta">开通</span>
-        </div>
-      </button>
-      <div v-if="!plans.length" class="empty">暂无可选套餐</div>
-    </div>
+          <h2 class="plan-name">{{ plan.guide.name }}</h2>
+          <p class="plan-price">{{ plan.guide.price }}</p>
+          <p class="plan-audience">{{ plan.guide.audience }}</p>
+          <div class="plan-fee">
+            <p><strong>平台抽成：</strong>{{ plan.guide.platformFee }}</p>
+            <p><strong>Stripe：</strong>{{ plan.guide.stripeFee }}</p>
+          </div>
+          <div class="plan-feature">
+            <p class="feature-title">功能</p>
+            <ul>
+              <li v-for="f in plan.guide.features" :key="f">· {{ f }}</li>
+            </ul>
+          </div>
+          <div class="plan-feature">
+            <p class="feature-title">用户心智</p>
+            <ul>
+              <li v-for="m in plan.guide.mindset" :key="m">🔹 {{ m }}</li>
+            </ul>
+          </div>
+          <button
+            v-if="plan.selectable"
+            class="plan-cta"
+            :class="{ active: plan.id === activePlanId }"
+            type="button"
+            :disabled="submittingId === plan.id || paying || !plan.available"
+            @click="plan.available && startSubscribe(plan.id)"
+          >
+            <span v-if="!plan.available">敬请期待</span>
+            <span v-else-if="submittingId === plan.id">处理中...</span>
+            <span v-else-if="paymentPlanId === plan.id">填写支付信息</span>
+            <span v-else-if="plan.id === activePlanId">已订阅</span>
+            <span v-else>开通</span>
+          </button>
+          <a
+            v-else
+            class="plan-cta outline"
+            href="mailto:hi@socialmore.com?subject=Enterprise"
+          >
+            联系销售
+          </a>
+        </article>
+      </div>
 
       <p v-if="error" class="error">{{ error }}</p>
     </template>
@@ -111,6 +142,109 @@ let paymentElement: StripePaymentElement | null = null;
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const activePlanId = computed(() => communityStore.getActiveCommunity()?.pricingPlanId ?? null);
 
+const planGuide = {
+  free: {
+    key: 'free',
+    name: '🟩 Free（免费试用 / Sandbox）',
+    price: '¥0 / 月',
+    audience: '适合：初次体验者、小圈子活动者、来试试平台的人。',
+    platformFee: '5%',
+    stripeFee: '实报实销',
+    tone: '试用 / Sandbox',
+    features: [
+      '每月 3 场活动，最多 100 张票',
+      'AI 文案 200 次/月，基础多语言翻译（JP/EN/CN）',
+      '基础文本/图片审核 200 次',
+      '1 名管理员',
+    ],
+    mindset: ['我来试试平台和 AI', '适合个人、小型聚会'],
+    cardClass: 'plan-free',
+  },
+  starter: {
+    key: 'starter',
+    name: '🟧 Starter（成长区间）',
+    price: '¥2,480 / 月',
+    audience: '适合：小型社区、语言交换会、兴趣小组。',
+    platformFee: '可选 2% 或 固定 ¥3,000/月（0% 抽成）',
+    stripeFee: '实报实销',
+    tone: '成长起步',
+    features: [
+      '20 场活动/月，最多 5,000 张票',
+      'AI 文案 300 次/月，多语言翻译 JP/EN/CN',
+      '内容审核 1,500 次（文/图）',
+      '模板：BBQ/学习会/外出活动，数据导出 CSV',
+      '管理员 3 名',
+    ],
+    mindset: ['比同类平台便宜，AI 更强/更安全', '活动多且有收入，想降抽成'],
+    cardClass: 'plan-starter',
+  },
+  pro: {
+    key: 'pro',
+    name: '🟦 Pro（核心盈收等级）',
+    price: '¥9,800 / 月',
+    audience: '适合：频繁办活动的主理人、大型兴趣社群/NPO。',
+    platformFee: '0% 平台抽佣（仅 Stripe 通道费）',
+    stripeFee: '实报实销',
+    tone: '专业 / 0% 抽成',
+    features: [
+      '无限活动 & 票（合理上限）',
+      'AI 文案 2,000 次/月 + 海报 100 次/月',
+      '高级审核（文本/图片/敏感）',
+      '多语言活动展示，Webhook/Zapier 自动化，品牌定制',
+      '管理员 10 名，优先客服',
+    ],
+    mindset: ['要品牌/0% 抽成，用 MORE 做社区事业', '追求专业工具与自动化'],
+    cardClass: 'plan-pro',
+  },
+  enterprise: {
+    key: 'enterprise',
+    name: '🟪 Enterprise（企业 / 政府 / 协会）',
+    price: '¥25,000〜80,000 / 月（按需）',
+    audience: '适合：大学、NPO 联合体、地方政府、企业培训等。',
+    platformFee: '定制',
+    stripeFee: '实报实销',
+    tone: '定制 / 私有化',
+    features: [
+      '私有模型/专属 AI，大规模多语言生成',
+      '专属审核策略，子组织/多团队权限',
+      '专属客户经理与 SLA，单租户部署（可选）',
+    ],
+    mindset: ['需要合规、定制与大规模 AI', '政企/学校/协会场景'],
+    cardClass: 'plan-enterprise',
+  },
+};
+
+const displayPlans = computed(() => {
+  const hasApiPlans = plans.value.length > 0;
+  const planMap = plans.value.reduce<Record<string, PricingPlan>>((acc, plan) => {
+    const name = plan.name?.toLowerCase() ?? '';
+    const key = name.includes('starter')
+      ? 'starter'
+      : name.includes('pro')
+        ? 'pro'
+        : name.includes('enterprise')
+          ? 'enterprise'
+          : 'free';
+    acc[key] = plan;
+    return acc;
+  }, {});
+
+  return Object.values(planGuide).map((guide) => {
+    const matchedPlan = planMap[guide.key];
+    const price = matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / 月` : guide.price;
+    return {
+      id: matchedPlan?.id ?? guide.key,
+      guide: {
+        ...guide,
+        price,
+      },
+      selectable: guide.key !== 'enterprise',
+      cardClass: guide.cardClass,
+      available: Boolean(matchedPlan || !hasApiPlans),
+    };
+  });
+});
+
 const loadPlans = async () => {
   error.value = null;
   loading.value = true;
@@ -121,13 +255,6 @@ const loadPlans = async () => {
   } finally {
     loading.value = false;
   }
-};
-
-const summaryFeatures = (plan: PricingPlan) => {
-  if (!plan.features || typeof plan.features !== 'object') return '基础支持';
-  const featureList = Object.values(plan.features).flat() as string[];
-  if (!featureList.length) return '基础支持';
-  return featureList.slice(0, 3).join(' / ');
 };
 
 const startSubscribe = async (planId: string) => {
@@ -269,6 +396,7 @@ const confirmPayment = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .sub-label {
@@ -282,6 +410,11 @@ const confirmPayment = async () => {
   font-weight: 700;
   color: #0f172a;
 }
+.sub-desc {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
 .refresh-btn {
   border: none;
   background: rgba(15, 23, 42, 0.06);
@@ -290,68 +423,114 @@ const confirmPayment = async () => {
   border-radius: 12px;
   color: #0f172a;
 }
-.plan-list {
-  display: flex;
-  flex-direction: column;
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
 .plan-card {
   width: 100%;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: #fff;
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 14px;
   text-align: left;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.plan-card.active {
-  border-color: #0ea5e9;
-  box-shadow: 0 10px 30px rgba(14, 165, 233, 0.2);
+.plan-free {
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
 }
-.plan-card.paying {
-  border-color: #6366f1;
+.plan-starter {
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
 }
-.plan-head {
+.plan-pro {
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+}
+.plan-enterprise {
+  background: linear-gradient(135deg, #f5f3ff, #ffffff);
+}
+.plan-chip {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-.plan-name {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: #0f172a;
-}
-.plan-price {
-  margin: 2px 0 0;
-  font-size: 14px;
-  color: #0f172a;
-}
-.plan-meta {
-  margin: 6px 0 0;
+  gap: 8px;
   font-size: 12px;
   color: #475569;
 }
-.plan-badge {
-  background: #ecfeff;
-  color: #0ea5e9;
+.current-chip {
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.plan-action {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-  color: #0f172a;
-  font-weight: 700;
-}
-.action-cta {
+  background: #ecfeff;
   color: #0ea5e9;
+  font-weight: 700;
 }
-.current {
-  color: #22b07d;
+.plan-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.plan-price {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.plan-audience {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+.plan-fee {
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #0f172a;
+}
+.plan-feature {
+  background: #fff;
+}
+.feature-title {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.plan-feature ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #0f172a;
+  font-size: 13px;
+}
+.plan-cta {
+  margin-top: 6px;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #fff;
+}
+.plan-cta.active {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.plan-cta.outline {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  text-align: center;
 }
 .loading {
   color: #475569;
@@ -365,6 +544,25 @@ const confirmPayment = async () => {
   text-align: center;
   color: #94a3b8;
   padding: 20px;
+}
+.disclaimer {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+}
+.disclaimer ol {
+  margin: 8px 0 0 16px;
+  padding: 0;
+}
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: #64748b;
 }
 .payment-sheet {
   margin-top: 14px;

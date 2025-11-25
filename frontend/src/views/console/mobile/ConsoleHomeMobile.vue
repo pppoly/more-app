@@ -45,158 +45,54 @@
     </section>
 
     <section class="action-grid">
-      <button class="action-card" type="button" @click="goCreateCommunity">
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">コミュニティ作成</p>
-            <p class="action-desc">新しいコミュニティを登録</p>
-          </div>
+      <button class="action-tile" type="button" @click="goCreateCommunity">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">创建社群</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="createEvent"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">新しいイベント</p>
-            <p class="action-desc">イベントを作成して公開</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="openCreateEventSheet">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">新建活动</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goEventAssistant"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">AI イベント助手</p>
-            <p class="action-desc">SOCIALMORE 憲法で企画</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goEventAssistant">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">AI 助手</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goAllEvents"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">イベント管理</p>
-            <p class="action-desc">登録状況と参加者を確認</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goAllEvents">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">活动管理</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goPayout"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">収益と入金</p>
-            <p class="action-desc">入金設定・請求を確認</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">收益入金</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goSubscription"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">プランと設定</p>
-            <p class="action-desc">プラン変更や通知設定</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goSubscription">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">订阅方案</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goPublicPortal"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">公開ページを見る</p>
-            <p class="action-desc">社群ポータルを確認（ユーザー側表示）</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPublicPortal">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">公开页</p>
       </button>
-      <button
-        class="action-card"
-        type="button"
-        :class="{ 'is-disabled': !hasCommunity }"
-        @click="goTicketScanner"
-      >
-        <div class="action-entry">
-          <div class="action-icon">
-            <img :src="defaultActionIcon" alt="" />
-          </div>
-          <div>
-            <p class="action-title">验票扫码</p>
-            <p class="action-desc">ストアフロントでQRを読み取る</p>
-          </div>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
+        <div class="action-icon">
+          <img :src="defaultActionIcon" alt="" />
         </div>
+        <p class="action-title">验票扫码</p>
       </button>
-    </section>
-
-    <section class="events-section">
-      <div class="section-head">
-        <div>
-          <p class="section-label">イベントの進行状況</p>
-          <h2>最新イベント</h2>
-        </div>
-        <button class="link-button" type="button" @click="goAllEvents">一覧を見る</button>
-      </div>
-      <div class="event-cards">
-        <button
-          v-for="item in displayEvents"
-          :key="item.id"
-          class="event-card"
-          type="button"
-          @click="openManage(item.id)"
-        >
-          <div class="event-status" :class="statusBadgeClass(item.status)">
-            {{ statusLabel(item.status) }}
-          </div>
-          <p class="event-date">{{ item.dateTimeText }}</p>
-          <h3>{{ item.title }}</h3>
-          <p class="event-meta">{{ item.entrySummary }}</p>
-        </button>
-        <div v-if="!displayEvents.length" class="event-empty">
-          まだイベントがありません。新しい企画を始めましょう。
-        </div>
-      </div>
     </section>
 
     <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
@@ -233,6 +129,46 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
+      <div class="create-sheet">
+        <header class="create-head">
+          <p class="create-title">怎么开始？</p>
+          <p class="create-subtitle">先选一个最省事的方式</p>
+        </header>
+        <div class="create-list">
+      <button type="button" class="create-item" @click="selectCreateMode('paste')">
+        <div class="create-icon">🧾</div>
+        <div class="create-body">
+          <p class="create-item-title">我已有活动方案</p>
+          <p class="create-item-desc">粘贴提纲，自动帮你填表，省时省力</p>
+        </div>
+          </button>
+          <button type="button" class="create-item" @click="selectCreateMode('assistant')">
+            <div class="create-icon">🤖</div>
+            <div class="create-body">
+              <p class="create-item-title">我只有想法</p>
+              <p class="create-item-desc">AI 一起讨论，几句口述生成活动内容</p>
+            </div>
+          </button>
+          <button type="button" class="create-item" @click="selectCreateMode('basic')">
+            <div class="create-icon">✍️</div>
+            <div class="create-body">
+              <p class="create-item-title">直接填活动</p>
+              <p class="create-item-desc">按表单一步步填写，熟悉流程最快</p>
+            </div>
+          </button>
+          <button type="button" class="create-item" @click="selectCreateMode('copy')">
+            <div class="create-icon">📄</div>
+            <div class="create-body">
+              <p class="create-item-title">复制一个历史活动</p>
+              <p class="create-item-desc">复用以前的配置，几秒办同款</p>
+            </div>
+          </button>
+        </div>
+        <button type="button" class="create-close" @click="closeCreateSheet">取消</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -262,6 +198,7 @@ const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
 const showCommunityPicker = ref(false);
+const showCreateSheet = ref(false);
 const pickerLoading = ref(false);
 const heroLogoUrl = ref<string | null>(null);
 const heroLoading = ref(true);
@@ -374,9 +311,40 @@ const openManage = (eventId: string) => {
   router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
 };
 
-const createEvent = () => {
+const openCreateEventSheet = () => {
   if (!communityId.value) return;
-  router.push({ name: 'ConsoleMobileEventForm', params: { communityId: communityId.value } });
+  showCreateSheet.value = true;
+};
+
+const closeCreateSheet = () => {
+  showCreateSheet.value = false;
+};
+
+const selectCreateMode = (mode: 'paste' | 'assistant' | 'basic' | 'copy') => {
+  if (!communityId.value) return;
+  try {
+    sessionStorage.setItem('CONSOLE_EVENT_ENTRY', mode);
+  } catch (e) {
+    // ignore storage failure
+  }
+  const params = { communityId: communityId.value };
+  switch (mode) {
+    case 'paste':
+      router.push({ name: 'ConsoleMobileEventPaste', params });
+      break;
+    case 'assistant':
+      router.push({ name: 'ConsoleMobileEventCreate', params });
+      break;
+    case 'basic':
+      router.push({ name: 'ConsoleMobileEventForm', params, query: { entry: 'basic' } });
+      break;
+    case 'copy':
+      router.push({ name: 'ConsoleMobileEventForm', params, query: { entry: 'copy' } });
+      break;
+    default:
+      break;
+  }
+  showCreateSheet.value = false;
 };
 
 const goEventAssistant = () => {
@@ -503,7 +471,7 @@ const loadActiveCommunityDetail = async () => {
 <style scoped>
 .console-home {
   min-height: 100vh;
-  padding: calc(env(safe-area-inset-top, 0px) + 4px) 4px calc(60px + env(safe-area-inset-bottom, 0px));
+  padding: calc(0.6rem + env(safe-area-inset-top, 0px)) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
   background: #f7f7fb;
   display: flex;
   flex-direction: column;
@@ -513,17 +481,17 @@ const loadActiveCommunityDetail = async () => {
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   background: #fff;
-  border-radius: 18px;
-  padding: 12px 14px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 20px 20px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
 }
 
 .avatar-btn {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
   border: none;
   padding: 0;
   overflow: hidden;
@@ -554,8 +522,8 @@ const loadActiveCommunityDetail = async () => {
 
 .top-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   color: #0f172a;
   line-height: 1.2;
 }
@@ -595,8 +563,8 @@ const loadActiveCommunityDetail = async () => {
 
 .stat-chip {
   background: #fff;
-  border-radius: 14px;
-  padding: 10px;
+  border-radius: 12px;
+  padding: 12px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
 }
 
@@ -615,30 +583,27 @@ const loadActiveCommunityDetail = async () => {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 2px 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px;
 }
 
-.action-card {
+.action-tile {
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
-  padding: 12px 10px;
-  display: flex;
-  text-align: left;
+  padding: 16px 12px;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-}
-
-.action-entry {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 10px;
+  text-align: center;
 }
 
 .action-icon {
-  width: 36px;
-  height: 36px;
+  width: 60px;
+  height: 60px;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.06);
   display: flex;
@@ -647,110 +612,20 @@ const loadActiveCommunityDetail = async () => {
 }
 
 .action-icon img {
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
 }
 
 .action-title {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--m-color-text-primary);
 }
 
-.action-desc {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: var(--m-color-text-tertiary);
-}
-
-.action-card.is-disabled {
+.action-tile.is-disabled {
   opacity: 0.5;
   pointer-events: none;
-}
-
-.events-section {
-  background: #fff;
-  border-radius: 22px;
-  padding: 18px;
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.section-label {
-  margin: 0;
-  font-size: 11px;
-  color: var(--m-color-text-tertiary);
-}
-
-.section-head h2 {
-  margin: 4px 0 0;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.link-button {
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  color: #0090d9;
-}
-
-.event-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.event-card {
-  border: none;
-  border-radius: 18px;
-  padding: 14px;
-  background: rgba(247, 249, 251, 0.8);
-  text-align: left;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.03);
-}
-
-.event-status {
-  display: inline-flex;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.event-date {
-  margin: 0;
-  font-size: 12px;
-  color: var(--m-color-text-tertiary);
-}
-
-.event-card h3 {
-  margin: 4px 0 2px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
-}
-
-.event-meta {
-  margin: 0;
-  font-size: 12px;
-  color: var(--m-color-text-secondary);
-}
-
-.event-empty {
-  padding: 24px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--m-color-text-tertiary);
 }
 .picker-overlay {
   position: fixed;
@@ -831,5 +706,100 @@ const loadActiveCommunityDetail = async () => {
   text-align: center;
   color: #94a3b8;
   font-size: 13px;
+}
+
+.create-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 70;
+}
+
+.create-sheet {
+  width: 100%;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  padding: 18px 16px 24px;
+  box-shadow: 0 -12px 32px rgba(15, 23, 42, 0.2);
+}
+
+.create-head {
+  margin-bottom: 8px;
+}
+
+.create-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.create-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.create-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.create-item {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  text-align: left;
+}
+
+.create-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.05);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.create-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.create-item-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.create-item-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.create-close {
+  width: 100%;
+  margin-top: 12px;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  font-weight: 700;
 }
 </style>

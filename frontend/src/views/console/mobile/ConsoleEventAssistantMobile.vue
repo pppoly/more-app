@@ -666,7 +666,7 @@ const startIntroConversation = async () => {
   introConversationStarted.value = true;
   const community = activeCommunityDetail.value;
   const aboutText = community?.description ? getLocalizedText(community.description) : '';
-  const communityName = community?.name ?? 'Tokyo Community Organizations Meetup Group';
+  const communityName = community?.name ?? 'Tokyo Community Organizations Group';
   const introPrompt = aboutText
     ? `コミュニティ紹介：${communityName}\n${aboutText}\n\n上記の背景を踏まえて、主催者が最初のアイデアを話しやすいようCoachモードで歓迎し、最初の質問を投げかけてください。`
     : 'コミュニティ紹介情報はありません。主催者を歓迎し、最初のアイデアを引き出す質問から始めてください。';

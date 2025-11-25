@@ -66,7 +66,6 @@
       </div>
     </section>
 
-    <p class="note-editor__hint">尺寸 750×X，最多上传 9 张，默认第一张为详情页主图</p>
     <p v-if="statusMessage" class="note-editor__status">{{ statusMessage }}</p>
 
     <input
@@ -453,7 +452,7 @@ const handleSave = () => {
 <style scoped>
 .note-editor {
   min-height: 100vh;
-  background: #fdf9f0;
+  background: #f5f7fb;
   padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex;
   flex-direction: column;

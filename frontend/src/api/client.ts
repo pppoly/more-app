@@ -29,6 +29,8 @@ import type {
   OrganizerApplicationStatus,
   PricingPlan,
   PromptDefinition,
+  ConsolePaymentList,
+  ConsoleCommunityBalance,
   SupportedLanguagesResponse,
   RenderPromptRequest,
   CompletePromptRequest,
@@ -199,6 +201,32 @@ export async function createStripeCheckout(registrationId: string): Promise<Stri
   return data;
 }
 
+export async function fetchCommunityPayments(
+  communityId: string,
+  params?: { page?: number; pageSize?: number; eventId?: string; status?: string },
+): Promise<ConsolePaymentList> {
+  const { data } = await apiClient.get<ConsolePaymentList>(`/console/communities/${communityId}/payments`, {
+    params,
+  });
+  return data;
+}
+
+export async function fetchCommunityBalance(communityId: string): Promise<ConsoleCommunityBalance> {
+  const { data } = await apiClient.get<ConsoleCommunityBalance>(`/console/communities/${communityId}/balance`);
+  return data;
+}
+
+export async function refundPayment(
+  paymentId: string,
+  payload?: { amount?: number; reason?: string },
+): Promise<{ refundId: string; status: string }> {
+  const { data } = await apiClient.post<{ refundId: string; status: string }>(
+    `/console/payments/${paymentId}/refund`,
+    payload ?? {},
+  );
+  return data;
+}
+
 export async function fetchPricingPlans(): Promise<PricingPlan[]> {
   const { data } = await apiClient.get<PricingPlan[]>('/console/communities/pricing-plans');
   return data;
@@ -210,6 +238,16 @@ export async function subscribeCommunityPlan(
 ): Promise<SubscriptionResponse> {
   const { data } = await apiClient.post<SubscriptionResponse>(`/console/communities/${communityId}/subscription`, {
     planId,
+  });
+  return data;
+}
+
+export async function extractEventDraft(
+  communityId: string,
+  payload: { draft: string; language?: string },
+): Promise<any> {
+  const { data } = await apiClient.post<any>(`/console/communities/${communityId}/event-draft/extract`, payload, {
+    timeout: 45000,
   });
   return data;
 }

@@ -19,7 +19,7 @@
     </div>
 
     <section class="card-list">
-      <article v-for="item in filteredEvents" :key="item.id" class="event-card" @click="openManage(item.id)">
+      <article v-for="item in filteredEvents" :key="item.id" class="event-card" @click="openManage(item.id, item.status)">
         <figure class="event-cover" :style="item.coverStyle"></figure>
         <div class="event-body">
           <div class="event-row">
@@ -114,7 +114,15 @@ watch(
   },
 );
 
-const openManage = (eventId: string) => {
+const openManage = (eventId: string, status: string) => {
+  if (communityId.value && status === 'draft') {
+    router.push({
+      name: 'ConsoleMobileEventForm',
+      params: { communityId: communityId.value },
+      query: { eventId },
+    });
+    return;
+  }
   router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
 };
 
