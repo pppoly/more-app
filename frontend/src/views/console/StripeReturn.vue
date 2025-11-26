@@ -50,9 +50,9 @@ const financeRoute = computed(() => {
 });
 
 const statusText = computed(() => {
-  if (loading.value) return '正在生成 Stripe 链接，请稍等。';
-  if (error.value) return error.value;
-  return '返回控制台查看收款状态，必要时可重新生成开通链接。';
+  if (loading.value) return '正在处理，请稍等…';
+  if (error.value) return '开通未完成，可以重试生成链接或稍后再试。';
+  return '返回控制台查看收款状态，必要时可以重新生成开通链接。';
 });
 
 const regenerate = async () => {
@@ -63,9 +63,7 @@ const regenerate = async () => {
     const { url } = await startCommunityStripeOnboarding(communityId.value);
     window.location.href = url;
   } catch (err: any) {
-    error.value =
-      err?.response?.data?.message ||
-      (err instanceof Error ? err.message : 'Stripe 链接生成失败，请稍后重试');
+    error.value = '开通链接生成失败，请稍后重试或联系支持';
   } finally {
     loading.value = false;
   }

@@ -28,10 +28,11 @@
       <article v-for="event in formattedEvents" :key="event.id" class="event-card" @click="goDetail(event.id)">
         <figure class="event-card__cover" :style="event.coverStyle">
           <div class="event-card__cover-meta">
-            <div class="event-card__avatar-stack">
+            <div v-if="event.attendees.length" class="event-card__avatar-stack">
               <template v-for="(avatar, idx) in event.attendees" :key="`${event.id}-attendee-${idx}`">
                 <img :src="avatar" alt="attendee avatar" :style="{ zIndex: event.attendees.length - idx }" />
               </template>
+              <span v-if="event.attendeesMore" class="event-card__avatar-more">+{{ event.attendeesMore }}</span>
             </div>
             <span class="event-card__capacity-pill">{{ event.capacityText }}</span>
           </div>
@@ -44,8 +45,12 @@
           </p>
           <div class="event-card__community-row">
             <button type="button" class="event-card__community-avatar" @click.stop="goCommunity(event.communitySlug)">
-              <img v-if="event.communityLogo" :src="event.communityLogo" alt="community logo" />
-              <span v-else>{{ event.communityInitial }}</span>
+              <img
+                v-if="event.communityLogo"
+                :src="event.communityLogo"
+                :alt="`${event.communityName} logo`"
+                @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+              />
             </button>
             <p class="event-card__community-name">{{ event.communityName }}</p>
           </div>
@@ -64,11 +69,12 @@ import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useResourceConfig } from '../../composables/useResourceConfig';
-
+import { useLocale } from '../../composables/useLocale';
 const router = useRouter();
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const { preferredLangs } = useLocale();
 
 const retrying = ref(false);
 const loadEvents = async () => {
@@ -158,7 +164,7 @@ const formattedEvents = computed(() =>
       capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : null;
     return {
       id: event.id,
-      title: getLocalizedText(event.title),
+      title: getLocalizedText(event.title, preferredLangs.value),
       categoryLabel: categoryLabel(event.category),
       dateText: formatDateShort(event.startTime),
       timeText: formatDateTime(event.startTime),
@@ -173,7 +179,7 @@ const formattedEvents = computed(() =>
       capacityPercent,
       hasCover: Boolean(event.coverImageUrl),
       coverStyle,
-      attendees: attendeeAvatars(event),
+      ...attendeeAvatars(event),
     };
   }),
 );
@@ -254,15 +260,16 @@ const attendeeAvatars = (event: EventSummary) => {
   if (!avatars.length && Array.isArray(config.attendeePreview)) {
     avatars = config.attendeePreview.map((item: any) => item?.avatarUrl || defaultAvatarImage.value);
   }
-  if (!avatars.length) {
-    avatars = [
-      defaultAvatarImage.value,
-      defaultAvatarImage.value,
-      defaultAvatarImage.value,
-    ];
+  const total = avatars.length;
+  if (!total) {
+    return { attendees: [], attendeesMore: 0 };
   }
-  return avatars.slice(0, 5).map((avatar) => resolveAssetUrl(avatar || defaultAvatarImage.value));
+  const resolved = avatars.map((avatar) => resolveAssetUrl(avatar || defaultAvatarImage.value));
+  const visible = resolved.slice(0, 5);
+  const extra = total > visible.length ? total - visible.length : 0;
+  return { attendees: visible, attendeesMore: extra };
 };
+
 
 onMounted(loadEvents);
 </script>
@@ -343,6 +350,17 @@ onMounted(loadEvents);
 
 .event-card__avatar-stack img:first-child {
   margin-left: 0;
+}
+
+.event-card__avatar-more {
+  margin-left: 6px;
+  padding: 0.1rem 0.4rem;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
 }
 
 .event-card__capacity-pill {
@@ -426,11 +444,11 @@ onMounted(loadEvents);
 }
 
 .event-card__community-avatar {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 0.5px solid rgba(0, 0, 0, 0.16);
   border-radius: 8px;
-  background: #f8fafc;
-  border: 1px solid rgba(15, 23, 42, 0.08);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -438,16 +456,22 @@ onMounted(loadEvents);
   font-size: 0.78rem;
   flex-shrink: 0;
   cursor: pointer;
-  overflow: hidden;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  outline: none;
 }
 
 .event-card__community-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-height: 30px;
+  max-width: 32px;
+  object-fit: contain;
   display: block;
-  border-radius: inherit;
-  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  box-shadow: none;
 }
 
 .event-card__community-name {

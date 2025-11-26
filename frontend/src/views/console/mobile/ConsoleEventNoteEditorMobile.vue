@@ -66,7 +66,6 @@
       </div>
     </section>
 
-    <p class="note-editor__hint">尺寸 750×X，最多上传 9 张，默认第一张为详情页主图</p>
     <p v-if="statusMessage" class="note-editor__status">{{ statusMessage }}</p>
 
     <input
@@ -272,7 +271,7 @@ const handleImagePick = async (event: Event) => {
       continue;
     }
     if (file.size > MAX_NOTE_IMAGE_SIZE) {
-      statusMessage.value = '图片过大，请压缩后再试';
+      statusMessage.value = '图片太大，换一张小一点的试试';
       continue;
     }
     try {
@@ -280,7 +279,7 @@ const handleImagePick = async (event: Event) => {
       insertImageBlock(src);
       statusMessage.value = '';
     } catch {
-      statusMessage.value = '图片读取失败，请重试';
+      statusMessage.value = '图片读取失败，换一张再试试';
     }
   }
   input.value = '';
@@ -453,7 +452,7 @@ const handleSave = () => {
 <style scoped>
 .note-editor {
   min-height: 100vh;
-  background: #fdf9f0;
+  background: #f5f7fb;
   padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex;
   flex-direction: column;

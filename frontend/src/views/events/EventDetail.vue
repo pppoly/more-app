@@ -234,7 +234,7 @@ const loadEvent = async (id: string) => {
     gallery.value = await fetchEventGallery(id);
     currentSlide.value = 0;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load event';
+    error.value = '活动加载失败，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -304,7 +304,7 @@ const submitRegistration = async (answers: Record<string, any>) => {
     const registration = await createRegistration(eventId.value!, { formAnswers: answers });
     handleRegistrationResult(registration);
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : 'Failed to register for this event';
+    registrationError.value = '报名失败，请稍后再试';
   } finally {
     isRegistering.value = false;
   }
@@ -331,7 +331,7 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : 'Failed to process payment';
+    registrationError.value = '支付失败，请稍后再试';
   } finally {
     isPaying.value = false;
   }

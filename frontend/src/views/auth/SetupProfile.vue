@@ -129,6 +129,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { updateProfile, uploadMyAvatar } from '../../api/client';
 import defaultAvatarSvg from '../../assets/images/default-avatar.svg';
+import { validateAvatarFile } from '../../utils/validateAvatarFile';
+import { processAvatarImage } from '../../utils/processAvatarImage';
 
 const CROPPER_VIEWPORT = 280;
 const CROPPER_RESULT = 720;
@@ -230,18 +232,25 @@ const cropImageStyle = computed(() => ({
   transform: `scale(${cropScale.value})`,
 }));
 
-const onAvatarFileSelected = (event: Event) => {
+const onAvatarFileSelected = async (event: Event) => {
   const target = event.target as HTMLInputElement | null;
   const file = target?.files?.[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const result = reader.result as string;
-    loadCropImage(result);
-  };
-  reader.readAsDataURL(file);
-  if (target) {
-    target.value = '';
+  try {
+    avatarError.value = '';
+    // 尝试自动处理：验证并压缩裁剪，无需用户干预
+    await validateAvatarFile(file, { requireSquare: false });
+    const processed = await processAvatarImage(file, { size: CROPPER_RESULT });
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      loadCropImage(result);
+    };
+    reader.readAsDataURL(processed);
+  } catch (err) {
+    avatarError.value = err instanceof Error ? '这张头像不合适，换一张清晰的照片试试' : '头像上传失败，请换一张照片再试';
+  } finally {
+    if (target) target.value = '';
   }
 };
 
@@ -305,8 +314,9 @@ const applyCropper = async () => {
   if (!cropImage.value) return;
   avatarUploading.value = true;
   try {
+    // 裁剪区域生成最终上传 Blob
     const blob = await createCroppedBlob();
-    const file = new File([blob], 'avatar.jpg', { type: blob.type || 'image/jpeg' });
+    const file = new File([blob], `avatar-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
     const profile = await uploadMyAvatar(file);
     setUserProfile(profile);
     avatarError.value = '';
@@ -314,7 +324,7 @@ const applyCropper = async () => {
     cropSource.value = null;
     cropImage.value = null;
   } catch (err) {
-    avatarError.value = err instanceof Error ? err.message : '上传失败';
+    avatarError.value = '头像上传失败，请换一张照片或稍后再试';
   } finally {
     avatarUploading.value = false;
   }
@@ -372,7 +382,7 @@ const createCroppedBlob = () => {
         }
       },
       'image/jpeg',
-      0.92,
+      0.86,
     );
   });
 };

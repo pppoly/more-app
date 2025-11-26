@@ -1,5 +1,14 @@
 <template>
   <PageMarker label="P6" />
+  <div v-if="thinkingOverlay" class="assistant-wait">
+    <div class="code-rain">
+      <span v-for="n in 80" :key="n" class="code-char" :style="codeStyle(n)">▉</span>
+    </div>
+    <div class="wait-grid">
+      <span v-for="n in 9" :key="n" class="wait-bar" :style="{ animationDelay: `${n * 0.08}s` }"></span>
+    </div>
+    <p class="wait-text">まもなく超強力な AI に接続します。少しだけお待ちください。</p>
+  </div>
   <div class="assistant-screen" :style="screenStyle">
     <section class="assistant-chat-surface">
       <div class="chat-tools">
@@ -657,7 +666,7 @@ const startIntroConversation = async () => {
   introConversationStarted.value = true;
   const community = activeCommunityDetail.value;
   const aboutText = community?.description ? getLocalizedText(community.description) : '';
-  const communityName = community?.name ?? 'Tokyo Community Organizations Meetup Group';
+  const communityName = community?.name ?? 'Tokyo Community Organizations Group';
   const introPrompt = aboutText
     ? `コミュニティ紹介：${communityName}\n${aboutText}\n\n上記の背景を踏まえて、主催者が最初のアイデアを話しやすいようCoachモードで歓迎し、最初の質問を投げかけてください。`
     : 'コミュニティ紹介情報はありません。主催者を歓迎し、最初のアイデアを引き出す質問から始めてください。';
@@ -1070,23 +1079,34 @@ onMounted(async () => {
   }
   loadHistoryEntries();
   await loadActiveCommunityDetail();
+});
 
-  if (typeof window !== 'undefined' && window.visualViewport) {
-    const handleViewport = () => {
-      const viewport = window.visualViewport;
-      const inner = window.innerHeight;
-      const offset = Math.max(0, inner - viewport.height - viewport.offsetTop);
-      keyboardOffset.value = offset;
-    };
-    window.visualViewport.addEventListener('resize', handleViewport);
-    window.visualViewport.addEventListener('scroll', handleViewport);
-    handleViewport();
+if (typeof window !== 'undefined' && window.visualViewport) {
+  const handleViewport = () => {
+    const viewport = window.visualViewport;
+    const inner = window.innerHeight;
+    const offset = Math.max(0, inner - viewport.height - viewport.offsetTop);
+    keyboardOffset.value = offset;
+  };
+  window.visualViewport.addEventListener('resize', handleViewport);
+  window.visualViewport.addEventListener('scroll', handleViewport);
+  handleViewport();
+  onUnmounted(() => {
+    window.visualViewport?.removeEventListener('resize', handleViewport);
+    window.visualViewport?.removeEventListener('scroll', handleViewport);
+  });
+}
 
-    onUnmounted(() => {
-      window.visualViewport?.removeEventListener('resize', handleViewport);
-      window.visualViewport?.removeEventListener('scroll', handleViewport);
-    });
-  }
+const thinkingOverlay = ref(true);
+const codeStyle = (n: number) => ({
+  left: `${(n * 7) % 100}%`,
+  '--rx': `${((n * 13) % 40) - 20}%`,
+  animationDelay: `${(n % 20) * 0.12}s`,
+} as any);
+onMounted(() => {
+  setTimeout(() => {
+    thinkingOverlay.value = false;
+  }, 5000);
 });
 </script>
 
@@ -1107,6 +1127,130 @@ onMounted(async () => {
   .assistant-screen {
     height: 100dvh;
     min-height: 100dvh;
+  }
+}
+
+.assistant-wait {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0, 144, 217, 0.9), rgba(34, 187, 170, 0.88), rgba(228, 194, 80, 0.8));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 999;
+  color: #dfefff;
+  text-align: center;
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+}
+.assistant-wait .code-rain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.code-char {
+  position: absolute;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.35);
+  animation: rainChar 2.4s linear infinite;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+  mix-blend-mode: screen;
+}
+.assistant-wait::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.08) 0,
+      rgba(255, 255, 255, 0.08) 10px,
+      rgba(255, 255, 255, 0) 10px,
+      rgba(255, 255, 255, 0) 20px
+    ),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.05) 0,
+      rgba(255, 255, 255, 0.05) 12px,
+      rgba(255, 255, 255, 0) 12px,
+      rgba(255, 255, 255, 0) 24px
+    );
+  animation: scan-bg 3s linear infinite;
+  opacity: 0.5;
+}
+.assistant-wait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 60%, rgba(255, 255, 255, 0.12), transparent 55%);
+}
+.wait-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 12px);
+  gap: 6px;
+}
+.wait-bar {
+  width: 12px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #0090d9, #00b7c6);
+  animation: pulse-bar 1s infinite ease-in-out;
+  box-shadow: 0 0 10px rgba(0, 181, 233, 0.3);
+}
+.wait-text {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+  color: #e8f5ff;
+}
+@keyframes pulse-bar {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+@keyframes scan-bg {
+  0% {
+    transform: translateX(-10%);
+  }
+  100% {
+    transform: translateX(10%);
+  }
+}
+@keyframes rainY {
+  0% {
+    transform: translateY(-20%);
+  }
+  100% {
+    transform: translateY(20%);
+  }
+}
+@keyframes rainX {
+  0% {
+    transform: translateX(-5%);
+  }
+  100% {
+    transform: translateX(5%);
+  }
+}
+@keyframes rainChar {
+  0% {
+    transform: translate3d(var(--rx), -20%, 0) scale(1);
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate3d(var(--rx), 120%, 0) scale(0.9);
+    opacity: 0;
   }
 }
 

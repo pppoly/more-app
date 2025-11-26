@@ -22,6 +22,123 @@ export class PaymentsService {
     private readonly permissions: PermissionsService,
   ) {}
 
+  async listCommunityPayments(
+    userId: string,
+    communityId: string,
+    opts?: { page?: number; pageSize?: number; eventId?: string | null; status?: string | null },
+  ) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    const page = Math.max(1, Number(opts?.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(opts?.pageSize) || 20));
+    const where: Prisma.PaymentWhereInput = {
+      communityId,
+    };
+    if (opts?.eventId) {
+      where.eventId = opts.eventId;
+    }
+    if (opts?.status) {
+      where.status = opts.status;
+    }
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, name: true, avatarUrl: true } },
+          event: { select: { id: true, title: true } },
+          registration: { select: { id: true, ticketTypeId: true } },
+        },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+
+    return {
+      page,
+      pageSize,
+      total,
+      items: items.map((item) => ({
+        id: item.id,
+        user: {
+          id: item.userId,
+          name: item.user?.name ?? 'ゲスト',
+          avatarUrl: item.user?.avatarUrl ?? null,
+        },
+        event: item.event
+          ? {
+              id: item.event.id,
+              title: this.getLocalizedText(item.event.title),
+            }
+          : null,
+        registrationId: item.registrationId ?? null,
+        amount: item.amount,
+        platformFee: item.platformFee ?? 0,
+        status: item.status,
+        method: item.method,
+        createdAt: item.createdAt,
+        stripePaymentIntentId: item.stripePaymentIntentId ?? null,
+        stripeRefundId: item.stripeRefundId ?? null,
+      })),
+    };
+  }
+
+  async getCommunityBalance(userId: string, communityId: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { stripeAccountId: true },
+    });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+
+    const paidWhere: Prisma.PaymentWhereInput = { communityId, status: 'paid' };
+    const refundedWhere: Prisma.PaymentWhereInput = { communityId, status: 'refunded' };
+    const [paidAgg, refundedAgg] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: paidWhere,
+        _sum: { amount: true, platformFee: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: refundedWhere,
+        _sum: { amount: true, platformFee: true },
+      }),
+    ]);
+
+    let stripeBalance: { available: number; pending: number } | null = null;
+    if (this.stripeService.enabled && community.stripeAccountId) {
+      try {
+        const balance = await this.stripeService.client.balance.retrieve({
+          stripeAccount: community.stripeAccountId,
+        });
+        const pick = (entries?: Array<{ amount: number; currency: string }>) =>
+          entries?.find((e) => e.currency === 'jpy')?.amount ?? 0;
+        stripeBalance = {
+          available: pick(balance.available),
+          pending: pick(balance.pending),
+        };
+      } catch (err) {
+        this.logger.warn(`Failed to fetch Stripe balance for community ${communityId}: ${err}`);
+      }
+    }
+
+    const grossPaid = paidAgg._sum.amount ?? 0;
+    const platformFee = paidAgg._sum.platformFee ?? 0;
+    const refunded = refundedAgg._sum.amount ?? 0;
+    const net = Math.max(0, grossPaid - platformFee - refunded);
+
+    return {
+      communityId,
+      currency: 'jpy',
+      grossPaid,
+      platformFee,
+      refunded,
+      net,
+      stripeBalance,
+    };
+  }
+
   async createMockPayment(userId: string, registrationId: string) {
     const registration = await this.prisma.eventRegistration.findUnique({
       where: { id: registrationId },
@@ -267,6 +384,10 @@ export class PaymentsService {
   }
 
   async refundStripePayment(userId: string, paymentId: string, reason?: string) {
+    return this.refundStripePaymentInternal(userId, paymentId, undefined, reason);
+  }
+
+  async refundStripePaymentInternal(userId: string, paymentId: string, amount?: number, reason?: string) {
     if (!this.stripeService.enabled) {
       throw new BadRequestException('Stripe決済が現在利用できません');
     }
@@ -286,6 +407,14 @@ export class PaymentsService {
     if (payment.method !== 'stripe') {
       throw new BadRequestException('Stripe以外の支払いは返金できません');
     }
+    if (amount !== undefined) {
+      if (amount > payment.amount) {
+        throw new BadRequestException('返金額が支払い額を超えています');
+      }
+      if (amount < payment.amount) {
+        throw new BadRequestException('現在は全額返金のみ対応しています');
+      }
+    }
 
     const paymentIntentId = await this.resolvePaymentIntentId(payment);
     if (!paymentIntentId) {
@@ -294,6 +423,7 @@ export class PaymentsService {
 
     const refund = await this.stripeService.client.refunds.create({
       payment_intent: paymentIntentId,
+      amount: amount ?? undefined,
       reverse_transfer: true,
       refund_application_fee: true,
       metadata: {

@@ -169,11 +169,13 @@ import {
   MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
   MOBILE_EVENT_SUCCESS_KEY,
 } from '../../constants/mobile';
+import { useLocale } from '../../composables/useLocale';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
+const { preferredLangs } = useLocale();
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
@@ -205,20 +207,10 @@ const derivePriceText = (target: EventDetail | null) => {
 
 const resolveErrorMessage = (err: unknown, fallback: string) => {
   if (isAxiosError(err)) {
-    const message = err.response?.data?.message;
-    if (typeof message === 'string') {
-      return message;
-    }
-    if (Array.isArray(message) && message.length) {
-      const first = message[0];
-      if (typeof first === 'string') {
-        return first;
-      }
-    }
-    return err.message;
+    return '提交失败，请稍后再试';
   }
   if (err instanceof Error) {
-    return err.message;
+    return '提交失败，请稍后再试';
   }
   return fallback;
 };
@@ -229,7 +221,7 @@ const detail = computed(() => {
   const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
   return {
     id: event.value.id,
-    title: getLocalizedText(event.value.title),
+    title: getLocalizedText(event.value.title, preferredLangs.value),
     timeText: `${start} 〜 ${end}`,
     locationText: event.value.locationText || '場所未定',
     priceText: event.value.config?.priceText ?? derivePriceText(event.value),
@@ -306,7 +298,7 @@ const loadEvent = async () => {
     initializeFormValues();
     applyDraftAnswers();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'イベント情報の取得に失敗しました';
+    error.value = '活动信息加载失败，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -405,7 +397,7 @@ const submitFreeRegistration = async () => {
       goToSuccessPage(payload);
     }
   } catch (err) {
-    registrationError.value = resolveErrorMessage(err, '申込に失敗しました');
+    registrationError.value = '报名失败，请稍后再试';
   } finally {
     submittingInline.value = false;
   }

@@ -28,6 +28,7 @@
         {{ onboarding ? '跳转中…' : stripeReady ? '更新收款信息' : '去开通收款' }}
       </button>
       <p class="hint">会跳到 Stripe 填信息，回来后就能继续用了。</p>
+      <button class="ghost" type="button" @click="goPayments">查看交易流水</button>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -36,11 +37,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { fetchConsoleCommunity, startCommunityStripeOnboarding } from '../../../api/client';
 import type { ConsoleCommunityDetail } from '../../../types/api';
 
 const store = useConsoleCommunityStore();
+const router = useRouter();
 const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
 const error = ref<string | null>(null);
@@ -85,6 +88,12 @@ const handleOnboarding = async () => {
   } finally {
     onboarding.value = false;
   }
+};
+
+const goPayments = () => {
+  const id = community.value?.id || store.activeCommunityId.value;
+  if (!id) return;
+  router.push({ name: 'ConsoleMobilePayments', params: { communityId: id } });
 };
 
 onMounted(loadCommunity);
@@ -203,5 +212,13 @@ onMounted(loadCommunity);
   color: #b91c1c;
   text-align: center;
   font-weight: 600;
+}
+.ghost {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 14px;
+  color: #0f172a;
 }
 </style>

@@ -68,7 +68,7 @@ const loadGoogleMaps = () => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     mapStatus.value = '環境変数 VITE_GOOGLE_MAPS_API_KEY を設定すると地図を表示できます。';
-    return Promise.reject(new Error('Missing Google Maps API key'));
+    return Promise.reject(new Error('无法加载地图，请稍后再试或联系管理员')); 
   }
   googleMapsPromise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');

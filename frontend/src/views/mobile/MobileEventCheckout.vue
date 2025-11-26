@@ -96,11 +96,13 @@ import {
   MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
   MOBILE_EVENT_SUCCESS_KEY,
 } from '../../constants/mobile';
+import { useLocale } from '../../composables/useLocale';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
+const { preferredLangs } = useLocale();
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
@@ -169,7 +171,7 @@ const detail = computed(() => {
   const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
   return {
     id: event.value.id,
-    title: getLocalizedText(event.value.title),
+    title: getLocalizedText(event.value.title, preferredLangs.value),
     timeText: `${start} 〜 ${end}`,
     locationText: event.value.locationText || '場所未定',
     priceText: event.value.config?.priceText ?? derivePriceText(event.value),

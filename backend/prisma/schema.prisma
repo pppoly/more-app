@@ -32,6 +32,7 @@ model User {
   promptDefinitionsCreated PromptDefinition[] @relation("PromptCreatedBy")
   promptDefinitionsUpdated PromptDefinition[] @relation("PromptUpdatedBy")
   promptDefinitionsApproved PromptDefinition[] @relation("PromptApprovedBy")
+  updatedI18nMessages I18nMessage[] @relation("I18nMessageUpdatedBy")
 }
 
 model Community {
@@ -185,6 +186,21 @@ model Payment {
   community               Community? @relation(fields: [communityId], references: [id])
   event                   Event?    @relation(fields: [eventId], references: [id])
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
+}
+
+model I18nMessage {
+  id          String   @id @default(cuid())
+  namespace   String
+  key         String
+  lang        String
+  text        String
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("I18nMessageUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([namespace, key, lang])
 }
 
 model PricingPlan {

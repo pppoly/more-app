@@ -97,8 +97,15 @@
             <button class="btn ghost" @click="openPublicPage">
               <span class="i-lucide-external-link mr-1.5"></span> 前台ページを見る
             </button>
+            <button class="btn ghost" @click="openPayments" :disabled="!communityId">
+              <span class="i-lucide-credit-card mr-1.5"></span> 收款/交易
+            </button>
             <button class="btn solid" @click="editEvent">
               <span class="i-lucide-pencil mr-1.5"></span> イベントを編集
+            </button>
+            <button class="btn danger" :disabled="cancelling" @click="cancelEvent">
+              <span class="i-lucide-octagon-alert mr-1.5"></span>
+              {{ cancelling ? '取消中…' : '活動を取消' }}
             </button>
           </div>
         </div>
@@ -241,6 +248,7 @@ import {
   fetchEventRegistrationsSummary,
   approveEventRegistration,
   rejectEventRegistration,
+  cancelConsoleEvent,
 } from '../../../api/client';
 import type {
   ConsoleEventDetail,
@@ -258,6 +266,7 @@ const communityId = computed(() => eventDetail.value?.communityId);
 
 const loading = ref(true);
 const error = ref('');
+const cancelling = ref(false);
 const showSkeleton = computed(() => loading.value || (!eventCard.value && !error.value));
 const eventDetail = ref<ConsoleEventDetail | null>(null);
 const summary = ref<EventRegistrationsSummary | null>(null);
@@ -373,8 +382,38 @@ const goBack = () => {
 };
 
 const editEvent = () => {
-  if (!eventCard.value) return;
-  router.push({ path: `/console/events/${eventCard.value.id}/edit` });
+  if (!eventCard.value || !communityId.value) return;
+  router.push({
+    name: 'ConsoleMobileEventForm',
+    params: { communityId: communityId.value },
+    query: { eventId: eventCard.value.id },
+  });
+};
+
+const openPayments = () => {
+  if (!communityId.value || !eventCard.value) return;
+  router.push({
+    name: 'ConsoleMobilePayments',
+    params: { communityId: communityId.value },
+    query: { eventId: eventCard.value.id },
+  });
+};
+
+const cancelEvent = async () => {
+  if (!eventCard.value || cancelling.value) return;
+  const sure = window.confirm('活动取消后会尝试退款已付款报名，确认取消吗？');
+  if (!sure) return;
+  cancelling.value = true;
+  error.value = '';
+  try {
+    await cancelConsoleEvent(eventCard.value.id, { notify: false });
+    await reload();
+  } catch (err) {
+    console.error('Cancel event failed', err);
+    error.value = err instanceof Error ? err.message : '取消失败，请稍后再试';
+  } finally {
+    cancelling.value = false;
+  }
 };
 
 const statusLabel = (status: string) => {
@@ -383,6 +422,8 @@ const statusLabel = (status: string) => {
       return '受付中';
     case 'closed':
       return '終了';
+    case 'cancelled':
+      return '取消済み';
     default:
       return '下書き';
   }
@@ -394,6 +435,8 @@ const statusBadgeClass = (status: string) => {
       return 'bg-emerald-100 text-emerald-700';
     case 'closed':
       return 'bg-slate-100 text-slate-500';
+    case 'cancelled':
+      return 'bg-rose-100 text-rose-700';
     default:
       return 'bg-amber-100 text-amber-700';
   }

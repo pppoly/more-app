@@ -6,12 +6,17 @@
       <span v-else>創</span>
     </div>
       <div class="header-title">MORE</div>
-      <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
-        <span class="i-lucide-shield"></span>
-      </button>
-      <button class="profile-entry" @click="handlePrimaryAction">
-        <span class="i-lucide-user-round text-lg"></span>
-      </button>
+      <div v-if="showHeaderActions" class="header-actions">
+        <button class="lang-entry" @click="openLocaleSheet">
+          <span class="i-lucide-globe-2 text-lg"></span>
+        </button>
+        <button v-if="isAdminUser" class="admin-entry" @click="goAdmin">
+          <span class="i-lucide-shield"></span>
+        </button>
+        <button class="profile-entry" @click="handlePrimaryAction">
+          <span class="i-lucide-user-round text-lg"></span>
+        </button>
+      </div>
     </header>
     <main
       :class="[
@@ -41,19 +46,59 @@
         </button>
       </div>
     </nav>
+    <teleport to="body">
+      <transition name="fade">
+        <div v-if="showLocaleSheet" class="locale-sheet__overlay" @click.self="closeLocaleSheet">
+          <div class="locale-sheet">
+            <div class="locale-sheet__handle"></div>
+            <div class="locale-sheet__header">
+              <div>
+                <p class="locale-sheet__title">选择界面语言</p>
+                <p class="locale-sheet__subtitle">更换后会影响活动标题等展示顺序</p>
+              </div>
+              <button type="button" class="locale-sheet__close" @click="closeLocaleSheet">
+                <span class="i-lucide-x"></span>
+              </button>
+            </div>
+            <div class="locale-sheet__list">
+              <button
+                v-for="item in localeOptions"
+                :key="item.code"
+                type="button"
+                class="locale-sheet__item"
+                :class="{ 'locale-sheet__item--active': item.code === currentLocale }"
+                :disabled="savingLocale"
+                @click="selectLocale(item.code)"
+              >
+                <div class="locale-sheet__item-label">
+                  <span class="locale-code">{{ item.code }}</span>
+                  <span class="locale-name">{{ item.label }}</span>
+                </div>
+                <span v-if="item.code === currentLocale" class="locale-active-chip">使用中</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useResourceConfig } from '../composables/useResourceConfig';
+import { useLocale } from '../composables/useLocale';
+import { updateProfile } from '../api/client';
+import { useToast } from '../composables/useToast';
 
 const route = useRoute();
 const router = useRouter();
-const { user } = useAuth();
+const { user, setUserProfile } = useAuth();
 const resourceConfig = useResourceConfig();
+const { currentLocale, supportedLocales, setLocale } = useLocale();
+const toast = useToast();
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 
@@ -115,6 +160,7 @@ const showTabbar = computed(() => {
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const showHeader = computed(() => !route.meta?.hideShellHeader);
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
+const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 
 const handlePrimaryAction = () => {
   if (user.value) {
@@ -141,6 +187,60 @@ const headerSafeAreaStyle = computed(() => ({
 const tabbarSafeAreaStyle = computed(() => ({
   paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))',
 }));
+
+const localeLabelMap: Record<string, string> = {
+  ja: '日本語',
+  en: 'English',
+  zh: '简体中文',
+  'zh-tw': '繁體中文',
+  vi: 'Tiếng Việt',
+  ko: '한국어',
+  tl: 'Tagalog',
+  'pt-br': 'Português (BR)',
+  ne: 'नेपाली',
+  id: 'Bahasa Indonesia',
+  th: 'ไทย',
+  my: 'မြန်မာစာ',
+};
+
+const localeOptions = computed(() =>
+  supportedLocales.map((code) => ({
+    code,
+    label: localeLabelMap[code] ?? code,
+  })),
+);
+
+const showLocaleSheet = ref(false);
+const savingLocale = ref(false);
+
+const openLocaleSheet = () => {
+  showLocaleSheet.value = true;
+};
+
+const closeLocaleSheet = () => {
+  if (savingLocale.value) return;
+  showLocaleSheet.value = false;
+};
+
+const selectLocale = async (locale: string) => {
+  setLocale(locale);
+  showLocaleSheet.value = false;
+  if (user.value) {
+    savingLocale.value = true;
+    try {
+      const profile = await updateProfile({ preferredLocale: locale });
+      setUserProfile(profile);
+      toast.show('语言已更新', 'success');
+    } catch (error) {
+      console.error('Failed to save preferred locale', error);
+      toast.show('语言设置保存失败，请稍后重试', 'error');
+    } finally {
+      savingLocale.value = false;
+    }
+  } else {
+    toast.show('Language updated', 'success');
+  }
+};
 </script>
 
 <style scoped>
@@ -161,6 +261,7 @@ const tabbarSafeAreaStyle = computed(() => ({
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  position: relative;
 }
 
 .brand-chip {
@@ -193,6 +294,10 @@ const tabbarSafeAreaStyle = computed(() => ({
   font-size: 1rem;
   font-weight: 600;
   color: var(--m-color-text-primary);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
 }
 
 .admin-entry {
@@ -218,6 +323,12 @@ const tabbarSafeAreaStyle = computed(() => ({
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(6px);
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .header-status {
@@ -271,6 +382,7 @@ const tabbarSafeAreaStyle = computed(() => ({
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 10;
   padding: 1rem 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
   background: #ffffff;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
@@ -310,6 +422,127 @@ const tabbarSafeAreaStyle = computed(() => ({
 }
 .tabbar__item--active .tabbar__icon {
   color: #fff;
+}
+
+.lang-entry {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #f8fafc;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.locale-sheet__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-end;
+  z-index: 9999;
+}
+
+.locale-sheet {
+  width: 100%;
+  background: #ffffff;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 0.75rem 1rem 1.25rem;
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.15);
+}
+
+.locale-sheet__handle {
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.12);
+  margin: 0 auto 0.75rem;
+}
+
+.locale-sheet__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.locale-sheet__title {
+  font-weight: 700;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.locale-sheet__subtitle {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.locale-sheet__close {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #f8fafc;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.locale-sheet__list {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.locale-sheet__item {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.locale-sheet__item--active {
+  border-color: #0ea5e9;
+  background: #e0f2fe;
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.2);
+}
+
+.locale-sheet__item-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.locale-code {
+  font-size: 0.85rem;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.locale-name {
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.locale-active-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .tab-slide-enter-active,

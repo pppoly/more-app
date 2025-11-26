@@ -221,7 +221,7 @@ const downscaleImageFile = (file: File) =>
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject(new Error('压缩失败'));
+              reject(new Error('图片处理失败，请换一张再试试'));
               return;
             }
             resolve(blob);
@@ -269,7 +269,7 @@ const handleImagePick = async (event: Event) => {
       added += 1;
       statusMessage.value = '';
     } catch (err) {
-      statusMessage.value = err instanceof Error ? err.message : '图片处理失败，请重试';
+      statusMessage.value = err instanceof Error ? err.message : '图片处理失败，换一张再试试';
     }
   }
   input.value = '';

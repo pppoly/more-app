@@ -237,6 +237,8 @@ const statusLabel = (status: string) => {
       return '受付中';
     case 'closed':
       return '終了';
+    case 'cancelled':
+      return '取消';
     default:
       return status;
   }

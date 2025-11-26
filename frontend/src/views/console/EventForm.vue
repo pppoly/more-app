@@ -1,6 +1,6 @@
 <template>
   <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
-    <header class="section-header" v-if="!isMobileLayout">
+      <header v-if="!isMobileLayout" class="section-header">
       <div>
         <h2>{{ isEdit ? 'イベント編集' : 'イベント作成' }}</h2>
         <p>{{ subtitle }}</p>
@@ -8,68 +8,108 @@
       <RouterLink :to="backLink">戻る</RouterLink>
     </header>
 
-    <section v-if="isMobileLayout" class="mobile-hero-card">
-      <div class="hero-top" v-if="aiPrefillNotice">
-        <p class="hero-desc">{{ aiPrefillNotice }}</p>
-      </div>
-      <div class="hero-cover-panel" ref="sectionCover">
-        <div v-if="coverDisplayItems.length" class="hero-cover-strip">
-          <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
-            <img :src="item.imageUrl" alt="cover" />
-            <span v-if="index === 0" class="hero-cover-main">主图</span>
-            <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
-          </figure>
-          <button
-            v-if="canAddMoreCovers"
-            type="button"
-            class="hero-cover-add"
-            @click.stop="triggerCoverPicker"
-          >
-            <span>+</span>
-            <p>继续添加</p>
-          </button>
+    <Teleport to="body">
+      <div v-if="showPastePanel" class="paste-full-overlay">
+        <div class="paste-full-card">
+          <header class="paste-full-head">
+            <div>
+              <p class="paste-full-title">粘贴你的活动草案</p>
+              <p class="paste-full-subtitle">一键提取标题/简介/规则并填好表单，省去重复输入</p>
+            </div>
+            <button type="button" class="paste-close" @click="togglePaste(false)">关闭</button>
+          </header>
+          <textarea
+            v-model="pastedDraft"
+            class="paste-input paste-input--full"
+            :placeholder="pastePlaceholder"
+            ref="pasteInputRef"
+            rows="10"
+          ></textarea>
+          <div class="paste-actions">
+            <button type="button" class="ios-chip" @click="pastedDraft = ''">清空</button>
+            <button type="button" class="btn ghost small" @click="goToEventAssistant">
+              我想先跟 AI 讨论
+            </button>
+            <button type="button" class="btn solid small" @click="checkPastedDraft">
+              自动填表
+            </button>
+          </div>
+          <p v-if="draftCheckMessage" class="status muted mt-2">{{ draftCheckMessage }}</p>
         </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showPasteResult" class="paste-result-overlay" @click.self="closePasteResult">
+        <div class="paste-result-card">
+          <h3 class="paste-result-title">已帮你填好核心信息</h3>
+          <p class="paste-result-subtitle">可以在表单里继续完善时间、地点、票价等细节</p>
+          <div v-if="pasteResultLoading" class="paste-result-loading">
+            <span class="spinner"></span>
+            <p>AI 正在生成建议…</p>
+          </div>
+          <template v-else>
+            <div class="paste-result-list" v-if="pasteFilledFields.length">
+              <p class="eyebrow">填入的内容</p>
+              <ul>
+                <li v-for="item in pasteFilledFields" :key="item">· {{ item }}</li>
+              </ul>
+            </div>
+            <div class="paste-result-hints">
+              <p class="eyebrow">下一步建议</p>
+              <ul>
+                <li v-for="tip in pasteAdvice" :key="tip">· {{ tip }}</li>
+              </ul>
+              <p class="eyebrow mt-2">合规提示</p>
+              <ul>
+                <li v-for="tip in pasteCompliance" :key="tip">· {{ tip }}</li>
+              </ul>
+            </div>
+          </template>
+          <div class="paste-result-actions">
+            <button type="button" class="btn ghost small" @click="goToEventAssistant">补充细节，找 AI</button>
+            <button type="button" class="btn solid small" @click="closePasteResult">去表单确认</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <section class="hero-cover-panel cover-below" ref="sectionCover">
+      <div v-if="coverDisplayItems.length" class="hero-cover-strip">
+        <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
+          <img :src="item.imageUrl" alt="cover" />
+          <span v-if="index === 0" class="hero-cover-main">主图</span>
+          <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
+        </figure>
         <button
-          v-else
+          v-if="canAddMoreCovers"
           type="button"
-          class="hero-cover-add hero-cover-add--solo"
+          class="hero-cover-add"
           @click.stop="triggerCoverPicker"
         >
           <span>+</span>
-          <p>添加优质图片</p>
+          <p>继续添加</p>
         </button>
-        <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
-        <p v-if="coverError" class="status error">{{ coverError }}</p>
-        <input
-          ref="coverInputRef"
-          type="file"
-          multiple
-          accept="image/*"
-          class="hidden-input"
-          @change="handleCoverUpload"
-        />
       </div>
-      <button v-if="communityId" type="button" class="hero-assistant" @click="openAssistant">
-        <span class="i-lucide-bot mr-1.5"></span>
-        用 AI 助手生成草案
+      <button
+        v-else
+        type="button"
+        class="hero-cover-add hero-cover-add--solo"
+        @click.stop="triggerCoverPicker"
+      >
+        <span>+</span>
+        <p>添加优质图片</p>
       </button>
-      <nav class="hero-nav">
-        <button type="button" @click="scrollToSection('basic')">基本</button>
-        <button type="button" @click="scrollToSection('schedule')">人数</button>
-        <button type="button" @click="scrollToSection('config')">设定</button>
-        <button type="button" @click="scrollToSection('form')">表单</button>
-      </nav>
-    </section>
-
-    <section v-if="eventCommunityId" class="copy-card">
-      <div>
-        <p class="copy-title">复制历史活动</p>
-        <p class="copy-desc">快速带入既有活动的标题、时间、报名表等所有内容</p>
-      </div>
-      <button type="button" class="copy-btn" @click="openCopyOverlay">
-        <span class="i-lucide-files mr-1.5"></span>
-        选择活动
-      </button>
+      <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
+      <p v-if="coverError" class="status error">{{ coverError }}</p>
+      <input
+        ref="coverInputRef"
+        type="file"
+        multiple
+        accept="image/*"
+        class="hidden-input"
+        @change="handleCoverUpload"
+      />
     </section>
 
     <div v-if="uploadingCover" class="cover-upload-overlay">
@@ -107,17 +147,13 @@
 
     <form class="form" @submit.prevent="handleSubmit">
       <!-- Category -->
-      <section class="card" ref="sectionCategory">
-        <h3>カテゴリ</h3>
-        <div class="category-grid">
-          <button
-            v-for="cat in categoryOptions"
-            :key="cat.value"
-            type="button"
-            :class="['category-chip', { active: form.category === cat.value }]"
-            @click="form.category = cat.value"
-          >
-            {{ cat.label }}
+      <section class="ios-panel" ref="sectionCategory">
+        <div class="ios-form">
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openCategorySheet">
+            <span class="ios-label">カテゴリ</span>
+            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.category }">
+              {{ categoryLabel }}
+            </span>
           </button>
         </div>
       </section>
@@ -170,15 +206,6 @@
               {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '请设置' }}
             </span>
           </button>
-          <div class="ios-helper-row">
-            <p class="ios-helper-title">快捷设置</p>
-            <div class="ios-chip-row">
-              <button type="button" class="ios-chip" @click="setEndShortcut(1)">结束 +1 小时</button>
-              <button type="button" class="ios-chip" @click="setEndShortcut(2)">结束 +2 小时</button>
-              <button type="button" class="ios-chip" @click="setRegDeadlineShortcut(60)">截止：开始前 1 小时</button>
-              <button type="button" class="ios-chip" @click="setRegDeadlineShortcut(24 * 60)">截止：开始前 1 天</button>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -273,6 +300,15 @@
               rows="2"
             ></textarea>
           </div>
+          <div class="ios-row ios-row--builder-line ios-row--textarea">
+            <span class="ios-label">注意事項 · {{ langLabel(activeContentLang) }}</span>
+            <textarea
+              class="ios-inline-input ios-inline-input--textarea"
+              placeholder="例：安全须知、携带物品、集合规则"
+              v-model="form.config.riskNoticeText"
+              rows="2"
+            ></textarea>
+          </div>
         </div>
       </section>
 
@@ -284,19 +320,11 @@
             class="ios-row ios-row--action ios-row--textarea ios-row--rich-note"
             @click="openRichTextEditor"
           >
-            <div class="ios-rich-text">
-              <div class="ios-rich-text__head">
-                <span class="ios-label">活动详情</span>
-                <span v-if="richTextImageCount" class="ios-chip">{{ richTextImageCount }} 张图</span>
-              </div>
-              <span
-                class="ios-value ios-value--multiline ios-rich-text__preview"
-                :class="{ 'ios-value--placeholder': !richTextPreview }"
-              >
-                {{ richTextPreview || '点击编辑笔记' }}
-              </span>
-              <p class="ios-helper">支持图文笔记，长按或再次点击可继续编辑</p>
-            </div>
+            <span class="ios-label">活动详情</span>
+            <span class="ios-value ios-rich-text__preview" :class="{ 'ios-value--placeholder': !richTextPreview }">
+              {{ richTextPreview || '请编辑' }}
+            </span>
+            <span v-if="richTextImageCount" class="ios-suffix ios-chip ios-chip--tight">{{ richTextImageCount }} 张图</span>
           </button>
         </div>
       </section>
@@ -324,18 +352,18 @@
       <!-- Dynamic form -->
       <section class="ios-panel ios-panel--builder" ref="sectionForm">
         <div class="ios-builder-head">
-          <p class="builder-eyebrow">招募表单</p>
-          <div class="builder-actions">
+          <div class="builder-title">
+            <p class="builder-eyebrow">报名表单</p>
             <p v-if="!registrationFields.length" class="builder-hint">{{ builderHintText }}</p>
-            <button type="button" class="ios-add-btn" @click="addField">＋ 新增项目</button>
           </div>
-          <div class="builder-quick">
-            <span class="builder-quick__label">常用字段</span>
-            <div class="builder-quick__chips">
-              <button type="button" class="quick-chip" @click="addPresetField('name')">姓名</button>
-              <button type="button" class="quick-chip" @click="addPresetField('phone')">电话</button>
-              <button type="button" class="quick-chip" @click="addPresetField('email')">邮箱</button>
-            </div>
+          <button type="button" class="ios-add-btn" @click="addField">＋ 新增项目</button>
+        </div>
+        <div class="builder-quick">
+          <span class="builder-quick__label">常用字段</span>
+          <div class="builder-quick__chips">
+            <button type="button" class="quick-chip" @click="addPresetField('name')">姓名</button>
+            <button type="button" class="quick-chip" @click="addPresetField('phone')">电话</button>
+            <button type="button" class="quick-chip" @click="addPresetField('email')">邮箱</button>
           </div>
         </div>
         <article
@@ -344,49 +372,49 @@
           class="ios-field-set"
         >
           <div class="ios-field-set__head">
-            <p>質問 {{ index + 1 }}</p>
+            <p>问题 {{ index + 1 }}</p>
             <button type="button" class="ios-field-card__delete" @click="removeField(field.uuid)">
-              削除
+              删除
             </button>
           </div>
           <div class="ios-field-set__body">
             <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'label')">
-              <span class="ios-label">タイトル</span>
+              <span class="ios-label">标题</span>
               <input
                 class="ios-inline-input"
                 :data-field="`label-${field.uuid}`"
-                placeholder="例：参加者の氏名"
+                placeholder="例：姓名"
                 v-model="field.label"
               />
             </div>
             <div class="ios-row ios-row--builder-line">
-              <span class="ios-label">回答形式</span>
+              <span class="ios-label">类型</span>
               <select v-model="field.type" class="ios-inline-select">
-                <option value="text">テキスト</option>
-                <option value="textarea">複数行</option>
+                <option value="text">单行</option>
+                <option value="textarea">多行</option>
                 <option value="number">数字</option>
-                <option value="date">日付</option>
-                <option value="phone">電話</option>
-                <option value="email">メール</option>
-                <option value="select">セレクト</option>
-                <option value="singleChoice">単一選択</option>
-                <option value="multiChoice">複数選択</option>
-                <option value="checkbox">同意チェック</option>
+                <option value="date">日期</option>
+                <option value="phone">电话</option>
+                <option value="email">邮箱</option>
+                <option value="select">下拉</option>
+                <option value="singleChoice">单选</option>
+                <option value="multiChoice">多选</option>
+                <option value="checkbox">同意勾选</option>
               </select>
             </div>
             <div class="ios-row ios-row--builder-line">
-              <span class="ios-label">必須</span>
+              <span class="ios-label">必填</span>
               <label class="ios-toggle">
                 <input type="checkbox" v-model="field.required" />
                 <span></span>
               </label>
             </div>
             <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'placeholder')">
-              <span class="ios-label">ヒント</span>
+              <span class="ios-label">提示</span>
               <input
                 class="ios-inline-input"
                 :data-field="`placeholder-${field.uuid}`"
-                placeholder="例：参加動機を教えてください"
+                placeholder="例：请填写参加动机"
                 v-model="field.placeholder"
               />
             </div>
@@ -417,7 +445,7 @@
           ＋ 新增项目
         </button>
         <div v-else class="hint">
-          目前还没有报名字段，点击［新增项目］开始设置。
+          暂无字段，点击“新增项目”开始设置。
         </div>
       </section>
 
@@ -502,12 +530,30 @@
       </div>
     </div>
 
-    <NoteEditorOverlay
-      v-if="showNoteOverlay"
-      :context="noteOverlayContext"
-      @close="closeNoteOverlay"
-      @save="handleNoteOverlaySave"
-    />
+    <div v-if="showCategorySheet" class="field-modal" @click.self="closeCategorySheet">
+      <div class="field-sheet">
+        <header class="field-sheet-head">
+          <button type="button" @click="closeCategorySheet">取消</button>
+          <p>选择类别</p>
+          <button type="button" class="highlight" @click="confirmCategorySheet">完成</button>
+        </header>
+        <div class="field-sheet-body">
+          <div class="select-option-list">
+            <button
+              v-for="cat in categoryOptions"
+              :key="cat.value"
+              type="button"
+              class="select-option"
+              :class="{ active: categoryDraft === cat.value }"
+              @click="categoryDraft = cat.value"
+            >
+              <span>{{ cat.label }}</span>
+              <span v-if="categoryDraft === cat.value" class="i-lucide-check"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div v-if="showCopyOverlay" class="copy-overlay" @click.self="closeCopyOverlay">
       <div class="copy-sheet">
@@ -567,6 +613,9 @@ import {
   uploadEventCovers,
   fetchEventGallery,
   deleteEventCover,
+  generateEventContent,
+  requestEventAssistantReply,
+  extractEventDraft,
 } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
@@ -575,12 +624,18 @@ import type {
   EventGalleryItem,
   ConsoleEventSummary,
   ConsoleEventDetail,
+  GeneratedEventContent,
+  EventAssistantReply,
+  EventAssistantRequest,
 } from '../../types/api';
 import {
   CONSOLE_AI_EVENT_DRAFT_KEY,
   CONSOLE_EVENT_SCROLL_KEY,
+  CONSOLE_EVENT_LANG_KEY,
+  CONSOLE_EVENT_NOTE_CONTEXT_KEY,
+  CONSOLE_EVENT_NOTE_RESULT_KEY,
+  CONSOLE_EVENT_FORM_DRAFT_KEY,
 } from '../../constants/console';
-import NoteEditorOverlay from '../../components/console/NoteEditorOverlay.vue';
 
 type FieldKey =
   | 'title'
@@ -601,19 +656,16 @@ interface BuilderField extends RegistrationFormField {
   optionsText?: string;
 }
 
-type NoteOverlayContext = {
-  text: string;
-  html: string;
-  images: Array<{ id: string; src: string }>;
-};
-
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const ENTRY_PREF_KEY = 'CONSOLE_EVENT_ENTRY';
 const communityId = route.params.communityId as string | undefined;
-const eventId = route.params.eventId as string | undefined;
+const eventId = computed(
+  () => (route.params.eventId as string | undefined) || (route.query.eventId as string | undefined),
+);
 const eventCommunityId = ref<string | null>(communityId ?? null);
-const isEdit = computed(() => Boolean(eventId));
+const isEdit = computed(() => Boolean(eventId.value));
 const prefersMobileLayout = ref(false);
 const isMobileLayout = computed(() => {
   if (prefersMobileLayout.value) return true;
@@ -633,6 +685,10 @@ const defaultConfig = () => ({
   notes: '',
   riskNoticeText: '',
 });
+
+type AiTargetKey = 'title' | 'description' | 'rules';
+type ContentLang = 'ja' | 'en' | 'zh';
+const supportedContentLangs: ContentLang[] = ['ja', 'en', 'zh'];
 
 const form = reactive({
   title: '',
@@ -668,6 +724,20 @@ const sectionConfig = ref<HTMLElement | null>(null);
 const sectionRichText = ref<HTMLElement | null>(null);
 const sectionTickets = ref<HTMLElement | null>(null);
 const sectionForm = ref<HTMLElement | null>(null);
+const activeContentLang = ref<ContentLang>('ja');
+const contentByLang = reactive<Record<AiTargetKey, Record<string, string>>>({
+  title: {},
+  description: {},
+  rules: {},
+});
+const descriptionHtmlByLang = reactive<Record<string, string>>({});
+const aiLoading = reactive<Record<AiTargetKey, boolean>>({
+  title: false,
+  description: false,
+  rules: false,
+});
+const aiPreview = ref<{ target: AiTargetKey; text: string; lang: ContentLang } | null>(null);
+const aiError = ref('');
 
 const submitting = ref(false);
 const error = ref<string | null>(null);
@@ -684,14 +754,17 @@ const builderHintText = '设置报名表里需要填写的问题，顺序即为�
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const MAX_COVERS = 9;
-const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (server limit)
-const MAX_COVER_UPLOAD_SIZE = 4 * 1024 * 1024; // 提前压缩到更安全的体积
-const MAX_COVER_DIMENSION = 1200;
-const COVER_COMPRESS_QUALITY = 0.72;
-const COVER_FALLBACK_QUALITY = 0.6;
-const COVER_RULES_TEXT = '推荐 1200px 宽，最多上传 9 张，默认第一张为主图';
+const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
+const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 压缩后预期安全值
+const MAX_COVER_DIMENSION = 1920; // 最大长边
+const MIN_COVER_WIDTH = 1200;
+const MIN_COVER_HEIGHT = 675;
+const TARGET_ASPECT = 16 / 9;
+const COVER_COMPRESS_QUALITY = 0.82;
+const COVER_FALLBACK_QUALITY = 0.7;
+const COVER_RULES_TEXT = '封面必填 · 16:9（至少 1200×675），单张 ≤10MB，最多 9 张，第一张为主图';
 const coverDisplayItems = computed(() =>
-  eventId ? galleries.value : localCoverPreviews.value,
+  eventId.value ? galleries.value : localCoverPreviews.value,
 );
 const currentCoverCount = computed(() => coverDisplayItems.value.length);
 const canAddMoreCovers = computed(() => currentCoverCount.value < MAX_COVERS);
@@ -711,17 +784,12 @@ const maxParticipantsInputRef = ref<HTMLInputElement | null>(null);
 const ticketPriceDisplay = computed(() =>
   form.ticketPrice != null ? String(form.ticketPrice) : '',
 );
-const showNoteOverlay = ref(false);
-const noteOverlayContext = ref<NoteOverlayContext>({
-  text: '',
-  html: '',
-  images: [],
-});
 const showCopyOverlay = ref(false);
 const copyEvents = ref<ConsoleEventSummary[]>([]);
 const copyLoading = ref(false);
 const copyError = ref<string | null>(null);
 const copySelectingId = ref<string | null>(null);
+const entryHandled = ref(false);
 const copyEventItems = computed(() =>
   copyEvents.value.map((event) => ({
     id: event.id,
@@ -730,6 +798,87 @@ const copyEventItems = computed(() =>
     dateRange: formatCopyRange(event.startTime, event.endTime),
   })),
 );
+const pastedDraft = ref('');
+const draftCheckMessage = ref('');
+const pastedPreview = ref<{ title: string; description: string; rules: string } | null>(null);
+const showPastePanel = ref(false);
+const pastePlaceholder = '粘贴你的活动标题/简介/规则，AI 自动帮你填进表单';
+const pasteInputRef = ref<HTMLTextAreaElement | null>(null);
+const showPasteResult = ref(false);
+const pasteFilledFields = ref<string[]>([]);
+const pasteAdvice = ref<string[]>([]);
+const pasteCompliance = ref<string[]>([]);
+const pasteResultLoading = ref(false);
+const storedParsedResult = ref<{ title?: string; description?: string; rules?: string; advice?: string[]; compliance?: string[] } | null>(null);
+
+const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
+  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+  if (/[a-zA-Z]/.test(text)) return 'en';
+  return 'ja';
+};
+
+const loadDraftFromStorage = () => {
+  if (typeof window === 'undefined') return;
+  const stored = sessionStorage.getItem('CONSOLE_EVENT_PASTE_DRAFT');
+  if (stored) {
+    pastedDraft.value = stored;
+    sessionStorage.removeItem('CONSOLE_EVENT_PASTE_DRAFT');
+    return stored;
+  }
+  return null;
+};
+
+const loadParsedResultFromStorage = () => {
+  if (typeof window === 'undefined') return null;
+  const stored = sessionStorage.getItem('CONSOLE_EVENT_PASTE_RESULT');
+  if (!stored) return null;
+  try {
+    const parsed = JSON.parse(stored);
+    storedParsedResult.value = parsed;
+    sessionStorage.removeItem('CONSOLE_EVENT_PASTE_RESULT');
+    return parsed;
+  } catch (e) {
+    console.warn('Failed to parse stored paste result', e);
+    return null;
+  }
+};
+
+const fetchPasteInsights = async (draft: string) => {
+  pasteAdvice.value = [];
+  pasteCompliance.value = [];
+  const baseLanguage = detectLang(draft || form.title || form.description);
+  const prompt = `你是活动策划助手，请阅读用户的活动草案，输出 JSON，字段：filled (已自动填的字段), advice (给主理人的下一步建议，简洁), compliance (风险/合规提醒，简洁)。只返回 JSON，勿输出其他文字。草案：${draft}`;
+  const payload: EventAssistantRequest = {
+    baseLanguage,
+    topic: '活动草案填表',
+    audience: 'organizer',
+    style: 'concise',
+    details: draft,
+    conversation: [{ role: 'user', content: prompt }],
+  };
+  pasteResultLoading.value = true;
+  try {
+    const res: EventAssistantReply = await requestEventAssistantReply(payload);
+    const raw = res.message || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      pasteFilledFields.value = parsed.filled ?? pasteFilledFields.value;
+      pasteAdvice.value = parsed.advice ?? [];
+      pasteCompliance.value = parsed.compliance ?? [];
+    }
+  } catch (err) {
+    console.warn('fetchPasteInsights failed', err);
+    if (!pasteAdvice.value.length) {
+      pasteAdvice.value = ['检查时间、地点、封面图，确保参与者信息完整', '设置报名表、票价和退款说明，减少沟通成本'];
+    }
+    if (!pasteCompliance.value.length) {
+      pasteCompliance.value = ['避免敏感/受限内容，遵守当地法规与场地要求', '明示退款/风险提示，线下活动预留紧急联系信息'];
+    }
+  } finally {
+    pasteResultLoading.value = false;
+  }
+};
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
@@ -757,6 +906,12 @@ const categoryOptions = [
   { label: '語学交流', value: 'language' },
   { label: 'その他', value: 'other' },
 ];
+const showCategorySheet = ref(false);
+const categoryDraft = ref('');
+const categoryLabel = computed(() => {
+  const found = categoryOptions.find((cat) => cat.value === form.category);
+  return found?.label || '请选择';
+});
 
 const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: string }>>> = {
   visibility: [
@@ -784,6 +939,202 @@ const richTextPreview = computed(() => {
   return base;
 });
 const richTextImageCount = computed(() => richNoteImages.value.length);
+const langLabel = (lang: ContentLang) => {
+  switch (lang) {
+    case 'en':
+      return 'EN';
+    case 'zh':
+      return '中文';
+    default:
+      return 'JP';
+  }
+};
+
+const EMPTY_HINTS: Record<ContentLang, string> = {
+  ja: '下書きを入れてから AI に最適化してもらってください。',
+  en: 'Add a draft first, then ask AI to improve it.',
+  zh: '先写点草稿，再让 AI 优化。',
+};
+
+const getLocalizedAiHint = (key: 'empty') => {
+  if (key === 'empty') {
+    return EMPTY_HINTS[activeContentLang.value] ?? EMPTY_HINTS.ja;
+  }
+  return EMPTY_HINTS.ja;
+};
+const setLangContent = (field: AiTargetKey, lang: ContentLang, value: string) => {
+  contentByLang[field][lang] = value ?? '';
+};
+const getLangContent = (field: AiTargetKey, lang: ContentLang) => contentByLang[field][lang] ?? '';
+const syncContentMap = (lang: ContentLang) => {
+  setLangContent('title', lang, form.title || '');
+  setLangContent('description', lang, form.description || '');
+  descriptionHtmlByLang[lang] = form.descriptionHtml || '';
+  setLangContent('rules', lang, form.config.riskNoticeText || '');
+};
+const applyContentFromMap = (lang: ContentLang) => {
+  form.title = getLangContent('title', lang);
+  form.description = getLangContent('description', lang);
+  const mappedHtml = descriptionHtmlByLang[lang];
+  if (mappedHtml) {
+    form.descriptionHtml = mappedHtml;
+  } else if (form.description) {
+    form.descriptionHtml = `<p>${form.description}</p>`;
+  } else {
+    form.descriptionHtml = '';
+  }
+  form.config.riskNoticeText = getLangContent('rules', lang);
+};
+const switchContentLang = (lang: ContentLang) => {
+  if (lang === activeContentLang.value) return;
+  syncContentMap(activeContentLang.value);
+  activeContentLang.value = lang;
+  applyContentFromMap(lang);
+};
+
+const loadStoredLang = () => {
+  try {
+    const stored = sessionStorage.getItem(CONSOLE_EVENT_LANG_KEY);
+    if (!stored) return;
+    if (supportedContentLangs.includes(stored as ContentLang)) {
+      activeContentLang.value = stored as ContentLang;
+      applyContentFromMap(activeContentLang.value);
+    }
+  } catch (err) {
+    console.warn('Failed to load stored lang', err);
+  }
+};
+
+const persistLang = () => {
+  try {
+    sessionStorage.setItem(CONSOLE_EVENT_LANG_KEY, activeContentLang.value);
+  } catch (err) {
+    console.warn('Failed to persist lang', err);
+  }
+};
+watch(
+  () => form.title,
+  (val) => {
+    setLangContent('title', activeContentLang.value, val || '');
+  },
+);
+watch(
+  () => form.description,
+  (val) => {
+    setLangContent('description', activeContentLang.value, val || '');
+  },
+);
+watch(
+  () => form.descriptionHtml,
+  (val) => {
+    descriptionHtmlByLang[activeContentLang.value] = val || '';
+  },
+);
+watch(
+  () => form.config.riskNoticeText,
+  (val) => {
+    setLangContent('rules', activeContentLang.value, val || '');
+  },
+);
+const aiFieldLabel = (target: AiTargetKey) => {
+  switch (target) {
+    case 'title':
+      return '标题';
+    case 'rules':
+      return '注意事项';
+    default:
+      return '详情';
+  }
+};
+const pickLocalized = (field: any, lang: ContentLang) => {
+  if (!field) return '';
+  if (typeof field === 'string') return field;
+  if (typeof field.original === 'string' && field.lang === lang) {
+    return field.original;
+  }
+  const translations = (field.translations ?? {}) as Record<string, string>;
+  if (typeof translations[lang] === 'string') return translations[lang];
+  if (typeof field[lang] === 'string') return field[lang];
+  if (typeof field.original === 'string') return field.original;
+  const fallback = Object.values(field).find((value) => typeof value === 'string');
+  return typeof fallback === 'string' ? fallback : '';
+};
+const buildAiPayload = (lang: ContentLang) => {
+  const lines = [
+    form.title && `Current title: ${form.title}`,
+    form.category && `Category: ${form.category}`,
+    form.locationText && `Location: ${form.locationText}`,
+    form.startTime && `Start: ${formatDisplayDate(form.startTime)}`,
+    form.config.riskNoticeText && `Rules: ${form.config.riskNoticeText}`,
+    registrationFields.value.length && `Questions: ${registrationFields.value.length} required`,
+  ].filter(Boolean);
+  return {
+    baseLanguage: lang,
+    topic: form.title || 'コミュニティイベント',
+    audience: 'community members and new participants',
+    style: 'friendly, concise, mobile-first',
+    details: lines.join('\n') || 'Generate a concise event description and rules.',
+  };
+};
+const requestAiSuggestion = async (target: AiTargetKey) => {
+  aiError.value = '';
+  aiPreview.value = null;
+  aiLoading[target] = true;
+  try {
+    const draftText =
+      target === 'title'
+        ? getLangContent('title', activeContentLang.value)
+        : target === 'rules'
+          ? getLangContent('rules', activeContentLang.value)
+          : getLangContent('description', activeContentLang.value);
+    if (!draftText.trim()) {
+      const emptyMessage = getLocalizedAiHint('empty');
+      aiError.value = emptyMessage;
+      toast.show(emptyMessage);
+      return;
+    }
+    const basePayload = buildAiPayload(activeContentLang.value);
+    const result = await generateEventContent({
+      ...basePayload,
+      details: `${basePayload.details}\n\nDraft to optimize (${activeContentLang.value}):\n${draftText}`,
+      topic: draftText.slice(0, 60) || basePayload.topic,
+    });
+    const field =
+      target === 'title'
+        ? result.title
+        : target === 'rules'
+          ? result.riskNotice ?? result.notes
+          : result.description;
+    const text = pickLocalized(field, activeContentLang.value);
+    if (!text) {
+      throw new Error('AI 没有返回内容，请稍后再试');
+    }
+    aiPreview.value = { target, text, lang: activeContentLang.value };
+  } catch (err) {
+    aiError.value = err instanceof Error ? err.message : 'AI 生成失败，请稍后重试';
+  } finally {
+    aiLoading[target] = false;
+  }
+};
+const applyAiSuggestion = (target: AiTargetKey) => {
+  if (!aiPreview.value || aiPreview.value.target !== target) return;
+  const { text, lang } = aiPreview.value;
+  setLangContent(target, lang, text);
+  if (lang !== activeContentLang.value) {
+    switchContentLang(lang);
+  }
+  if (target === 'title') {
+    form.title = text;
+  } else if (target === 'description') {
+    form.description = text;
+    form.descriptionHtml = `<p>${text}</p>`;
+    richNoteImages.value = [];
+  } else if (target === 'rules') {
+    form.config.riskNoticeEnabled = true;
+    form.config.riskNoticeText = text;
+  }
+  aiPreview.value = null;
+};
 
 const formatDisplayDate = (value: string) => {
   if (!value) return '请设置';
@@ -912,6 +1263,32 @@ const loadAiDraftFromSession = () => {
   }
 };
 
+const hydrateLocalizedField = (key: AiTargetKey, field: any, html?: string | null) => {
+  if (!field) return;
+  const baseLang =
+    typeof field.lang === 'string' && supportedContentLangs.includes(field.lang as ContentLang)
+      ? (field.lang as ContentLang)
+      : ('ja' as ContentLang);
+  if (typeof field.original === 'string') {
+    setLangContent(key, baseLang, field.original);
+  }
+  const translations = (field.translations ?? {}) as Record<string, string>;
+  Object.entries(translations).forEach(([lang, text]) => {
+    if (supportedContentLangs.includes(lang as ContentLang)) {
+      setLangContent(key, lang as ContentLang, text);
+    }
+  });
+  supportedContentLangs.forEach((lang) => {
+    const direct = (field as any)[lang];
+    if (typeof direct === 'string') {
+      setLangContent(key, lang, direct);
+    }
+  });
+  if (key === 'description' && html) {
+    descriptionHtmlByLang[baseLang] = html;
+  }
+};
+
 const applyEventDetailToForm = (
   event: ConsoleEventDetail,
   options: {
@@ -957,6 +1334,16 @@ const applyEventDetailToForm = (
     : [];
   registrationFields.value = buildBuilderFields(schema);
 
+  hydrateLocalizedField('title', event.title);
+  hydrateLocalizedField('description', event.description, event.descriptionHtml);
+  hydrateLocalizedField('rules', sanitizedConfig?.riskNoticeText ?? sanitizedConfig?.riskNotice);
+  const localizedLang =
+    typeof event.title?.lang === 'string' && supportedContentLangs.includes(event.title.lang as ContentLang)
+      ? (event.title.lang as ContentLang)
+      : activeContentLang.value;
+  activeContentLang.value = localizedLang;
+  applyContentFromMap(localizedLang);
+
   if (options.syncCommunity && event.communityId) {
     eventCommunityId.value = event.communityId;
   }
@@ -969,17 +1356,17 @@ const applyEventDetailToForm = (
 };
 
 const load = async () => {
-  if (communityId && !eventId) {
+  if (communityId && !eventId.value) {
     const community = await fetchConsoleCommunity(communityId);
     subtitle.value = `コミュニティ: ${community.name}`;
   }
 
-  if (!eventId) {
+  if (!eventId.value) {
     loadAiDraftFromSession();
     return;
   }
   try {
-    const event = await fetchConsoleEvent(eventId);
+    const event = await fetchConsoleEvent(eventId.value);
     applyEventDetailToForm(event, { syncCommunity: true, setSubtitle: true, includeGalleries: true });
     if (!event.galleries?.length) {
       await reloadGallery();
@@ -990,9 +1377,9 @@ const load = async () => {
 };
 
 const reloadGallery = async () => {
-  if (!eventId) return;
+  if (!eventId.value) return;
   try {
-    galleries.value = await fetchEventGallery(eventId);
+    galleries.value = await fetchEventGallery(eventId.value);
   } catch (err) {
     console.error(err);
   }
@@ -1143,16 +1530,246 @@ const copyStatusLabel = (status: string) => {
   }
 };
 
+const extractFromPastedDraft = (text: string) => {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  const title = lines[0] ?? '';
+  const description = lines.slice(1, 4).join(' ').slice(0, 280);
+  const rulesLine = lines.find((line) => /注意|規則|规则|须知|rule/i.test(line)) ?? '';
+  return {
+    title,
+    description,
+    rules: rulesLine || '',
+  };
+};
+
+const checkPastedDraft = async (auto = false) => {
+  draftCheckMessage.value = '';
+  pastedPreview.value = null;
+  const text = pastedDraft.value.trim();
+  const length = text.length;
+  if (!length) {
+    draftCheckMessage.value = getLocalizedAiHint('empty');
+    toast.show(draftCheckMessage.value);
+    return;
+  }
+  if (length < 80) {
+    draftCheckMessage.value = '文字が少ないため、企画相談モードでアイデアを広げてください。';
+    if (!auto) {
+      toast.show(draftCheckMessage.value);
+      goToEventAssistant();
+    }
+    return;
+  }
+  const preview = extractFromPastedDraft(text);
+  pastedPreview.value = preview;
+  draftCheckMessage.value = '草案を検出しました。表单に自動で反映しました。';
+  await applyPastedPreview(true);
+};
+
+const applyPastedPreview = async (auto = false) => {
+  if (!pastedPreview.value) return;
+  pasteFilledFields.value = [];
+  const { title, description, rules } = pastedPreview.value;
+  if (title) {
+    form.title = title;
+    setLangContent('title', activeContentLang.value, title);
+    pasteFilledFields.value.push('活动标题');
+  }
+  if (description) {
+    form.description = description;
+    form.descriptionHtml = `<p>${description}</p>`;
+    setLangContent('description', activeContentLang.value, description);
+    descriptionHtmlByLang[activeContentLang.value] = form.descriptionHtml;
+    pasteFilledFields.value.push('活动简介');
+  }
+  if (rules) {
+    form.config.riskNoticeText = rules;
+    setLangContent('rules', activeContentLang.value, rules);
+    pasteFilledFields.value.push('注意事项/风险提示');
+  }
+  pastedPreview.value = null;
+  draftCheckMessage.value = '表单に反映しました。内容を確認してください。';
+  aiPrefillNotice.value = '已根据你的草案填入标题/简介/规则，记得检查时间、票价、报名表等细节。';
+  showPastePanel.value = false;
+  if (!auto) {
+    await fetchPasteInsights(pastedDraft.value || `${title || ''}\n${description || ''}\n${rules || ''}`);
+    showPasteResult.value = true;
+    toast.show(draftCheckMessage.value);
+  }
+};
+
+const applyParsedResult = async (result: Record<string, any>) => {
+  const pick = <T>(camel: string, snake: string): T | null => {
+    if (result[camel] !== undefined) return result[camel] as T;
+    if (result[snake] !== undefined) return result[snake] as T;
+    return null;
+  };
+  pasteFilledFields.value = [];
+  const title = pick<string>('title', 'title');
+  if (title) {
+    form.title = title;
+    setLangContent('title', activeContentLang.value, title);
+    pasteFilledFields.value.push('活动标题');
+  }
+  const description = pick<string>('description', 'description');
+  if (description) {
+    form.description = description;
+    form.descriptionHtml = `<p>${description}</p>`;
+    setLangContent('description', activeContentLang.value, description);
+    descriptionHtmlByLang[activeContentLang.value] = form.descriptionHtml;
+    pasteFilledFields.value.push('活动简介');
+  }
+  const rules = pick<string>('rules', 'rules');
+  if (rules) {
+    form.config.riskNoticeText = rules;
+    setLangContent('rules', activeContentLang.value, rules);
+    pasteFilledFields.value.push('注意事项/风险提示');
+  }
+  const category = pick<string>('category', 'category');
+  if (category) {
+    form.category = category;
+    pasteFilledFields.value.push('分类');
+  }
+  const locationText = pick<string>('locationText', 'location_text');
+  if (locationText) {
+    form.locationText = locationText;
+    pasteFilledFields.value.push('地点');
+  }
+  const startTime = pick<string>('startTime', 'start_time');
+  if (startTime) {
+    form.startTime = startTime;
+    pasteFilledFields.value.push('开始时间');
+  }
+  const endTime = pick<string>('endTime', 'end_time');
+  if (endTime) {
+    form.endTime = endTime;
+    pasteFilledFields.value.push('结束时间');
+  }
+  const regStartTime = pick<string>('regStartTime', 'reg_start_time');
+  if (regStartTime) {
+    form.regStartTime = regStartTime;
+    pasteFilledFields.value.push('报名开始');
+  }
+  const regEndTime = pick<string>('regEndTime', 'reg_end_time');
+  if (regEndTime) {
+    form.regEndTime = regEndTime;
+    pasteFilledFields.value.push('报名截止');
+  }
+  const minParticipants = pick<number>('minParticipants', 'min_participants');
+  if (minParticipants != null) {
+    form.minParticipants = minParticipants;
+    pasteFilledFields.value.push('最低人数');
+  }
+  const maxParticipants = pick<number>('maxParticipants', 'max_participants');
+  if (maxParticipants != null) {
+    form.maxParticipants = maxParticipants;
+    pasteFilledFields.value.push('最高人数');
+  }
+  const ticketPrice = pick<number>('ticketPrice', 'ticket_price');
+  if (ticketPrice != null) {
+    form.ticketPrice = ticketPrice;
+    pasteFilledFields.value.push('票价');
+  }
+  const visibility = pick<string>('visibility', 'visibility');
+  if (visibility) {
+    form.visibility = visibility;
+    pasteFilledFields.value.push('可见性');
+  }
+  const visibleRange = pick<string>('visibleRange', 'visible_range');
+  if (visibleRange) {
+    form.config.visibleRange = visibleRange;
+    pasteFilledFields.value.push('Console 可视范围');
+  }
+  const refundPolicy = pick<string>('refundPolicy', 'refund_policy');
+  if (refundPolicy) {
+    form.config.refundPolicy = refundPolicy;
+    pasteFilledFields.value.push('退款政策');
+  }
+  const ticketTypes = pick<any[]>('ticketTypes', 'ticket_types');
+  if (Array.isArray(ticketTypes) && ticketTypes.length) {
+    form.ticketTypes = ticketTypes as any;
+    pasteFilledFields.value.push('票务配置');
+  }
+  const regForm = pick<any[]>('registrationForm', 'registration_form');
+  if (Array.isArray(regForm) && regForm.length) {
+    form.registrationForm = regForm as any;
+    pasteFilledFields.value.push('报名表');
+  }
+  pasteAdvice.value = (pick<string[]>('advice', 'advice') || []).filter(Boolean);
+  pasteCompliance.value = (pick<string[]>('compliance', 'compliance') || []).filter(Boolean);
+  aiPrefillNotice.value = '已根据你的草案填入标题/简介/规则，记得检查时间、票价、报名表等细节。';
+  showPastePanel.value = false;
+  showPasteResult.value = true;
+};
+
+const togglePaste = (state?: boolean) => {
+  const next = state !== undefined ? state : !showPastePanel.value;
+  showPastePanel.value = next;
+  if (!next) {
+    draftCheckMessage.value = '';
+    pastedPreview.value = null;
+  } else {
+    nextTick(() => pasteInputRef.value?.focus());
+  }
+};
+
+const handleEntryFromQuery = async () => {
+  if (entryHandled.value) return;
+  const entry = route.query.entry as string | undefined;
+  if (!entry) return;
+  entryHandled.value = true;
+  switch (entry) {
+    case 'paste': {
+      const parsed = loadParsedResultFromStorage();
+      const stored = loadDraftFromStorage();
+      if (parsed) {
+        await applyParsedResult(parsed);
+      } else if (stored?.trim()) {
+        let applied = false;
+        if (eventCommunityId.value) {
+          try {
+            const res = await extractEventDraft(eventCommunityId.value, { draft: stored });
+            if (res) {
+              await applyParsedResult(res as any);
+              applied = true;
+            }
+          } catch (err) {
+            console.warn('extractEventDraft apply failed', err);
+          }
+        }
+        if (!applied) {
+          await checkPastedDraft(true);
+        }
+      }
+      break;
+    }
+    case 'basic':
+      await nextTick();
+      scrollToSection('basic');
+      break;
+    case 'copy':
+      await openCopyOverlay();
+      break;
+    default:
+      break;
+  }
+};
+
 const triggerCoverPicker = () => {
   if (coverInputRef.value) {
     coverInputRef.value.click();
   }
 };
 
+const closePasteResult = () => {
+  showPasteResult.value = false;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
 const parseCoverUploadError = (err: unknown) => {
   const status = (err as any)?.response?.status;
   if (status === 413) {
-    return '封面图片过大，请选择更小的图片或继续压缩后再试';
+    return '这张图片太大了，换一张更小的照片或截图再试';
   }
   const isNetwork = (err as any)?.message === 'Network Error';
   const isCors =
@@ -1160,10 +1777,10 @@ const parseCoverUploadError = (err: unknown) => {
     (err as any)?.message?.includes?.('Failed to fetch') ||
     (err as any)?.message?.includes?.('ERR_FAILED');
   if (isCors) {
-    return '封面上传被跨域限制拦截，请改用同域 API（或本地代理）后重试';
+    return '网络不稳定，换个网络或稍后再试';
   }
   if (isNetwork) {
-    return '封面上传失败，请检查网络或稍后重试';
+    return '网络不稳定，换个网络或稍后再试';
   }
   return err instanceof Error ? err.message : '封面上传失败，请重试';
 };
@@ -1195,21 +1812,61 @@ const downscaleImageFile = (file: File) =>
       const img = new Image();
       img.onload = async () => {
         try {
-          const maxSide = Math.max(img.width, img.height);
-          const ratio = maxSide > MAX_COVER_DIMENSION ? MAX_COVER_DIMENSION / maxSide : 1;
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * ratio);
-          canvas.height = Math.round(img.height * ratio);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('无法压缩图片'));
+          if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
+            reject(new Error('图片太小了，换一张更清晰的照片（至少 1200×675）'));
             return;
           }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          let blob = await toJpegBlob(canvas, COVER_COMPRESS_QUALITY);
+          const sourceAspect = img.width / img.height;
+          const crop: { sx: number; sy: number; sw: number; sh: number } = {
+            sx: 0,
+            sy: 0,
+            sw: img.width,
+            sh: img.height,
+          };
+          if (sourceAspect > TARGET_ASPECT) {
+            crop.sw = img.height * TARGET_ASPECT;
+            crop.sx = (img.width - crop.sw) / 2;
+          } else if (sourceAspect < TARGET_ASPECT) {
+            crop.sh = img.width / TARGET_ASPECT;
+            crop.sy = (img.height - crop.sh) / 2;
+          }
+
+          let targetWidth = Math.min(MAX_COVER_DIMENSION, crop.sw);
+          let targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+
+          const compressOnce = async (width: number, height: number, quality: number) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(width);
+            canvas.height = Math.round(height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('无法压缩图片');
+            ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
+            return toJpegBlob(canvas, quality);
+          };
+
+          let blob = await compressOnce(targetWidth, targetHeight, COVER_COMPRESS_QUALITY);
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
-            blob = await toJpegBlob(canvas, COVER_FALLBACK_QUALITY);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_UPLOAD_SIZE) {
+            const scale = Math.max(0.7, Math.sqrt(MAX_COVER_UPLOAD_SIZE / blob.size));
+            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * scale));
+            targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_UPLOAD_SIZE) {
+            // 最后一次兜底：进一步缩小分辨率
+            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * 0.75));
+            targetHeight = Math.round(targetWidth / TARGET_ASPECT);
+            blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
+          }
+
+          if (blob.size > MAX_COVER_SIZE) {
+            reject(new Error('这张图片太大，已经帮你压缩过了，再换一张更小的照片试试'));
+            return;
           }
 
           const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), {
@@ -1253,7 +1910,8 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
       const blob = await response.blob();
       const extension = blob.type.includes('png') ? 'png' : 'jpg';
       const fileName = `copied-${Date.now()}-${index}.${extension}`;
-      const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const rawFile = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const file = await downscaleImageFile(rawFile);
       const id = `${fileName}-${Math.random().toString(36).slice(2)}`;
       pendingCoverFiles.value.push({ id, file });
       const objectUrl = URL.createObjectURL(file);
@@ -1263,7 +1921,7 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
         order: index,
       });
     } catch (err) {
-      console.warn('Failed to import gallery cover', err);
+      showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
     }
   });
   await Promise.all(tasks);
@@ -1290,10 +1948,10 @@ const handleCopyFromEvent = async (sourceEventId: string) => {
   try {
     const detail = await fetchConsoleEvent(sourceEventId);
     applyEventDetailToForm(detail, {
-      includeGalleries: Boolean(eventId),
+      includeGalleries: Boolean(eventId.value),
       stripParticipants: true,
     });
-    if (!eventId) {
+    if (!eventId.value) {
       await importGalleryToPending(detail);
     }
     aiPrefillNotice.value = `已复制「${getLocalizedText(detail.title) || '历史活动'}」内容，请根据实际情况调整。`;
@@ -1334,11 +1992,23 @@ const removeLocalCoverPreview = (coverId: string) => {
   pendingCoverFiles.value = pendingCoverFiles.value.filter((item) => item.id !== coverId);
 };
 
-const buildContent = (text: string) => ({
-  original: text,
-  lang: 'ja',
-  translations: {},
-});
+const buildContent = (text: string, field: AiTargetKey) => {
+  syncContentMap(activeContentLang.value);
+  const translations = { ...(contentByLang[field] || {}) } as Record<string, string>;
+  const baseLang: ContentLang = translations.ja ? 'ja' : activeContentLang.value;
+  const original = translations[baseLang] ?? text;
+  delete translations[baseLang];
+  Object.keys(translations).forEach((lang) => {
+    if (!translations[lang]) {
+      delete translations[lang];
+    }
+  });
+  return {
+    original,
+    lang: baseLang,
+    translations,
+  };
+};
 
 function buildRegistrationSchema() {
   return registrationFields.value
@@ -1416,6 +2086,16 @@ const focusMainInline = (key: 'title' | 'locationText') => {
   });
 };
 
+const goToEventAssistant = () => {
+  if (!communityId) return;
+  persistLang();
+  router.push({
+    name: 'ConsoleMobileEventCreate',
+    params: { communityId },
+    query: { lang: activeContentLang.value },
+  });
+};
+
 const handleLocationInput = (event: Event) => {
   const input = event.target as HTMLInputElement;
   form.locationText = input.value;
@@ -1488,24 +2168,83 @@ const extractNoteImagesFromHtml = (html?: string | null) => {
 };
 
 const openRichTextEditor = () => {
-  noteOverlayContext.value = {
+  const payload = {
     text: form.description,
     html: form.descriptionHtml,
     images: [...richNoteImages.value],
   };
-  sessionStorage.setItem(CONSOLE_EVENT_SCROLL_KEY, String(window.scrollY ?? 0));
-  showNoteOverlay.value = true;
+  try {
+    sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
+  } catch (err) {
+    console.warn('Failed to persist form draft', err);
+  }
+  sessionStorage.setItem(CONSOLE_EVENT_NOTE_CONTEXT_KEY, JSON.stringify(payload));
+  const paramsCommunity = eventCommunityId.value || communityId;
+  if (!paramsCommunity) return;
+  const query: Record<string, string> = {};
+  if (eventId.value) query.eventId = eventId.value;
+  router.push({
+    name: 'ConsoleMobileEventNoteEditor',
+    params: { communityId: paramsCommunity },
+    query: Object.keys(query).length ? query : undefined,
+  });
 };
 
-const handleNoteOverlaySave = (payload: NoteOverlayContext) => {
-  form.description = payload.text;
-  form.descriptionHtml = payload.html;
-  richNoteImages.value = payload.images;
-  showNoteOverlay.value = false;
+const applyNoteResultFromStorage = () => {
+  try {
+    const raw = sessionStorage.getItem(CONSOLE_EVENT_NOTE_RESULT_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(CONSOLE_EVENT_NOTE_RESULT_KEY);
+    const payload = JSON.parse(raw) as { text?: string; html?: string; images?: Array<{ id: string; src: string }> };
+    if (payload.text !== undefined) {
+      form.description = payload.text;
+    }
+    if (payload.html !== undefined) {
+      form.descriptionHtml = payload.html;
+    }
+    if (Array.isArray(payload.images)) {
+      richNoteImages.value = payload.images;
+    }
+  } catch (err) {
+    console.warn('Failed to apply note result', err);
+  }
 };
 
-const closeNoteOverlay = () => {
-  showNoteOverlay.value = false;
+const applyFormDraftFromStorage = () => {
+  try {
+    const raw = sessionStorage.getItem(CONSOLE_EVENT_FORM_DRAFT_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(CONSOLE_EVENT_FORM_DRAFT_KEY);
+    const saved = JSON.parse(raw);
+    const savedForm = saved?.form;
+    if (!savedForm) return;
+    Object.assign(form, savedForm);
+    if (savedForm.config) {
+      Object.assign(form.config, savedForm.config);
+    }
+    if (Array.isArray(savedForm.ticketTypes)) {
+      form.ticketTypes = savedForm.ticketTypes;
+    }
+    if (Array.isArray(savedForm.registrationForm)) {
+      form.registrationForm = savedForm.registrationForm;
+    }
+  } catch (err) {
+    console.warn('Failed to restore form draft', err);
+  }
+};
+
+const openCategorySheet = () => {
+  categoryDraft.value = form.category || '';
+  showCategorySheet.value = true;
+};
+
+const closeCategorySheet = () => {
+  showCategorySheet.value = false;
+};
+
+const confirmCategorySheet = () => {
+  form.category = categoryDraft.value;
+  closeCategorySheet();
 };
 
 const flashSaveStatus = (text: string) => {
@@ -1513,6 +2252,7 @@ const flashSaveStatus = (text: string) => {
   if (saveStatusTimer) {
     window.clearTimeout(saveStatusTimer);
   }
+  // Keep UX but avoid auto scroll/visual jank on mount
   saveStatusTimer = window.setTimeout(() => {
     saveStatus.value = null;
     saveStatusTimer = null;
@@ -1646,11 +2386,20 @@ const persistEvent = async (status: 'draft' | 'open') => {
     form.ticketPrice = 0;
   }
 
+  syncContentMap(activeContentLang.value);
   const descriptionText = stripHtml(form.descriptionHtml || '').trim() || form.description.trim();
   if (!descriptionText) {
     error.value = '请填写活动详情';
     submitting.value = false;
     actionLoading.value = null;
+    return;
+  }
+
+  if (coverDisplayItems.value.length === 0 && status === 'open') {
+    error.value = '发布前请至少上传一张封面（第一张为主图）';
+    submitting.value = false;
+    actionLoading.value = null;
+    sectionCover.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
@@ -1663,9 +2412,10 @@ const persistEvent = async (status: 'draft' | 'open') => {
   }
 
   const payload = {
-    title: buildContent(form.title),
-    description: buildContent(form.description || form.title),
+    title: buildContent(form.title, 'title'),
+    description: buildContent(form.description || form.title, 'description'),
     descriptionHtml: form.descriptionHtml,
+    originalLanguage: activeContentLang.value,
     category: form.category || null,
     locationText: form.locationText,
     locationLat: form.locationLat,
@@ -1685,12 +2435,12 @@ const persistEvent = async (status: 'draft' | 'open') => {
   };
 
   try {
-    if (isEdit.value && eventId) {
-      await updateConsoleEvent(eventId, {
+    if (isEdit.value && eventId.value) {
+      await updateConsoleEvent(eventId.value, {
         ...payload,
         ticketTypes: [
           {
-            name: buildContent(`${form.title} チケット`),
+            name: buildContent(`${form.title} チケット`, 'title'),
             type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
             price: form.ticketPrice ?? 0,
           },
@@ -1698,29 +2448,33 @@ const persistEvent = async (status: 'draft' | 'open') => {
       });
       flashSaveStatus(status === 'open' ? '已发布' : '已保存');
       if (status === 'open') {
-        goToPublishSuccess(eventId, 'list');
+        goToPublishSuccess(eventId.value, 'list');
       }
     } else if (communityId) {
-    const event = await createConsoleEvent(communityId, {
-      ...payload,
-      ticketTypes: [
-        {
-          name: buildContent(`${form.title} チケット`),
-          type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
-          price: form.ticketPrice ?? 0,
-        },
-      ],
-    });
-    if (pendingCoverFiles.value.length) {
-      const uploaded = await uploadPendingCovers(event.id);
-      if (!uploaded) {
-        showCoverError('活动已保存，但封面未能上传，请稍后在编辑页重新添加。', 'warning');
+      const event = await createConsoleEvent(communityId, {
+        ...payload,
+        ticketTypes: [
+          {
+            name: buildContent(`${form.title} チケット`, 'title'),
+            type: (form.ticketPrice ?? 0) > 0 ? 'normal' : 'free',
+            price: form.ticketPrice ?? 0,
+          },
+        ],
+      });
+      if (pendingCoverFiles.value.length) {
+        const uploaded = await uploadPendingCovers(event.id);
+        if (!uploaded) {
+          showCoverError('活动已保存，但封面未能上传，请稍后在编辑页重新添加。', 'warning');
+        }
       }
-    }
-    if (status === 'open') {
-      goToPublishSuccess(event.id, 'edit');
-    } else {
-      router.replace({ name: 'console-event-edit', params: { eventId: event.id } });
+      // after first creation, lock to this event id for subsequent saves
+      router.replace({
+        name: route.name as string,
+        params: route.params,
+        query: { ...route.query, eventId: event.id },
+      });
+      if (status === 'open') {
+        goToPublishSuccess(event.id, 'edit');
       }
       return;
     } else {
@@ -1740,16 +2494,11 @@ const handlePublish = () => persistEvent('open');
 const handleSubmit = () => handlePublish();
 
 const handlePreview = () => {
-  if (!eventId) {
+  if (!eventId.value) {
     error.value = '请先保存草稿后再预览活动';
     return;
   }
-  router.push({ name: 'event-detail', params: { eventId } });
-};
-
-const openAssistant = () => {
-  if (!communityId) return;
-  router.push({ name: 'ConsoleMobileEventCreate', params: { communityId } });
+  router.push({ name: 'event-detail', params: { eventId: eventId.value } });
 };
 
 const handleCoverUpload = async (ev: Event) => {
@@ -1765,30 +2514,27 @@ const handleCoverUpload = async (ev: Event) => {
   const valid: File[] = [];
   for (const file of files) {
     if (!file.type?.startsWith('image/')) {
-      showCoverError('仅支持上传 jpg/png 等图片文件');
+      showCoverError('仅支持上传 jpg/png/webp 图片');
       continue;
     }
-    let candidate = file;
-    if (file.size > MAX_COVER_SIZE) {
-      try {
-        candidate = await downscaleImageFile(file);
-      } catch (err) {
-        showCoverError(err instanceof Error ? err.message : '图片过大，请压缩后重新上传');
-        continue;
-      }
-    }
-    if (candidate.size > MAX_COVER_SIZE) {
-      showCoverError('图片过大，请压缩后重新上传');
+    try {
+      const processed = await downscaleImageFile(file);
+      valid.push(processed);
+    } catch (err) {
+      showCoverError(
+        err instanceof Error
+          ? err.message
+          : '上传失败，这张图太大或不合适，换一张手机照片/截图再试',
+      );
       continue;
     }
-    valid.push(candidate);
     if (existing + valid.length >= MAX_COVERS) break;
   }
   if (!valid.length) {
     input.value = '';
     return;
   }
-  if (!eventId) {
+  if (!eventId.value) {
     pendingCoverFiles.value.push(...valid);
     setLocalCoverPreviews(valid);
     coverError.value = null;
@@ -1798,7 +2544,7 @@ const handleCoverUpload = async (ev: Event) => {
   coverError.value = null;
   uploadingCover.value = true;
   try {
-    await uploadEventCovers(eventId, valid);
+    await uploadEventCovers(eventId.value, valid);
     await reloadGallery();
     input.value = '';
   } catch (err) {
@@ -1809,14 +2555,14 @@ const handleCoverUpload = async (ev: Event) => {
 };
 
 const handleDeleteCover = async (coverId: string) => {
-  if (!eventId) {
+  if (!eventId.value) {
     removeLocalCoverPreview(coverId);
     return;
   }
   uploadingCover.value = true;
   coverError.value = null;
   try {
-    galleries.value = await deleteEventCover(eventId, coverId);
+    galleries.value = await deleteEventCover(eventId.value, coverId);
   } catch (err) {
     showCoverError(err instanceof Error ? err.message : '封面删除失败，请重试');
   } finally {
@@ -1848,7 +2594,7 @@ const uploadPendingCovers = async (targetEventId: string) => {
 };
 
 const applyAssistantDraftFromStorage = () => {
-  if (eventId) return;
+  if (eventId.value) return;
   try {
     const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
     if (!raw) return;
@@ -1883,10 +2629,24 @@ const applyAssistantDraftFromStorage = () => {
 
 onMounted(async () => {
   setupMobileMediaQuery();
+  loadStoredLang();
   await load();
+  await handleEntryFromQuery(); // handle entry after load to ensure refs ready
   applyAssistantDraftFromStorage();
-  restoreScrollPosition();
+  // prevent auto scroll/restore on mobile initial load
+  window.scrollTo({ top: 0 });
+  applyFormDraftFromStorage();
+  applyNoteResultFromStorage();
 });
+
+watch(
+  () => route.query.entry,
+  async (val) => {
+    if (val) {
+      await handleEntryFromQuery();
+    }
+  },
+);
 
 watch(
   () => eventCommunityId.value,
@@ -1905,7 +2665,8 @@ onUnmounted(() => {
 });
 
 onActivated(() => {
-  restoreScrollPosition();
+  applyFormDraftFromStorage();
+  applyNoteResultFromStorage();
 });
 
 </script>
@@ -1915,11 +2676,18 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  padding: 0 0.75rem;
 }
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.section-header .section-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
 }
 .form {
   display: flex;
@@ -1951,6 +2719,70 @@ select {
   padding: 0.85rem;
   font-size: 0.9rem;
   color: #0f172a;
+}
+.ai-helper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ai-helper-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+.ai-lang-switch {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.ai-lang-btn {
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #334155;
+}
+.ai-lang-btn.active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+.ai-helper-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.ai-chip {
+  border: 1px dashed #cbd5f5;
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.ai-chip:disabled {
+  opacity: 0.6;
+}
+.ai-preview {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+.ai-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ai-preview-text {
+  white-space: pre-line;
+  color: #0f172a;
+  margin-top: 0.35rem;
+  line-height: 1.45;
 }
 .checklist-card {
   gap: 0.5rem;
@@ -2065,22 +2897,6 @@ select {
 .upload-btn input {
   display: none;
 }
-.category-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.category-chip {
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  border: 1px solid #cbd5f5;
-  background: white;
-  cursor: pointer;
-}
-.category-chip.active {
-  background: #2563eb;
-  color: white;
-}
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -2099,6 +2915,11 @@ select {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+.builder-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .builder-quick {
@@ -2131,10 +2952,9 @@ select {
 
 .builder-eyebrow {
   margin: 0;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(15, 23, 42, 0.4);
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .ios-add-btn {
@@ -2203,12 +3023,18 @@ select {
 
 .ios-inline-editor,
 .ios-inline-select {
-  flex: 1;
+  flex: 0 1 auto;
   border: none;
   background: transparent;
   font-size: 16px;
   text-align: right;
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ios-inline-editor:focus,
@@ -2261,6 +3087,9 @@ select {
 .ios-inline-select {
   appearance: none;
   background-image: none;
+  text-align-last: right;
+  min-width: 120px;
+  max-width: 70%;
 }
 
 .ios-toggle {
@@ -2309,33 +3138,59 @@ select {
   color: #475569;
 }
 .console-section--mobile {
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(150px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #f6fbff 0%, #eef3f8 40%, #f9f9fb 100%);
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
+  background: #f5f7fb;
   gap: 0.75rem;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .console-section--mobile .section-header {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 15px 40px rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  border-radius: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 0.6rem 12px;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  align-items: center;
+  width: 100%;
+  margin: 0 0 8px 0;
+  box-sizing: border-box;
+}
+
+.nav-text-btn {
+  border: none;
+  background: transparent;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px 4px;
+}
+.nav-text-btn.back {
+  padding-left: 0;
+}
+.nav-text-btn.placeholder {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .console-section--mobile .section-header h2 {
   font-size: 18px;
 }
 
-.console-section--mobile .section-header p {
-  font-size: 12px;
-  color: var(--m-color-text-tertiary);
-}
-
-.console-section--mobile .card {
+.console-section--mobile .card,
+.console-section--mobile .ios-panel,
+.console-section--mobile .mobile-hero-card {
   border: none;
   border-radius: 12px;
   padding: 18px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.98);
+  width: 100%;
+  max-width: none;
+  margin: 0 0 12px 0;
+  box-sizing: border-box;
 }
 
 .console-section--mobile h3 {
@@ -2350,9 +3205,25 @@ select {
   color: #0f172a;
 }
 
+.console-section--mobile .card,
+.console-section--mobile .ios-panel,
+.console-section--mobile .mobile-hero-card {
+  margin-left: 0;
+  margin-right: 0;
+}
 
+.console-section--mobile .hero-cover-panel {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 12px 0;
+  overflow: hidden;
+}
 
-
+.console-section--mobile .hero-cover-strip {
+  margin: 0;
+  padding: 0 0 4px 0;
+}
 
 .ios-form {
   display: flex;
@@ -2395,6 +3266,9 @@ select {
   gap: 16px;
   font-size: 16px;
   position: relative;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ios-row::after {
@@ -2637,21 +3511,15 @@ select {
   flex-direction: column;
   gap: 6px;
   width: 100%;
-}
-
-.ios-rich-text__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
+  box-sizing: border-box;
 }
 
 .ios-rich-text__preview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
   max-width: 100%;
+  text-align: right;
 }
 
 .ios-helper {
@@ -2893,8 +3761,9 @@ select {
 .copy-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  z-index: 80;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 90;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -3192,19 +4061,213 @@ select {
   color: rgba(236, 245, 255, 0.9);
 }
 
-.hero-assistant {
+.assistant-link {
+  margin-top: 8px;
   align-self: flex-start;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(15, 76, 92, 0.2);
-  color: #ecf5ff;
+  border: 1px solid rgba(0, 144, 217, 0.25);
+  background: #fff;
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.cover-below {
   margin-top: 10px;
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: none;
+  width: 100%;
+  margin: 0;
+}
+.cover-below .hero-cover-rules {
+  color: #475569;
+}
+.cover-below .hero-cover-add {
+  border-color: rgba(15, 23, 42, 0.15);
+  background: #f8fafc;
+  color: #0f172a;
+}
+.paste-card {
+  margin-top: 10px;
+  background: #fff;
+  border: 1px solid rgba(0, 144, 217, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.paste-input {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 200px;
+}
+.paste-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.paste-preview {
+  border: 1px dashed rgba(15, 23, 42, 0.15);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.paste-preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.paste-preview-text {
+  margin: 0;
+  color: #0f172a;
+  line-height: 1.4;
+}
+.paste-preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.paste-close {
+  border: none;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+.paste-full-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 90;
+}
+.paste-full-card {
+  width: min(960px, 96vw);
+  max-height: 92vh;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+.paste-full-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.paste-full-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+.paste-full-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+.paste-input--full {
+  width: 100%;
+  min-height: 240px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.paste-result-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 95;
+}
+.paste-result-card {
+  width: min(640px, 92vw);
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.24);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.paste-result-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+.paste-result-subtitle {
+  margin: 2px 0 6px;
+  font-size: 13px;
+  color: #475569;
+}
+.paste-result-list ul,
+.paste-result-hints ul {
+  margin: 6px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #0f172a;
+}
+.paste-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.paste-result-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #475569;
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 23, 42, 0.15);
+  border-top-color: #0ea5e9;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .cover-upload-overlay {
@@ -3255,11 +4318,11 @@ select {
 .builder-hint {
   margin: 0;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.55);
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .builder-hint--inline {
-  margin-top: 4px;
+  margin-top: 8px;
   text-align: right;
 }
 

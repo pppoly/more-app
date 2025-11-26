@@ -290,11 +290,13 @@ import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
+import { useLocale } from '../../composables/useLocale';
 
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
 const favoritesStore = useFavorites();
+const { preferredLangs } = useLocale();
 
 const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
@@ -403,7 +405,7 @@ const detail = computed(() => {
     id: event.value.id,
     status: event.value.status,
     registrationStatus: registrationStatus.value,
-    title: getLocalizedText(event.value.title),
+    title: getLocalizedText(event.value.title, preferredLangs.value),
     categoryLabel: event.value.category ?? 'イベント',
     timeFullText: `${start} 〜 ${end}`,
     locationText: event.value.locationText,
@@ -426,7 +428,7 @@ const detail = computed(() => {
       ) || defaultAvatarImage.value,
     descriptionHtml:
       event.value.descriptionHtml ??
-      `<p>${getLocalizedText(event.value.description ?? event.value.title)}</p>`,
+      `<p>${getLocalizedText(event.value.description ?? event.value.title, preferredLangs.value)}</p>`,
     mapUrl:
       typeof event.value.locationLat === 'number' && typeof event.value.locationLng === 'number'
         ? `https://www.google.com/maps/dir/?api=1&destination=${event.value.locationLat},${event.value.locationLng}`
@@ -478,7 +480,7 @@ const calendarLink = computed(() => {
   const title = encodeURIComponent(detail.value.title);
   const location = encodeURIComponent(detail.value.locationText ?? '');
   const description = encodeURIComponent(
-    getLocalizedText(event.value.description ?? event.value.title) ?? detail.value.title,
+    getLocalizedText(event.value.description ?? event.value.title, preferredLangs.value) ?? detail.value.title,
   );
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&location=${location}&details=${description}`;
 });
@@ -610,7 +612,7 @@ const loadEvent = async () => {
     event.value = detailData;
     gallery.value = galleryData;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'イベント情報の取得に失敗しました';
+    error.value = '活动加载失败，请稍后再试';
   } finally {
     loading.value = false;
   }
@@ -797,7 +799,7 @@ const submitBooking = async () => {
     handleRegistrationResult(registration);
     showBooking.value = false;
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '申込に失敗しました';
+    registrationError.value = '报名失败，请稍后再试';
   } finally {
     submitting.value = false;
   }
@@ -825,7 +827,7 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    registrationError.value = err instanceof Error ? err.message : '決済処理に失敗しました';
+    registrationError.value = '支付失败，请稍后再试';
   } finally {
     isPaying.value = false;
   }
