@@ -7,7 +7,12 @@
       </button>
       <div class="top-text" @click="goCommunitySettings">
         <p class="top-label">社群</p>
-        <h1 class="top-title">{{ communityName || '未選択のコミュニティ' }}</h1>
+        <div class="top-title-row">
+          <h1 class="top-title">{{ communityName || '未選択のコミュニティ' }}</h1>
+          <button v-if="planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
+            {{ planLabel }}
+          </button>
+        </div>
         <p class="top-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
       </div>
       <button
@@ -179,6 +184,7 @@ import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
   fetchConsoleCommunity,
   fetchConsoleCommunityEvents,
+  fetchCommunityBalance,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
@@ -200,6 +206,8 @@ const loading = ref(false);
 const showCommunityPicker = ref(false);
 const showCreateSheet = ref(false);
 const pickerLoading = ref(false);
+const pricingPlanId = ref<string | null>(null);
+const monthRevenueText = ref<string>('¥0');
 const heroLogoUrl = ref<string | null>(null);
 const heroLoading = ref(true);
 let logoRequestId = 0;
@@ -225,9 +233,17 @@ const roleLabel = computed(() => {
       return 'メンバー';
   }
 });
+const planLabel = computed(() => {
+  const id = (pricingPlanId.value || '').toLowerCase();
+  if (!id) return '';
+  if (id.includes('pro')) return 'Pro';
+  if (id.includes('starter')) return 'Starter';
+  if (id.includes('free')) return 'Free';
+  return id;
+});
 
 const stats = computed(() => ({
-  monthRevenueText: '¥0',
+  monthRevenueText: monthRevenueText.value,
   eventCount: events.value.length,
   registrationCount: '--',
 }));
@@ -244,6 +260,22 @@ const displayEvents = computed(() =>
     coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
   })),
 );
+
+const formatJPY = (amount: number) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', minimumFractionDigits: 0 }).format(amount);
+
+const fetchMonthBalance = async () => {
+  if (!communityId.value) {
+    monthRevenueText.value = '¥0';
+    return;
+  }
+  try {
+    const balance = await fetchCommunityBalance(communityId.value, { period: 'month' });
+    monthRevenueText.value = formatJPY(balance.net ?? 0);
+  } catch (err) {
+    monthRevenueText.value = '¥0';
+  }
+};
 
 const loadEvents = async () => {
   if (!communityId.value) return;
@@ -285,7 +317,7 @@ const goPayout = () => {
 };
 
 const goSubscription = () => {
-  router.push({ name: 'ConsoleMobileSubscription' });
+  router.push({ name: 'ConsoleMobileSubscriptionStandalone' });
 };
 
 const goCommunitySettings = () => {
@@ -424,6 +456,7 @@ watch(
     }
     if (!newId) {
       heroLogoUrl.value = null;
+      monthRevenueText.value = '¥0';
     }
   },
 );
@@ -440,6 +473,8 @@ watch(
 const loadActiveCommunityDetail = async () => {
   if (!communityId.value) {
     heroLogoUrl.value = null;
+    pricingPlanId.value = null;
+    monthRevenueText.value = '¥0';
     heroLoading.value = false;
     return;
   }
@@ -453,13 +488,16 @@ const loadActiveCommunityDetail = async () => {
         ? (detail.description as ConsoleCommunityDetail['description'])
         : null;
     const logo = (descriptionObj as any)?.logoImageUrl || null;
+    pricingPlanId.value = detail.pricingPlanId ?? null;
     if (currentRequestId === logoRequestId) {
       heroLogoUrl.value = logo ? resolveAssetUrl(logo) : null;
     }
+    fetchMonthBalance();
   } catch (err) {
     if (currentRequestId === logoRequestId) {
       heroLogoUrl.value = null;
     }
+    monthRevenueText.value = '¥0';
   } finally {
     if (currentRequestId === logoRequestId) {
       heroLoading.value = false;
@@ -526,6 +564,23 @@ const loadActiveCommunityDetail = async () => {
   font-weight: 800;
   color: #0f172a;
   line-height: 1.2;
+}
+.top-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: none;
+  cursor: pointer;
 }
 
 .top-role {

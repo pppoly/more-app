@@ -23,8 +23,9 @@ const { setLocale } = useLocale();
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
-  if (locale) {
-    setLocale(locale);
+  // UI 基础语言固定为日语，忽略非日语的偏好设置
+  if (locale === 'ja' || !locale) {
+    setLocale('ja');
   }
 }
 

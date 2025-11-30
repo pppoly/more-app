@@ -1,14 +1,15 @@
 <template>
   <div class="payout">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">收银台</p>
-        <h1>{{ titleText }}</h1>
-        <p class="sub">{{ subText }}</p>
+    <header class="app-bar">
+      <button class="text-back" type="button" @click="router.back()">
+        {{ $t('nav.back') }}
+      </button>
+      <div class="app-bar__title">
+        <h1>{{ pageTitle }}</h1>
       </div>
-      <span :class="['pill', stripeReady ? 'ok' : 'warn']">
-        {{ stripeReady ? '可收款' : '待开通' }}
-      </span>
+      <button class="text-back text-back--ghost" type="button" aria-hidden="true" tabindex="-1">
+        {{ $t('nav.back') }}
+      </button>
     </header>
 
     <section class="card" v-if="community">
@@ -51,11 +52,7 @@ const error = ref<string | null>(null);
 const stripeReady = computed(
   () => !!(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded),
 );
-
-const titleText = computed(() => (stripeReady.value ? '可以收钱啦' : '先把收款开一下'));
-const subText = computed(() =>
-  stripeReady.value ? '资料有变可以随时更新，保证打款顺利。' : '按提示填资料，很快就能把票款结算到你账户。',
-);
+const pageTitle = computed(() => '收款设置');
 
 const loadCommunity = async () => {
   error.value = null;
@@ -103,54 +100,41 @@ onMounted(loadCommunity);
 .payout {
   min-height: 100vh;
   background: #f8fafc;
-  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px
-    calc(80px + env(safe-area-inset-bottom, 0px));
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(80px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.hero {
-  background: linear-gradient(135deg, #2563eb, #10b981);
-  color: #f8fafc;
-  padding: 16px;
-  border-radius: 16px;
-  display: flex;
-  justify-content: space-between;
+.app-bar {
+  display: grid;
+  grid-template-columns: 80px 1fr 80px;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.2);
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 0 12px;
+  width: calc(100% + 32px);
+  margin: 0 -16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
-.eyebrow {
+.app-bar__title h1 {
   margin: 0;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 12px;
-  opacity: 0.9;
-}
-.hero h1 {
-  margin: 4px 0 6px;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
+  color: #0f172a;
+  text-align: center;
 }
-.sub {
-  margin: 0;
-  color: #e2f3ff;
-  font-size: 14px;
-}
-.pill {
-  padding: 6px 12px;
-  border-radius: 999px;
+.text-back {
+  border: none;
+  background: transparent;
+  color: #0f172a;
   font-weight: 700;
-  font-size: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 15px;
+  padding: 0;
+  min-width: 72px;
+  text-align: left;
 }
-.pill.ok {
-  background: rgba(16, 185, 129, 0.2);
-  color: #d1fae5;
-}
-.pill.warn {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fef3c7;
+.text-back--ghost {
+  visibility: hidden;
 }
 .card {
   background: #fff;

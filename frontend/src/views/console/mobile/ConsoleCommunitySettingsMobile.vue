@@ -1,14 +1,15 @@
 <template>
   <PageMarker label="P3" />
   <div class="community-settings">
-    <header class="hero-card">
-      <button class="hero-back" type="button" @click="router.back()">
-        <span class="i-lucide-chevron-left"></span>
-      </button>
+    <header class="hero-card" :class="`theme-${portalTheme}`">
       <div class="hero-text">
         <p class="hero-eyebrow">社群設定</p>
         <h1>{{ form.name || 'コミュニティ' }}</h1>
         <p class="hero-subtext">公開情報と AI が参照するプロフィールをここで管理します。</p>
+        <button class="portal-btn" type="button" @click="goPortal">
+          <span class="i-lucide-layout-template"></span>
+          ポータルをカスタマイズ
+        </button>
       </div>
       <span class="hero-status">{{ form.visibleLevel === 'private' ? '非公開' : '公開中' }}</span>
     </header>
@@ -93,10 +94,6 @@
           <p class="card-label">社群紹介</p>
           <div class="card-head__right">
             <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
-            <button class="link-btn" type="button" :disabled="stripeOnboardLoading" @click="startStripeOnboard">
-              <span class="i-lucide-credit-card"></span>
-              {{ stripeOnboardLoading ? '接続中…' : 'Stripe収款を連携' }}
-            </button>
           </div>
         </div>
         <textarea
@@ -104,13 +101,9 @@
           rows="6"
           placeholder="社群のビジョン・活動内容・歓迎する人などを記載してください。"
         ></textarea>
-        <p v-if="stripeOnboardLink" class="stripe-hint">
-          リンクを開けない場合はこちら:
-          <a :href="stripeOnboardLink" target="_blank">Stripe Onboard</a>
-        </p>
       </section>
 
-      <p v-if="error" class="form-error">{{ error }}</p>
+    <p v-if="error" class="form-error">{{ error }}</p>
     </form>
 
     <footer class="form-footer">
@@ -119,15 +112,17 @@
         {{ saving ? '保存中…' : '保存する' }}
       </button>
     </footer>
+    <button class="hero-back" type="button" @click="router.back()">
+      <span class="i-lucide-arrow-left"></span>
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue';
+import { computed, reactive, ref, onMounted, onActivated } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   fetchConsoleCommunity,
-  startCommunityStripeOnboarding,
   updateConsoleCommunity,
   uploadCommunityAsset,
 } from '../../../api/client';
@@ -136,11 +131,13 @@ import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import PageMarker from '../../../components/PageMarker.vue';
+import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const communityId = route.params.communityId as string;
+const { t } = useI18n();
 
 const form = reactive({
   name: '',
@@ -158,6 +155,8 @@ const coverInput = ref<HTMLInputElement | null>(null);
 const logoInput = ref<HTMLInputElement | null>(null);
 const uploadingCover = ref(false);
 const uploadingLogo = ref(false);
+const portalTheme = ref('immersive');
+const themeOptions = ['clean', 'immersive', 'warm', 'collage'];
 
 const saving = ref(false);
 const error = ref<string | null>(null);
@@ -193,6 +192,10 @@ const loadCommunity = async () => {
     form.logoImageUrl = descriptionObj?.logoImageUrl ?? '';
     logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
     stripeOnboardLink.value = descriptionObj?._stripeOnboardLink ?? null;
+    if (descriptionObj?._portalConfig && typeof descriptionObj._portalConfig.theme === 'string') {
+      const theme = descriptionObj._portalConfig.theme;
+      portalTheme.value = themeOptions.includes(theme) ? theme : 'immersive';
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '社群情報の取得に失敗しました';
   }
@@ -209,22 +212,7 @@ const buildDescription = () => ({
 const triggerCoverUpload = () => coverInput.value?.click();
 const triggerLogoUpload = () => logoInput.value?.click();
 
-const stripeOnboardLoading = ref(false);
 const stripeOnboardLink = ref<string | null>(null);
-
-const startStripeOnboard = async () => {
-  stripeOnboardLoading.value = true;
-  error.value = null;
-  try {
-    const { url } = await startCommunityStripeOnboarding(communityId);
-    stripeOnboardLink.value = url;
-    window.location.href = url;
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Stripe 連携リンクの取得に失敗しました';
-  } finally {
-    stripeOnboardLoading.value = false;
-  }
-};
 
 const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
   new Promise<string>((resolve, reject) => {
@@ -336,7 +324,13 @@ const handleSave = async () => {
   }
 };
 
+const goPortal = () => {
+  if (!communityId) return;
+  router.push({ name: 'ConsoleMobileCommunityPortal', params: { communityId } });
+};
+
 onMounted(loadCommunity);
+onActivated(loadCommunity);
 </script>
 
 <style scoped>
@@ -346,13 +340,26 @@ onMounted(loadCommunity);
   padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
 }
 .hero-card {
-  margin: 16px;
+  margin: 16px 16px 0;
   padding: 18px;
   border-radius: 24px;
   background: linear-gradient(135deg, #0f3057, #45aee2);
   color: #f0f9ff;
   box-shadow: 0 25px 45px rgba(15, 23, 42, 0.2);
   position: relative;
+}
+.hero-card.theme-clean {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+  color: #0f172a;
+}
+.hero-card.theme-immersive {
+  background: linear-gradient(135deg, #0f3057, #45aee2);
+}
+.hero-card.theme-warm {
+  background: linear-gradient(135deg, #c2410c, #f97316);
+}
+.hero-card.theme-collage {
+  background: linear-gradient(135deg, #6b21a8, #4f46e5);
 }
 .hero-back {
   width: 42px;
@@ -367,6 +374,20 @@ onMounted(loadCommunity);
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.portal-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  border: none;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #f8fafc;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
 }
 .hero-eyebrow {
   margin: 0;

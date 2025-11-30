@@ -25,8 +25,8 @@ export class ConsolePaymentsController {
   }
 
   @Get('communities/:communityId/balance')
-  getBalance(@Param('communityId') communityId: string, @Req() req: any) {
-    return this.paymentsService.getCommunityBalance(req.user.id, communityId);
+  getBalance(@Param('communityId') communityId: string, @Req() req: any, @Query('period') period?: string) {
+    return this.paymentsService.getCommunityBalance(req.user.id, communityId, period);
   }
 
   @Post('payments/:paymentId/refund')

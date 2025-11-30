@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'MobileEvents' });
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';

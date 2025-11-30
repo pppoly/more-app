@@ -88,6 +88,21 @@ export async function fetchCommunityBySlug(slug: string): Promise<CommunityPorta
   return data;
 }
 
+export async function fetchCommunityFollowStatus(communityId: string) {
+  const { data } = await apiClient.get<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
+  return data;
+}
+
+export async function followCommunity(communityId: string) {
+  const { data } = await apiClient.post<{ following: boolean }>(`/communities/${communityId}/follow`);
+  return data;
+}
+
+export async function unfollowCommunity(communityId: string) {
+  const { data } = await apiClient.delete<{ following: boolean }>(`/communities/${communityId}/follow`);
+  return data;
+}
+
 export async function fetchCommunityPortalConfig(communityId: string) {
   const { data } = await apiClient.get<{ communityId: string; config: CommunityPortalConfig }>(
     `/console/communities/${communityId}/portal`,
@@ -211,8 +226,13 @@ export async function fetchCommunityPayments(
   return data;
 }
 
-export async function fetchCommunityBalance(communityId: string): Promise<ConsoleCommunityBalance> {
-  const { data } = await apiClient.get<ConsoleCommunityBalance>(`/console/communities/${communityId}/balance`);
+export async function fetchCommunityBalance(
+  communityId: string,
+  params?: { period?: 'month' | 'all' },
+): Promise<ConsoleCommunityBalance> {
+  const { data } = await apiClient.get<ConsoleCommunityBalance>(`/console/communities/${communityId}/balance`, {
+    params,
+  });
   return data;
 }
 

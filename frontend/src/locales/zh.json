@@ -14,5 +14,223 @@
     "subscriptionUnavailable": "支付暂时不可用，请稍后再试或联系支持。",
     "stripeLinkFailed": "开通链接生成失败，请稍后重试或联系支持。",
     "qrScanFailed": "扫码失败，请重试或上传二维码照片。"
+  },
+  "nav": {
+    "back": "返回",
+    "events": "活动",
+    "me": "我的",
+    "console": "控制台",
+    "admin": "管理"
+  },
+  "header": {
+    "createEvent": "创建活动",
+    "console": "控制台",
+    "default": "MORE"
+  },
+  "localeSheet": {
+    "title": "选择界面语言",
+    "subtitle": "更换后会影响内容的展示顺序",
+    "active": "使用中",
+    "saved": "语言已更新",
+    "saveFailed": "语言设置保存失败，请稍后重试"
+  },
+  "subscription": {
+    "title": "订阅套餐",
+    "subtitle": "为社群选择合适的方案",
+    "feeNote": "平台费随套餐不同，Stripe 通道费按成本计费。",
+    "currentCommunity": "当前社群",
+    "currentPlan": "当前套餐",
+    "platformFee": "平台费：",
+    "stripeFee": "Stripe 费用：",
+    "perMonth": "月",
+    "loading": "加载中…",
+    "noCommunity": "请选择社群后再设置套餐。",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "price": "¥0 / 月",
+        "audience": "体验/小规模",
+        "platformFee": "5%",
+        "stripeFee": "Stripe 成本",
+        "features": [
+          "每月 3 场活动 / 100 张票",
+          "基础 AI 文案与翻译（JA/EN/zh）",
+          "基础内容审核"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "price": "¥2,480 / 月",
+        "audience": "小-中型主理人",
+        "platformFee": "2% 或 ¥3,000/月 固定",
+        "stripeFee": "Stripe 成本",
+        "features": [
+          "每月 20 场活动 / 5,000 张票",
+          "更大 AI 文案/翻译额度 + 图片生成",
+          "更强审核 + CSV 导出"
+        ]
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "¥9,800 / 月",
+        "audience": "高频/收入导向",
+        "platformFee": "0%（仅 Stripe）",
+        "stripeFee": "Stripe 成本",
+        "features": [
+          "活动/票基本不限（合理上限）",
+          "更大 AI 额度 + 品牌展示",
+          "优先支持与自动化"
+        ]
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "price": "联系我们",
+        "audience": "大型/政企/学校",
+        "platformFee": "定制",
+        "stripeFee": "Stripe 成本",
+        "features": [
+          "专属 AI 和审核策略",
+          "多团队权限与 SLA",
+          "可选独立/私有化部署"
+        ]
+      }
+    },
+    "featuresTitle": "包含",
+    "cta": {
+      "current": "当前套餐",
+      "upgrade": "选择此套餐",
+      "select": "选择",
+      "contact": "联系销售",
+      "processing": "处理中…",
+      "pay": "前往支付",
+      "comingSoon": "敬请期待"
+    },
+    "refresh": "刷新",
+    "payment": {
+      "title": "支付确认",
+      "desc": "请在应用内完成支付。",
+      "confirm": "确认并支付",
+      "processing": "确认支付中…",
+      "notReady": "支付信息未准备好"
+    },
+    "toast": {
+      "switched": "套餐已更新",
+      "processing": "正在确认支付，请稍候。",
+      "failed": "支付失败，请重试。"
+    }
+  },
+  "mobile": {
+    "settings": {
+      "title": "通用设置",
+      "language": {
+        "label": "语言设置",
+        "meta": "切换界面语言"
+      },
+      "notifications": {
+        "label": "通知与应用",
+        "meta": "权限和偏好设置"
+      },
+      "localeSheet": {
+        "title": "选择界面语言",
+        "subtitle": "更换后会影响内容展示顺序",
+        "active": "使用中"
+      },
+      "toast": {
+        "notificationsPending": "通知设置开发中"
+      }
+    },
+    "me": {
+      "organizer": "主理人",
+      "avatar": {
+        "title": "调整头像",
+        "cancel": "取消",
+        "use": "使用此头像",
+        "error": {
+          "invalid": "这张头像不合适，换一张清晰的照片试试。",
+          "loadFailed": "图片加载失败",
+          "readFailed": "无法读取图片",
+          "tooLarge": "图片过大，请重新选择",
+          "saveFailed": "头像更新失败",
+          "generateFailed": "无法生成头像",
+          "notFound": "未找到图片"
+        },
+        "updated": "头像已更新"
+      },
+      "cards": {
+        "events": { "title": "参加的活动", "description": "预约/票券", "cta": "查看" },
+        "payments": { "title": "支付记录", "description": "付款记录", "cta": "查看" },
+        "favorites": { "title": "收藏活动", "description": "收藏夹", "cta": "查看" },
+        "settings": { "title": "设置", "description": "应用偏好", "cta": "打开" }
+      }
+    },
+    "locale": {
+      "ja": "日本語",
+      "zh": "简体中文",
+      "zhTw": "繁體中文"
+    }
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "管理中的社群",
+      "roleOwner": "主理人",
+      "roleAdmin": "管理员",
+      "noCommunities": "还没有可管理的社群。",
+      "create": "创建社群",
+      "loginRequired": "请登录后使用主理人控制台。",
+      "loginCta": "登录 / 申请",
+      "applyRequired": "需先完成主理人申请",
+      "applyHint": "审核通过后即可使用控制台功能。",
+      "applyCta": "前往申请页",
+      "noManagedTitle": "暂无可管理的社群",
+      "noManagedHint": "先创建一个社群开始吧。",
+      "createNew": "创建新的社群"
+    }
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "管理中的社群",
+      "roleOwner": "主理人",
+      "roleAdmin": "管理员",
+      "noCommunities": "还没有可管理的社群。",
+      "create": "创建社群",
+      "loginRequired": "请登录后使用主理人控制台。",
+      "loginCta": "登录 / 申请",
+      "applyRequired": "需先完成主理人申请",
+      "applyHint": "审核通过后即可使用控制台功能。",
+      "applyCta": "前往申请页",
+      "noManagedTitle": "暂无可管理的社群",
+      "noManagedHint": "先创建一个社群开始吧。",
+      "createNew": "创建新的社群"
+    },
+    "portal": {
+      "title": "社群门户",
+      "subtitle": "选择模板和展示模块",
+      "back": "返回",
+      "loading": "加载中…",
+      "error": "读取设置失败",
+      "themeTitle": "模板",
+      "layoutTitle": "显示模块",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "已保存",
+      "lockedTitle": "门户需升级后使用",
+      "lockedDesc": "社群门户发布属于付费功能，请升级套餐后继续。",
+      "upgrade": "去订阅/升级",
+      "modules": {
+        "hero": { "name": "封面", "desc": "大封面与标签" },
+        "about": { "name": "简介", "desc": "社群介绍文本" },
+        "upcoming": { "name": "招募中", "desc": "正在报名的活动" },
+        "past": { "name": "往期", "desc": "历史活动列表" },
+        "moments": { "name": "精彩瞬间", "desc": "照片/封面拼贴" }
+      },
+      "themes": {
+        "clean": { "name": "清爽", "desc": "浅色卡片 + 渐变" },
+        "immersive": { "name": "沉浸", "desc": "暗色遮罩 + 大封面" },
+        "warm": { "name": "暖色", "desc": "暖色调 + 圆角卡片" },
+        "collage": { "name": "拼贴", "desc": "纹理叠加 + 照片感" }
+      }
+    }
   }
 }

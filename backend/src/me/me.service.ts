@@ -4,6 +4,7 @@ import { extname, join } from 'path';
 import { promises as fs } from 'fs';
 import type { Express } from 'express';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
+import { buildAssetUrl } from '../common/storage/asset-path';
 
 const AVATAR_UPLOAD_ROOT = join(UPLOAD_ROOT, 'avatars');
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
@@ -58,7 +59,7 @@ export class MeService {
     return registrations.map((registration) => {
       const { event, ...rest } = registration;
       const galleries = (event as any)?.galleries ?? [];
-      const coverImageUrl = galleries[0]?.imageUrl ?? null;
+      const coverImageUrl = buildAssetUrl(galleries[0]?.imageUrl);
       const { galleries: _omit, ...eventData } = event as typeof event & {
         galleries?: { imageUrl: string | null }[];
       };

@@ -1,5 +1,5 @@
 <template>
-<div class="mobile-shell">
+<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
   <header v-if="showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
@@ -53,8 +53,8 @@
             <div class="locale-sheet__handle"></div>
             <div class="locale-sheet__header">
               <div>
-                <p class="locale-sheet__title">选择界面语言</p>
-                <p class="locale-sheet__subtitle">更换后会影响活动标题等展示顺序</p>
+                <p class="locale-sheet__title">{{ t('localeSheet.title') }}</p>
+                <p class="locale-sheet__subtitle">{{ t('localeSheet.subtitle') }}</p>
               </div>
               <button type="button" class="locale-sheet__close" @click="closeLocaleSheet">
                 <span class="i-lucide-x"></span>
@@ -74,7 +74,7 @@
                   <span class="locale-code">{{ item.code }}</span>
                   <span class="locale-name">{{ item.label }}</span>
                 </div>
-                <span v-if="item.code === currentLocale" class="locale-active-chip">使用中</span>
+                <span v-if="item.code === currentLocale" class="locale-active-chip">{{ t('localeSheet.active') }}</span>
               </button>
             </div>
           </div>
@@ -85,13 +85,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useResourceConfig } from '../composables/useResourceConfig';
 import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
+import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
 const router = useRouter();
@@ -99,6 +100,9 @@ const { user, setUserProfile } = useAuth();
 const resourceConfig = useResourceConfig();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
+const { t } = useI18n();
+const scrollPositions = new Map<string, number>();
+const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 
@@ -115,14 +119,14 @@ const iconDefaults = computed(() => {
 const tabs = computed(() => {
   const icons = iconDefaults.value;
   const base = [
-    { id: 'events', label: '活動', path: '/events', icon: icons.events },
-    { id: 'me', label: 'マイページ', path: '/me', icon: icons.me },
+    { id: 'events', label: t('nav.events'), path: '/events', icon: icons.events },
+    { id: 'me', label: t('nav.me'), path: '/me', icon: icons.me },
   ];
   if (user.value?.isOrganizer || user.value?.isAdmin) {
-    base.splice(1, 0, { id: 'console', label: 'Console', path: '/console', icon: icons.console });
+    base.splice(1, 0, { id: 'console', label: t('nav.console'), path: '/console', icon: icons.console });
   }
   if (user.value?.isAdmin) {
-    base.splice(base.length - 1, 0, { id: 'admin', label: '管理', path: '/admin', icon: icons.admin });
+    base.splice(base.length - 1, 0, { id: 'admin', label: t('nav.admin'), path: '/admin', icon: icons.admin });
   }
   return base;
 });
@@ -188,6 +192,20 @@ const tabbarSafeAreaStyle = computed(() => ({
   paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))',
 }));
 
+const saveScrollPosition = (path: string) => {
+  if (!path) return;
+  const top = contentEl.value ? contentEl.value.scrollTop : window.scrollY;
+  scrollPositions.set(path, top);
+};
+
+const restoreScrollPosition = (path: string) => {
+  const saved = scrollPositions.get(path) ?? 0;
+  if (contentEl.value) {
+    contentEl.value.scrollTo({ top: saved, behavior: 'auto' });
+  }
+  window.scrollTo({ top: saved, behavior: 'auto' });
+};
+
 const localeLabelMap: Record<string, string> = {
   ja: '日本語',
   en: 'English',
@@ -230,17 +248,35 @@ const selectLocale = async (locale: string) => {
     try {
       const profile = await updateProfile({ preferredLocale: locale });
       setUserProfile(profile);
-      toast.show('语言已更新', 'success');
+      toast.show(t('localeSheet.saved'), 'success');
     } catch (error) {
       console.error('Failed to save preferred locale', error);
-      toast.show('语言设置保存失败，请稍后重试', 'error');
+      toast.show(t('localeSheet.saveFailed'), 'error');
     } finally {
       savingLocale.value = false;
     }
   } else {
-    toast.show('Language updated', 'success');
+    toast.show(t('localeSheet.saved'), 'success');
   }
 };
+
+onMounted(() => {
+  contentEl.value = document.querySelector('.mobile-shell__content');
+});
+
+watch(
+  () => route.fullPath,
+  async (to, from) => {
+    if (from) {
+      saveScrollPosition(from);
+    }
+    await nextTick();
+    restoreScrollPosition(to);
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.blur) active.blur();
+  },
+  { flush: 'post' },
+);
 </script>
 
 <style scoped>
@@ -249,8 +285,13 @@ const selectLocale = async (locale: string) => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  background: #030917;
-  color: #fff;
+  background: #f5f7fb;
+  color: #0f172a;
+}
+.mobile-shell--fixed {
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mobile-shell__header {
@@ -356,13 +397,14 @@ const selectLocale = async (locale: string) => {
 }
 
 .mobile-shell__content--fixed {
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  height: 100vh;
 }
 
 .mobile-shell__content--flush {
   padding: 0;
 }
-
 .mobile-shell__view {
   height: 100%;
 }
@@ -383,17 +425,18 @@ const selectLocale = async (locale: string) => {
   right: 0;
   bottom: 0;
   z-index: 10;
-  padding: 1rem 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: #ffffff;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: none;
+  box-shadow: none;
 }
 
 .tabbar {
   margin: 0 auto;
   max-width: 520px;
   display: flex;
-  gap: 1rem;
-  background: transparent;
+  gap: 12px;
+  background: #ffffff;
   padding: 0;
 }
 
@@ -406,8 +449,8 @@ const selectLocale = async (locale: string) => {
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.75rem 0.5rem;
-  font-size: 0.9rem;
+  padding: 10px 8px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--m-color-text-tertiary, #666);
 }
@@ -415,7 +458,7 @@ const selectLocale = async (locale: string) => {
 .tabbar__item--active {
   background: #0090d9;
   color: #fff;
-  box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
+  box-shadow: none;
 }
 .tabbar__icon {
   color: var(--m-color-text-tertiary, #666);

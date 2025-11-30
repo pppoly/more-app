@@ -216,6 +216,19 @@
           </div>
         </section>
 
+        <section class="event-section" v-if="detail.mapUrl || detail.locationText">
+          <h2 class="m-section-title">場所</h2>
+          <div class="m-event-card location-card">
+            <div class="location-text">
+              <span class="i-lucide-map-pin"></span>
+              <p class="location-copy">{{ detail.locationText || '場所未定' }}</p>
+            </div>
+            <div class="location-actions" v-if="detail.mapUrl">
+              <a class="location-btn" :href="detail.mapUrl" target="_blank" rel="noopener">地図で開く</a>
+            </div>
+          </div>
+        </section>
+
         <section class="event-section" v-if="formFields.length">
           <h2 class="m-section-title">申込時の必須情報</h2>
           <div class="m-event-card">
@@ -297,6 +310,11 @@ const router = useRouter();
 const { user } = useAuth();
 const favoritesStore = useFavorites();
 const { preferredLangs } = useLocale();
+const currencyFormatter = new Intl.NumberFormat('ja-JP', {
+  style: 'currency',
+  currency: 'JPY',
+  maximumFractionDigits: 0,
+});
 
 const event = ref<EventDetail | null>(null);
 const gallery = ref<EventGalleryItem[]>([]);
@@ -401,6 +419,15 @@ const detail = computed(() => {
     config.participants?.length ??
     attendeeAvatars.length ??
     (capacity ? Math.min(currentParticipants, capacity) : currentParticipants);
+  const derivePriceText = () => {
+    if (!event.value?.ticketTypes?.length) return '無料 / 未定';
+    const prices = event.value.ticketTypes.map((ticket) => ticket.price ?? 0);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    if (max === 0) return '無料';
+    if (min === max) return currencyFormatter.format(max);
+    return `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
+  };
   return {
     id: event.value.id,
     status: event.value.status,
@@ -416,7 +443,7 @@ const detail = computed(() => {
     regSummary,
     capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
     regProgress,
-    priceText: event.value.config?.priceText ?? '無料 / 未定',
+    priceText: event.value.config?.priceText ?? derivePriceText(),
     hostName: event.value.community?.name ?? 'SOCIALMORE Community',
     communitySlug: event.value.community?.slug ?? null,
     communityAvatar:
@@ -432,7 +459,10 @@ const detail = computed(() => {
     mapUrl:
       typeof event.value.locationLat === 'number' && typeof event.value.locationLng === 'number'
         ? `https://www.google.com/maps/dir/?api=1&destination=${event.value.locationLat},${event.value.locationLng}`
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`,
+        : event.value.locationText
+          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`
+          : null,
+    locationText: event.value.locationText,
     participantCount,
     showParticipants: config.showRegistrationStatus !== false,
     config,
@@ -1391,6 +1421,38 @@ watch(
   margin-top: 12px;
 }
 
+.location-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.location-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+  font-weight: 700;
+}
+.location-text .i-lucide-map-pin {
+  color: #0ea5e9;
+}
+.location-copy {
+  margin: 0;
+  line-height: 1.4;
+}
+.location-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.location-btn {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .event-group-card {
   display: flex;
   flex-direction: column;
@@ -1685,22 +1747,29 @@ watch(
   bottom: 0;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: var(--m-color-surface);
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.05);
   box-sizing: border-box;
   z-index: 10;
 }
 
+.price-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
 .price-block .price {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
 }
 
 .rails-cta {
-  flex: 1;
   border: none;
   border-radius: 999px;
   padding: 14px 20px;

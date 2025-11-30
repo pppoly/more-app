@@ -8,11 +8,22 @@
     <template v-if="isMobile">
       <RouterView v-slot="{ Component, route }">
         <MobileShell>
-          <component
-            :is="Component"
-            v-bind="resolveRouteProps(route)"
-            :key="route.fullPath"
-          />
+          <template v-if="route.meta?.keepAlive">
+            <KeepAlive :include="keepAliveRoutes">
+              <component
+                :is="Component"
+                v-bind="resolveRouteProps(route)"
+                :key="(route.name as string) || 'keepalive'"
+              />
+            </KeepAlive>
+          </template>
+          <template v-else>
+            <component
+              :is="Component"
+              v-bind="resolveRouteProps(route)"
+              :key="route.fullPath"
+            />
+          </template>
         </MobileShell>
       </RouterView>
     </template>
@@ -91,6 +102,7 @@ const router = useRouter();
 const currentRoute = useRoute();
 const showDevPageName = computed(() => import.meta.env.DEV);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
+const keepAliveRoutes = ['MobileEvents'];
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;

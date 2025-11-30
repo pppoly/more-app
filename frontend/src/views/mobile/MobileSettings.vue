@@ -1,19 +1,19 @@
 <template>
   <div class="mobile-settings m-page">
     <section class="settings-section">
-      <h2 class="m-section-title">一般設定</h2>
+      <h2 class="m-section-title">{{ t('mobile.settings.title') }}</h2>
       <div class="settings-list">
         <button class="settings-item" @click="openLanguage">
           <div>
-            <p class="settings-item__label">言語設定 / Language</p>
-            <p class="settings-item__meta">表示言語を切り替える</p>
+            <p class="settings-item__label">{{ t('mobile.settings.language.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.language.meta') }}</p>
           </div>
           <span class="i-lucide-chevron-right"></span>
         </button>
         <button class="settings-item" @click="openNotification">
           <div>
-            <p class="settings-item__label">通知・アプリ設定</p>
-            <p class="settings-item__meta">アプリ権限と環境設定</p>
+            <p class="settings-item__label">{{ t('mobile.settings.notifications.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.notifications.meta') }}</p>
           </div>
           <span class="i-lucide-chevron-right"></span>
         </button>
@@ -21,7 +21,7 @@
     </section>
 
     <section class="settings-section" v-if="isLoggedIn">
-      <h2 class="m-section-title">アカウント</h2>
+      <h2 class="m-section-title">{{ t('header.default') }}</h2>
       <div class="settings-list">
         <button class="settings-item settings-item--danger" @click="logoutUser">
           <div>
@@ -40,8 +40,8 @@
             <div class="locale-sheet__handle"></div>
             <div class="locale-sheet__header">
               <div>
-                <p class="locale-sheet__title">选择界面语言</p>
-                <p class="locale-sheet__subtitle">更换后会影响活动标题等展示顺序</p>
+                <p class="locale-sheet__title">{{ t('localeSheet.title') }}</p>
+                <p class="locale-sheet__subtitle">{{ t('localeSheet.subtitle') }}</p>
               </div>
               <button type="button" class="locale-sheet__close" @click="closeLocaleSheet">
                 <span class="i-lucide-x"></span>
@@ -61,7 +61,7 @@
                   <span class="locale-code">{{ item.code }}</span>
                   <span class="locale-name">{{ item.label }}</span>
                 </div>
-                <span v-if="item.code === currentLocale" class="locale-active-chip">使用中</span>
+                <span v-if="item.code === currentLocale" class="locale-active-chip">{{ t('localeSheet.active') }}</span>
               </button>
             </div>
           </div>
@@ -78,11 +78,13 @@ import { useAuth } from '../../composables/useAuth';
 import { useLocale } from '../../composables/useLocale';
 import { updateProfile } from '../../api/client';
 import { useToast } from '../../composables/useToast';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
 const { logout, user, setUserProfile } = useAuth();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
+const { t } = useI18n();
 
 const isLoggedIn = computed(() => Boolean(user.value));
 
@@ -91,7 +93,7 @@ const openLanguage = () => {
 };
 
 const openNotification = () => {
-  toast.show('通知設定は準備中です', 'info');
+  toast.show(t('mobile.settings.toast.notificationsPending'), 'info');
 };
 
 const logoutUser = () => {
@@ -99,25 +101,10 @@ const logoutUser = () => {
   router.replace({ path: '/' });
 };
 
-const localeLabelMap: Record<string, string> = {
-  ja: '日本語',
-  en: 'English',
-  zh: '简体中文',
-  'zh-tw': '繁體中文',
-  vi: 'Tiếng Việt',
-  ko: '한국어',
-  tl: 'Tagalog',
-  'pt-br': 'Português (BR)',
-  ne: 'नेपाली',
-  id: 'Bahasa Indonesia',
-  th: 'ไทย',
-  my: 'မြန်မာစာ',
-};
-
 const localeOptions = computed(() =>
   supportedLocales.map((code) => ({
     code,
-    label: localeLabelMap[code] ?? code,
+    label: t(`mobile.locale.${code}`),
   })),
 );
 
@@ -137,15 +124,15 @@ const selectLocale = async (locale: string) => {
     try {
       const profile = await updateProfile({ preferredLocale: locale });
       setUserProfile(profile);
-      toast.show('语言已更新', 'success');
+      toast.show(t('localeSheet.saved'), 'success');
     } catch (error) {
       console.error('Failed to save preferred locale', error);
-      toast.show('语言设置保存失败，请稍后重试', 'error');
+      toast.show(t('localeSheet.saveFailed'), 'error');
     } finally {
       savingLocale.value = false;
     }
   } else {
-    toast.show('Language updated', 'success');
+    toast.show(t('localeSheet.saved'), 'success');
   }
 };
 </script>

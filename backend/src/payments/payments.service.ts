@@ -83,7 +83,7 @@ export class PaymentsService {
     };
   }
 
-  async getCommunityBalance(userId: string, communityId: string) {
+  async getCommunityBalance(userId: string, communityId: string, period?: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
@@ -93,8 +93,26 @@ export class PaymentsService {
       throw new NotFoundException('Community not found');
     }
 
-    const paidWhere: Prisma.PaymentWhereInput = { communityId, status: 'paid' };
-    const refundedWhere: Prisma.PaymentWhereInput = { communityId, status: 'refunded' };
+    const monthStart =
+      period === 'month'
+        ? (() => {
+            const d = new Date();
+            d.setDate(1);
+            d.setHours(0, 0, 0, 0);
+            return d;
+          })()
+        : null;
+
+    const paidWhere: Prisma.PaymentWhereInput = {
+      communityId,
+      status: 'paid',
+      ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+    };
+    const refundedWhere: Prisma.PaymentWhereInput = {
+      communityId,
+      status: 'refunded',
+      ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+    };
     const [paidAgg, refundedAgg] = await Promise.all([
       this.prisma.payment.aggregate({
         where: paidWhere,
@@ -136,6 +154,7 @@ export class PaymentsService {
       refunded,
       net,
       stripeBalance,
+      period: period === 'month' ? 'month' : 'all',
     };
   }
 

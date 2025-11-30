@@ -4,30 +4,18 @@ import { i18n, messages } from '../i18n';
 const STORAGE_KEY = 'app.locale';
 
 const supportedLocales = Object.keys(messages);
-const defaultLocale = i18n.global.locale.value || 'ja';
+const defaultLocale = 'ja';
 
 const buildPreferredLangs = (locale: string) => {
-  const fallbacks = ['ja', 'zh', 'en'];
+  const fallbacks = [defaultLocale, 'en', 'zh'];
   return Array.from(new Set([locale, ...fallbacks]));
 };
-
-function detectBrowserLocale() {
-  if (typeof navigator === 'undefined') return defaultLocale;
-  const langs = navigator.languages || [navigator.language];
-  for (const lang of langs) {
-    const normalized = lang.toLowerCase();
-    if (supportedLocales.includes(normalized)) return normalized;
-    const short = normalized.split('-')[0];
-    if (supportedLocales.includes(short)) return short;
-  }
-  return defaultLocale;
-}
 
 function loadLocale() {
   if (typeof localStorage === 'undefined') return defaultLocale;
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved && supportedLocales.includes(saved)) return saved;
-  return detectBrowserLocale();
+  return defaultLocale;
 }
 
 export function useLocale() {
@@ -42,6 +30,7 @@ export function useLocale() {
     }
   };
 
+  // Enforce default locale when none is set.
   if (!supportedLocales.includes(i18n.global.locale.value as string)) {
     setLocale(loadLocale());
   }

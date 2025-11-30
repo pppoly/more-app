@@ -1,108 +1,114 @@
 <template>
   <div class="subscription-page" :class="{ 'subscription-page--payment': Boolean(paymentClientSecret) }">
     <template v-if="!paymentClientSecret">
-      <header class="sub-header">
-        <div>
-          <p class="sub-label">订阅计划</p>
-          <h1>按社群成长阶段挑选方案</h1>
-          <p class="sub-desc">透明收费：平台抽成 + Stripe 通道费分开显示，超额 AI 仅记录不扣费。</p>
+      <header class="app-bar">
+        <button class="ghost-btn" type="button" @click="router.back()">
+          <span class="i-lucide-arrow-left" />
+        </button>
+        <div class="app-bar__title">
+          <h1>{{ t('subscription.title') }}</h1>
         </div>
-        <button class="refresh-btn" type="button" @click="reload" :disabled="loading || paying">
+        <button class="ghost-btn" type="button" @click="reload" :disabled="loading || paying">
           <span class="i-lucide-refresh-ccw" />
         </button>
       </header>
 
-      <div class="disclaimer">
-        <p class="eyebrow">收费结构</p>
-        <ol>
-          <li>Stripe 通道费：实报实销，单独显示。</li>
-          <li>平台抽佣：Free 5%；Starter 可选 2% 或固定 ¥3,000/月（0% 抽成）；Pro 0%。</li>
-          <li>AI 超额：S1 不计费，只记录 usage（文本/图像 ¥0.5/次，视频审核 ¥3/分钟）。</li>
-        </ol>
-      </div>
-
-      <div v-if="loading" class="empty">加载中…</div>
-      <div v-else-if="!communityId" class="empty">
-        <p>请先选择一个社群再订阅套餐。</p>
-      </div>
-
-      <div v-else class="plan-grid">
-        <article
-          v-for="plan in displayPlans"
-          :key="plan.id"
-          class="plan-card"
-          :class="plan.cardClass"
-        >
-          <div class="plan-chip">
-            <span>{{ plan.guide.tone }}</span>
-            <span v-if="plan.id === activePlanId" class="current-chip">当前</span>
+      <div class="page-body">
+        <section class="summary-card">
+          <div class="summary-row">
+            <p class="eyebrow">{{ t('subscription.currentCommunity') }}</p>
+            <span v-if="activeCommunity" class="pill">{{ activeCommunity.name }}</span>
+            <span v-else class="pill muted">{{ t('subscription.noCommunity') }}</span>
           </div>
-          <h2 class="plan-name">{{ plan.guide.name }}</h2>
-          <p class="plan-price">{{ plan.guide.price }}</p>
-          <p class="plan-audience">{{ plan.guide.audience }}</p>
-          <div class="plan-fee">
-            <p><strong>平台抽成：</strong>{{ plan.guide.platformFee }}</p>
-            <p><strong>Stripe：</strong>{{ plan.guide.stripeFee }}</p>
+          <div class="summary-row" v-if="activeCommunity">
+            <p class="eyebrow">{{ t('subscription.currentPlan') }}</p>
+            <span class="pill primary">{{ activePlanName }}</span>
           </div>
-          <div class="plan-feature">
-            <p class="feature-title">功能</p>
-            <ul>
-              <li v-for="f in plan.guide.features" :key="f">· {{ f }}</li>
-            </ul>
-          </div>
-          <div class="plan-feature">
-            <p class="feature-title">用户心智</p>
-            <ul>
-              <li v-for="m in plan.guide.mindset" :key="m">🔹 {{ m }}</li>
-            </ul>
-          </div>
-          <button
-            v-if="plan.selectable"
-            class="plan-cta"
-            :class="{ active: plan.id === activePlanId }"
-            type="button"
-            :disabled="submittingId === plan.id || paying || !plan.available"
-            @click="plan.available && startSubscribe(plan.id)"
-          >
-            <span v-if="!plan.available">敬请期待</span>
-            <span v-else-if="submittingId === plan.id">处理中...</span>
-            <span v-else-if="paymentPlanId === plan.id">填写支付信息</span>
-            <span v-else-if="plan.id === activePlanId">已订阅</span>
-            <span v-else>开通</span>
+          <p class="summary-fee" v-if="activeCommunity">{{ activePlanFee }}</p>
+          <button v-if="activeCommunity" class="summary-upgrade" type="button" @click="scrollToPlans">
+            {{ t('subscription.cta.upgrade') }}
+            <span class="i-lucide-chevron-down" />
           </button>
-          <a
-            v-else
-            class="plan-cta outline"
-            href="mailto:hi@socialmore.com?subject=Enterprise"
-          >
-            联系销售
-          </a>
-        </article>
-      </div>
+          <p class="fine-print">{{ t('subscription.feeNote') }}</p>
+        </section>
 
-      <p v-if="error" class="error">{{ error }}</p>
+        <div v-if="loading" class="empty">{{ t('subscription.loading') }}</div>
+        <div v-else-if="!communityId" class="empty">
+          <p>{{ t('subscription.noCommunity') }}</p>
+        </div>
+
+        <section v-else ref="planStackRef" class="plan-stack">
+          <article
+            v-for="plan in displayPlans"
+            :key="plan.id"
+            class="plan-card"
+            :class="plan.cardClass"
+          >
+            <div class="plan-header">
+              <div>
+                <p class="eyebrow">{{ plan.guide.audience }}</p>
+                <h2>{{ plan.guide.name }}</h2>
+              </div>
+              <span v-if="plan.id === activePlanId" class="status-chip">{{ t('subscription.cta.current') }}</span>
+            </div>
+            <p class="price">{{ plan.guide.price }}</p>
+            <div class="fee-chips">
+              <span class="chip">{{ t('subscription.platformFee') }} {{ plan.guide.platformFee }}</span>
+              <span class="chip">{{ t('subscription.stripeFee') }} {{ plan.guide.stripeFee }}</span>
+            </div>
+            <ul class="feature-list">
+              <li v-for="feature in plan.guide.features" :key="feature">{{ feature }}</li>
+            </ul>
+            <button
+              v-if="plan.selectable"
+              class="plan-cta"
+              :class="{ active: plan.id === activePlanId }"
+              type="button"
+              :disabled="submittingId === plan.id || paying || !plan.available || plan.id === activePlanId"
+              @click="plan.available && plan.id !== activePlanId && startSubscribe(plan.id)"
+            >
+              <span v-if="!plan.available">{{ t('subscription.cta.comingSoon') }}</span>
+              <span v-else-if="submittingId === plan.id">{{ t('subscription.cta.processing') }}</span>
+              <span v-else-if="paymentPlanId === plan.id">{{ t('subscription.cta.pay') }}</span>
+              <span v-else-if="plan.id === activePlanId">{{ t('subscription.cta.current') }}</span>
+              <span v-else>{{ t('subscription.cta.upgrade') }}</span>
+            </button>
+            <a
+              v-else
+              class="plan-cta outline"
+              href="mailto:hi@socialmore.com?subject=Enterprise"
+            >
+              {{ t('subscription.cta.contact') }}
+            </a>
+          </article>
+        </section>
+
+        <p v-if="error" class="error">{{ error }}</p>
+      </div>
     </template>
 
     <template v-else>
       <div class="payment-overlay" @click.self="resetPayment">
         <section class="payment-sheet">
           <header class="pay-header">
-            <div class="pay-handle" />
+            <button class="ghost-btn" type="button" :disabled="paying" @click="resetPayment">
+              <span class="i-lucide-arrow-left" />
+            </button>
             <div class="pay-title">
-              <p class="sub-label">支付确认</p>
-              <h1>{{ payingPlan?.name || '套餐支付' }}</h1>
+              <p class="eyebrow">{{ t('subscription.payment.title') }}</p>
+              <h1>{{ payingPlan?.name || t('subscription.title') }}</h1>
             </div>
-            <button class="close-btn" type="button" :disabled="paying" @click="resetPayment">
+            <button class="ghost-btn" type="button" :disabled="paying" @click="resetPayment">
               <span class="i-lucide-x" />
             </button>
           </header>
           <div class="pay-amount" v-if="payingPlan">
-            ¥{{ payingPlan.monthlyFee }}/月
+            ¥{{ payingPlan.monthlyFee }}/{{ t('subscription.perMonth') }}
           </div>
-          <div class="payment-tip">请在应用内完成支付，成功后自动开通套餐</div>
+          <div class="payment-tip">{{ t('subscription.payment.desc') }}</div>
           <div ref="paymentElementContainer" class="payment-element"></div>
           <button class="pay-btn" type="button" :disabled="paying" @click="confirmPayment">
-            <span v-if="paying" class="spinner" /> 确认并支付
+            <span v-if="paying" class="spinner" /> {{ t('subscription.payment.confirm') }}
           </button>
           <p v-if="error" class="error">{{ error }}</p>
         </section>
@@ -113,17 +119,19 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
   fetchConsoleCommunity,
   fetchPricingPlans,
   subscribeCommunityPlan,
 } from '../../../api/client';
-import type { PricingPlan } from '../../../types/api';
+import type { ConsoleCommunityDetail, PricingPlan } from '../../../types/api';
 import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
 import { useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
 
+const { t, tm } = useI18n();
 const communityStore = useConsoleCommunityStore();
 const router = useRouter();
 const toast = useToast();
@@ -135,86 +143,60 @@ const paying = ref(false);
 const paymentClientSecret = ref<string | null>(null);
 const paymentPlanId = ref<string | null>(null);
 const paymentElementContainer = ref<HTMLDivElement | null>(null);
+const activePlanId = ref<string | null>(null);
+const planStackRef = ref<HTMLElement | null>(null);
 let stripeInstance: Stripe | null = null;
 let elementsInstance: StripeElements | null = null;
 let paymentElement: StripePaymentElement | null = null;
 
 const communityId = computed(() => communityStore.activeCommunityId.value);
-const activePlanId = computed(() => communityStore.getActiveCommunity()?.pricingPlanId ?? null);
+const activeCommunity = computed(() => communityStore.getActiveCommunity());
 
-const planGuide = {
+const planGuide = computed(() => ({
   free: {
     key: 'free',
-    name: '🟩 Free（免费试用 / Sandbox）',
-    price: '¥0 / 月',
-    audience: '适合：初次体验者、小圈子活动者、来试试平台的人。',
-    platformFee: '5%',
-    stripeFee: '实报实销',
-    tone: '试用 / Sandbox',
-    features: [
-      '每月 3 场活动，最多 100 张票',
-      'AI 文案 200 次/月，基础多语言翻译（JP/EN/CN）',
-      '基础文本/图片审核 200 次',
-      '1 名管理员',
-    ],
-    mindset: ['我来试试平台和 AI', '适合个人、小型聚会'],
+    name: t('subscription.plans.free.name'),
+    price: t('subscription.plans.free.price'),
+    audience: t('subscription.plans.free.audience'),
+    platformFee: t('subscription.plans.free.platformFee'),
+    stripeFee: t('subscription.plans.free.stripeFee'),
+    features: (tm('subscription.plans.free.features') as string[]) || [],
     cardClass: 'plan-free',
   },
   starter: {
     key: 'starter',
-    name: '🟧 Starter（成长区间）',
-    price: '¥2,480 / 月',
-    audience: '适合：小型社区、语言交换会、兴趣小组。',
-    platformFee: '可选 2% 或 固定 ¥3,000/月（0% 抽成）',
-    stripeFee: '实报实销',
-    tone: '成长起步',
-    features: [
-      '20 场活动/月，最多 5,000 张票',
-      'AI 文案 300 次/月，多语言翻译 JP/EN/CN',
-      '内容审核 1,500 次（文/图）',
-      '模板：BBQ/学习会/外出活动，数据导出 CSV',
-      '管理员 3 名',
-    ],
-    mindset: ['比同类平台便宜，AI 更强/更安全', '活动多且有收入，想降抽成'],
+    name: t('subscription.plans.starter.name'),
+    price: t('subscription.plans.starter.price'),
+    audience: t('subscription.plans.starter.audience'),
+    platformFee: t('subscription.plans.starter.platformFee'),
+    stripeFee: t('subscription.plans.starter.stripeFee'),
+    features: (tm('subscription.plans.starter.features') as string[]) || [],
     cardClass: 'plan-starter',
   },
   pro: {
     key: 'pro',
-    name: '🟦 Pro（核心盈收等级）',
-    price: '¥9,800 / 月',
-    audience: '适合：频繁办活动的主理人、大型兴趣社群/NPO。',
-    platformFee: '0% 平台抽佣（仅 Stripe 通道费）',
-    stripeFee: '实报实销',
-    tone: '专业 / 0% 抽成',
-    features: [
-      '无限活动 & 票（合理上限）',
-      'AI 文案 2,000 次/月 + 海报 100 次/月',
-      '高级审核（文本/图片/敏感）',
-      '多语言活动展示，Webhook/Zapier 自动化，品牌定制',
-      '管理员 10 名，优先客服',
-    ],
-    mindset: ['要品牌/0% 抽成，用 MORE 做社区事业', '追求专业工具与自动化'],
+    name: t('subscription.plans.pro.name'),
+    price: t('subscription.plans.pro.price'),
+    audience: t('subscription.plans.pro.audience'),
+    platformFee: t('subscription.plans.pro.platformFee'),
+    stripeFee: t('subscription.plans.pro.stripeFee'),
+    features: (tm('subscription.plans.pro.features') as string[]) || [],
     cardClass: 'plan-pro',
   },
   enterprise: {
     key: 'enterprise',
-    name: '🟪 Enterprise（企业 / 政府 / 协会）',
-    price: '¥25,000〜80,000 / 月（按需）',
-    audience: '适合：大学、NPO 联合体、地方政府、企业培训等。',
-    platformFee: '定制',
-    stripeFee: '实报实销',
-    tone: '定制 / 私有化',
-    features: [
-      '私有模型/专属 AI，大规模多语言生成',
-      '专属审核策略，子组织/多团队权限',
-      '专属客户经理与 SLA，单租户部署（可选）',
-    ],
-    mindset: ['需要合规、定制与大规模 AI', '政企/学校/协会场景'],
+    name: t('subscription.plans.enterprise.name'),
+    price: t('subscription.plans.enterprise.price'),
+    audience: t('subscription.plans.enterprise.audience'),
+    platformFee: t('subscription.plans.enterprise.platformFee'),
+    stripeFee: t('subscription.plans.enterprise.stripeFee'),
+    features: (tm('subscription.plans.enterprise.features') as string[]) || [],
     cardClass: 'plan-enterprise',
   },
-};
+}));
 
 const displayPlans = computed(() => {
+  const guides = planGuide.value;
   const hasApiPlans = plans.value.length > 0;
   const planMap = plans.value.reduce<Record<string, PricingPlan>>((acc, plan) => {
     const name = plan.name?.toLowerCase() ?? '';
@@ -229,9 +211,10 @@ const displayPlans = computed(() => {
     return acc;
   }, {});
 
-  return Object.values(planGuide).map((guide) => {
+  return Object.values(guides).map((guide) => {
     const matchedPlan = planMap[guide.key];
-    const price = matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / 月` : guide.price;
+    const price =
+      matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}` : guide.price;
     return {
       id: matchedPlan?.id ?? guide.key,
       guide: {
@@ -241,9 +224,30 @@ const displayPlans = computed(() => {
       selectable: guide.key !== 'enterprise',
       cardClass: guide.cardClass,
       available: Boolean(matchedPlan || !hasApiPlans),
+      monthlyFee: matchedPlan?.monthlyFee ?? 0,
     };
   });
 });
+
+const activePlanName = computed(() => {
+  const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
+  return matched?.guide.name ?? t('subscription.plans.free.name');
+});
+const activePlanFee = computed(() => {
+  const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
+  const fee = matched?.guide.platformFee || t('subscription.plans.free.platformFee');
+  const stripe = matched?.guide.stripeFee || t('subscription.plans.free.stripeFee');
+  return `${t('subscription.platformFee')} ${fee} · ${t('subscription.stripeFee')} ${stripe}`;
+});
+const scrollToPlans = () => {
+  if (planStackRef.value) {
+    planStackRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+const applyCommunityDetail = (detail: ConsoleCommunityDetail | null) => {
+  activePlanId.value = detail?.pricingPlanId ?? null;
+};
 
 const loadPlans = async () => {
   error.value = null;
@@ -251,7 +255,7 @@ const loadPlans = async () => {
   try {
     plans.value = await fetchPricingPlans();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '无法获取套餐列表';
+    error.value = err instanceof Error ? err.message : t('error.networkUnstable');
   } finally {
     loading.value = false;
   }
@@ -263,18 +267,19 @@ const startSubscribe = async (planId: string) => {
   error.value = null;
   try {
     const res = await subscribeCommunityPlan(communityId.value, planId);
+    activePlanId.value = res.planId ?? planId;
     if (res.clientSecret && res.publishableKey) {
       paymentPlanId.value = planId;
       paymentClientSecret.value = res.clientSecret;
       await setupPaymentElement(res.clientSecret, res.publishableKey);
     } else if (planById(planId)?.monthlyFee && planById(planId)!.monthlyFee > 0) {
-      throw new Error('支付暂时不可用，请稍后再试或联系支持');
+      throw new Error(t('error.subscriptionUnavailable'));
     } else {
       await reload();
-      toast.show('已切换套餐', 'success');
+      toast.show(t('subscription.toast.switched'), 'success');
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '订阅失败';
+    error.value = err instanceof Error ? err.message : t('error.subscriptionUnavailable');
   } finally {
     submittingId.value = null;
   }
@@ -289,6 +294,9 @@ const reload = async () => {
     const res = await fetchConsoleCommunity(communityId.value).catch(() => null);
     if (res?.id) {
       communityStore.setActiveCommunity(res.id);
+      applyCommunityDetail(res);
+    } else {
+      applyCommunityDetail(null);
     }
   }
   await loadPlans();
@@ -299,16 +307,20 @@ onMounted(async () => {
     await communityStore.loadCommunities();
     communityStore.ensureActiveCommunity();
   }
+  if (communityId.value) {
+    const res = await fetchConsoleCommunity(communityId.value).catch(() => null);
+    applyCommunityDetail(res);
+  }
   await loadPlans();
 });
 
 const setupPaymentElement = async (clientSecret: string, publishableKey: string) => {
   if (!publishableKey) {
-    throw new Error('支付暂时不可用，请稍后再试或联系支持');
+    throw new Error(t('error.subscriptionUnavailable'));
   }
   stripeInstance = await loadStripe(publishableKey);
   if (!stripeInstance) {
-    throw new Error('支付暂时不可用，请稍后再试或联系支持');
+    throw new Error(t('error.subscriptionUnavailable'));
   }
   elementsInstance = stripeInstance.elements({
     clientSecret,
@@ -340,7 +352,7 @@ const resetPayment = () => {
 
 const confirmPayment = async () => {
   if (!stripeInstance || !elementsInstance || !paymentClientSecret.value) {
-    error.value = '支付信息未准备好';
+    error.value = t('subscription.payment.notReady');
     return;
   }
   paying.value = true;
@@ -348,7 +360,7 @@ const confirmPayment = async () => {
   try {
     const { error: submitError } = await elementsInstance.submit();
     if (submitError) {
-      error.value = submitError.message || '请检查支付信息后重试';
+      error.value = submitError.message || t('error.paymentFailed');
       paying.value = false;
       return;
     }
@@ -359,25 +371,25 @@ const confirmPayment = async () => {
       confirmParams: {},
     });
     if (stripeError) {
-      error.value = stripeError.message || '支付失败，请重试';
+      error.value = stripeError.message || t('error.paymentFailed');
       return;
     }
     if (paymentIntent?.status === 'succeeded') {
       await reload();
       resetPayment();
-      toast.show('支付完成，正在刷新套餐状态', 'success');
+      toast.show(t('subscription.toast.switched'), 'success');
       return;
     }
     if (paymentIntent?.status === 'processing') {
-      toast.show('支付处理中，请稍后查看状态', 'warning');
+      toast.show(t('subscription.toast.processing'), 'warning');
       await reload();
       return;
     }
-    toast.show('支付未完成，请重试', 'warning');
+    toast.show(t('subscription.toast.failed'), 'warning');
     await reload();
   } catch (err) {
     console.error('confirmPayment failed', err);
-    error.value = err instanceof Error ? err.message : '支付失败，请重试';
+    error.value = err instanceof Error ? err.message : t('error.paymentFailed');
   } finally {
     paying.value = false;
   }
@@ -386,56 +398,99 @@ const confirmPayment = async () => {
 
 <style scoped>
 .subscription-page {
-  padding: 16px;
   min-height: 100vh;
   background: #f8fafc;
   color: #0f172a;
   font-weight: 500;
 }
-.sub-header {
-  display: flex;
-  justify-content: space-between;
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
-.sub-label {
+.app-bar__title {
+  text-align: center;
+}
+.app-bar__title h1 {
   margin: 0;
-  font-size: 12px;
-  color: #64748b;
-}
-.sub-header h1 {
-  margin: 4px 0 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
 }
-.sub-desc {
-  margin: 4px 0 0;
-  color: #475569;
-  font-size: 13px;
-}
-.refresh-btn {
-  border: none;
-  background: rgba(15, 23, 42, 0.06);
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+.ghost-btn {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
   color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
-.plan-grid {
+.page-body {
+  padding: 12px 16px 24px;
+}
+.summary-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 16px;
+  padding: 12px 12px 10px;
+  margin-bottom: 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 600;
+}
+.pill.primary {
+  background: #e0f2fe;
+  color: #075985;
+}
+.pill.muted {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+.fine-print {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+.plan-stack {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  margin-bottom: 16px;
 }
 .plan-card {
-  width: 100%;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: #fff;
   border-radius: 18px;
-  padding: 14px;
+  padding: 14px 14px 12px;
   text-align: left;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -452,59 +507,43 @@ const confirmPayment = async () => {
 .plan-enterprise {
   background: linear-gradient(135deg, #f5f3ff, #ffffff);
 }
-.plan-chip {
+.plan-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: 8px;
-  font-size: 12px;
-  color: #475569;
+  align-items: flex-start;
 }
-.current-chip {
-  padding: 4px 10px;
+.status-chip {
+  padding: 6px 10px;
   border-radius: 999px;
-  background: #ecfeff;
-  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
   font-weight: 700;
+  font-size: 12px;
 }
-.plan-name {
+.price {
   margin: 0;
   font-size: 17px;
   font-weight: 800;
   color: #0f172a;
 }
-.plan-price {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
+.fee-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.plan-audience {
-  margin: 4px 0 0;
-  color: #475569;
-  font-size: 13px;
-}
-.plan-fee {
-  background: rgba(15, 23, 42, 0.04);
-  border-radius: 12px;
-  padding: 8px 10px;
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.05);
   font-size: 12px;
   color: #0f172a;
 }
-.plan-feature {
-  background: #fff;
-}
-.feature-title {
-  margin: 6px 0 4px;
-  font-size: 12px;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.plan-feature ul {
+.feature-list {
   margin: 0;
-  padding-left: 0;
-  list-style: none;
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -512,7 +551,7 @@ const confirmPayment = async () => {
   font-size: 13px;
 }
 .plan-cta {
-  margin-top: 6px;
+  margin-top: 4px;
   width: 100%;
   border: none;
   border-radius: 12px;
@@ -532,9 +571,6 @@ const confirmPayment = async () => {
   border: 1px solid #cbd5e1;
   text-align: center;
 }
-.loading {
-  color: #475569;
-}
 .error {
   margin-top: 12px;
   color: #ef4444;
@@ -545,23 +581,11 @@ const confirmPayment = async () => {
   color: #94a3b8;
   padding: 20px;
 }
-.disclaimer {
-  margin: 12px 0;
-  padding: 12px;
-  border-radius: 14px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 13px;
-}
-.disclaimer ol {
-  margin: 8px 0 0 16px;
-  padding: 0;
-}
 .eyebrow {
   margin: 0;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
   color: #64748b;
 }
 .payment-sheet {
@@ -619,14 +643,6 @@ const confirmPayment = async () => {
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
-}
-.close-btn {
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.06);
-  color: #0f172a;
 }
 .pay-title h1 {
   margin: 4px 0 0;

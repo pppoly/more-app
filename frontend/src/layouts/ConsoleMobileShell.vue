@@ -1,7 +1,7 @@
 <template>
-  <div class="mobile-shell">
+  <div class="mobile-shell console-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
     <header v-if="showShellHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
-      <button class="header-back" type="button" @click="goBack">返回</button>
+      <button class="header-back" type="button" @click="goBack">{{ t('nav.back') }}</button>
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions" />
     </header>
@@ -19,38 +19,27 @@
       </div>
     </main>
 
-    <nav v-if="showTabbar" class="mobile-shell__tabbar" :style="tabbarSafeAreaStyle">
-      <div class="tabbar">
-        <button
-          v-for="tab in tabs"
-          :key="tab.path"
-          class="tabbar__item"
-          :class="{ 'tabbar__item--active': activeTab === tab.id }"
-          @click="go(tab.path)"
-        >
-          <span :class="['tabbar__icon', tab.icon]" />
-          <span class="tabbar__label">{{ tab.label }}</span>
-        </button>
-      </div>
-    </nav>
-
     <CommunitySwitchSheet v-if="showCommunitySheet" @close="showCommunitySheet = false" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAuth } from '../composables/useAuth';
 import { useResourceConfig } from '../composables/useResourceConfig';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import CommunitySwitchSheet from '../components/console/CommunitySwitchSheet.vue';
 
+const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const store = useConsoleCommunityStore();
 const { user } = useAuth();
 const resourceConfig = useResourceConfig();
+const scrollPositions = new Map<string, number>();
+const contentEl = ref<HTMLElement | null>(null);
 
 const showCommunitySheet = ref(false);
 
@@ -82,14 +71,14 @@ const iconDefaults = computed(() => {
 const tabs = computed(() => {
   const icons = iconDefaults.value;
   const base = [
-    { id: 'events', label: '活動', path: '/events', icon: icons.events },
-    { id: 'me', label: 'マイページ', path: '/me', icon: icons.me },
+    { id: 'events', label: t('nav.events'), path: '/events', icon: icons.events },
+    { id: 'me', label: t('nav.me'), path: '/me', icon: icons.me },
   ];
   if (user.value?.isOrganizer || user.value?.isAdmin) {
-    base.splice(1, 0, { id: 'console', label: 'Console', path: '/console', icon: icons.console });
+    base.splice(1, 0, { id: 'console', label: t('nav.console'), path: '/console', icon: icons.console });
   }
   if (user.value?.isAdmin) {
-    base.splice(base.length - 1, 0, { id: 'admin', label: '管理', path: '/admin', icon: icons.admin });
+    base.splice(base.length - 1, 0, { id: 'admin', label: t('nav.admin'), path: '/admin', icon: icons.admin });
   }
   return base;
 });
@@ -106,10 +95,7 @@ const activeTab = computed(() => {
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 
-const showTabbar = computed(() => {
-  if (route.meta?.hideTabbar) return false;
-  return tabs.value.some((tab) => route.path === tab.path || route.path.startsWith(`${tab.path}/`));
-});
+const showTabbar = computed(() => false);
 
 const showShellHeader = computed(() => {
   if (route.meta?.hideShellHeader) return false;
@@ -117,14 +103,28 @@ const showShellHeader = computed(() => {
   return activeTab.value === 'console';
 });
 const headerTitle = computed(() => {
-  if (route.name === 'ConsoleMobileEventForm') return '创建活动';
-  return activeTab.value === 'console' ? 'Console' : 'MORE';
+  if (route.name === 'ConsoleMobileEventForm') return t('header.createEvent');
+  return activeTab.value === 'console' ? t('header.console') : t('header.default');
 });
 const headerSafeAreaStyle = computed(() => ({ paddingTop: `calc(8px + env(safe-area-inset-top, 0px))` }));
 
 const tabbarSafeAreaStyle = computed(() => ({
   paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
 }));
+
+const saveScrollPosition = (path: string) => {
+  if (!path) return;
+  const top = contentEl.value ? contentEl.value.scrollTop : window.scrollY;
+  scrollPositions.set(path, top);
+};
+
+const restoreScrollPosition = (path: string) => {
+  const saved = scrollPositions.get(path) ?? 0;
+  if (contentEl.value) {
+    contentEl.value.scrollTo({ top: saved, behavior: 'auto' });
+  }
+  window.scrollTo({ top: saved, behavior: 'auto' });
+};
 
 const goBack = () => {
   // Default back behavior: if we're in console scope (or no history), return to console home
@@ -143,12 +143,25 @@ const go = (path: string) => {
 };
 
 onMounted(() => {
+  contentEl.value = document.querySelector('.mobile-shell__content');
   window.addEventListener('console:open-community-picker', handleExternalPickerOpen);
 });
 
 onUnmounted(() => {
   window.removeEventListener('console:open-community-picker', handleExternalPickerOpen);
 });
+
+watch(
+  () => route.fullPath,
+  async (to, from) => {
+    if (from) saveScrollPosition(from);
+    await nextTick();
+    restoreScrollPosition(to);
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.blur) active.blur();
+  },
+  { flush: 'post' },
+);
 </script>
 
 <style scoped>
@@ -158,6 +171,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #f5f7fb;
+}
+.mobile-shell--fixed {
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mobile-shell__header {
   display: grid;
@@ -211,9 +229,17 @@ onUnmounted(() => {
 .mobile-shell__content--flush {
   padding: 0;
 }
+.console-shell {
+  background: #f8fafc;
+}
+.console-shell .mobile-shell__content {
+  background: #f8fafc;
+}
 
 .mobile-shell__content--fixed {
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  height: 100vh;
 }
 
 .mobile-shell__content--flush {
@@ -230,22 +256,29 @@ onUnmounted(() => {
   height: 100%;
   overflow: hidden;
 }
+.console-shell {
+  background: #f8fafc;
+}
+.console-shell .mobile-shell__content {
+  background: #f8fafc;
+}
 .mobile-shell__tabbar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 10;
-  padding: 1rem 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: #ffffff;
-  box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.06);
+  border-top: none;
+  box-shadow: none;
 }
 .tabbar {
   margin: 0 auto;
   max-width: 520px;
   display: flex;
-  gap: 1rem;
-  background: transparent;
+  gap: 12px;
+  background: #ffffff;
   padding: 0;
 }
 .tabbar__item {
@@ -257,15 +290,15 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.75rem 0.5rem;
-  font-size: 0.9rem;
+  padding: 10px 8px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--m-color-text-tertiary, #666);
 }
 .tabbar__item--active {
   background: #0090d9;
   color: #fff;
-  box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
+  box-shadow: none;
 }
 .tabbar__icon {
   color: var(--m-color-text-tertiary, #666);

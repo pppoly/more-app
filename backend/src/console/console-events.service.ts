@@ -2,14 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
-import { extname, join } from 'path';
+import { dirname, extname } from 'path';
 import type { Express } from 'express';
-import { UPLOAD_ROOT } from '../common/storage/upload-root';
 import { PaymentsService } from '../payments/payments.service';
 import { AiService, TranslateTextDto } from '../ai/ai.service';
 import { PermissionsService } from '../auth/permissions.service';
+import { assetKeyToDiskPath, buildAssetUrl } from '../common/storage/asset-path';
 
-const EVENT_UPLOAD_ROOT = join(UPLOAD_ROOT, 'events');
+const EVENT_UPLOAD_PREFIX = 'events';
 
 interface LocalizedField {
   original?: string;
@@ -46,15 +46,18 @@ export class ConsoleEventsService {
         },
       },
     });
-    return events.map((event) => ({
-      id: event.id,
-      title: event.title,
-      startTime: event.startTime,
-      endTime: event.endTime,
-      status: event.status,
-      visibility: event.visibility,
-      coverImageUrl: event.galleries[0]?.imageUrl ?? null,
-    }));
+    return events.map((event) => {
+      const coverImageUrl = buildAssetUrl(event.galleries[0]?.imageUrl);
+      return {
+        id: event.id,
+        title: event.title,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        status: event.status,
+        visibility: event.visibility,
+        coverImageUrl,
+      };
+    });
   }
 
   async createEvent(userId: string, communityId: string, payload: any) {
@@ -62,7 +65,6 @@ export class ConsoleEventsService {
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
-    const targetLangs = this.getTranslationTargets(rest.originalLanguage);
     const created = await this.prisma.event.create({
       data: {
         ...eventData,
@@ -89,7 +91,7 @@ export class ConsoleEventsService {
         }),
       },
     });
-    await this.translateEventIfNeeded(created.id, created.originalLanguage, targetLangs, {
+    this.queueEventTranslation(created.id, created.originalLanguage, {
       title: created.title,
       description: created.description,
       descriptionHtml: created.descriptionHtml,
@@ -104,7 +106,11 @@ export class ConsoleEventsService {
       include: { ticketTypes: true, community: true, galleries: { orderBy: { order: 'asc' } } },
     });
     if (!event) throw new NotFoundException('Event not found');
-    return event;
+    const galleries = (event.galleries ?? []).map((gallery) => ({
+      ...gallery,
+      imageUrl: buildAssetUrl(gallery.imageUrl),
+    }));
+    return { ...event, galleries };
   }
 
   async updateEvent(userId: string, eventId: string, data: any) {
@@ -124,7 +130,6 @@ export class ConsoleEventsService {
         reviewedAt: null,
       });
     }
-    const targetLangs = this.getTranslationTargets(rest.originalLanguage);
     const updated = await this.prisma.event.update({
       where: { id: eventId },
       data: eventData,
@@ -154,7 +159,7 @@ export class ConsoleEventsService {
       }
     }
 
-    await this.translateEventIfNeeded(eventId, updated.originalLanguage, targetLangs, {
+    this.queueEventTranslation(eventId, updated.originalLanguage, {
       title: updated.title,
       description: updated.description,
       descriptionHtml: updated.descriptionHtml,
@@ -642,10 +647,6 @@ export class ConsoleEventsService {
     }
     await this.permissions.assertEventManager(userId, eventId);
 
-    await fs.mkdir(EVENT_UPLOAD_ROOT, { recursive: true });
-    const eventDir = join(EVENT_UPLOAD_ROOT, eventId);
-    await fs.mkdir(eventDir, { recursive: true });
-
     const aggregate = await this.prisma.eventGallery.aggregate({
       where: { eventId },
       _max: { order: true },
@@ -656,14 +657,17 @@ export class ConsoleEventsService {
     for (const file of files) {
       const extension = extname(file.originalname) || '.jpg';
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
-      const filePath = join(eventDir, filename);
-      await fs.writeFile(filePath, file.buffer);
-      const imageUrl = `/uploads/events/${eventId}/${filename}`;
+      const imageKey = `${EVENT_UPLOAD_PREFIX}/${eventId}/${filename}`;
+      const filePath = assetKeyToDiskPath(imageKey);
+      if (filePath) {
+        await fs.mkdir(dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, file.buffer);
+      }
       creations.push(
         this.prisma.eventGallery.create({
           data: {
             eventId,
-            imageUrl,
+            imageUrl: imageKey,
             order: nextOrder,
             isCover: nextOrder === 0,
           },
@@ -673,7 +677,11 @@ export class ConsoleEventsService {
     }
 
     const created = await this.prisma.$transaction(creations);
-    return created.map((item) => ({ id: item.id, imageUrl: item.imageUrl, order: item.order }));
+    return created.map((item) => ({
+      id: item.id,
+      imageUrl: buildAssetUrl(item.imageUrl),
+      order: item.order,
+    }));
   }
 
   async removeEventCover(userId: string, eventId: string, coverId: string) {
@@ -685,9 +693,8 @@ export class ConsoleEventsService {
     await this.prisma.eventGallery.delete({ where: { id: coverId } });
 
     if (target.imageUrl) {
-      const filename = target.imageUrl.split('/').pop();
-      if (filename) {
-        const filePath = join(EVENT_UPLOAD_ROOT, eventId, filename);
+      const filePath = assetKeyToDiskPath(target.imageUrl);
+      if (filePath) {
         try {
           await fs.unlink(filePath);
         } catch (err) {
@@ -712,9 +719,23 @@ export class ConsoleEventsService {
 
     return remaining.map((item, index) => ({
       id: item.id,
-      imageUrl: item.imageUrl,
+      imageUrl: buildAssetUrl(item.imageUrl),
       order: index,
     }));
+  }
+
+  private queueEventTranslation(
+    eventId: string,
+    originalLanguage: string | null | undefined,
+    fields?: { title?: any; description?: any; descriptionHtml?: string | null },
+  ) {
+    const targetLangs = this.getTranslationTargets(originalLanguage ?? undefined);
+    if (!targetLangs.length) return;
+    // Fire-and-forget so the API response is not blocked by translation latency.
+    void this.translateEventIfNeeded(eventId, originalLanguage, targetLangs, fields).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('queueEventTranslation failed', { eventId, error: err });
+    });
   }
 
   private prepareEventData(payload: any, isUpdate = false): Prisma.EventCreateInput | Prisma.EventUpdateInput {
