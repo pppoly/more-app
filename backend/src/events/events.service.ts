@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildAssetUrl } from '../common/storage/asset-path';
 
 interface CreateRegistrationDto {
   ticketTypeId?: string;
@@ -93,6 +94,7 @@ export class EventsService {
       const currentParticipants = event._count?.registrations ?? 0;
       const capacityFromConfig =
         (event.config as any)?.capacity ?? (event.config as any)?.maxParticipants ?? event.maxParticipants ?? null;
+      const coverImageUrl = buildAssetUrl(event.galleries[0]?.imageUrl);
       return {
         id: event.id,
         status: event.status,
@@ -110,7 +112,7 @@ export class EventsService {
         },
         communityLogoUrl: communityLogo,
         priceRange: { min, max },
-        coverImageUrl: event.galleries[0]?.imageUrl ?? null,
+        coverImageUrl,
         config: {
           ...(event.config as Record<string, any>),
           attendeeAvatars,
@@ -210,7 +212,8 @@ export class EventsService {
       avatarUrl: reg.user?.avatarUrl ?? DEFAULT_AVATAR,
     }));
 
-    const communityLogo = this.extractCommunityLogo(event.community?.description) ?? event.community?.coverImageUrl ?? null;
+    const communityCoverUrl = buildAssetUrl(event.community?.coverImageUrl);
+    const communityLogo = this.extractCommunityLogo(event.community?.description) ?? communityCoverUrl ?? null;
 
     const mergedConfig = {
       ...(event.config as Record<string, any>),
@@ -231,7 +234,7 @@ export class EventsService {
     const { registrations, _count, galleries, ...rest } = event;
     return {
       ...rest,
-      coverImageUrl: galleries?.[0]?.imageUrl ?? null,
+      coverImageUrl: buildAssetUrl(galleries?.[0]?.imageUrl),
       config: mergedConfig,
     };
   }
@@ -410,7 +413,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException('Event not found');
     }
-    return this.prisma.eventGallery.findMany({
+    const gallery = await this.prisma.eventGallery.findMany({
       where: { eventId },
       orderBy: { order: 'asc' },
       select: {
@@ -419,6 +422,10 @@ export class EventsService {
         order: true,
       },
     });
+    return gallery.map((item) => ({
+      ...item,
+      imageUrl: buildAssetUrl(item.imageUrl),
+    }));
   }
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
     if (!content) return '';
@@ -436,10 +443,10 @@ export class EventsService {
     if (!description || typeof description !== 'object') return null;
     const record = description as Record<string, any>;
     if (record.logoImageUrl && typeof record.logoImageUrl === 'string') {
-      return record.logoImageUrl;
+      return buildAssetUrl(record.logoImageUrl);
     }
     if (typeof record.original === 'object' && record.original?.logoImageUrl) {
-      return record.original.logoImageUrl;
+      return buildAssetUrl(record.original.logoImageUrl);
     }
     return null;
   }

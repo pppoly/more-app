@@ -14,5 +14,223 @@
     "subscriptionUnavailable": "支払いを開始できません。時間をおいて再試行するか、サポートへご連絡ください。",
     "stripeLinkFailed": "リンクを作成できませんでした。時間をおいて再試行するか、サポートへご連絡ください。",
     "qrScanFailed": "読み取りに失敗しました。もう一度スキャンするか、写真をアップロードしてください。"
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "管理中のコミュニティ",
+      "roleOwner": "主理人",
+      "roleAdmin": "管理者",
+      "noCommunities": "まだ管理できるコミュニティがありません。",
+      "create": "コミュニティを作成",
+      "loginRequired": "主理人コンソールを利用するにはログインが必要です。",
+      "loginCta": "ログイン / 主理人申請",
+      "applyRequired": "主理人申請が必要です",
+      "applyHint": "申請が承認されるとコンソール機能を利用できます。",
+      "applyCta": "主理人申請ページへ",
+      "noManagedTitle": "管理対象のコミュニティがありません",
+      "noManagedHint": "まずはコミュニティを作成してみましょう。",
+      "createNew": "新しいコミュニティを作成"
+    }
+  },
+  "subscription": {
+    "title": "サブスクリプション",
+    "subtitle": "コミュニティに合ったプランを選んでください",
+    "feeNote": "プラットフォーム手数料はプランにより異なり、Stripe 手数料は実費精算です。",
+    "currentCommunity": "対象コミュニティ",
+    "currentPlan": "現在のプラン",
+    "platformFee": "プラットフォーム手数料：",
+    "stripeFee": "Stripe 手数料：",
+    "perMonth": "月",
+    "loading": "読み込み中…",
+    "noCommunity": "コミュニティを選択してからプランを設定してください。",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "price": "¥0 / 月",
+        "audience": "お試し・小規模向け",
+        "platformFee": "5%",
+        "stripeFee": "Stripe 実費",
+        "features": [
+          "月 3 件のイベント・100 枚チケット",
+          "AI 文章・翻訳の基本枠（JP/EN/zh）",
+          "基本的な内容チェック"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "price": "¥2,480 / 月",
+        "audience": "小〜中規模の主催者向け",
+        "platformFee": "2% または 固定 ¥3,000/月",
+        "stripeFee": "Stripe 実費",
+        "features": [
+          "月 20 件のイベント・5,000 枚チケット",
+          "AI 文章・翻訳枠を拡大、画像生成も利用可",
+          "内容チェック強化と CSV 出力"
+        ]
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "¥9,800 / 月",
+        "audience": "高頻度・収益化重視向け",
+        "platformFee": "0%（Stripe のみ）",
+        "stripeFee": "Stripe 実費",
+        "features": [
+          "イベント・チケット実質無制限（合理的上限）",
+          "AI 文章/翻訳の大きな枠 + ブランド表示",
+          "優先サポート・自動化連携"
+        ]
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "price": "お問い合わせ",
+        "audience": "大規模/自治体/学校向け",
+        "platformFee": "個別見積もり",
+        "stripeFee": "Stripe 実費",
+        "features": [
+          "専用 AI / 監査ルール",
+          "多チーム権限・個別 SLA",
+          "専有環境や私有化も相談可"
+        ]
+      }
+    },
+    "featuresTitle": "含まれる内容",
+    "cta": {
+      "current": "利用中",
+      "upgrade": "このプランにする",
+      "select": "選択",
+      "contact": "営業に問い合わせ",
+      "processing": "処理中…",
+      "pay": "支払いへ進む",
+      "comingSoon": "準備中"
+    },
+    "refresh": "更新",
+    "payment": {
+      "title": "支払い確認",
+      "desc": "アプリ内で決済を完了してください。",
+      "confirm": "確認して支払う",
+      "processing": "支払いを確認中…",
+      "notReady": "支払い情報が準備できていません"
+    },
+    "toast": {
+      "switched": "プランを更新しました",
+      "processing": "決済を確認しています。少しお待ちください。",
+      "failed": "決済に失敗しました。再試行してください。"
+    }
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "管理中のコミュニティ",
+      "roleOwner": "主理人",
+      "roleAdmin": "管理者",
+      "noCommunities": "まだ管理できるコミュニティがありません。",
+      "create": "コミュニティを作成",
+      "loginRequired": "主理人コンソールを利用するにはログインが必要です。",
+      "loginCta": "ログイン / 主理人申請",
+      "applyRequired": "主理人申請が必要です",
+      "applyHint": "申請が承認されるとコンソール機能を利用できます。",
+      "applyCta": "主理人申請ページへ",
+      "noManagedTitle": "管理対象のコミュニティがありません",
+      "noManagedHint": "まずはコミュニティを作成してみましょう。",
+      "createNew": "新しいコミュニティを作成"
+    },
+    "portal": {
+      "title": "コミュニティポータル",
+      "subtitle": "テンプレートと表示ブロックを選択してください",
+      "back": "戻る",
+      "loading": "読み込み中…",
+      "error": "設定を読み込めませんでした",
+      "themeTitle": "テンプレート",
+      "layoutTitle": "表示ブロック",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "保存しました",
+      "lockedTitle": "ポータル機能はアップグレードが必要です",
+      "lockedDesc": "ポータル公開は有料プランの機能です。プランを変更してご利用ください。",
+      "upgrade": "プランを確認する",
+      "modules": {
+        "hero": { "name": "ヒーロー", "desc": "大きなカバーとタグ" },
+        "about": { "name": "紹介", "desc": "コミュニティ説明" },
+        "upcoming": { "name": "開催中", "desc": "募集しているイベント" },
+        "past": { "name": "過去イベント", "desc": "これまでの開催" },
+        "moments": { "name": "ハイライト", "desc": "写真・カバーのコラージュ" }
+      },
+      "themes": {
+        "clean": { "name": "クリーン", "desc": "白ベース + 淡いグラデ" },
+        "immersive": { "name": "イマーシブ", "desc": "暗めのカバーとオーバーレイ" },
+        "warm": { "name": "ウォーム", "desc": "暖色と丸みのカード" },
+        "collage": { "name": "コラージュ", "desc": "テクスチャと写真感" }
+      }
+    }
+  },
+  "mobile": {
+    "settings": {
+      "title": "一般設定",
+      "language": {
+        "label": "言語設定 / Language",
+        "meta": "表示言語を切り替える"
+      },
+      "notifications": {
+        "label": "通知・アプリ設定",
+        "meta": "アプリ権限と環境設定"
+      },
+      "localeSheet": {
+        "title": "表示言語を選択",
+        "subtitle": "変更すると表示順などに影響します",
+        "active": "使用中"
+      },
+      "toast": {
+        "notificationsPending": "通知設定は準備中です"
+      }
+    },
+    "me": {
+      "organizer": "主理人",
+      "avatar": {
+        "title": "プロフィール画像",
+        "cancel": "キャンセル",
+        "use": "この画像を使う",
+        "error": {
+          "invalid": "この写真は使えません。はっきり写った写真に変えてください。",
+          "loadFailed": "画像を読み込めませんでした",
+          "readFailed": "画像を読み込めませんでした",
+          "tooLarge": "画像が大きすぎます。小さめの写真を選んでください。",
+          "saveFailed": "画像の更新に失敗しました",
+          "generateFailed": "画像を生成できませんでした",
+          "notFound": "画像が見つかりません"
+        },
+        "updated": "画像を更新しました"
+      },
+      "cards": {
+        "events": { "title": "参加したイベント", "description": "予約・チケット", "cta": "見る" },
+        "payments": { "title": "支払い履歴", "description": "お支払い記録", "cta": "見る" },
+        "favorites": { "title": "お気に入りイベント", "description": "お気に入り", "cta": "見る" },
+        "settings": { "title": "設定", "description": "アプリ環境", "cta": "開く" }
+      }
+    },
+    "locale": {
+      "ja": "日本語",
+      "zh": "简体中文",
+      "zhTw": "繁體中文"
+    }
+  },
+  "nav": {
+    "back": "戻る",
+    "events": "イベント",
+    "me": "マイページ",
+    "console": "コンソール",
+    "admin": "管理"
+  },
+  "header": {
+    "createEvent": "イベント作成",
+    "console": "コンソール",
+    "default": "MORE"
+  },
+  "localeSheet": {
+    "title": "表示言語を選択",
+    "subtitle": "変更すると表示順などに影響します",
+    "active": "使用中",
+    "saved": "言語を更新しました",
+    "saveFailed": "言語設定の保存に失敗しました。時間をおいて再試行してください。"
   }
 }

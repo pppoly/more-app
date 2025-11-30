@@ -1,18 +1,17 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Community, Prisma } from '@prisma/client';
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { dirname } from 'path';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
 import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
-import { UPLOAD_ROOT } from '../common/storage/upload-root';
+import { assetKeyToDiskPath, buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 
 @Injectable()
 export class ConsoleCommunitiesService {
   private readonly logger = new Logger(ConsoleCommunitiesService.name);
-  private readonly uploadRoot = UPLOAD_ROOT;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -66,7 +65,7 @@ export class ConsoleCommunitiesService {
       labels: community.labels,
       visibleLevel: community.visibleLevel,
       createdAt: community.createdAt,
-      coverImageUrl: community.coverImageUrl,
+      coverImageUrl: buildAssetUrl(community.coverImageUrl),
       role: community.ownerId === userId ? 'owner' : community.members[0]?.role ?? 'admin',
     }));
   }
@@ -93,7 +92,7 @@ export class ConsoleCommunitiesService {
           description: payload.description,
           labels: payload.labels,
           visibleLevel: payload.visibleLevel,
-          coverImageUrl: payload.coverImageUrl ?? null,
+          coverImageUrl: toAssetKey(payload.coverImageUrl) ?? payload.coverImageUrl ?? null,
           language: 'ja',
         },
       });
@@ -116,7 +115,7 @@ export class ConsoleCommunitiesService {
       },
     });
 
-    return community;
+    return this.decorateCommunity(community);
   }
 
   async getCommunity(userId: string, communityId: string) {
@@ -125,7 +124,8 @@ export class ConsoleCommunitiesService {
     if (!community) {
       throw new NotFoundException('Community not found');
     }
-    return this.syncStripeAccountStatus(community);
+    const synced = await this.syncStripeAccountStatus(community);
+    return this.decorateCommunity(synced);
   }
 
   async updateCommunity(
@@ -146,9 +146,15 @@ export class ConsoleCommunitiesService {
     if (payload.description !== undefined) data.description = payload.description;
     if (payload.labels !== undefined) data.labels = payload.labels;
     if (payload.visibleLevel !== undefined) data.visibleLevel = payload.visibleLevel;
-    if (payload.coverImageUrl !== undefined) data.coverImageUrl = payload.coverImageUrl;
+    if (payload.coverImageUrl !== undefined) {
+      data.coverImageUrl = toAssetKey(payload.coverImageUrl) ?? payload.coverImageUrl;
+    }
+    if (payload.logoImageUrl !== undefined) {
+      data.description = await this.mergeLogoIntoDescription(communityId, payload.logoImageUrl);
+    }
 
-    return this.prisma.community.update({ where: { id: communityId }, data });
+    const updated = await this.prisma.community.update({ where: { id: communityId }, data });
+    return this.decorateCommunity(updated);
   }
 
   async refreshStripeStatus(userId: string, communityId: string) {
@@ -159,6 +165,25 @@ export class ConsoleCommunitiesService {
     }
     const updated = await this.syncStripeAccountStatus(community);
     return { stripeAccountId: updated.stripeAccountId, stripeAccountOnboarded: updated.stripeAccountOnboarded };
+  }
+
+  private decorateCommunity(community: Community) {
+    return { ...community, coverImageUrl: buildAssetUrl(community.coverImageUrl) };
+  }
+
+  private async mergeLogoIntoDescription(communityId: string, logoImageUrl: string | null) {
+    const current = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { description: true },
+    });
+    const desc = current?.description && typeof current.description === 'object' ? { ...(current.description as any) } : {};
+    if (logoImageUrl === null) {
+      delete desc.logoImageUrl;
+      if (desc._portalConfig) delete desc._portalConfig.logoImageUrl;
+    } else {
+      desc.logoImageUrl = toAssetKey(logoImageUrl) ?? logoImageUrl;
+    }
+    return desc as Prisma.InputJsonValue;
   }
 
   async getPortalConfig(userId: string, communityId: string) {
@@ -240,13 +265,16 @@ export class ConsoleCommunitiesService {
       throw new BadRequestException('画像のみアップロードできます');
     }
     const folder = type === 'logo' ? 'logos' : 'covers';
-    const targetDir = join(this.uploadRoot, 'communities', communityId, folder);
-    await fs.mkdir(targetDir, { recursive: true });
     const ext = this.getExtension(file.originalname) || 'jpg';
     const filename = `${randomUUID()}.${ext}`;
-    await fs.writeFile(join(targetDir, filename), file.buffer);
-    const imageUrl = `/uploads/communities/${communityId}/${folder}/${filename}`;
-    return { imageUrl };
+    const imageKey = `communities/${communityId}/${folder}/${filename}`;
+    const filePath = assetKeyToDiskPath(imageKey);
+    if (filePath) {
+      await fs.mkdir(dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, file.buffer);
+    }
+    const imageUrl = buildAssetUrl(imageKey);
+    return { imageKey, imageUrl };
   }
 
   private getExtension(filename: string) {
@@ -445,6 +473,14 @@ export class ConsoleCommunitiesService {
     if (!clientSecret) {
       throw new BadRequestException('Stripe支払いの初期化に失敗しました');
     }
+
+    await this.prisma.community.update({
+      where: { id: communityId },
+      data: {
+        pricingPlanId: plan.id,
+        stripeSubscriptionId: subscription.id,
+      },
+    });
 
     return {
       planId: plan.id,

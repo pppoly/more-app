@@ -1,41 +1,41 @@
 <template>
   <section class="console-shell">
     <header class="console-header">
-      <RouterLink class="logo" :to="{ name: 'console-home' }">MORE Console</RouterLink>
+      <RouterLink class="logo" :to="{ name: 'console-home' }">{{ t('console.access.logo') }}</RouterLink>
       <div class="switcher" v-if="user?.isOrganizer">
         <template v-if="communities.length">
           <label>
-            <span>管理中のコミュニティ</span>
+            <span>{{ t('console.access.managing') }}</span>
             <select v-model="selectedId" @change="handleCommunityChange">
               <option v-for="community in communities" :key="community.id" :value="community.id">
-                {{ community.name }}（{{ community.role === 'owner' ? '主理人' : '管理者' }}）
+                {{ community.name }}（{{ community.role === 'owner' ? t('console.access.roleOwner') : t('console.access.roleAdmin') }}）
               </option>
             </select>
           </label>
         </template>
         <template v-else>
-          <span>まだ管理できるコミュニティがありません。</span>
-          <RouterLink class="primary" :to="{ name: 'console-community-create' }">コミュニティを作成</RouterLink>
+          <span>{{ t('console.access.noCommunities') }}</span>
+          <RouterLink class="primary" :to="{ name: 'console-community-create' }">{{ t('console.access.create') }}</RouterLink>
         </template>
       </div>
     </header>
 
     <div class="console-body">
       <div v-if="!user" class="card">
-        <p>主理人コンソールを利用するにはログインが必要です。</p>
-        <RouterLink class="primary" to="/organizer/apply">ログイン / 主理人申請</RouterLink>
+        <p>{{ t('console.access.loginRequired') }}</p>
+        <RouterLink class="primary" to="/organizer/apply">{{ t('console.access.loginCta') }}</RouterLink>
       </div>
       <div v-else-if="!user.isOrganizer" class="card">
-        <h3>主理人申請が必要です</h3>
-        <p>主理人申請が承認されるとコンソール機能を利用できます。</p>
-        <RouterLink class="primary" to="/organizer/apply">主理人申請ページへ</RouterLink>
+        <h3>{{ t('console.access.applyRequired') }}</h3>
+        <p>{{ t('console.access.applyHint') }}</p>
+        <RouterLink class="primary" to="/organizer/apply">{{ t('console.access.applyCta') }}</RouterLink>
       </div>
       <div v-else>
         <p v-if="error" class="status error">{{ error }}</p>
         <div v-if="!communities.length && !loading" class="card">
-          <h3>管理対象のコミュニティがありません</h3>
-          <p>まずはコミュニティを作成してみましょう。</p>
-          <RouterLink class="primary" :to="{ name: 'console-community-create' }">新しいコミュニティを作成</RouterLink>
+          <h3>{{ t('console.access.noManagedTitle') }}</h3>
+          <p>{{ t('console.access.noManagedHint') }}</p>
+          <RouterLink class="primary" :to="{ name: 'console-community-create' }">{{ t('console.access.createNew') }}</RouterLink>
         </div>
         <RouterView />
       </div>
@@ -48,7 +48,9 @@ import { onMounted, ref, watch } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { useConsoleCommunityStore } from '../../stores/consoleCommunity';
+import { useI18n } from 'vue-i18n';
 
+const { t } = useI18n();
 const auth = useAuth();
 const router = useRouter();
 const route = useRoute();

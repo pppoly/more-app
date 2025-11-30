@@ -14,5 +14,223 @@
     "subscriptionUnavailable": "Payment isn’t available now. Please try again later or contact support.",
     "stripeLinkFailed": "Could not create the link. Please try again later or contact support.",
     "qrScanFailed": "Scan failed. Try again or upload a photo of the code."
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "Communities you manage",
+      "roleOwner": "Owner",
+      "roleAdmin": "Admin",
+      "noCommunities": "You don’t have a community to manage yet.",
+      "create": "Create community",
+      "loginRequired": "Please log in to use the console.",
+      "loginCta": "Log in / Apply",
+      "applyRequired": "Organizer application required",
+      "applyHint": "Once approved, you can use console features.",
+      "applyCta": "Go to application",
+      "noManagedTitle": "No managed communities",
+      "noManagedHint": "Create a community to get started.",
+      "createNew": "Create a new community"
+    }
+  },
+  "subscription": {
+    "title": "Subscription",
+    "subtitle": "Pick the right plan for your community",
+    "feeNote": "Platform fees differ by plan; Stripe fees are passed through.",
+    "currentCommunity": "Community",
+    "currentPlan": "Current plan",
+    "platformFee": "Platform fee:",
+    "stripeFee": "Stripe fees:",
+    "perMonth": "month",
+    "loading": "Loading…",
+    "noCommunity": "Select a community before choosing a plan.",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "price": "¥0 / month",
+        "audience": "Trial / small scale",
+        "platformFee": "5%",
+        "stripeFee": "Stripe at cost",
+        "features": [
+          "Up to 3 events / 100 tickets per month",
+          "Basic AI copy + translation (JA/EN/zh)",
+          "Basic compliance checks"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "price": "¥2,480 / month",
+        "audience": "Small to mid organizers",
+        "platformFee": "2% or ¥3,000/mo fixed",
+        "stripeFee": "Stripe at cost",
+        "features": [
+          "Up to 20 events / 5,000 tickets per month",
+          "Larger AI copy & translation allowance + images",
+          "Stronger review + CSV export"
+        ]
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "¥9,800 / month",
+        "audience": "High frequency / revenue focused",
+        "platformFee": "0% (Stripe only)",
+        "stripeFee": "Stripe at cost",
+        "features": [
+          "Practically unlimited events & tickets",
+          "Large AI allowance + branding",
+          "Priority support & automation"
+        ]
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "price": "Contact us",
+        "audience": "Large org / gov / school",
+        "platformFee": "Custom",
+        "stripeFee": "Stripe at cost",
+        "features": [
+          "Dedicated AI and review rules",
+          "Multi-team permissions & SLA",
+          "Private/isolated deployment options"
+        ]
+      }
+    },
+    "featuresTitle": "Included",
+    "cta": {
+      "current": "Current",
+      "upgrade": "Choose plan",
+      "select": "Select",
+      "contact": "Contact sales",
+      "processing": "Processing…",
+      "pay": "Proceed to pay",
+      "comingSoon": "Coming soon"
+    },
+    "refresh": "Refresh",
+    "payment": {
+      "title": "Payment",
+      "desc": "Complete payment in-app.",
+      "confirm": "Confirm and pay",
+      "processing": "Confirming payment…",
+      "notReady": "Payment info not ready"
+    },
+    "toast": {
+      "switched": "Plan updated",
+      "processing": "Payment processing, please wait.",
+      "failed": "Payment failed, please try again."
+    }
+  },
+  "console": {
+    "access": {
+      "logo": "MORE Console",
+      "managing": "Communities you manage",
+      "roleOwner": "Owner",
+      "roleAdmin": "Admin",
+      "noCommunities": "You don’t have a community to manage yet.",
+      "create": "Create community",
+      "loginRequired": "Please log in to use the console.",
+      "loginCta": "Log in / Apply",
+      "applyRequired": "Organizer application required",
+      "applyHint": "Once approved, you can use console features.",
+      "applyCta": "Go to application",
+      "noManagedTitle": "No managed communities",
+      "noManagedHint": "Create a community to get started.",
+      "createNew": "Create a new community"
+    },
+    "portal": {
+      "title": "Community portal",
+      "subtitle": "Choose a template and show blocks",
+      "back": "Back",
+      "loading": "Loading…",
+      "error": "Failed to load settings",
+      "themeTitle": "Template",
+      "layoutTitle": "Blocks",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "lockedTitle": "Portal is available on paid plans",
+      "lockedDesc": "Publishing the community portal requires an upgraded plan. Please upgrade to continue.",
+      "upgrade": "View plans",
+      "modules": {
+        "hero": { "name": "Hero", "desc": "Large cover & tags" },
+        "about": { "name": "About", "desc": "Community description" },
+        "upcoming": { "name": "Open events", "desc": "Events open for registration" },
+        "past": { "name": "Past events", "desc": "Previous events" },
+        "moments": { "name": "Highlights", "desc": "Photos/covers collage" }
+      },
+      "themes": {
+        "clean": { "name": "Clean", "desc": "Light cards + soft gradient" },
+        "immersive": { "name": "Immersive", "desc": "Dark cover overlay" },
+        "warm": { "name": "Warm", "desc": "Warm tones + rounded cards" },
+        "collage": { "name": "Collage", "desc": "Textures and photo feel" }
+      }
+    }
+  },
+  "mobile": {
+    "settings": {
+      "title": "General settings",
+      "language": {
+        "label": "Language",
+        "meta": "Choose display language"
+      },
+      "notifications": {
+        "label": "Notifications & app",
+        "meta": "App permissions and preferences"
+      },
+      "localeSheet": {
+        "title": "Choose display language",
+        "subtitle": "Changing this may affect how titles are shown",
+        "active": "Active"
+      },
+      "toast": {
+        "notificationsPending": "Notification settings coming soon"
+      }
+    },
+    "me": {
+      "organizer": "Organizer",
+      "avatar": {
+        "title": "Profile image",
+        "cancel": "Cancel",
+        "use": "Use this image",
+        "error": {
+          "invalid": "This photo can’t be used. Please pick a clearer one.",
+          "loadFailed": "Could not load the image.",
+          "readFailed": "Could not read the image.",
+          "tooLarge": "Image is too large. Please pick a smaller one.",
+          "saveFailed": "Failed to update image.",
+          "generateFailed": "Failed to generate image.",
+          "notFound": "Image not found."
+        },
+        "updated": "Image updated"
+      },
+      "cards": {
+        "events": { "title": "Joined events", "description": "Bookings & tickets", "cta": "View" },
+        "payments": { "title": "Payment history", "description": "Payments", "cta": "View" },
+        "favorites": { "title": "Favorite events", "description": "Favorites", "cta": "View" },
+        "settings": { "title": "Settings", "description": "App preferences", "cta": "Open" }
+      }
+    },
+    "locale": {
+      "ja": "Japanese",
+      "zh": "Simplified Chinese",
+      "zhTw": "Traditional Chinese"
+    }
+  },
+  "nav": {
+    "back": "Back",
+    "events": "Events",
+    "me": "My page",
+    "console": "Console",
+    "admin": "Admin"
+  },
+  "header": {
+    "createEvent": "Create event",
+    "console": "Console",
+    "default": "MORE"
+  },
+  "localeSheet": {
+    "title": "Choose display language",
+    "subtitle": "Changing this may affect how titles are shown",
+    "active": "Active",
+    "saved": "Language updated",
+    "saveFailed": "Failed to save language. Please try again."
   }
 }

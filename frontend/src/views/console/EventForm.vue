@@ -1,13 +1,10 @@
 <template>
   <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
-      <header v-if="!isMobileLayout" class="section-header">
-      <div>
-        <h2>{{ isEdit ? 'イベント編集' : 'イベント作成' }}</h2>
-        <p>{{ subtitle }}</p>
-      </div>
-      <RouterLink :to="backLink">戻る</RouterLink>
+    <header v-if="isMobileLayout" class="mobile-nav">
+      <button type="button" class="mobile-nav__back" @click="goBack">戻る</button>
+      <h1 class="mobile-nav__title">イベント作成</h1>
+      <span class="mobile-nav__placeholder" />
     </header>
-
     <Teleport to="body">
       <div v-if="showPastePanel" class="paste-full-overlay">
         <div class="paste-full-card">
@@ -64,13 +61,48 @@
               <ul>
                 <li v-for="tip in pasteCompliance" :key="tip">· {{ tip }}</li>
               </ul>
-            </div>
-          </template>
+  </div>
+</template>
           <div class="paste-result-actions">
             <button type="button" class="btn ghost small" @click="goToEventAssistant">补充细节，找 AI</button>
             <button type="button" class="btn solid small" @click="closePasteResult">去表单确认</button>
           </div>
         </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showLocationPicker" class="location-overlay" @click.self="closeLocationPicker">
+        <section class="location-card">
+          <header class="location-head">
+            <h3>場所を選択</h3>
+            <span class="location-placeholder" />
+          </header>
+          <p class="location-hint">住所を検索してピンを微調整できます（日本語推奨）</p>
+          <div class="location-search">
+            <input
+              ref="locationSearchInputRef"
+              v-model="locationSearchText"
+              type="text"
+              placeholder="例: 東京駅, 渋谷スクランブル, 表参道..."
+              :disabled="mapLoading"
+            />
+          </div>
+          <div class="map-frame">
+            <div v-if="mapLoading" class="map-loading">
+              <span class="spinner"></span>
+              <p>地図を読み込み中…</p>
+            </div>
+            <p v-else-if="mapError" class="status error">{{ mapError }}</p>
+            <div v-show="!mapLoading && !mapError" ref="mapRef" class="map-canvas"></div>
+          </div>
+          <footer class="location-actions">
+            <button class="ios-chip" type="button" @click="closeLocationPicker">キャンセル</button>
+            <button class="primary" type="button" :disabled="mapLoading" @click="applyLocationSelection">
+              位置を確定
+            </button>
+          </footer>
+        </section>
       </div>
     </Teleport>
 
@@ -171,16 +203,38 @@
               v-model="form.title"
             />
           </div>
-          <div class="ios-row ios-row--builder-line" @click="focusMainInline('locationText')">
+          <div
+            class="ios-row ios-row--builder-line"
+            @click="manualLocationMode ? focusMainInline('locationText') : openLocationPicker()"
+          >
             <span class="ios-label">場所</span>
-            <input
-              type="text"
-              class="ios-inline-input"
-              placeholder="例：渋谷駅周辺"
-              ref="locationInputRef"
-              :value="form.locationText"
-              @input="handleLocationInput"
-            />
+            <template v-if="manualLocationMode">
+              <input
+                type="text"
+                class="ios-inline-input"
+                placeholder="場所を入力"
+                ref="locationInputRef"
+                :value="form.locationText"
+                @input="handleLocationInput"
+              />
+            </template>
+            <template v-else>
+              <span
+                class="ios-value"
+                :class="{ 'ios-value--placeholder': !form.locationText }"
+              >
+                {{ form.locationText || '地図で選択' }}
+              </span>
+            </template>
+          </div>
+          <div class="ios-row ios-row--helper">
+            <button
+              type="button"
+              class="ios-link"
+              @click.stop="manualLocationMode = !manualLocationMode"
+            >
+              {{ manualLocationMode ? '地図から選ぶ' : '見つからない場合は手入力' }}
+            </button>
           </div>
           <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('startTime')">
             <span class="ios-label">開始日時</span>
@@ -659,6 +713,17 @@ interface BuilderField extends RegistrationFormField {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const goBack = () => router.back();
+const showLocationPicker = ref(false);
+const mapLoading = ref(false);
+const mapError = ref<string | null>(null);
+const mapRef = ref<HTMLDivElement | null>(null);
+const locationSearchInputRef = ref<HTMLInputElement | null>(null);
+const locationSearchText = ref('');
+let mapInstance: google.maps.Map | null = null;
+let markerInstance: google.maps.Marker | null = null;
+let autocompleteInstance: google.maps.places.Autocomplete | null = null;
+let googleLoaded = false;
 const ENTRY_PREF_KEY = 'CONSOLE_EVENT_ENTRY';
 const communityId = route.params.communityId as string | undefined;
 const eventId = computed(
@@ -695,9 +760,9 @@ const form = reactive({
   subtitle: '',
   description: '',
   descriptionHtml: '',
-  locationText: '',
-  locationLat: null as number | null,
-  locationLng: null as number | null,
+    locationText: '',
+    locationLat: null as number | null,
+    locationLng: null as number | null,
   category: '',
   startTime: '',
   endTime: '',
@@ -810,6 +875,7 @@ const pasteAdvice = ref<string[]>([]);
 const pasteCompliance = ref<string[]>([]);
 const pasteResultLoading = ref(false);
 const storedParsedResult = ref<{ title?: string; description?: string; rules?: string; advice?: string[]; compliance?: string[] } | null>(null);
+const manualLocationMode = ref(false);
 
 const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
@@ -2103,6 +2169,101 @@ const handleLocationInput = (event: Event) => {
   form.locationLng = null;
 };
 
+const loadGoogleMaps = async () => {
+  if (googleLoaded) return;
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    mapError.value = 'Google Maps API key が未設定です（VITE_GOOGLE_MAPS_API_KEY）。';
+    throw new Error('missing maps key');
+  }
+  if (typeof window === 'undefined') return;
+  if (window.google?.maps) {
+    googleLoaded = true;
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.onload = () => {
+      googleLoaded = true;
+      resolve();
+    };
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(script);
+  });
+};
+
+const initMap = async () => {
+  if (!mapRef.value) return;
+  mapLoading.value = true;
+  mapError.value = null;
+  try {
+    await loadGoogleMaps();
+    const center = form.locationLat && form.locationLng
+      ? { lat: form.locationLat, lng: form.locationLng }
+      : { lat: 35.6804, lng: 139.769 };
+    mapInstance = new google.maps.Map(mapRef.value, {
+      center,
+      zoom: 15,
+      disableDefaultUI: true,
+    });
+    markerInstance = new google.maps.Marker({
+      position: center,
+      map: mapInstance,
+      draggable: true,
+    });
+    markerInstance.addListener('dragend', () => {
+      const pos = markerInstance?.getPosition();
+      if (pos) {
+        form.locationLat = pos.lat();
+        form.locationLng = pos.lng();
+      }
+    });
+    if (locationSearchInputRef.value) {
+      autocompleteInstance = new google.maps.places.Autocomplete(locationSearchInputRef.value, {
+        fields: ['geometry', 'formatted_address', 'name'],
+        types: ['geocode', 'establishment'],
+        componentRestrictions: { country: 'jp' },
+      });
+      autocompleteInstance.addListener('place_changed', () => {
+        const place = autocompleteInstance?.getPlace();
+        if (!place?.geometry?.location) return;
+        const loc = place.geometry.location;
+        const pos = { lat: loc.lat(), lng: loc.lng() };
+        mapInstance?.panTo(pos);
+        markerInstance?.setPosition(pos);
+        form.locationLat = pos.lat;
+        form.locationLng = pos.lng;
+        const address = place.formatted_address || place.name;
+        if (address) {
+          form.locationText = address;
+          locationSearchText.value = address;
+        }
+      });
+    }
+  } catch (err: any) {
+    mapError.value = err?.message || '地図を読み込めませんでした';
+  } finally {
+    mapLoading.value = false;
+  }
+};
+
+const openLocationPicker = async () => {
+  showLocationPicker.value = true;
+  locationSearchText.value = form.locationText || '';
+  await nextTick();
+  initMap();
+};
+
+const closeLocationPicker = () => {
+  showLocationPicker.value = false;
+};
+
+const applyLocationSelection = () => {
+  showLocationPicker.value = false;
+};
+
 const handleInlineFocus = (event: Event) => {
   const target = event.target as HTMLElement;
   setCaretToEnd(target);
@@ -2672,11 +2833,49 @@ onActivated(() => {
 </script>
 
 <style scoped>
+.mobile-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  box-sizing: border-box;
+}
+.mobile-nav__back {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 6px 4px;
+}
+.mobile-nav__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  text-align: center;
+  flex: 1;
+}
+.mobile-nav__placeholder {
+  width: 48px;
+  display: block;
+}
 .console-section {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   padding: 0 0.75rem;
+}
+.console-section--mobile {
+  padding: 0;
 }
 .section-header {
   display: flex;
@@ -3138,7 +3337,7 @@ select {
   color: #475569;
 }
 .console-section--mobile {
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
+  padding: 0 0 72px;
   background: #f5f7fb;
   gap: 0.75rem;
   overflow-x: hidden;
@@ -3150,7 +3349,7 @@ select {
 .console-section--mobile .section-header {
   background: #ffffff;
   border-radius: 0;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 0.6rem 12px;
+  padding: 12px 0.6rem;
   box-shadow: none;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   align-items: center;
@@ -3457,6 +3656,81 @@ select {
 
 .ios-switch:checked::after {
   transform: translateX(18px);
+}
+
+.location-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.location-card {
+  width: min(960px, 100%);
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.location-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.location-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+.location-placeholder {
+  width: 64px;
+  height: 24px;
+}
+.location-hint {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+.location-search input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  font-size: 15px;
+}
+.map-frame {
+  position: relative;
+  height: 360px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+.map-canvas {
+  position: absolute;
+  inset: 0;
+}
+.map-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  color: #475569;
+}
+.location-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.location-meta {
+  font-size: 12px;
+  color: #475569;
 }
 
 .ios-select {

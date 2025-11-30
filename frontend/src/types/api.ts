@@ -100,6 +100,7 @@ export interface CommunityPortalEvent {
   locationText: string;
   status: string;
   title?: LocalizedContent;
+  coverImageUrl?: string | null;
 }
 
 export interface CommunityPortal {
@@ -108,9 +109,17 @@ export interface CommunityPortal {
   slug: string;
   description: LocalizedContent;
   coverImageUrl?: string | null;
+  logoImageUrl?: string | null;
   labels: string[];
   visibleLevel: string;
   events: CommunityPortalEvent[];
+  members?: Array<{
+   id: string;
+   name?: string | null;
+   avatarUrl?: string | null;
+  }>;
+  memberCount?: number;
+  isFollowing?: boolean;
   portalConfig?: {
     theme?: string;
     layout?: string[];
@@ -195,6 +204,7 @@ export interface ConsoleCommunityBalance {
   platformFee: number;
   refunded: number;
   net: number;
+  period?: 'month' | 'all';
   stripeBalance?: {
     available: number;
     pending: number;

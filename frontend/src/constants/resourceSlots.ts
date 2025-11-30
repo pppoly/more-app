@@ -80,7 +80,7 @@ export const RESOURCE_SLOTS = [
     description: '当用户或社区没有上传头像时，使用该图片作为兜底。',
     helper: '建议 128×128 正方形 PNG/SVG。',
     type: 'image',
-    defaultValue: 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png',
+    defaultValue: '/assets/default-avatar.png',
   },
   {
     id: 'mobile.eventDetail.heroFallback',

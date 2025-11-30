@@ -14,13 +14,13 @@
         @change="onAvatarSelected"
       />
       <div class="me-hero__info">
-        <p class="me-hero__subtitle">{{ isLoggedIn ? currentLanguageLabel : 'ようこそ' }}</p>
+        <p class="me-hero__subtitle">{{ isLoggedIn ? currentLanguageLabel : t('header.default') }}</p>
         <button class="me-hero__title" type="button" @click="handleAuthAction">
           {{ user?.name || 'ゲスト' }}
         </button>
         <div class="me-hero__chips">
           <span v-if="isOrganizer" class="chip chip--success">
-            <span class="i-lucide-badge-check mr-1"></span>主理人
+            <span class="i-lucide-badge-check mr-1"></span>{{ t('mobile.me.organizer') }}
           </span>
           <span v-else class="chip chip--ghost">ゲスト</span>
         </div>
@@ -54,7 +54,7 @@
       <transition name="fade">
         <div v-if="showCropper" class="me-overlay">
           <div class="me-overlay__panel">
-            <p class="me-overlay__title">调整头像</p>
+            <p class="me-overlay__title">{{ t('mobile.me.avatar.title') }}</p>
             <div
               class="me-cropper"
               @pointerdown.prevent="startDrag"
@@ -73,9 +73,9 @@
               <input type="range" min="1" max="3" step="0.01" v-model.number="cropScale" @input="clampOffsets" />
             </div>
             <div class="me-overlay__actions">
-              <button type="button" class="ghost" @click="cancelCropper">取消</button>
+              <button type="button" class="ghost" @click="cancelCropper">{{ t('mobile.me.avatar.cancel') }}</button>
               <button type="button" class="primary" :disabled="avatarUploading" @click="applyCropper">
-                {{ avatarUploading ? '上传中…' : '使用此头像' }}
+                {{ avatarUploading ? 'アップロード中…' : t('mobile.me.avatar.use') }}
               </button>
             </div>
           </div>
@@ -92,10 +92,12 @@ import { useAuth } from '../../composables/useAuth';
 import { uploadMyAvatar } from '../../api/client';
 import { validateAvatarFile } from '../../utils/validateAvatarFile';
 import { processAvatarImage } from '../../utils/processAvatarImage';
+import { useI18n } from 'vue-i18n';
 
 const router = useRouter();
 const route = useRoute();
 const { user, logout, setUserProfile } = useAuth();
+const { t } = useI18n();
 
 const isLoggedIn = computed(() => Boolean(user.value));
 const isOrganizer = computed(() => Boolean(user.value?.isOrganizer));
@@ -104,18 +106,17 @@ const userInitials = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?
 
 const currentLanguageLabel = computed(() => {
   const lang = user.value?.language ?? 'ja';
-  switch (lang) {
-    case 'zh':
-      return '中文 / Chinese';
-    case 'en':
-      return 'English';
-    default:
-      return '日本語 / Japanese';
-  }
+  if (lang === 'zh') return t('mobile.locale.zh');
+  if (lang === 'en') return 'English';
+  return t('mobile.locale.ja');
 });
 
 const goMyEvents = () => {
   router.push({ name: 'my-events' });
+};
+
+const goMyCommunities = () => {
+  router.push({ name: 'MobileCommunities' });
 };
 
 const goMyPayments = () => {
@@ -130,36 +131,43 @@ const goSettings = () => {
   router.push({ name: 'MobileSettings' });
 };
 
-const serviceEntries = [
+const serviceEntries = computed(() => [
   {
-    title: '参加したイベント',
-    description: '予約・チケット',
-    cta: '見る',
+    title: t('mobile.me.cards.events.title'),
+    description: t('mobile.me.cards.events.description'),
+    cta: t('mobile.me.cards.events.cta'),
     icon: 'i-lucide-ticket',
     action: () => goMyEvents(),
   },
   {
-    title: '支払い履歴',
-    description: 'お支払い記録',
-    cta: '見る',
+    title: '我的社群',
+    description: '关注的社群列表',
+    cta: '进入',
+    icon: 'i-lucide-users',
+    action: () => goMyCommunities(),
+  },
+  {
+    title: t('mobile.me.cards.payments.title'),
+    description: t('mobile.me.cards.payments.description'),
+    cta: t('mobile.me.cards.payments.cta'),
     icon: 'i-lucide-receipt-japanese-yen',
     action: () => goMyPayments(),
   },
   {
-    title: 'お気に入りイベント',
-    description: 'お気に入り',
-    cta: '見る',
+    title: t('mobile.me.cards.favorites.title'),
+    description: t('mobile.me.cards.favorites.description'),
+    cta: t('mobile.me.cards.favorites.cta'),
     icon: 'i-lucide-heart',
     action: () => goFavorites(),
   },
   {
-    title: '設定',
-    description: 'アプリ環境',
-    cta: '開く',
+    title: t('mobile.me.cards.settings.title'),
+    description: t('mobile.me.cards.settings.description'),
+    cta: t('mobile.me.cards.settings.cta'),
     icon: 'i-lucide-settings',
     action: () => goSettings(),
   },
-];
+]);
 
 const goApplyOrganizer = () => {
   router.push({ name: 'organizer-apply' });
@@ -232,7 +240,7 @@ const onAvatarSelected = async (event: Event) => {
     const processed = await processAvatarImage(file, { size: CROPPER_RESULT });
     loadCropImage(processed);
   } catch (err) {
-    avatarStatus.value = err instanceof Error ? '这张头像不合适，换一张清晰的照片试试' : '头像上传失败，请换一张照片再试';
+    avatarStatus.value = err instanceof Error ? t('mobile.me.avatar.error.invalid') : t('mobile.me.avatar.error.saveFailed');
     avatarStatusType.value = 'error';
     if (input) input.value = '';
     return;
@@ -258,13 +266,13 @@ const loadCropImage = (file: File) => {
       showCropper.value = true;
     };
     img.onerror = () => {
-      avatarStatus.value = '图片加载失败';
+      avatarStatus.value = t('mobile.me.avatar.error.loadFailed');
       avatarStatusType.value = 'error';
     };
     img.src = reader.result as string;
   };
   reader.onerror = () => {
-    avatarStatus.value = '无法读取图片';
+    avatarStatus.value = t('mobile.me.avatar.error.readFailed');
     avatarStatusType.value = 'error';
   };
   reader.readAsDataURL(file);
@@ -317,7 +325,7 @@ const applyCropper = async () => {
   try {
     const blob = await createCroppedBlob();
     if (blob.size > MAX_AVATAR_SIZE) {
-      avatarStatus.value = '图片过大，请重新选择';
+      avatarStatus.value = t('mobile.me.avatar.error.tooLarge');
       avatarStatusType.value = 'error';
       avatarUploading.value = false;
       return;
@@ -325,12 +333,12 @@ const applyCropper = async () => {
     const file = new File([blob], `avatar-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
     const profile = await uploadMyAvatar(file);
     setUserProfile(profile);
-    avatarStatus.value = '头像已更新';
+    avatarStatus.value = t('mobile.me.avatar.updated');
     avatarStatusType.value = 'success';
     cancelCropper();
   } catch (error) {
     console.error('Failed to upload avatar', error);
-    avatarStatus.value = '头像上传失败';
+    avatarStatus.value = t('mobile.me.avatar.error.saveFailed');
     avatarStatusType.value = 'error';
   } finally {
     avatarUploading.value = false;
@@ -341,7 +349,7 @@ const createCroppedBlob = () =>
   new Promise<Blob>((resolve, reject) => {
     const image = cropImage.value;
     if (!image) {
-      reject(new Error('未找到图片'));
+      reject(new Error(t('mobile.me.avatar.error.notFound')));
       return;
     }
     const canvas = document.createElement('canvas');
@@ -349,7 +357,7 @@ const createCroppedBlob = () =>
     canvas.height = CROPPER_RESULT;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      reject(new Error('无法创建画布'));
+      reject(new Error(t('mobile.me.avatar.error.generateFailed')));
       return;
     }
     const coverScale = Math.max(CROPPER_VIEWPORT / image.naturalWidth, CROPPER_VIEWPORT / image.naturalHeight);
@@ -376,7 +384,7 @@ const createCroppedBlob = () =>
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error('无法生成头像'));
+          reject(new Error(t('mobile.me.avatar.error.generateFailed')));
           return;
         }
         resolve(blob);
@@ -389,7 +397,7 @@ const createCroppedBlob = () =>
 
 <style scoped>
 .mobile-me {
-  padding: 1rem 1.25rem 4rem;
+  padding: 0 1.25rem 4rem;
   background: var(--m-color-bg, #fafafa);
   min-height: 100%;
   height: 100%;
@@ -403,13 +411,15 @@ const createCroppedBlob = () =>
   background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
   border-radius: 0;
   padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.5rem 1.2rem;
-  margin: 0 -1.25rem;
+  margin: 0 calc(50% - 50vw);
+  width: 100vw;
   color: #fff;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 1rem;
   align-items: center;
   box-shadow: 0 20px 45px rgba(0, 144, 217, 0.25);
+  box-sizing: border-box;
 }
 
 .me-hero__avatar {
@@ -541,19 +551,20 @@ const createCroppedBlob = () =>
 }
 
 .service-sheet {
-  margin: 0 -12px;
-  border-radius: 26px;
+  margin: 0 calc(50% - 50vw);
+  width: 100vw;
+  border-radius: 0;
   background: #fff;
-  padding: 8px 4px;
-  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 8px 0;
+  box-shadow: none;
+  border: none;
 }
 
 .service-row {
   width: 100%;
   border: none;
   background: transparent;
-  padding: 14px 24px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 12px;
