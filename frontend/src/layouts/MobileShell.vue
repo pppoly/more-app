@@ -1,6 +1,6 @@
 <template>
 <div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
-  <header v-if="showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
+  <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
       <span v-else>創</span>
@@ -165,6 +165,7 @@ const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const showHeader = computed(() => !route.meta?.hideShellHeader);
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 const showHeaderActions = computed(() => !route.meta?.hideShellActions);
+const routeReady = ref(false);
 
 const handlePrimaryAction = () => {
   if (user.value) {
@@ -262,6 +263,10 @@ const selectLocale = async (locale: string) => {
 
 onMounted(() => {
   contentEl.value = document.querySelector('.mobile-shell__content');
+  // 避免首屏闪出默认头部，等待路由就绪后再展示
+  router.isReady().then(() => {
+    routeReady.value = true;
+  });
 });
 
 watch(
@@ -271,6 +276,7 @@ watch(
       saveScrollPosition(from);
     }
     await nextTick();
+    routeReady.value = true;
     restoreScrollPosition(to);
     const active = document.activeElement as HTMLElement | null;
     if (active?.blur) active.blur();
@@ -287,6 +293,7 @@ watch(
   flex-direction: column;
   background: #f5f7fb;
   color: #0f172a;
+  overflow: hidden;
 }
 .mobile-shell--fixed {
   height: 100vh;
@@ -351,6 +358,7 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: none;
 }
 
 .profile-entry {
@@ -364,12 +372,14 @@ watch(
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(6px);
+  box-shadow: none;
 }
 
 .header-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  box-shadow: none;
 }
 
 .header-status {
@@ -386,6 +396,7 @@ watch(
   background: #f5f7fb;
   color: #0f172a;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .mobile-shell__content--tabbed {
@@ -406,7 +417,9 @@ watch(
   padding: 0;
 }
 .mobile-shell__view {
-  height: 100%;
+  min-height: 100%;
+  height: auto;
+  overflow: visible;
 }
 
 .mobile-shell__view--fixed {

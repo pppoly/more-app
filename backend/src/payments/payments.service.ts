@@ -22,6 +22,14 @@ export class PaymentsService {
     private readonly permissions: PermissionsService,
   ) {}
 
+  private resolvePlanFee(planId?: string | null) {
+    const key = (planId || '').toLowerCase();
+    if (key.includes('pro')) return { percent: 0, fixed: 0, planId };
+    if (key.includes('starter')) return { percent: 2, fixed: 0, planId };
+    if (key.includes('free')) return { percent: 5, fixed: 0, planId };
+    return { percent: 5, fixed: 0, planId: planId || 'free' };
+  }
+
   async listCommunityPayments(
     userId: string,
     communityId: string,
@@ -74,10 +82,67 @@ export class PaymentsService {
         registrationId: item.registrationId ?? null,
         amount: item.amount,
         platformFee: item.platformFee ?? 0,
+        feePercent: item.feePercent ?? null,
         status: item.status,
         method: item.method,
         createdAt: item.createdAt,
         stripePaymentIntentId: item.stripePaymentIntentId ?? null,
+        stripeRefundId: item.stripeRefundId ?? null,
+      })),
+    };
+  }
+
+  async listAdminPayments(opts?: { page?: number; pageSize?: number; communityId?: string | null; status?: string | null }) {
+    const page = Math.max(1, Number(opts?.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(opts?.pageSize) || 20));
+    const where: Prisma.PaymentWhereInput = {};
+    if (opts?.communityId) where.communityId = opts.communityId;
+    if (opts?.status) where.status = opts.status;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          event: { select: { id: true, title: true, communityId: true, community: { select: { name: true } } } },
+          registration: { select: { id: true, ticketTypeId: true } },
+        },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+    return {
+      page,
+      pageSize,
+      total,
+      items: items.map((item) => ({
+        id: item.id,
+        user: {
+          id: item.userId,
+          name: item.user?.name ?? 'ゲスト',
+          email: item.user?.email ?? null,
+        },
+        community: item.event?.community
+          ? { id: item.event.communityId, name: item.event.community.name }
+          : item.communityId
+            ? { id: item.communityId, name: null }
+            : null,
+        event: item.event
+          ? {
+              id: item.event.id,
+              title: this.getLocalizedText(item.event.title),
+            }
+          : null,
+        registrationId: item.registrationId ?? null,
+        amount: item.amount,
+        platformFee: item.platformFee ?? 0,
+        feePercent: item.feePercent ?? null,
+        status: item.status,
+        method: item.method,
+        createdAt: item.createdAt,
+        stripePaymentIntentId: item.stripePaymentIntentId ?? null,
+        stripeChargeId: item.stripeChargeId ?? null,
         stripeRefundId: item.stripeRefundId ?? null,
       })),
     };
@@ -273,10 +338,9 @@ export class PaymentsService {
       throw new BadRequestException('Stripe決済が現在利用できません');
     }
 
-    const platformPercent = Number(process.env.PLATFORM_FEE_PERCENT ?? '1');
-    const platformFixed = Number(process.env.PLATFORM_FEE_FIXED ?? '0');
-    const percent = isNaN(platformPercent) ? 1 : platformPercent;
-    const fixed = isNaN(platformFixed) ? 0 : platformFixed;
+    const planFee = this.resolvePlanFee(community.pricingPlanId);
+    const percent = planFee.percent;
+    const fixed = planFee.fixed;
     const platformFee = Math.min(amount, Math.round((amount * percent) / 100) + fixed);
     const eventTitle = this.getLocalizedText(event.title) || 'MORE Event';
 
@@ -298,6 +362,9 @@ export class PaymentsService {
         eventId: event.id,
         communityId: community.id,
         userId,
+        planId: community.pricingPlanId ?? 'free',
+        feePercent: percent,
+        feeFixed: fixed,
       },
       success_url: `${this.stripeService.successUrlBase}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: this.stripeService.cancelUrlBase,
@@ -321,6 +388,7 @@ export class PaymentsService {
         eventId: event.id,
         amount,
         platformFee,
+        feePercent: percent,
         currency: 'jpy',
         status: 'pending',
         method: 'stripe',
@@ -333,6 +401,7 @@ export class PaymentsService {
         registrationId,
         amount,
         platformFee,
+        feePercent: percent,
         currency: 'jpy',
         status: 'pending',
         method: 'stripe',
@@ -797,7 +866,9 @@ export class PaymentsService {
       return null;
     }
     try {
-      const session = await this.stripeService.client.checkout.sessions.retrieve(payment.stripeCheckoutSessionId);
+      const session = await this.stripeService.client.checkout.sessions.retrieve(payment.stripeCheckoutSessionId, {
+        expand: ['payment_intent'],
+      });
       const paymentIntentId =
         typeof session.payment_intent === 'string'
           ? session.payment_intent
@@ -816,6 +887,33 @@ export class PaymentsService {
       );
       return null;
     }
+  }
+
+  async diagnoseStripePayment(paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    const intentId = await this.resolvePaymentIntentId(payment);
+    if (!intentId) {
+      throw new NotFoundException('Stripe payment intent not found');
+    }
+    const intent = await this.stripeService.client.paymentIntents.retrieve(intentId);
+    const status = intent.status;
+    // Sync status if succeeded
+    if (status === 'succeeded' && payment.status !== 'paid') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'paid', stripePaymentIntentId: intentId },
+      });
+      if (payment.registrationId) {
+        await this.prisma.eventRegistration.update({
+          where: { id: payment.registrationId },
+          data: { status: 'paid', paymentStatus: 'paid', paidAmount: payment.amount },
+        });
+      }
+    }
+    return { paymentId, intentId, intentStatus: status, localStatus: payment.status };
   }
 
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {

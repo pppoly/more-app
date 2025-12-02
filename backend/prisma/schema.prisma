@@ -22,6 +22,7 @@ model User {
   updatedAt     DateTime            @updatedAt
   isOrganizer   Boolean             @default(false)
   isAdmin       Boolean             @default(false)
+  status        String              @default("active")
   communities   Community[]         @relation("CommunityOwner")
   memberships   CommunityMember[]
   registrations EventRegistration[]
@@ -50,6 +51,7 @@ model Community {
   stripeAccountOnboarded Boolean    @default(false)
   stripeSubscriptionId String?
   stripeCustomerId String?
+  status         String             @default("active")
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   owner          User               @relation("CommunityOwner", fields: [ownerId], references: [id])
@@ -98,6 +100,10 @@ model Event {
   visibility             String
   requireApproval        Boolean              @default(false)
   status                 String
+  reviewStatus           String               @default("pending_review")
+  reviewReason           String?
+  reviewReviewedAt       DateTime?
+  reviewReviewerId       String?
   registrationFormSchema Json?
   config                 Json?
   refundPolicy           Json?
@@ -173,6 +179,7 @@ model Payment {
   registrationId          String?  @unique
   amount                  Int
   platformFee             Int      @default(0)
+  feePercent              Float?
   currency                String   @default("jpy")
   status                  String   @default("pending")
   method                  String   @default("stripe")

@@ -65,7 +65,7 @@
             <div class="upload-drop" @click="triggerLogoUpload">
               <input ref="logoInput" type="file" accept="image/*" class="hidden-input" @change="handleLogoUpload" />
               <div v-if="logoPreview" class="upload-preview">
-                <img :src="logoPreview" alt="logo preview" />
+                <img :src="logoPreview" alt="logo preview" @error="handlePreviewError('logo')" />
               </div>
               <div v-else class="upload-empty">
                 <span class="i-lucide-image-plus"></span>
@@ -78,7 +78,7 @@
             <div class="upload-drop" @click="triggerCoverUpload">
               <input ref="coverInput" type="file" accept="image/*" class="hidden-input" @change="handleCoverUpload" />
               <div v-if="coverPreview" class="upload-preview">
-                <img :src="coverPreview" alt="cover preview" />
+                <img :src="coverPreview" alt="cover preview" @error="handlePreviewError('cover')" />
               </div>
               <div v-else class="upload-empty">
                 <span class="i-lucide-image-plus"></span>
@@ -115,6 +115,20 @@
     <button class="hero-back" type="button" @click="router.back()">
       <span class="i-lucide-arrow-left"></span>
     </button>
+    <ImageCropperModal
+      :model-value="showCropper"
+      :src="cropSource"
+      :aspect-ratio="cropAspect"
+      :result-width="cropResultWidth"
+      :result-type="cropTarget === 'logo' ? 'image/png' : 'image/jpeg'"
+      :loading="croppingLoading"
+      title="画像を調整"
+      confirm-text="保存する"
+      cancel-text="キャンセル"
+      @update:modelValue="(val) => (showCropper = val)"
+      @confirm="handleCropConfirm"
+      @cancel="resetCropper"
+    />
   </div>
 </template>
 
@@ -132,6 +146,7 @@ import { resolveAssetUrl } from '../../../utils/assetUrl';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import PageMarker from '../../../components/PageMarker.vue';
 import { useI18n } from 'vue-i18n';
+import ImageCropperModal from '../../../components/ImageCropperModal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -160,6 +175,9 @@ const themeOptions = ['clean', 'immersive', 'warm', 'collage'];
 
 const saving = ref(false);
 const error = ref<string | null>(null);
+const showCropper = ref(false);
+const cropSource = ref<string | null>(null);
+const cropTarget = ref<'cover' | 'logo' | null>(null);
 
 const visibleOptions = [
   { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
@@ -182,14 +200,15 @@ const loadCommunity = async () => {
     form.slug = detail.slug;
     form.labels = (detail.labels || []).join(', ');
     form.visibleLevel = detail.visibleLevel ?? 'public';
-    form.coverImageUrl = detail.coverImageUrl || '';
+    form.coverImageUrl = normalizeManagedAsset(detail.coverImageUrl);
     coverPreview.value = form.coverImageUrl ? resolveAssetUrl(form.coverImageUrl) : null;
     const descriptionObj =
       typeof detail.description === 'object' && detail.description
         ? (detail.description as ConsoleCommunityDetail['description']) as any
         : null;
     form.description = getLocalizedText(detail.description);
-    form.logoImageUrl = descriptionObj?.logoImageUrl ?? '';
+    const logoUrl = descriptionObj?.logoImageUrl ?? '';
+    form.logoImageUrl = normalizeManagedAsset(logoUrl);
     logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
     stripeOnboardLink.value = descriptionObj?._stripeOnboardLink ?? null;
     if (descriptionObj?._portalConfig && typeof descriptionObj._portalConfig.theme === 'string') {
@@ -214,46 +233,14 @@ const triggerLogoUpload = () => logoInput.value?.click();
 
 const stripeOnboardLink = ref<string | null>(null);
 
-const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const { width, height } = img;
-        let cropWidth = width;
-        let cropHeight = cropWidth / aspectRatio;
-        if (cropHeight > height) {
-          cropHeight = height;
-          cropWidth = cropHeight * aspectRatio;
-        }
-        const startX = (width - cropWidth) / 2;
-        const startY = (height - cropHeight) / 2;
-        const outputWidth = Math.min(targetWidth, cropWidth);
-        const outputHeight = outputWidth / aspectRatio;
-        const canvas = document.createElement('canvas');
-        canvas.width = outputWidth;
-        canvas.height = outputHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas not supported'));
-          return;
-        }
-        ctx.drawImage(img, startX, startY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = reader.result as string;
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
+const cropAspect = computed(() => {
+  if (cropTarget.value === 'cover') return 16 / 9;
+  if (cropTarget.value === 'logo') return 1;
+  return 1;
+});
 
-const dataUrlToFile = async (dataUrl: string, filename: string) => {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
-};
+const cropResultWidth = computed(() => (cropTarget.value === 'cover' ? 1280 : 512));
+const croppingLoading = computed(() => cropTarget.value === 'cover' ? uploadingCover.value : uploadingLogo.value);
 
 const handleCoverUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -263,19 +250,14 @@ const handleCoverUpload = async (event: Event) => {
     error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
     return;
   }
-  uploadingCover.value = true;
-  try {
-    const dataUrl = await cropImage(file, 16 / 9, 1280);
-    coverPreview.value = dataUrl;
-    const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'cover');
-    form.coverImageUrl = imageUrl;
-    coverPreview.value = resolveAssetUrl(imageUrl);
-  } catch (err) {
-    console.warn(err);
-  } finally {
-    uploadingCover.value = false;
-  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    cropTarget.value = 'cover';
+    cropSource.value = reader.result as string;
+    showCropper.value = true;
+  };
+  reader.readAsDataURL(file);
+  target.value = '';
 };
 
 const handleLogoUpload = async (event: Event) => {
@@ -286,18 +268,54 @@ const handleLogoUpload = async (event: Event) => {
     error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
     return;
   }
-  uploadingLogo.value = true;
-  try {
-    const dataUrl = await cropImage(file, 1, 512);
-    logoPreview.value = dataUrl;
-    const uploadFile = await dataUrlToFile(dataUrl, `logo-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'logo');
-    form.logoImageUrl = imageUrl;
-    logoPreview.value = resolveAssetUrl(imageUrl);
-  } catch (err) {
-    console.warn(err);
-  } finally {
-    uploadingLogo.value = false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    cropTarget.value = 'logo';
+    cropSource.value = reader.result as string;
+    showCropper.value = true;
+  };
+  reader.readAsDataURL(file);
+  target.value = '';
+};
+
+const resetCropper = () => {
+  showCropper.value = false;
+  cropSource.value = null;
+  cropTarget.value = null;
+};
+
+const handleCropConfirm = async (blob: Blob) => {
+  if (!cropTarget.value || !communityId) return;
+  const filename = `${cropTarget.value}-${Date.now()}.jpg`;
+  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+
+  if (cropTarget.value === 'cover') {
+    uploadingCover.value = true;
+    try {
+      const { imageUrl } = await uploadCommunityAsset(communityId, file, 'cover');
+      form.coverImageUrl = normalizeManagedAsset(imageUrl);
+      coverPreview.value = form.coverImageUrl ? resolveAssetUrl(form.coverImageUrl) : null;
+    } catch (err) {
+      console.warn(err);
+    } finally {
+      uploadingCover.value = false;
+      resetCropper();
+    }
+    return;
+  }
+
+  if (cropTarget.value === 'logo') {
+    uploadingLogo.value = true;
+    try {
+      const { imageUrl } = await uploadCommunityAsset(communityId, file, 'logo');
+      form.logoImageUrl = normalizeManagedAsset(imageUrl);
+      logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
+    } catch (err) {
+      console.warn(err);
+    } finally {
+      uploadingLogo.value = false;
+      resetCropper();
+    }
   }
 };
 
@@ -329,13 +347,40 @@ const goPortal = () => {
   router.push({ name: 'ConsoleMobileCommunityPortal', params: { communityId } });
 };
 
+const handlePreviewError = (type: 'cover' | 'logo') => {
+  if (type === 'cover') {
+    coverPreview.value = null;
+    form.coverImageUrl = '';
+  } else {
+    logoPreview.value = null;
+    form.logoImageUrl = '';
+  }
+};
+
+const normalizeManagedAsset = (url?: string | null) => {
+  if (!url) return '';
+  let v = url.trim();
+  if (!v) return '';
+  // strip api prefix
+  if (v.startsWith('/api/v1/')) {
+    v = v.slice('/api/v1/'.length - 1);
+  }
+  if (v.startsWith('/uploads/')) {
+    v = v.slice('/uploads/'.length);
+  } else if (v.startsWith('uploads/')) {
+    v = v.slice('uploads/'.length);
+  }
+  if (!v) return '';
+  return v;
+};
+
 onMounted(loadCommunity);
 onActivated(loadCommunity);
 </script>
 
 <style scoped>
 .community-settings {
-  min-height: 100vh;
+  min-height: auto;
   background: #f4f6fb;
   padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
 }

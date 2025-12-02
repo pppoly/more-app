@@ -8,6 +8,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { AiService, TranslateTextDto } from '../ai/ai.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { assetKeyToDiskPath, buildAssetUrl } from '../common/storage/asset-path';
+import { ContentModerationService, ModerationResult } from '../common/moderation/content-moderation.service';
 
 const EVENT_UPLOAD_PREFIX = 'events';
 
@@ -25,6 +26,7 @@ export class ConsoleEventsService {
     private readonly permissions: PermissionsService,
     private readonly paymentsService: PaymentsService,
     private readonly aiService: AiService,
+    private readonly moderationService: ContentModerationService,
   ) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
@@ -65,10 +67,14 @@ export class ConsoleEventsService {
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
+    const moderation = await this.moderateEventText(rest);
+    this.applyModerationToEventData(eventData, moderation, false);
     const created = await this.prisma.event.create({
       data: {
         ...eventData,
         community: { connect: { id: communityId } },
+        reviewStatus: eventData.reviewStatus ?? 'pending_review',
+        reviewReason: eventData.reviewReason ?? null,
         ticketTypes: {
           create: ticketTypes.map((ticket: any) => ({
             name: ticket.name,
@@ -84,10 +90,10 @@ export class ConsoleEventsService {
       where: { id: created.id },
       data: {
         config: this.mergeReviewConfig(created.config, {
-          status: 'pending_review',
+          status: moderation.decision === 'reject' ? 'rejected' : moderation.decision === 'needs_review' ? 'pending_review' : 'approved',
           reviewerId: 'system',
-          reason: null,
-          reviewedAt: null,
+          reason: eventData.reviewReason ?? null,
+          reviewedAt: moderation.decision === 'approve' ? new Date() : null,
         }),
       },
     });
@@ -117,11 +123,12 @@ export class ConsoleEventsService {
     await this.permissions.assertEventManager(userId, eventId);
     const existing = await this.prisma.event.findUnique({
       where: { id: eventId },
-      select: { status: true, config: true },
+      select: { status: true, config: true, reviewStatus: true },
     });
     const { ticketTypes = [], ...rest } = data;
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
-    if (!eventData.status && existing?.status === 'rejected') {
+    if (!eventData.status && existing?.reviewStatus === 'rejected') {
+      eventData.reviewStatus = 'pending_review';
       eventData.status = 'pending_review';
       eventData.config = this.mergeReviewConfig(existing.config ?? null, {
         status: 'pending_review',
@@ -130,6 +137,15 @@ export class ConsoleEventsService {
         reviewedAt: null,
       });
     }
+    const moderation = await this.moderateEventText(rest);
+    this.applyModerationToEventData(eventData, moderation, true);
+    const baseConfig = eventData.config ?? existing?.config ?? null;
+    eventData.config = this.mergeReviewConfig(baseConfig as any, {
+      status: moderation.decision === 'reject' ? 'rejected' : moderation.decision === 'needs_review' ? 'pending_review' : 'approved',
+      reviewerId: 'system',
+      reason: (eventData as any).reviewReason ?? null,
+      reviewedAt: moderation.decision === 'approve' ? new Date() : null,
+    });
     const updated = await this.prisma.event.update({
       where: { id: eventId },
       data: eventData,
@@ -589,6 +605,7 @@ export class ConsoleEventsService {
       where: { id: eventId },
       data: {
         status: 'open',
+        reviewStatus: 'approved',
         config: this.mergeReviewConfig(event.config, {
           status: 'approved',
           reviewerId: userId,
@@ -610,6 +627,7 @@ export class ConsoleEventsService {
       where: { id: eventId },
       data: {
         status: 'rejected',
+        reviewStatus: 'rejected',
         config: this.mergeReviewConfig(event.config, {
           status: 'rejected',
           reviewerId: userId,
@@ -646,6 +664,11 @@ export class ConsoleEventsService {
       return [];
     }
     await this.permissions.assertEventManager(userId, eventId);
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { config: true, status: true },
+    });
+    if (!event) throw new NotFoundException('Event not found');
 
     const aggregate = await this.prisma.eventGallery.aggregate({
       where: { eventId },
@@ -654,7 +677,15 @@ export class ConsoleEventsService {
     let nextOrder = (aggregate._max.order ?? -1) + 1;
 
     const creations = [];
+    let needsReview = false;
     for (const file of files) {
+      const moderation = await this.moderationService.moderateImageFromBuffer(file.buffer, file.originalname);
+      if (moderation.decision === 'reject') {
+        throw new BadRequestException('アップロードした画像がガイドラインに違反しています。別の画像をお試しください。');
+      }
+      if (moderation.decision === 'needs_review') {
+        needsReview = true;
+      }
       const extension = extname(file.originalname) || '.jpg';
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
       const imageKey = `${EVENT_UPLOAD_PREFIX}/${eventId}/${filename}`;
@@ -677,6 +708,22 @@ export class ConsoleEventsService {
     }
 
     const created = await this.prisma.$transaction(creations);
+    if (needsReview) {
+      await this.prisma.event.update({
+        where: { id: eventId },
+        data: {
+          reviewStatus: 'pending_review',
+          status: event.status === 'rejected' ? 'pending_review' : event.status ?? 'pending_review',
+          reviewReason: '画像の確認が必要です。',
+          config: this.mergeReviewConfig(event.config, {
+            status: 'pending_review',
+            reviewerId: 'system',
+            reviewedAt: null,
+            reason: '画像の確認が必要です。',
+          }),
+        },
+      });
+    }
     return created.map((item) => ({
       id: item.id,
       imageUrl: buildAssetUrl(item.imageUrl),
@@ -834,6 +881,38 @@ export class ConsoleEventsService {
       labels: review.labels ?? [],
     };
     return base as Prisma.InputJsonValue;
+  }
+
+  private async moderateEventText(payload: any): Promise<ModerationResult> {
+    const title = this.getLocalizedText(payload?.title);
+    const description = this.getLocalizedText(payload?.description);
+    const combined = [title, description].filter(Boolean).join('\n').trim();
+    return this.moderationService.moderateText(combined);
+  }
+
+  private applyModerationToEventData(
+    eventData: Prisma.EventCreateInput | Prisma.EventUpdateInput,
+    result: ModerationResult,
+    isUpdate: boolean,
+  ) {
+    const data = eventData as any;
+    if (result.decision === 'reject') {
+      data.reviewStatus = 'rejected';
+      data.reviewReason = result.reason ?? 'コンテンツがガイドラインに違反しています。';
+      data.status = 'rejected';
+    } else if (result.decision === 'needs_review') {
+      data.reviewStatus = 'pending_review';
+      data.reviewReason = result.reason ?? 'システム審査が必要です。';
+      if (!isUpdate && !data.status) {
+        data.status = 'pending_review';
+      }
+    } else {
+      data.reviewStatus = data.reviewStatus ?? 'approved';
+      data.reviewReason = data.reviewReason ?? null;
+      if (!data.status && !isUpdate) {
+        data.status = 'pending_review';
+      }
+    }
   }
 
   private extractOriginalText(field: any): { text: string | null; lang: string | null } {

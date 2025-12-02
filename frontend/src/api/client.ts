@@ -4,6 +4,7 @@ import { resolveAssetUrl } from '../utils/assetUrl';
 import type {
   AiUsageDetailResponse,
   AiUsageSummaryResponse,
+  AiCommunityUsage,
   CommunityAnalytics,
   CommunityPortal,
   ConsoleEventAssistantLog,
@@ -31,6 +32,8 @@ import type {
   PromptDefinition,
   ConsolePaymentList,
   ConsoleCommunityBalance,
+  AdminEventReviewItem,
+  ConsolePaymentItem,
   SupportedLanguagesResponse,
   RenderPromptRequest,
   CompletePromptRequest,
@@ -38,6 +41,9 @@ import type {
   StripeCheckoutResponse,
   SubscriptionResponse,
   UserProfile,
+  ResourceGroup,
+  AiUsageSummaryResponse,
+  PromptDefinition,
 } from '../types/api';
 import type { StripeOnboardResponse } from '../types/console';
 
@@ -213,6 +219,24 @@ export async function createStripeCheckout(registrationId: string): Promise<Stri
   const { data } = await apiClient.post<StripeCheckoutResponse>('/payments/stripe/checkout', {
     registrationId,
   });
+  return data;
+}
+
+// Admin: resource groups
+export async function fetchResourceGroups(): Promise<ResourceGroup[]> {
+  const { data } = await apiClient.get<ResourceGroup[]>('/admin/resources');
+  return data;
+}
+
+// Admin: AI usage summary
+export async function fetchAdminAiUsageSummary(): Promise<AiUsageSummaryResponse> {
+  const { data } = await apiClient.get<AiUsageSummaryResponse>('/admin/ai/usage-summary');
+  return data;
+}
+
+// Admin: Prompts
+export async function fetchAdminPrompts(): Promise<PromptDefinition[]> {
+  const { data } = await apiClient.get<PromptDefinition[]>('/admin/ai/prompts');
   return data;
 }
 
@@ -470,6 +494,81 @@ export async function fetchAiUsageDetail(moduleId: string): Promise<AiUsageDetai
   return data;
 }
 
+export async function fetchCommunityAiUsage(communityId: string): Promise<AiCommunityUsage> {
+  const { data } = await apiClient.get<AiCommunityUsage>(`/console/ai/communities/${communityId}/usage`);
+  return data;
+}
+
+export async function fetchAdminEventReviews(): Promise<AdminEventReviewItem[]> {
+  const { data } = await apiClient.get<AdminEventReviewItem[]>('/admin/events/reviews');
+  return data;
+}
+
+export async function adminApproveEvent(eventId: string): Promise<{ eventId: string; status: string }> {
+  const { data } = await apiClient.post<{ eventId: string; status: string }>(`/admin/events/${eventId}/approve`);
+  return data;
+}
+
+export async function adminRejectEvent(
+  eventId: string,
+  reason?: string,
+): Promise<{ eventId: string; status: string; reason?: string | null }> {
+  const { data } = await apiClient.post<{ eventId: string; status: string; reason?: string | null }>(
+    `/admin/events/${eventId}/reject`,
+    { reason },
+  );
+  return data;
+}
+
+export async function adminCloseEvent(eventId: string): Promise<{ eventId: string; status: string }> {
+  const { data } = await apiClient.post<{ eventId: string; status: string }>(`/admin/events/${eventId}/close`);
+  return data;
+}
+
+export async function adminCancelEvent(eventId: string, reason?: string): Promise<{ eventId: string; status: string }> {
+  const { data } = await apiClient.post<{ eventId: string; status: string }>(`/admin/events/${eventId}/cancel`, {
+    reason,
+  });
+  return data;
+}
+
+export async function fetchAdminEvents(params?: {
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ items: any[] }> {
+  const { data } = await apiClient.get('/admin/events', { params });
+  return data;
+}
+
+export async function fetchAdminPayments(params?: {
+  communityId?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ConsolePaymentList> {
+  const { data } = await apiClient.get<ConsolePaymentList>('/admin/payments', { params });
+  return data;
+}
+
+export async function adminRefundPayment(
+  paymentId: string,
+  payload?: { amount?: number; reason?: string },
+): Promise<{ refundId: string; status: string }> {
+  const { data } = await apiClient.post<{ refundId: string; status: string }>(
+    `/admin/payments/ops/${paymentId}/refund`,
+    payload ?? {},
+  );
+  return data;
+}
+
+export async function adminDiagnosePayment(paymentId: string): Promise<{ paymentId: string; intentStatus: string; localStatus: string }> {
+  const { data } = await apiClient.post<{ paymentId: string; intentStatus: string; localStatus: string }>(
+    `/admin/payments/ops/${paymentId}/diagnose`,
+  );
+  return data;
+}
+
 export async function fetchAiPrompts() {
   const { data } = await apiClient.get<PromptDefinition[]>('/ai/prompts');
   return data;
@@ -502,5 +601,51 @@ export async function translateText(payload: { sourceLang: string; targetLangs: 
 
 export async function evalPrompt(payload: EvalPromptRequest) {
   const { data } = await apiClient.post('/ai/eval', payload);
+  return data;
+}
+export async function adminListUsers(params?: { status?: string }): Promise<
+  Array<{
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    isAdmin?: boolean;
+    isOrganizer?: boolean;
+    status?: string;
+    createdAt: string;
+  }>
+> {
+  const { data } = await apiClient.get('/admin/users', { params });
+  return data;
+}
+
+export async function adminUpdateUserStatus(userId: string, status: string): Promise<{ id: string; status: string }> {
+  const { data } = await apiClient.patch<{ id: string; status: string }>(`/admin/users/${userId}/status`, { status });
+  return data;
+}
+
+export async function adminListCommunities(params?: { status?: string }): Promise<
+  Array<{
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    pricingPlanId?: string | null;
+    stripeAccountId?: string | null;
+    stripeAccountOnboarded?: boolean | null;
+    createdAt: string;
+  }>
+> {
+  const { data } = await apiClient.get('/admin/communities', { params });
+  return data;
+}
+
+export async function adminUpdateCommunityStatus(
+  communityId: string,
+  status: string,
+): Promise<{ id: string; status: string }> {
+  const { data } = await apiClient.patch<{ id: string; status: string }>(
+    `/admin/communities/${communityId}/status`,
+    { status },
+  );
   return data;
 }

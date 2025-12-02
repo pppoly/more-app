@@ -16,6 +16,8 @@
     "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
+    "@google-cloud/aiplatform": "^5.13.0",
+    "@google-cloud/vision": "^5.3.4",
     "@nestjs/axios": "^3.0.0",
     "@nestjs/common": "^10.3.0",
     "@nestjs/core": "^10.3.0",

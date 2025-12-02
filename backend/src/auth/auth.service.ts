@@ -4,6 +4,9 @@ import { JwtService } from '@nestjs/jwt';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { getLineConfig } from './line.config';
+import { promises as fs } from 'fs';
+import { extname, join } from 'path';
+import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
 interface DevLoginPayload {
   name: string;
@@ -171,6 +174,33 @@ export class AuthService {
     return data;
   }
 
+  private async saveLineAvatar(userId: string, pictureUrl?: string | null): Promise<string | null> {
+    if (!pictureUrl) return null;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(pictureUrl, {
+          responseType: 'arraybuffer',
+        }),
+      );
+      const contentType = (response.headers['content-type'] as string | undefined)?.toLowerCase() ?? '';
+      let ext = '.jpg';
+      if (contentType.includes('png')) ext = '.png';
+      else if (contentType.includes('webp')) ext = '.webp';
+      else {
+        const pathExt = extname(new URL(pictureUrl).pathname).toLowerCase();
+        if (pathExt) ext = pathExt;
+      }
+      const dir = join(UPLOAD_ROOT, 'avatars', userId);
+      await fs.mkdir(dir, { recursive: true });
+      const filename = `line-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+      await fs.writeFile(join(dir, filename), Buffer.from(response.data));
+      return `/uploads/avatars/${userId}/${filename}`;
+    } catch (err) {
+      // 如果拉取失败，不阻断登录流程
+      return null;
+    }
+  }
+
   async lineLogin(code: string) {
     const tokenResponse = await this.exchangeLineToken(code).catch(() => null);
     if (!tokenResponse?.access_token) {
@@ -182,6 +212,7 @@ export class AuthService {
       throw new BadRequestException('Failed to load LINE profile');
     }
 
+    const displayName = profile.displayName?.trim() || 'LINEユーザー';
     let user = await this.prisma.user.findFirst({
       where: { lineUserId: profile.userId },
     });
@@ -190,13 +221,26 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           lineUserId: profile.userId,
-          name: profile.displayName || 'LINE User',
-          avatarUrl: profile.pictureUrl,
+          name: displayName,
           language: 'ja',
           preferredLocale: 'ja',
         },
       });
     }
+
+    const storedAvatar = await this.saveLineAvatar(user.id, profile.pictureUrl);
+    const updateData: Record<string, any> = {
+      name: displayName,
+      language: 'ja',
+      preferredLocale: 'ja',
+    };
+    if (storedAvatar) {
+      updateData.avatarUrl = storedAvatar;
+    }
+    user = await this.prisma.user.update({
+      where: { id: user.id },
+      data: updateData,
+    });
 
     const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
     return { accessToken, user };

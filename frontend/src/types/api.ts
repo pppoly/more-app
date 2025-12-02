@@ -183,6 +183,7 @@ export interface ConsolePaymentItem {
   registrationId?: string | null;
   amount: number;
   platformFee: number;
+  feePercent?: number | null;
   status: string;
   method: string;
   createdAt: string;
@@ -266,6 +267,8 @@ export interface ConsoleEventSummary {
   endTime?: string;
   status: string;
   visibility: string;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
   coverImageUrl?: string | null;
 }
 
@@ -286,6 +289,10 @@ export interface ConsoleEventDetail extends ConsoleEventSummary {
   registrationFormSchema?: RegistrationFormField[] | null;
   config?: Record<string, any> | null;
   coverType?: string | null;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
+  reviewReviewedAt?: string | null;
+  reviewReviewerId?: string | null;
   ticketTypes: Array<{
     id: string;
     name: LocalizedContent;
@@ -586,6 +593,26 @@ export interface AiModuleUsageSummary {
 export interface AiUsageSummaryResponse {
   generatedAt: string;
   modules: AiModuleUsageSummary[];
+}
+
+export interface AiCommunityUsage {
+  communityId: string;
+  totalAiCallsThisMonth: number;
+  estimatedMinutesSaved: number;
+}
+
+export interface AdminEventReviewItem {
+  id: string;
+  title: LocalizedContent;
+  status: string;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
+  updatedAt: string;
+  community?: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 }
 
 export interface AiAssistantSessionSummary {

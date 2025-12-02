@@ -68,7 +68,7 @@
                 <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
                 <span class="view-count">{{ viewCountLabel }}</span>
               </div>
-              <div class="event-hero-actions">
+              <div v-if="showHeaderActions" class="event-hero-actions">
                 <button class="event-action-icon" type="button" @click="shareEvent">
                   <span class="i-lucide-share-2"></span>
                 </button>
@@ -304,6 +304,7 @@ import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
+import { APP_TARGET } from '../../config';
 
 const route = useRoute();
 const router = useRouter();
@@ -462,7 +463,6 @@ const detail = computed(() => {
         : event.value.locationText
           ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`
           : null,
-    locationText: event.value.locationText,
     participantCount,
     showParticipants: config.showRegistrationStatus !== false,
     config,
@@ -677,6 +677,10 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  if (APP_TARGET === 'liff') {
+    showUiMessage('LINE 内で共有してください');
+    return;
+  }
   const payload = { title: detail.value.title, url: window.location.href };
 
   // 1) 原生分享（优先）
@@ -959,6 +963,8 @@ const formatTimeRange = (start?: string, end?: string) => {
   return `${formatLongDate(start)} ${startTime} 〜 ${formatLongDate(end)} ${endTime}`;
 };
 
+const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+
 const pad = (value: number) => value.toString().padStart(2, '0');
 
 const formatCalendarDate = (value?: string) => {
@@ -1021,6 +1027,7 @@ watch(
 .event-detail-page {
   background-color: var(--m-color-bg);
   min-height: 100vh;
+  padding: 0 10px calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 .event-state {
@@ -1033,7 +1040,7 @@ watch(
 }
 
 .event-skeleton {
-  padding: 18px 16px 80px;
+  padding: 18px 0 60px;
 }
 
 .skeleton-hero {
@@ -1578,7 +1585,7 @@ watch(
 }
 
 .event-content--with-footer {
-  padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 
 .participant-wall {

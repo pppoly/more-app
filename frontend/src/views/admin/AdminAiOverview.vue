@@ -1,73 +1,49 @@
 <template>
-  <main class="ai-overview">
-    <section class="hero">
-      <p class="hero-chip">SOCIALMORE · AI 控制</p>
-      <h1>AI 助手使用情况</h1>
-      <p class="hero-desc">
-        这里可以看到所有 AI 助手的运行概况、关键指标，并进入各模块的详细使用记录。
-      </p>
-      <p class="hero-meta">上次拉取：{{ formatDate(summary?.generatedAt) }}</p>
-      <div class="hero-actions">
-        <button type="button" class="outline-button" @click="goPrompts">Prompt 管理</button>
+  <main class="admin-ai-overview">
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">AI 使用概览</p>
+        <h1>AI ダッシュボード</h1>
+        <p class="subhead">模块调用量与风险状态</p>
       </div>
-    </section>
+      <button class="ghost" type="button" :disabled="loading" @click="load">
+        <span class="i-lucide-refresh-cw"></span> 更新
+      </button>
+    </header>
 
-    <section v-if="error" class="error-card">
-      <p>{{ error }}</p>
-      <button type="button" @click="loadSummary">重新加载</button>
-    </section>
-
-    <section v-else class="module-list" :aria-busy="loading">
-      <article v-for="module in summary?.modules ?? []" :key="module.id" class="module-card">
-        <div class="module-head">
-          <div>
-            <p class="module-eyebrow">{{ module.status === 'active' ? '运行中' : '筹备中' }}</p>
-            <h2>{{ module.name }}</h2>
+    <section class="card">
+      <div v-if="loading" class="empty">読み込み中…</div>
+      <div v-else-if="error" class="empty error">{{ error }}</div>
+      <div v-else-if="!modules.length" class="empty">データがありません。</div>
+      <div v-else class="card-list">
+        <article v-for="mod in modules" :key="mod.id" class="ai-card">
+          <div class="card-top">
+            <div>
+              <p class="eyebrow">{{ mod.id }}</p>
+              <h3>{{ mod.name }}</h3>
+            </div>
+            <span class="pill" :class="mod.status === 'active' ? 'pill-live' : 'pill-pending'">{{ mod.status }}</span>
           </div>
-          <span :class="['status-pill', module.status === 'active' ? 'is-active' : 'is-muted']">
-            {{ module.status === 'active' ? 'LIVE' : 'SOON' }}
-          </span>
-        </div>
-        <p class="module-desc">{{ module.description }}</p>
-        <div v-if="module.metrics" class="metric-grid">
-          <div class="metric">
-            <p>会话总数</p>
-            <strong>{{ formatNumber(module.metrics.totalLogs) }}</strong>
+          <p class="meta">{{ mod.description }}</p>
+          <div class="metrics">
+            <div class="metric">
+              <p class="metric-label">调用</p>
+              <strong>{{ mod.metrics?.totalCalls ?? 0 }}</strong>
+            </div>
+            <div class="metric">
+              <p class="metric-label">失败</p>
+              <strong>{{ mod.metrics?.failedCalls ?? 0 }}</strong>
+            </div>
+            <div class="metric">
+              <p class="metric-label">时长</p>
+              <strong>{{ mod.metrics?.avgDurationMs ?? 0 }} ms</strong>
+            </div>
           </div>
-          <div class="metric">
-            <p>24h</p>
-            <strong>{{ formatNumber(module.metrics.last24h) }}</strong>
+          <div class="actions">
+            <button class="ghost" type="button" @click="goDetail(mod.id)">详情</button>
           </div>
-          <div class="metric">
-            <p>7天</p>
-            <strong>{{ formatNumber(module.metrics.last7d) }}</strong>
-          </div>
-          <div class="metric">
-            <p>活跃社群</p>
-            <strong>{{ formatNumber(module.metrics.activeCommunities) }}</strong>
-          </div>
-          <div class="metric">
-            <p>活跃用户</p>
-            <strong>{{ formatNumber(module.metrics.activeUsers) }}</strong>
-          </div>
-          <div class="metric">
-            <p>最新记录</p>
-            <strong>{{ formatDate(module.metrics.lastActivityAt) ?? '—' }}</strong>
-          </div>
-        </div>
-        <div v-else class="coming-soon">
-          <p>功能筹备中，敬请期待。</p>
-        </div>
-        <button
-          v-if="module.status === 'active'"
-          class="outline-button"
-          type="button"
-          @click="goDetail(module.id)"
-        >
-          查看详细数据
-          <span class="i-lucide-arrow-up-right"></span>
-        </button>
-      </article>
+        </article>
+      </div>
     </section>
   </main>
 </template>
@@ -75,210 +51,142 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import type { AiUsageSummaryResponse } from '../../types/api';
-import { fetchAiUsageSummary } from '../../api/client';
+import type { AiModuleUsageSummary } from '../../types/api';
+import { fetchAdminAiUsageSummary } from '../../api/client';
 
-const router = useRouter();
-const summary = ref<AiUsageSummaryResponse | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const modules = ref<AiModuleUsageSummary[]>([]);
+const router = useRouter();
 
-const formatNumber = (value?: number | null) => {
-  if (typeof value !== 'number') return '-';
-  return new Intl.NumberFormat('ja-JP').format(value);
-};
-
-const formatDate = (value?: string | null) => {
-  if (!value) return null;
-  return new Date(value).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
-
-const goDetail = (moduleId: string) => {
-  router.push({ name: 'admin-ai-detail', params: { moduleId } });
-};
-
-const goPrompts = () => {
-  router.push({ name: 'admin-ai-prompts' });
-};
-
-const loadSummary = async () => {
+const load = async () => {
   loading.value = true;
   error.value = null;
   try {
-    summary.value = await fetchAiUsageSummary();
+    const res = await fetchAdminAiUsageSummary();
+    modules.value = res.modules ?? [];
   } catch (err) {
-    console.error(err);
-    error.value = '无法加载 AI 使用概览，请稍后重试。';
+    error.value = 'ロードに失敗しました';
   } finally {
     loading.value = false;
   }
 };
 
-onMounted(() => {
-  loadSummary();
-});
+const goDetail = (id: string) => {
+  router.push({ name: 'admin-ai-detail', params: { moduleId: id } });
+};
+
+onMounted(load);
 </script>
 
 <style scoped>
-.ai-overview {
+.admin-ai-overview {
   min-height: 100vh;
-  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(80px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #ecf3ff 0%, #f8fbff 50%, #ffffff 100%);
+  padding: 12px;
+  background: #f8fafc;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   color: #0f172a;
 }
-
-.hero {
-  border-radius: 28px;
-  padding: 24px;
-  background: linear-gradient(140deg, #001a43, #004173, #00a0e9);
-  color: #fff;
-  box-shadow: 0 25px 50px rgba(0, 26, 67, 0.35);
-}
-
-.hero-chip {
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  opacity: 0.8;
-}
-
-.hero h1 {
-  margin: 0.5rem 0;
-  font-size: 2rem;
-}
-
-.hero-desc {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  opacity: 0.95;
-}
-
-.hero-meta {
-  margin: 0;
-  font-size: 0.9rem;
-  opacity: 0.8;
-}
-
-.hero-actions {
-  margin-top: 10px;
-  display: flex;
-  gap: 10px;
-}
-
-.error-card {
-  border-radius: 12px;
-  padding: 16px;
-  background: #fff1f2;
-  color: #b91c1c;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.module-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.module-card {
-  border-radius: 24px;
-  padding: 18px;
-  background: #fff;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.module-head {
+.page-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: 10px;
 }
-
-.module-eyebrow {
+.eyebrow {
+  font-size: 12px;
+  color: #475569;
+  letter-spacing: 0.08em;
+}
+.page-head h1 {
+  margin: 4px 0;
+}
+.subhead {
   margin: 0;
-  font-size: 0.85rem;
-  letter-spacing: 0.12em;
-  color: #94a3b8;
-}
-
-.module-card h2 {
-  margin: 0.1rem 0 0;
-  font-size: 1.4rem;
-}
-
-.module-desc {
-  margin: 0;
-  font-size: 0.95rem;
   color: #475569;
 }
-
-.metric-grid {
+.ghost {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+.empty {
+  padding: 18px;
+  color: #475569;
+}
+.empty.error {
+  color: #b91c1c;
+}
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ai-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.meta {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+.metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 8px;
 }
-
 .metric {
-  border-radius: 18px;
-  padding: 0.9rem;
   background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px;
 }
-
-.metric p {
+.metric-label {
   margin: 0;
-  font-size: 0.75rem;
-  color: #94a3b8;
+  font-size: 12px;
+  color: #475569;
 }
-
 .metric strong {
   display: block;
-  margin-top: 0.35rem;
-  font-size: 1.2rem;
-  color: #0f172a;
+  margin-top: 4px;
 }
-
-.coming-soon {
-  padding: 0.8rem;
-  border-radius: 16px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 0.9rem;
+.actions {
+  display: flex;
+  justify-content: flex-end;
 }
-
-.outline-button {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+.pill {
+  padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  padding: 0.5rem 1rem;
-  background: transparent;
-  color: #0f172a;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 12px;
 }
-
-.status-pill {
-  border-radius: 999px;
-  padding: 0.25rem 0.8rem;
-  font-weight: 600;
-  font-size: 0.8rem;
+.pill-live {
+  background: #ecfdf3;
+  color: #15803d;
 }
-
-.status-pill.is-active {
-  background: rgba(16, 185, 129, 0.2);
-  color: #047857;
-}
-
-.status-pill.is-muted {
-  background: rgba(148, 163, 184, 0.25);
-  color: #475569;
+.pill-pending {
+  background: #fff7ed;
+  color: #c2410c;
 }
 </style>

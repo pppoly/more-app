@@ -47,6 +47,10 @@
         <p class="stat-label">申込数</p>
         <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
       </article>
+      <article class="stat-chip" v-if="aiMinutesSaved !== null">
+        <p class="stat-label">AIで節約</p>
+        <p class="stat-value">{{ aiMinutesSaved }} 分</p>
+      </article>
     </section>
 
     <section class="action-grid">
@@ -185,6 +189,7 @@ import {
   fetchConsoleCommunity,
   fetchConsoleCommunityEvents,
   fetchCommunityBalance,
+  fetchCommunityAiUsage,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
@@ -241,6 +246,7 @@ const planLabel = computed(() => {
   if (id.includes('free')) return 'Free';
   return id;
 });
+const aiMinutesSaved = ref<number | null>(null);
 
 const stats = computed(() => ({
   monthRevenueText: monthRevenueText.value,
@@ -274,6 +280,19 @@ const fetchMonthBalance = async () => {
     monthRevenueText.value = formatJPY(balance.net ?? 0);
   } catch (err) {
     monthRevenueText.value = '¥0';
+  }
+};
+
+const fetchAiUsage = async () => {
+  if (!communityId.value) {
+    aiMinutesSaved.value = null;
+    return;
+  }
+  try {
+    const usage = await fetchCommunityAiUsage(communityId.value);
+    aiMinutesSaved.value = usage.estimatedMinutesSaved;
+  } catch (err) {
+    aiMinutesSaved.value = null;
   }
 };
 
@@ -444,6 +463,8 @@ onMounted(async () => {
   if (communityId.value) {
     loadEvents();
     loadActiveCommunityDetail();
+    fetchMonthBalance();
+    fetchAiUsage();
   }
 });
 
@@ -453,10 +474,13 @@ watch(
     if (newId && newId !== oldId) {
       loadEvents();
       loadActiveCommunityDetail();
+      fetchMonthBalance();
+      fetchAiUsage();
     }
     if (!newId) {
       heroLogoUrl.value = null;
       monthRevenueText.value = '¥0';
+      aiMinutesSaved.value = null;
     }
   },
 );

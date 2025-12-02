@@ -1,6 +1,5 @@
 <template>
   <div class="mobile-events-page">
-
     <section v-if="loading" class="state-section">
       <article v-for="n in 3" :key="n" class="event-card event-card--skeleton">
         <div class="skeleton block cover"></div>
@@ -280,7 +279,7 @@ onMounted(loadEvents);
 
 .mobile-events-page {
   min-height: 100vh;
-  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px calc(40px + env(safe-area-inset-bottom, 0px));
   background: var(--color-page-bg);
   font-family: var(--font-family-base);
 }
@@ -289,7 +288,7 @@ onMounted(loadEvents);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  padding: 0.5rem 0.6rem var(--space-lg);
+  padding: 0;
 }
 
 .event-card {

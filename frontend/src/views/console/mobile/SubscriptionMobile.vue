@@ -14,6 +14,19 @@
       </header>
 
       <div class="page-body">
+        <section v-if="upgradeSuccessPlanId" class="success-card">
+          <p class="eyebrow">アップグレード完了</p>
+          <h2>{{ upgradeSuccessName }}</h2>
+          <ul>
+            <li>AI コンテンツ & 翻訳の上限が拡張されました</li>
+            <li>プラットフォーム手数料は {{ upgradeSuccessFee }} になりました</li>
+            <li>コンテンツ審査が有効です。安心して公開できます</li>
+          </ul>
+          <button class="primary" type="button" @click="goCommunitySettings">
+            プロフィールを最適化する
+          </button>
+        </section>
+
         <section class="summary-card">
           <div class="summary-row">
             <p class="eyebrow">{{ t('subscription.currentCommunity') }}</p>
@@ -145,6 +158,8 @@ const paymentPlanId = ref<string | null>(null);
 const paymentElementContainer = ref<HTMLDivElement | null>(null);
 const activePlanId = ref<string | null>(null);
 const planStackRef = ref<HTMLElement | null>(null);
+const upgradeSuccessPlanId = ref<string | null>(null);
+const previousPlanId = ref<string | null>(null);
 let stripeInstance: Stripe | null = null;
 let elementsInstance: StripeElements | null = null;
 let paymentElement: StripePaymentElement | null = null;
@@ -152,13 +167,21 @@ let paymentElement: StripePaymentElement | null = null;
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const activeCommunity = computed(() => communityStore.getActiveCommunity());
 
+const resolvePlanKey = (planId?: string | null) => {
+  const id = (planId || '').toLowerCase();
+  if (id.includes('pro')) return 'pro';
+  if (id.includes('starter')) return 'starter';
+  if (id.includes('free')) return 'free';
+  return 'free';
+};
+
 const planGuide = computed(() => ({
   free: {
     key: 'free',
     name: t('subscription.plans.free.name'),
     price: t('subscription.plans.free.price'),
     audience: t('subscription.plans.free.audience'),
-    platformFee: t('subscription.plans.free.platformFee'),
+    platformFee: '5%',
     stripeFee: t('subscription.plans.free.stripeFee'),
     features: (tm('subscription.plans.free.features') as string[]) || [],
     cardClass: 'plan-free',
@@ -168,7 +191,7 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.starter.name'),
     price: t('subscription.plans.starter.price'),
     audience: t('subscription.plans.starter.audience'),
-    platformFee: t('subscription.plans.starter.platformFee'),
+    platformFee: '2%',
     stripeFee: t('subscription.plans.starter.stripeFee'),
     features: (tm('subscription.plans.starter.features') as string[]) || [],
     cardClass: 'plan-starter',
@@ -178,7 +201,7 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.pro.name'),
     price: t('subscription.plans.pro.price'),
     audience: t('subscription.plans.pro.audience'),
-    platformFee: t('subscription.plans.pro.platformFee'),
+    platformFee: '0%',
     stripeFee: t('subscription.plans.pro.stripeFee'),
     features: (tm('subscription.plans.pro.features') as string[]) || [],
     cardClass: 'plan-pro',
@@ -212,15 +235,20 @@ const displayPlans = computed(() => {
   }, {});
 
   return Object.values(guides).map((guide) => {
-    const matchedPlan = planMap[guide.key];
-    const price =
+  const matchedPlan = planMap[guide.key];
+  const price =
       matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}` : guide.price;
-    return {
-      id: matchedPlan?.id ?? guide.key,
-      guide: {
-        ...guide,
-        price,
-      },
+    const platformFee =
+      matchedPlan && matchedPlan.transactionFeePercent != null
+        ? `${matchedPlan.transactionFeePercent}%`
+        : guide.platformFee;
+  return {
+    id: matchedPlan?.id ?? guide.key,
+    guide: {
+      ...guide,
+      price,
+      platformFee,
+    },
       selectable: guide.key !== 'enterprise',
       cardClass: guide.cardClass,
       available: Boolean(matchedPlan || !hasApiPlans),
@@ -235,9 +263,19 @@ const activePlanName = computed(() => {
 });
 const activePlanFee = computed(() => {
   const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
-  const fee = matched?.guide.platformFee || t('subscription.plans.free.platformFee');
+  const fee = matched?.guide.platformFee || '5%';
   const stripe = matched?.guide.stripeFee || t('subscription.plans.free.stripeFee');
   return `${t('subscription.platformFee')} ${fee} · ${t('subscription.stripeFee')} ${stripe}`;
+});
+const upgradeSuccessName = computed(() => {
+  const key = resolvePlanKey(upgradeSuccessPlanId.value);
+  return planGuide.value[key as keyof typeof planGuide.value]?.name ?? 'プラン';
+});
+const upgradeSuccessFee = computed(() => {
+  const key = resolvePlanKey(upgradeSuccessPlanId.value);
+  if (key === 'pro') return '0%';
+  if (key === 'starter') return '2%';
+  return '5%';
 });
 const scrollToPlans = () => {
   if (planStackRef.value) {
@@ -247,6 +285,12 @@ const scrollToPlans = () => {
 
 const applyCommunityDetail = (detail: ConsoleCommunityDetail | null) => {
   activePlanId.value = detail?.pricingPlanId ?? null;
+  if (!previousPlanId.value && activePlanId.value) {
+    previousPlanId.value = activePlanId.value;
+  } else if (previousPlanId.value && activePlanId.value && previousPlanId.value !== activePlanId.value) {
+    upgradeSuccessPlanId.value = activePlanId.value;
+    previousPlanId.value = activePlanId.value;
+  }
 };
 
 const loadPlans = async () => {
@@ -300,6 +344,11 @@ const reload = async () => {
     }
   }
   await loadPlans();
+};
+
+const goCommunitySettings = () => {
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileCommunitySettings', params: { communityId: communityId.value } });
 };
 
 onMounted(async () => {
@@ -472,6 +521,31 @@ const confirmPayment = async () => {
 .pill.muted {
   background: #f1f5f9;
   color: #94a3b8;
+}
+.success-card {
+  background: linear-gradient(135deg, #ecfdf3, #e0f2fe);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.success-card h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+.success-card ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.success-card .primary {
+  align-self: flex-start;
 }
 .fine-print {
   margin: 2px 0 0;
