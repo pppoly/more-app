@@ -1,6 +1,5 @@
 <template>
   <div class="payments">
-    <PageMarker label="P-pay" />
     <header class="top">
       <div>
         <p class="eyebrow">收款 / 交易</p>
@@ -103,7 +102,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { fetchCommunityBalance, fetchCommunityPayments, refundPayment } from '../../../api/client';
 import type { ConsoleCommunityBalance, ConsolePaymentItem, ConsolePaymentList } from '../../../types/api';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();

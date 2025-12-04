@@ -1822,6 +1822,7 @@ const togglePaste = (state?: boolean) => {
 const handleEntryFromQuery = async () => {
   if (entryHandled.value) return;
   const entry = route.query.entry as string | undefined;
+  const copyEventId = route.query.copyEventId as string | undefined;
   if (!entry) return;
   entryHandled.value = true;
   switch (entry) {
@@ -1854,7 +1855,11 @@ const handleEntryFromQuery = async () => {
       scrollToSection('basic');
       break;
     case 'copy':
-      await openCopyOverlay();
+      if (copyEventId) {
+        await handleCopyFromEvent(copyEventId);
+      } else {
+        await openCopyOverlay();
+      }
       break;
     default:
       break;
@@ -2008,15 +2013,18 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
   if (!detail.galleries?.length) return;
   revokeLocalCoverPreviews();
   const gallerySlice = detail.galleries.slice(0, MAX_COVERS);
+  let successCount = 0;
   const tasks = gallerySlice.map(async (item, index) => {
     try {
       const resolvedUrl = resolveAssetUrl(item.imageUrl);
+      if (!resolvedUrl) return;
       const response = await fetch(resolvedUrl, { credentials: 'include' });
       if (!response.ok) return;
       const blob = await response.blob();
-      const extension = blob.type.includes('png') ? 'png' : 'jpg';
+      const mime = blob.type || 'image/jpeg';
+      const extension = mime.includes('png') ? 'png' : 'jpg';
       const fileName = `copied-${Date.now()}-${index}.${extension}`;
-      const rawFile = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const rawFile = new File([blob], fileName, { type: mime });
       const file = await downscaleImageFile(rawFile);
       const id = `${fileName}-${Math.random().toString(36).slice(2)}`;
       pendingCoverFiles.value.push({ id, file });
@@ -2026,11 +2034,15 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
         imageUrl: objectUrl,
         order: index,
       });
+      successCount += 1;
     } catch (err) {
-      showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
+      // ignore this image, continue
     }
   });
   await Promise.all(tasks);
+  if (!successCount) {
+    showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
+  }
 };
 
 const openCopyOverlay = async () => {
@@ -2758,6 +2770,7 @@ const handleCoverUpload = async (ev: Event) => {
     await reloadGallery();
     input.value = '';
   } catch (err) {
+    console.error('cover upload failed', err);
     showCoverError(parseCoverUploadError(err));
   } finally {
     uploadingCover.value = false;
@@ -2795,6 +2808,7 @@ const uploadPendingCovers = async (targetEventId: string) => {
     revokeLocalCoverPreviews();
     return true;
   } catch (err) {
+    console.error('pending cover upload failed', err);
     const message = parseCoverUploadError(err);
     showCoverError(message, 'warning');
     return false;

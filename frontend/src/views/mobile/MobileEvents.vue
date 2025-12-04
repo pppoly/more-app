@@ -1,62 +1,97 @@
 <template>
-  <div class="mobile-events-page">
-    <section v-if="loading" class="state-section">
-      <article v-for="n in 3" :key="n" class="event-card event-card--skeleton">
-        <div class="skeleton block cover"></div>
-        <div class="skeleton block line short"></div>
-        <div class="skeleton block line"></div>
-      </article>
-    </section>
+  <div class="events-page">
+    <!-- App Bar -->
+    <header class="app-bar">
+      <div class="app-bar__left">
+        <img :src="logoImage" alt="MORE logo" class="logo-img" />
+      </div>
+      <div class="app-bar__title">MORE</div>
+      <div class="app-bar__actions"></div>
+    </header>
 
-    <section v-else-if="error" class="state-section">
-      <article class="state-card state-card--error">
-        <div class="state-card__icon">🚧</div>
-        <div class="state-card__body">
-          <p class="state-card__title">活動を取得できませんでした</p>
-          <p class="state-card__message">{{ error }}</p>
-        </div>
-        <button type="button" class="state-card__action" @click="retryLoading" :disabled="retrying">
-          {{ retrying ? 'リトライ中…' : '再読み込み' }}
+    <main class="content">
+      <!-- 分类 Chips -->
+      <div class="chip-row">
+        <button
+          v-for="cat in categories"
+          :key="cat.id"
+          type="button"
+          class="chip"
+          :class="{ 'chip--active': cat.id === activeCategoryId }"
+          @click="selectCategory(cat.id)"
+        >
+          {{ cat.label }}
         </button>
-      </article>
-    </section>
+      </div>
+      <!-- Loading -->
+      <section v-if="loading" class="state-list">
+        <article v-for="n in 3" :key="n" class="card">
+          <div class="cover skeleton"></div>
+          <div class="skeleton line w-70"></div>
+          <div class="skeleton line w-50"></div>
+        </article>
+      </section>
 
-    <section v-else class="card-list">
-      <p v-if="!formattedEvents.length" class="state-empty">条件に合うイベントが見つかりません。</p>
+      <!-- Error -->
+      <section v-else-if="error" class="state-list">
+        <article class="card state-card">
+          <p class="state-title">活動を取得できませんでした</p>
+          <p class="state-desc">{{ error }}</p>
+          <button type="button" class="primary-btn" @click="retryLoading" :disabled="retrying">
+            {{ retrying ? 'リトライ中…' : '再読み込み' }}
+          </button>
+        </article>
+      </section>
 
-      <article v-for="event in formattedEvents" :key="event.id" class="event-card" @click="goDetail(event.id)">
-        <figure class="event-card__cover" :style="event.coverStyle">
-          <div class="event-card__cover-meta">
-            <div v-if="event.attendees.length" class="event-card__avatar-stack">
-              <template v-for="(avatar, idx) in event.attendees" :key="`${event.id}-attendee-${idx}`">
-                <img :src="avatar" alt="attendee avatar" :style="{ zIndex: event.attendees.length - idx }" />
-              </template>
-              <span v-if="event.attendeesMore" class="event-card__avatar-more">+{{ event.attendeesMore }}</span>
+      <!-- Empty -->
+      <section v-else-if="!formattedEvents.length" class="state-list">
+        <p class="empty-text">条件に合うイベントが見つかりません。</p>
+      </section>
+
+      <!-- Cards -->
+      <section v-else class="card-list">
+        <article v-for="event in formattedEvents" :key="event.id" class="card" @click="goDetail(event.id)">
+          <div class="cover-wrapper">
+            <img
+              v-if="event.coverUrl"
+              :src="event.coverUrl"
+              alt="event cover"
+              class="cover"
+              loading="lazy"
+            />
+            <div v-else class="cover cover-fallback">MORE</div>
+            <div class="overlay-tags">
+              <div v-if="event.attendees.length" class="avatar-row">
+                <img
+                  v-for="(avatar, idx) in event.attendees"
+                  :key="`${event.id}-att-${idx}`"
+                  :src="avatar"
+                  alt="attendee"
+                />
+                <span v-if="event.attendeesMore > 0" class="avatar-more">+{{ event.attendeesMore }}</span>
+              </div>
+              <span class="chip-dark">{{ event.capacityText }}</span>
             </div>
-            <span class="event-card__capacity-pill">{{ event.capacityText }}</span>
           </div>
-        </figure>
-        <div class="event-card__details">
-          <h2 class="event-card__title">{{ event.title }}</h2>
-          <p class="event-card__meta">
-            <span class="i-lucide-clock-8 text-xs"></span>
-            {{ event.timeText }}
-          </p>
-          <div class="event-card__community-row">
-            <button type="button" class="event-card__community-avatar" @click.stop="goCommunity(event.communitySlug)">
-              <img
-                v-if="event.communityLogo"
-                :src="event.communityLogo"
-                :alt="`${event.communityName} logo`"
-                @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-              />
-            </button>
-            <p class="event-card__community-name">{{ event.communityName }}</p>
+          <div class="card-body">
+            <h2 class="title">{{ event.title }}</h2>
+            <p class="time">
+              <span class="i-lucide-clock-8 text-xs"></span>
+              {{ event.timeText }}
+            </p>
+            <div class="community">
+              <button type="button" class="community-avatar" @click.stop="goCommunity(event.communitySlug)">
+                <img v-if="event.communityLogo" :src="event.communityLogo" :alt="`${event.communityName} logo`" />
+              </button>
+              <div class="community-text">
+                <p class="community-name">{{ event.communityName }}</p>
+                <p class="community-status">参加募集中</p>
+              </div>
+            </div>
           </div>
-        </div>
-      </article>
-    </section>
-
+        </article>
+      </section>
+    </main>
   </div>
 </template>
 
@@ -70,13 +105,51 @@ import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
+import logo1 from '../../assets/images/logo1.svg';
+
 const router = useRouter();
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const { preferredLangs } = useLocale();
-
 const retrying = ref(false);
+const activeCategoryId = ref('all');
+const { preferredLangs } = useLocale();
+const logoImage = logo1;
+
+const resourceConfig = useResourceConfig();
+const { slotMap } = resourceConfig;
+
+const fallbackCoverImages = computed(() => {
+  const list = resourceConfig.getListValue('mobile.eventList.cardFallbacks');
+  if (list.length) return list;
+  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+});
+
+const labelFromCategory = (id: string) => {
+  const map: Record<string, string> = {
+    sport: 'スポーツ / アウトドア',
+    campus: '大学サークル',
+    social: '交流・趣味',
+    business: 'ビジネス / 起業',
+    tech: 'テック / AI',
+    art: 'アート / デザイン',
+    music: '音楽 / エンタメ',
+    food: 'グルメ',
+    family: 'ファミリー / 教育',
+    language: '言語 / 学習',
+    public: '公益 / 支援',
+    mind: '心と暮らし',
+    online: 'オンライン / ワークショップ',
+  };
+  return map[id] ?? id;
+};
+
+const defaultAvatarImage = computed(
+  () =>
+    resourceConfig.getStringValue('global.defaultAvatar') ||
+    (slotMap['global.defaultAvatar'].defaultValue as string),
+);
+
 const loadEvents = async () => {
   loading.value = true;
   error.value = null;
@@ -97,34 +170,6 @@ const retryLoading = async () => {
   retrying.value = false;
 };
 
-const categoryLabel = (category?: string | null) => {
-  const labelMap: Record<string, string> = {
-    parent: '親子',
-    sports: 'スポーツ',
-    language: '語学',
-    work: 'スキル',
-    career: 'キャリア',
-    kids: 'キッズ',
-  };
-  const key = (category ?? '').toLowerCase();
-  return labelMap[key] ?? 'イベント';
-};
-
-const resourceConfig = useResourceConfig();
-const { slotMap } = resourceConfig;
-
-const fallbackCoverImages = computed(() => {
-  const list = resourceConfig.getListValue('mobile.eventList.cardFallbacks');
-  if (list.length) return list;
-  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
-});
-
-const defaultAvatarImage = computed(
-  () =>
-    resourceConfig.getStringValue('global.defaultAvatar') ||
-    (slotMap['global.defaultAvatar'].defaultValue as string),
-);
-
 const hashToIndex = (value: string, length: number) => {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -134,52 +179,61 @@ const hashToIndex = (value: string, length: number) => {
   return Math.abs(hash) % length;
 };
 
-const coverStyleForEvent = (event: EventSummary) => {
+const coverUrlForEvent = (event: EventSummary) => {
   const fallbacks = fallbackCoverImages.value.length
     ? fallbackCoverImages.value
     : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
-  if (event.coverImageUrl) {
-    return {
-      backgroundImage: `url(${resolveAssetUrl(event.coverImageUrl)})`,
-      backgroundPosition: 'center',
-      backgroundSize: 'cover',
-    };
-  }
+  if (event.coverImageUrl) return resolveAssetUrl(event.coverImageUrl);
+  if (!fallbacks.length) return '';
   const index = hashToIndex(event.id || event.title?.toString() || 'fallback', fallbacks.length || 1);
-  return {
-    backgroundImage: `url(${fallbacks[index]})`,
-    backgroundPosition: 'center',
-    backgroundSize: 'cover',
-  };
+  return fallbacks[index];
 };
 
 const visibleEvents = computed(() => events.value.filter((event) => event.status === 'open'));
 
+const categories = computed(() => {
+  const ids = [
+    'all',
+    'sport',
+    'campus',
+    'social',
+    'business',
+    'tech',
+    'art',
+    'music',
+    'food',
+    'family',
+    'language',
+    'public',
+    'mind',
+    'online',
+  ];
+  return ids.map((id) => ({
+    id,
+    label: id === 'all' ? 'すべて' : labelFromCategory(id),
+  }));
+});
+
+const filteredEvents = computed(() => {
+  if (activeCategoryId.value === 'all') return visibleEvents.value;
+  return visibleEvents.value.filter((ev) => (ev.category ?? '').toLowerCase() === activeCategoryId.value);
+});
+
 const formattedEvents = computed(() =>
-  visibleEvents.value.map((event) => {
-    const coverStyle = coverStyleForEvent(event);
-    const currentParticipants = getCurrentParticipants(event);
-    const capacity = getCapacity(event);
-    const capacityPercent =
-      capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : null;
+  filteredEvents.value.map((event) => {
+    const capacityText = formatCapacity(event);
+    const { attendees, attendeesMore } = attendeeAvatars(event);
     return {
       id: event.id,
       title: getLocalizedText(event.title, preferredLangs.value),
-      categoryLabel: categoryLabel(event.category),
-      dateText: formatDateShort(event.startTime),
-      timeText: formatDateTime(event.startTime),
-      locationText: event.locationText,
+      timeText: formatDateTime(event.startTime, event.endTime),
       communityName: event.community?.name ?? 'SOCIALMORE',
       communitySlug: (event.community as any)?.slug ?? event.community?.id ?? 'club',
       communityLogo: event.communityLogoUrl ? resolveAssetUrl(event.communityLogoUrl) : null,
-      communityInitial: event.community?.name?.charAt(0)?.toUpperCase() ?? 'M',
-      statusLabel: statusLabel(event.status),
-      statusClass: statusClass(event.status),
-      capacityText: formatCapacity(event),
-      capacityPercent,
-      hasCover: Boolean(event.coverImageUrl),
-      coverStyle,
-      ...attendeeAvatars(event),
+      capacityText,
+      coverUrl: coverUrlForEvent(event),
+      attendees,
+      attendeesMore,
     };
   }),
 );
@@ -193,32 +247,27 @@ const goCommunity = (slugOrId: string) => {
   router.push({ name: 'community-portal', params: { slug: slugOrId } });
 };
 
-const statusLabel = (status: string) => {
-  if (status === 'open') return '参加募集中';
-  if (status === 'closed') return '受付終了';
-  return '告知予定';
+const selectCategory = (id: string) => {
+  activeCategoryId.value = id;
 };
 
-const statusClass = (status: string) => {
-  if (status === 'open') return 'event-card__status--open';
-  if (status === 'closed') return 'event-card__status--closed';
-  return 'event-card__status--info';
-};
-
-const formatDateShort = (value: string) => {
-  const date = new Date(value);
-  return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`;
-};
-
-const formatDateTime = (value: string) => {
-  const date = new Date(value);
-  return date.toLocaleString('ja-JP', {
+const formatDateTime = (start: string, end?: string | null) => {
+  const s = new Date(start);
+  const e = end ? new Date(end) : null;
+  const startText = s.toLocaleString('ja-JP', {
+    year: 'numeric',
     month: 'long',
     day: 'numeric',
     weekday: 'short',
     hour: '2-digit',
     minute: '2-digit',
   });
+  if (!e) return startText;
+  const endText = e.toLocaleString('ja-JP', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${startText} – ${endText}`;
 };
 
 const getEventConfig = (event: EventSummary) => ((event as any).config ?? {}) as Record<string, any>;
@@ -246,7 +295,7 @@ const formatCapacity = (event: EventSummary) => {
   if (capacity && capacity > 0) {
     return `${current}/${capacity}`;
   }
-  return `${current}人参加中`;
+  return `${current}人`;
 };
 
 const attendeeAvatars = (event: EventSummary) => {
@@ -260,291 +309,282 @@ const attendeeAvatars = (event: EventSummary) => {
   if (!avatars.length && Array.isArray(config.attendeePreview)) {
     avatars = config.attendeePreview.map((item: any) => item?.avatarUrl || defaultAvatarImage.value);
   }
-  const total = avatars.length;
-  if (!total) {
-    return { attendees: [], attendeesMore: 0 };
-  }
   const resolved = avatars.map((avatar) => resolveAssetUrl(avatar || defaultAvatarImage.value));
-  const visible = resolved.slice(0, 5);
-  const extra = total > visible.length ? total - visible.length : 0;
+  const visible = resolved.slice(0, 3);
+  const extra = resolved.length > visible.length ? resolved.length - visible.length : 0;
   return { attendees: visible, attendeesMore: extra };
 };
-
 
 onMounted(loadEvents);
 </script>
 
 <style scoped>
-@import '../../assets/styles/mobile-tokens.css';
-
-.mobile-events-page {
+.events-page {
   min-height: 100vh;
-  padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px calc(40px + env(safe-area-inset-bottom, 0px));
-  background: var(--color-page-bg);
-  font-family: var(--font-family-base);
+  background: #f3f4f6;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
 }
-
-.card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  padding: 0;
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+  border-bottom: 1px solid #e5e7eb;
 }
-
-.event-card {
-  background: var(--color-surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
-  padding: 10px;
+.app-bar__title {
+  justify-self: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+.logo-chip,
+.logo-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  object-fit: contain;
+}
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #0f172a;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+}
+.action-placeholder {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+}
+.content {
+  padding: 8px 0 0;
+}
+.chip-row {
+  padding: 0 16px 10px;
   display: flex;
-  flex-direction: column;
   gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
-
-.event-card--skeleton {
-  min-height: 190px;
+.chip-row::-webkit-scrollbar {
+  display: none;
 }
-
-.event-card__cover {
-  width: 100%;
-  height: clamp(150px, 44vw, 200px);
-  background-size: cover;
-  background-position: center;
-  border-radius: 10px;
-  margin: 0;
+.chip {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid #d8dde6;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip--active {
+  background: #1d9bf0;
+  border-color: #1d9bf0;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(29, 155, 240, 0.16);
+}
+.card-list,
+.state-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px;
+}
+.card {
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
+}
+.cover-wrapper {
   position: relative;
 }
-
-.event-card__cover-fallback {
-  font-size: 2.2rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
+.cover {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  display: block;
 }
-
-.event-card__cover-meta {
+.cover-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #1d4ed8;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.overlay-tags {
   position: absolute;
   right: 10px;
   bottom: 10px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-
-.event-card__avatar-stack {
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-.event-card__avatar-stack img {
-  width: 24px;
-  height: 24px;
+.chip-dark {
+  padding: 6px 12px;
+  background: rgba(17, 24, 39, 0.92);
   border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.95);
-  margin-left: -10px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
-  object-fit: cover;
-  background: #f8fafc;
-}
-
-.event-card__avatar-stack img:first-child {
-  margin-left: 0;
-}
-
-.event-card__avatar-more {
-  margin-left: 6px;
-  padding: 0.1rem 0.4rem;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.2;
-}
-
-.event-card__capacity-pill {
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-.skeleton.block {
-  border-radius: 10px;
-}
-
-.skeleton.block.cover {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-}
-
-.skeleton.block.line {
-  height: 14px;
-}
-
-.skeleton.block.line.short {
-  width: 60%;
-}
-
-.event-card__details {
-  padding: 0.9rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.event-card__meta-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.event-card__category {
-  padding: var(--space-xxs) var(--space-sm);
-  border-radius: var(--radius-pill);
-  background: rgba(15, 23, 42, 0.05);
-  color: var(--color-text-main);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-}
-
-.event-card__title {
-  margin: var(--space-xxs) 0 0;
-  font-size: 1.05rem;
-  line-height: 1.35;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--color-text-main);
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.18);
+}
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(2px);
+}
+.avatar-row img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+}
+.avatar-more {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+.card-body {
+  padding: 12px 14px 14px;
+}
+.title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-
-.event-card__meta,
-.event-card__location {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xxs);
+.time {
   margin: 0;
-  font-size: 0.84rem;
-  color: var(--color-text-muted);
-}
-
-.event-card__community-row {
-  margin-top: var(--space-xs);
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7280;
 }
-
-.event-card__community-avatar {
+.community {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.community-avatar {
   width: 36px;
   height: 36px;
-  background: none;
-  border: 0.5px solid rgba(0, 0, 0, 0.16);
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: var(--font-weight-semibold);
-  font-size: 0.78rem;
-  flex-shrink: 0;
-  cursor: pointer;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  overflow: hidden;
   padding: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  box-shadow: none;
-  outline: none;
 }
-
-.event-card__community-avatar img {
-  max-height: 30px;
-  max-width: 32px;
-  object-fit: contain;
+.community-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
-  border: none;
-  background: none;
-  border-radius: 6px;
-  box-shadow: none;
 }
-
-.event-card__community-name {
-  margin: 0;
-  padding-left: 0.15rem;
-  font-size: 0.82rem;
-  color: var(--color-text-main);
-  font-weight: var(--font-weight-medium);
-}
-
-.state-section {
-  padding: var(--space-md);
-}
-
-.state-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-card);
-  padding: var(--space-lg);
-  text-align: center;
-  box-shadow: var(--shadow-card);
-}
-
-.state-card button {
-  margin-top: var(--space-md);
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: var(--space-xs) var(--space-lg);
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-}
-
-.state-card--error {
+.community-text {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  text-align: left;
+  gap: 2px;
 }
-
-.state-card__icon {
-  font-size: 2rem;
-}
-
-.state-card__title {
+.community-name {
   margin: 0;
+  font-size: 14px;
   font-weight: 600;
   color: #0f172a;
+  line-height: 1.3;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.state-card__message {
+.community-status {
   margin: 0;
-  color: #475569;
-  font-size: 0.9rem;
+  font-size: 12px;
+  color: #6b7280;
 }
-
-.state-card__action {
+.skeleton {
+  background: linear-gradient(90deg, #e5e7eb, #f1f5f9, #e5e7eb);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: 12px;
+}
+.skeleton.line {
+  height: 12px;
+  margin-top: 10px;
+}
+.skeleton.w-70 {
+  width: 70%;
+}
+.skeleton.w-50 {
+  width: 50%;
+}
+.state-card {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.state-title {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+}
+.state-desc {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+.primary-btn {
   align-self: flex-start;
-  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
   color: #fff;
-  padding: 0.4rem 0.9rem;
+  font-weight: 700;
 }
-
-.state-empty {
+.empty-text {
   text-align: center;
-  color: var(--color-text-muted);
-  padding: var(--space-xl) 0;
+  color: #6b7280;
+  padding: 32px 0;
 }
 
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+@keyframes shimmer {
+  0% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

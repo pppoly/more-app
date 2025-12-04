@@ -41,7 +41,12 @@
           :class="{ 'tabbar__item--active': activeTab === tab.id }"
           @click="go(tab.path)"
         >
-          <span :class="['tabbar__icon', tab.icon]"></span>
+          <img
+            :src="activeTab === tab.id ? tab.icon.active : tab.icon.inactive"
+            alt=""
+            class="tabbar__icon-img"
+            loading="lazy"
+          />
           <span class="tabbar__label">{{ tab.label }}</span>
         </button>
       </div>
@@ -106,27 +111,35 @@ const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 
-const iconDefaults = computed(() => {
-  const { slotMap } = resourceConfig;
-  return {
-    events: resourceConfig.getStringValue('icon.tab.events') || (slotMap['icon.tab.events'].defaultValue as string),
-    console: resourceConfig.getStringValue('icon.tab.console') || (slotMap['icon.tab.console'].defaultValue as string),
-    me: resourceConfig.getStringValue('icon.tab.me') || (slotMap['icon.tab.me'].defaultValue as string),
-    admin: resourceConfig.getStringValue('icon.tab.admin') || (slotMap['icon.tab.admin'].defaultValue as string),
-  };
-});
+const tabIcons = {
+  events: {
+    active: new URL('../assets/home-clicked.svg', import.meta.url).href,
+    inactive: new URL('../assets/home.svg', import.meta.url).href,
+  },
+  console: {
+    active: new URL('../assets/console-clicked.svg', import.meta.url).href,
+    inactive: new URL('../assets/console.svg', import.meta.url).href,
+  },
+  me: {
+    active: new URL('../assets/me-clicked.svg', import.meta.url).href,
+    inactive: new URL('../assets/me.svg', import.meta.url).href,
+  },
+  admin: {
+    active: new URL('../assets/admin-clicked.svg', import.meta.url).href,
+    inactive: new URL('../assets/admin.svg', import.meta.url).href,
+  },
+};
 
 const tabs = computed(() => {
-  const icons = iconDefaults.value;
   const base = [
-    { id: 'events', label: t('nav.events'), path: '/events', icon: icons.events },
-    { id: 'me', label: t('nav.me'), path: '/me', icon: icons.me },
+    { id: 'events', label: t('nav.events'), path: '/events', icon: tabIcons.events },
+    { id: 'me', label: t('nav.me'), path: '/me', icon: tabIcons.me },
   ];
   if (user.value?.isOrganizer || user.value?.isAdmin) {
-    base.splice(1, 0, { id: 'console', label: t('nav.console'), path: '/console', icon: icons.console });
+    base.splice(1, 0, { id: 'console', label: t('nav.console'), path: '/console', icon: tabIcons.console });
   }
   if (user.value?.isAdmin) {
-    base.splice(base.length - 1, 0, { id: 'admin', label: t('nav.admin'), path: '/admin', icon: icons.admin });
+    base.splice(base.length - 1, 0, { id: 'admin', label: t('nav.admin'), path: '/admin', icon: tabIcons.admin });
   }
   return base;
 });
@@ -291,9 +304,9 @@ watch(
   width: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f7fb;
+  background: #f3f4f6;
   color: #0f172a;
-  overflow: hidden;
+  overflow: visible;
 }
 .mobile-shell--fixed {
   height: 100vh;
@@ -302,33 +315,37 @@ watch(
 }
 
 .mobile-shell__header {
-  padding: 0.75rem 1.5rem calc(0.5rem + env(safe-area-inset-top, 0px));
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
   background: #ffffff;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  position: relative;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
 .brand-chip {
   width: 44px;
   height: 44px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #01c2ff, #00d7b4 50%, #f6c343);
+  background: linear-gradient(135deg, #32d2c5, #76e3b3);
+  border: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-size: 1.1rem;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #0f172a;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.1);
 }
 
 .brand-chip--image {
   padding: 4px;
   background: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.25);
 }
 
 .brand-chip img {
@@ -340,71 +357,53 @@ watch(
 
 .header-title {
   font-size: 1rem;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
+  font-weight: 800;
+  color: #0f172a;
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
 }
 
-.admin-entry {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
-  border: 1px solid rgba(37, 99, 235, 0.4);
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
+.admin-entry,
+.profile-entry,
+.lang-entry {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #0f172a;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: none;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
 }
 
-.profile-entry {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(6px);
-  box-shadow: none;
+.admin-entry {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.25);
 }
 
 .header-actions {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: none;
-}
-
-.header-status {
-  margin-top: 1.25rem;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.9rem 1.1rem;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.85);
 }
 
 .mobile-shell__content {
   flex: 1;
-  background: #f5f7fb;
+  background: #f3f4f6;
   color: #0f172a;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 .mobile-shell__content--tabbed {
-  padding: 1.25rem 1rem 5.5rem;
+  padding: 0 0 5.25rem;
 }
 
 .mobile-shell__content--plain {
-  padding: 1.25rem 1rem 1.5rem;
+  padding: 1rem 1rem 1.5rem;
 }
 
 .mobile-shell__content--fixed {
@@ -437,59 +436,49 @@ watch(
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 10;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  padding: 0 calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px))
+    calc(10px + env(safe-area-inset-left, 0px));
   background: #ffffff;
   border-top: none;
   box-shadow: none;
 }
 
 .tabbar {
-  margin: 0 auto;
-  max-width: 520px;
+  margin: 0;
+  width: 100%;
   display: flex;
-  gap: 12px;
+  gap: 8px;
   background: #ffffff;
-  padding: 0;
+  padding: 10px 0;
+  border-radius: 0;
 }
 
 .tabbar__item {
   flex: 1;
   border: none;
   background: transparent;
-  border-radius: 24px;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  padding: 10px 8px;
-  font-size: 14px;
+  gap: 4px;
+  padding: 10px 6px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--m-color-text-tertiary, #666);
+  color: #9ca3af;
 }
 
 .tabbar__item--active {
-  background: #0090d9;
-  color: #fff;
+  background: transparent;
+  color: #111827;
   box-shadow: none;
 }
 .tabbar__icon {
-  color: var(--m-color-text-tertiary, #666);
+  color: #94a3b8;
 }
 .tabbar__item--active .tabbar__icon {
-  color: #fff;
-}
-
-.lang-entry {
-  width: 44px;
-  height: 44px;
-  border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #f8fafc;
-  color: #0f172a;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  color: #ffffff;
 }
 
 .locale-sheet__overlay {
@@ -611,12 +600,8 @@ watch(
   opacity: 0;
   transform: translateX(10px);
 }
-
-.tabbar__icon {
-  font-size: 1.2rem;
-}
-
-.tabbar__item--active .tabbar__icon {
-  color: #fff;
+.tabbar__icon-img {
+  width: 22px;
+  height: 22px;
 }
 </style>

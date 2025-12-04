@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24px" height="24px" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>icon/首页点击</title>
+    <g id="icon/首页点击" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="首页复制-2" transform="translate(3.000000, 2.000000)" stroke-width="1.6">
+            <path d="M18,1 L18,13.2400344 C18,13.5977271 17.808949,13.9281809 17.4989644,14.1066568 L9.49896444,18.7127174 C9.19009013,18.8905542 8.80990987,18.8905542 8.50103556,18.7127174 L0.501035555,14.1066568 C0.191051047,13.9281809 1.82016156e-15,13.5977271 0,13.2400344 L0,1 C-6.76353751e-17,0.44771525 0.44771525,1.01453063e-16 1,0 L17,0 C17.5522847,-2.12475365e-16 18,0.44771525 18,1 Z" id="多边形" stroke="#24171F" fill="#24171F" stroke-linejoin="round" transform="translate(9.000000, 9.500000) scale(1, -1) translate(-9.000000, -9.500000) "></path>
+            <line x1="5.27053397" y1="16.2461825" x2="12.8781215" y2="16.2461825" id="路径-36" stroke="#FFFFFF" stroke-linecap="round"></line>
+        </g>
+    </g>
+</svg>

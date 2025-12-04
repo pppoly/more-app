@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL, DEV_LOGIN_SECRET } from '../config';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { reportError } from '../utils/reporting';
 import type {
   AiUsageDetailResponse,
   AiUsageSummaryResponse,
@@ -42,8 +43,7 @@ import type {
   SubscriptionResponse,
   UserProfile,
   ResourceGroup,
-  AiUsageSummaryResponse,
-  PromptDefinition,
+  CommunityTagCategory,
 } from '../types/api';
 import type { StripeOnboardResponse } from '../types/console';
 
@@ -58,9 +58,84 @@ const apiClient = axios.create({
 });
 
 let authToken: string | null = null;
+let headerProvider: (() => Record<string, string>) | null = null;
+let unauthorizedHandler: null | ((context: { status?: number; url?: string }) => void | Promise<void>) = null;
+
+function buildErrorMessage(error: any) {
+  const status = error?.response?.status;
+  const message =
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    'Request failed, please try again.';
+  if (status === 401) return 'ログインが必要です。もう一度ログインしてください。';
+  if (status === 413) return 'アップロード内容が大きすぎます。圧縮して再試行してください。';
+  return message;
+}
+
+function normalizeError(error: any) {
+  const status = error?.response?.status;
+  const url = error?.config?.url;
+  const message = buildErrorMessage(error);
+  reportError('http:request_failed', { url, status, message });
+  if (status === 401 && unauthorizedHandler) {
+    unauthorizedHandler({ status, url });
+  }
+  const wrapped = new Error(message);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  (wrapped as any).cause = error;
+  (wrapped as any).status = status;
+  (wrapped as any).response = error?.response;
+  return wrapped;
+}
+
+interface UploadOptions {
+  fieldName?: string;
+  headers?: Record<string, string>;
+  allowedTypes?: string[];
+  maxBytes?: number;
+}
+
+async function uploadFiles<T>(path: string, files: File[], options: UploadOptions = {}): Promise<T> {
+  const { fieldName = 'file', headers, allowedTypes, maxBytes } = options;
+  const validFiles = files.filter((f): f is File => !!f && typeof (f as any).size === 'number');
+  if (!validFiles.length) {
+    throw new Error('ファイルが選択されていません');
+  }
+  validFiles.forEach((file) => {
+    if (!file) return;
+    const fileType = file?.type || '';
+    if (allowedTypes && allowedTypes.length && fileType && !allowedTypes.includes(fileType)) {
+      throw new Error('ファイル形式が正しくありません');
+    }
+    if (maxBytes && typeof file?.size === 'number' && file.size > maxBytes) {
+      throw new Error('ファイルサイズが大きすぎます。圧縮して再試行してください。');
+    }
+  });
+
+  const formData = new FormData();
+  validFiles.forEach((file) => formData.append(fieldName, file));
+
+  try {
+    const { data } = await apiClient.post<T>(path, formData, {
+      headers: { 'Content-Type': 'multipart/form-data', ...headers },
+    });
+    return data;
+  } catch (error) {
+    throw normalizeError(error);
+  }
+}
 
 export function setAccessToken(token: string | null) {
   authToken = token;
+}
+
+export function setRequestHeaderProvider(provider: () => Record<string, string>) {
+  headerProvider = provider;
+}
+
+export function onUnauthorized(handler: (context: { status?: number; url?: string }) => void | Promise<void>) {
+  unauthorizedHandler = handler;
 }
 
 apiClient.interceptors.request.use((config) => {
@@ -68,8 +143,17 @@ apiClient.interceptors.request.use((config) => {
     config.headers = config.headers ?? {};
     config.headers.Authorization = `Bearer ${authToken}`;
   }
+  if (headerProvider) {
+    const extra = headerProvider();
+    config.headers = { ...(config.headers ?? {}), ...extra };
+  }
   return config;
 });
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => Promise.reject(normalizeError(error)),
+);
 
 export async function fetchEvents(): Promise<EventSummary[]> {
   const { data } = await apiClient.get<EventSummary[]>('/events');
@@ -116,6 +200,11 @@ export async function fetchCommunityPortalConfig(communityId: string) {
   return data;
 }
 
+export async function fetchCommunityTags(): Promise<CommunityTagCategory[]> {
+  const { data } = await apiClient.get<CommunityTagCategory[]>(`/console/community-tags`);
+  return data;
+}
+
 export async function updateCommunityPortalConfig(communityId: string, payload: CommunityPortalConfig) {
   const { data } = await apiClient.patch<{ communityId: string; config: CommunityPortalConfig }>(
     `/console/communities/${communityId}/portal`,
@@ -132,14 +221,10 @@ export async function uploadCommunityAsset(
   if (!communityId) {
     throw new Error('communityId is required to upload assets');
   }
-  const formData = new FormData();
-  formData.append('file', file);
-  const { data } = await apiClient.post<{ imageUrl: string }>(
+  const data = await uploadFiles<{ imageUrl: string }>(
     `/console/communities/uploads?communityId=${communityId}&type=${type}`,
-    formData,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    },
+    [file],
+    { fieldName: 'file', allowedTypes: ['image/jpeg', 'image/png', 'image/webp'], maxBytes: 5 * 1024 * 1024 },
   );
   return data;
 }
@@ -158,6 +243,15 @@ export async function devLogin(name: string, language?: string): Promise<DevLogi
     payload.secret = DEV_LOGIN_SECRET;
   }
   const { data } = await apiClient.post<DevLoginResponse>('/auth/dev-login', payload);
+  return data;
+}
+
+export async function lineLiffLogin(payload: {
+  idToken: string;
+  displayName?: string | null;
+  pictureUrl?: string | null;
+}): Promise<DevLoginResponse> {
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff-login', payload);
   return data;
 }
 
@@ -202,12 +296,11 @@ export async function cancelMyRegistration(registrationId: string): Promise<{ re
 }
 
 export async function uploadMyAvatar(file: File): Promise<UserProfile> {
-  const formData = new FormData();
-  formData.append('avatar', file);
-  const { data } = await apiClient.post<UserProfile>('/me/avatar', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  return uploadFiles<UserProfile>('/me/avatar', [file], {
+    fieldName: 'avatar',
+    allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytes: 5 * 1024 * 1024,
   });
-  return data;
 }
 
 export async function createMockPayment(registrationId: string): Promise<MockPaymentResponse> {
@@ -417,12 +510,16 @@ export async function updateProfile(payload: { name?: string; preferredLocale?: 
 }
 
 export async function uploadEventCovers(eventId: string, files: File[]) {
-  const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
-  const { data } = await apiClient.post(`/console/events/${eventId}/covers`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const sanitized = files.filter((f): f is File => !!f && typeof f.size === 'number');
+  if (!sanitized.length) {
+    throw new Error('ファイルが選択されていません');
+  }
+  const data = await uploadFiles<EventGalleryItem[]>(`/console/events/${eventId}/covers`, sanitized, {
+    fieldName: 'files',
+    allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+    maxBytes: 10 * 1024 * 1024,
   });
-  return data as EventGalleryItem[];
+  return data;
 }
 
 export async function deleteEventCover(eventId: string, coverId: string) {

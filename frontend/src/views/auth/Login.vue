@@ -73,8 +73,20 @@ const handleDevLogin = async () => {
   }
 };
 
-const handleLineLogin = () => {
+const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
+  if (APP_TARGET === 'liff') {
+    loading.value = true;
+    error.value = '';
+    try {
+      await auth.loginWithLiff();
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'LINE 登录失败';
+    } finally {
+      loading.value = false;
+    }
+    return;
+  }
   window.localStorage.setItem(LOGIN_FLOW_STORAGE_KEY, 'line');
   window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, redirectTarget.value || '/');
   const backendOrigin = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');

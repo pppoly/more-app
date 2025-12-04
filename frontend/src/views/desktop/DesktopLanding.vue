@@ -163,6 +163,8 @@ const t = (key: string) =>
 .brand-logo {
   font-size: 1.25rem;
   font-weight: 700;
+  text-shadow: none;
+  box-shadow: none;
 }
 
 .brand-subtitle {

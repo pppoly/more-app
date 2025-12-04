@@ -1,11 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildAssetUrl } from '../common/storage/asset-path';
 import { Prisma } from '@prisma/client';
+import { PermissionsService } from '../auth/permissions.service';
 
 @Injectable()
 export class CommunitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   async findBySlug(slug: string, userId?: string) {
     const community = await this.prisma.community.findUnique({
@@ -14,6 +15,7 @@ export class CommunitiesService {
         id: true,
         name: true,
         slug: true,
+        ownerId: true,
         description: true,
         coverImageUrl: true,
         labels: true,
@@ -72,11 +74,35 @@ export class CommunitiesService {
       throw new NotFoundException('Community not found');
     }
 
+    // enforce visibility rules
+    if (community.visibleLevel === 'semi-public') {
+      if (!userId) {
+        throw new ForbiddenException('Login required to view this community');
+      }
+      const member = await this.prisma.communityMember.findFirst({
+        where: { communityId: community.id, userId, status: 'active' },
+      });
+      if (!member && community.ownerId !== userId) {
+        throw new ForbiddenException('Only community members can view this page');
+      }
+    } else if (community.visibleLevel === 'private') {
+      if (!userId) {
+        throw new ForbiddenException('Login required to view this community');
+      }
+      const isOwner = community.ownerId === userId;
+      const isAdmin = await this.permissions.isAdmin?.(userId);
+      if (!isOwner && !isAdmin) {
+        throw new ForbiddenException('This community is private');
+      }
+    }
+
     const portalConfig = this.extractPortalConfig(community.description);
-    const logoImageUrl = this.extractCommunityLogo(community.description);
+    const logoImageUrlRaw = this.extractCommunityLogo(community.description);
+    const logoImageUrl = buildAssetUrl(logoImageUrlRaw);
+    const coverImageUrl = buildAssetUrl(community.coverImageUrl);
 
     const events =
-      (community.events || []).map((event) => ({
+      ((community as any).events || []).map((event: any) => ({
         ...event,
         coverImageUrl: buildAssetUrl(event.galleries?.[0]?.imageUrl),
       })) ?? [];
@@ -92,11 +118,12 @@ export class CommunitiesService {
     return {
       ...rest,
       logoImageUrl,
+      coverImageUrl,
       events,
       members: memberList.map((member) => ({
         id: member.user.id,
         name: member.user.name,
-        avatarUrl: member.user.avatarUrl,
+        avatarUrl: buildAssetUrl(member.user.avatarUrl),
       })),
       memberCount: _count?.members ?? 0,
       isFollowing,
@@ -105,7 +132,7 @@ export class CommunitiesService {
   }
 
   private extractPortalConfig(description: any) {
-    const defaultConfig = { theme: 'immersive', layout: ['hero', 'about', 'upcoming', 'past', 'moments'] };
+    const defaultConfig = { theme: 'clean', layout: ['hero', 'about', 'upcoming', 'past', 'moments'] };
     if (description && typeof description === 'object' && description._portalConfig) {
       const cfg = description._portalConfig as any;
       const theme = typeof cfg.theme === 'string' ? cfg.theme : defaultConfig.theme;

@@ -1,5 +1,4 @@
 <template>
-  <PageMarker label="P7" />
   <div class="page">
     <header class="nav-bar">
       <button type="button" class="back-btn" @click="goBack">返回</button>
@@ -257,7 +256,6 @@ import type {
 } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useResourceConfig } from '../../../composables/useResourceConfig';
-import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();

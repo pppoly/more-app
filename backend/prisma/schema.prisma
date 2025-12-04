@@ -62,6 +62,33 @@ model Community {
   aiEventDraftLogs AiEventDraftLog[]
 }
 
+model CommunityTagCategory {
+  id        String   @id @default(cuid())
+  nameJa    String
+  nameEn    String?
+  nameZh    String?
+  order     Int      @default(1000)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tags      CommunityTag[]
+}
+
+model CommunityTag {
+  id          String   @id @default(cuid())
+  categoryId  String
+  nameJa      String
+  nameEn      String?
+  nameZh      String?
+  order       Int      @default(1000)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  category    CommunityTagCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+}
+
 model CommunityMember {
   id              String    @id @default(cuid())
   communityId     String
@@ -297,4 +324,35 @@ model AiEventDraftLog {
   createdAt    DateTime  @default(now())
   community    Community @relation(fields: [communityId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
+}
+
+// Managed asset for UGC images/files
+model ManagedAsset {
+  id               String   @id @default(cuid())
+  tenantId         String
+  ownerId          String
+  resourceType     String
+  resourceId       String?
+  role             String?
+  bucket           String
+  objectKey        String
+  originalName     String?
+  mimeType         String
+  size             Int
+  hash             String?
+  variants         Json?
+  width            Int?
+  height           Int?
+  status           String   @default("pending")
+  moderationStatus String   @default("pending")
+  moderationReason String?
+  visibility       String   @default("public")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  @@index([resourceType, resourceId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([tenantId])
 }

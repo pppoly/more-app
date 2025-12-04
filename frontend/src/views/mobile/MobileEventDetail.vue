@@ -304,7 +304,8 @@ import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
-import { APP_TARGET } from '../../config';
+import { APP_TARGET, LIFF_ID } from '../../config';
+import { loadLiff } from '../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -678,7 +679,26 @@ const goBack = () => {
 const shareEvent = async () => {
   if (!detail.value) return;
   if (APP_TARGET === 'liff') {
-    showUiMessage('LINE 内で共有してください');
+    if (!LIFF_ID) {
+      showUiMessage('LINE 設定を確認してください');
+      return;
+    }
+    try {
+      const liff = await loadLiff(LIFF_ID);
+      const url = typeof window !== 'undefined' ? window.location.href : '';
+      const title =
+        getLocalizedText(detail.value.title, preferredLangs.value) ||
+        (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
+      if (liff.shareTargetPicker) {
+        await liff.shareTargetPicker([{ type: 'text', text: `${title}\n${url}` }]);
+      } else if (liff.sendMessages) {
+        await liff.sendMessages([{ type: 'text', text: `${title}\n${url}` }]);
+      }
+      showUiMessage('LINE で共有しました');
+    } catch (err) {
+      console.error('Failed to share via LIFF', err);
+      showUiMessage('LINE 共有に失敗しました');
+    }
     return;
   }
   const payload = { title: detail.value.title, url: window.location.href };
@@ -1224,13 +1244,14 @@ watch(
 
 .event-cover-wrapper {
   position: relative;
-  margin: 0;
+  margin: 0 0 0 -16px;
+  width: calc(100% + 32px);
   padding-top: env(safe-area-inset-top, 0px);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
   background-color: #0f172a10;
 }

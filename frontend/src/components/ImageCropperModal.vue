@@ -18,6 +18,7 @@
               </div>
             </div>
             <div class="cropper-mask" />
+            <div v-if="showCircleGuide" class="cropper-guide" :style="guideStyle" />
           </div>
           <div class="cropper-slider">
             <input type="range" :min="1" :max="maxScale" step="0.01" v-model.number="scale" @input="clampOffsets" />
@@ -49,6 +50,7 @@ interface Props {
   cancelText?: string;
   loading?: boolean;
   maxScale?: number;
+  showCircleGuide?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -61,6 +63,7 @@ const props = withDefaults(defineProps<Props>(), {
   cancelText: 'キャンセル',
   loading: false,
   maxScale: 2.5,
+  showCircleGuide: false,
 });
 
 const emit = defineEmits<{
@@ -85,6 +88,14 @@ const viewportStyle = computed(() => ({
   width: `${viewportWidth.value}px`,
   height: `${viewportHeight.value}px`,
 }));
+
+const guideStyle = computed(() => {
+  const size = Math.min(viewportWidth.value, viewportHeight.value) - 6;
+  return {
+    width: `${size}px`,
+    height: `${size}px`,
+  };
+});
 
 const shiftStyle = computed(() => ({
   width: `${baseSize.value.width}px`,
@@ -272,9 +283,9 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   overflow: hidden;
   border-radius: 14px;
-  background: #f1f5f9;
+  background: #fff;
   touch-action: none;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 2px solid rgba(15, 23, 42, 0.2);
 }
 .cropper-image {
   position: absolute;
@@ -300,6 +311,17 @@ onBeforeUnmount(() => {
   pointer-events: none;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9);
   border-radius: 14px;
+  z-index: 1;
+}
+.cropper-guide {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border: 2px dashed rgba(15, 23, 42, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  background: transparent;
 }
 .cropper-slider {
   padding: 6px 4px 0;

@@ -1,100 +1,85 @@
 <template>
-  <PageMarker label="P1" />
   <div class="console-home">
-    <section class="top-bar">
-      <button class="avatar-btn" type="button" @click="goCommunitySettings">
-        <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" />
-      </button>
-      <div class="top-text" @click="goCommunitySettings">
-        <p class="top-label">社群</p>
-        <div class="top-title-row">
-          <h1 class="top-title">{{ communityName || '未選択のコミュニティ' }}</h1>
-          <button v-if="planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
-            {{ planLabel }}
-          </button>
-        </div>
-        <p class="top-role">{{ hasCommunity ? `役割: ${roleLabel}` : 'まずはコミュニティを登録' }}</p>
+    <div v-if="!dataReady" class="console-skeleton">
+      <div class="sk-header"></div>
+      <div class="sk-stats">
+        <div class="sk-chip" v-for="n in 3" :key="`chip-${n}`"></div>
       </div>
-      <button
-        v-if="hasCommunity"
-        class="pill-btn"
-        type="button"
-        @click="openCommunityPicker"
-      >
-        切り替え
-      </button>
-      <button
-        v-else
-        class="pill-btn pill-btn--primary"
-        type="button"
-        @click="goCreateCommunity"
-      >
-        <span class="i-lucide-sparkles"></span>
-        新建
-      </button>
+      <div class="sk-actions">
+        <div class="sk-tile" v-for="n in 6" :key="`tile-${n}`"></div>
+      </div>
+    </div>
+    <section class="top-bar">
+      <div class="top-main">
+        <button class="avatar-btn" type="button" @click="goCommunitySettings">
+          <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" loading="lazy" />
+        </button>
+        <div class="top-text" @click="goCommunitySettings">
+          <div class="top-title-row">
+            <h1 class="top-title">
+              {{ communityName || '未選択のコミュニティ' }}
+              <span v-if="roleLabel" class="role-chip">{{ roleLabel }}</span>
+            </h1>
+            <button v-if="planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
+              {{ planDisplay }}
+            </button>
+          </div>
+          <p class="top-role">{{ hasCommunity ? 'タップして設定を開く' : 'まずはコミュニティを登録' }}</p>
+        </div>
+        <button
+          :class="['pill-btn', hasCommunity ? '' : 'pill-btn--primary']"
+          type="button"
+          @click="openCommunityPicker"
+        >
+          <span class="i-lucide-sparkles" v-if="!hasCommunity"></span>
+          社群
+        </button>
+      </div>
+      <button v-if="hasCommunity" type="button" class="portal-btn" @click="goPublicPortal">进入我的社群页面</button>
     </section>
 
-    <section class="stat-row">
+    <section class="stat-grid">
       <article class="stat-chip">
         <p class="stat-label">今月の収入</p>
         <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '---' }}</p>
       </article>
       <article class="stat-chip">
-        <p class="stat-label">今月のイベント</p>
-        <p class="stat-value">{{ hasCommunity ? stats.eventCount : '--' }}</p>
+        <p class="stat-label">今月の閲覧</p>
+        <p class="stat-value">{{ hasCommunity ? stats.pageViews : '--' }}</p>
+      </article>
+      <article class="stat-chip">
+        <p class="stat-label">フォロー数</p>
+        <p class="stat-value">{{ hasCommunity ? stats.followerCount : '--' }}</p>
       </article>
       <article class="stat-chip">
         <p class="stat-label">申込数</p>
         <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
       </article>
-      <article class="stat-chip" v-if="aiMinutesSaved !== null">
-        <p class="stat-label">AIで節約</p>
-        <p class="stat-value">{{ aiMinutesSaved }} 分</p>
-      </article>
     </section>
 
+    <button
+      class="fab"
+      :class="{ 'fab--disabled': !hasCommunity }"
+      type="button"
+      @click="hasCommunity ? openCreateEventSheet() : goCreateCommunity()"
+    >
+      <svg class="fab-plus" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+    </button>
+
     <section class="action-grid">
-      <button class="action-tile" type="button" @click="goCreateCommunity">
-        <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
-        </div>
-        <p class="action-title">创建社群</p>
-      </button>
-      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="openCreateEventSheet">
-        <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
-        </div>
-        <p class="action-title">新建活动</p>
-      </button>
-      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goEventAssistant">
-        <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
-        </div>
-        <p class="action-title">AI 助手</p>
-      </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goAllEvents">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
+          <img :src="defaultActionIcon" alt="" loading="lazy" />
         </div>
         <p class="action-title">活动管理</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
+          <img :src="defaultActionIcon" alt="" loading="lazy" />
         </div>
         <p class="action-title">收益入金</p>
-      </button>
-      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goSubscription">
-        <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
-        </div>
-        <p class="action-title">订阅方案</p>
-      </button>
-      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPublicPortal">
-        <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
-        </div>
-        <p class="action-title">公开页</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
         <div class="action-icon">
@@ -123,17 +108,32 @@
               type="button"
               @click="selectCommunity(item.id)"
             >
-              <div>
+              <div class="picker-avatar">
+                <img
+                  v-if="item.logoImageUrl"
+                  :src="normalizeLogoUrl(item.logoImageUrl)"
+                  alt="logo"
+                  loading="lazy"
+                />
+                <span v-else>{{ item.name.slice(0, 1) }}</span>
+              </div>
+              <div class="picker-meta">
                 <p class="picker-name">{{ item.name }}</p>
                 <p class="picker-slug">@{{ item.slug }}</p>
               </div>
               <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
             </button>
             <p v-if="!managedCommunities.length" class="picker-empty">まだ社群がありません。</p>
-            <RouterLink class="picker-add" :to="{ name: 'ConsoleMobileCommunityCreate' }" @click="closeCommunityPicker">
+            <button
+              type="button"
+              class="picker-add"
+              :class="{ 'is-disabled': !canCreateCommunity }"
+              @click="handleCreateClick"
+            >
               <span class="i-lucide-plus"></span>
-              新しい社群を登録
-            </RouterLink>
+              {{ canCreateCommunity ? '新しい社群を登録' : 'プランをアップグレード' }}
+            </button>
+            <p v-if="!canCreateCommunity" class="picker-hint">Free プランでは社群は 1 つまでです。アップグレードで増やせます。</p>
           </template>
         </div>
       </div>
@@ -146,12 +146,12 @@
           <p class="create-subtitle">先选一个最省事的方式</p>
         </header>
         <div class="create-list">
-      <button type="button" class="create-item" @click="selectCreateMode('paste')">
-        <div class="create-icon">🧾</div>
-        <div class="create-body">
-          <p class="create-item-title">我已有活动方案</p>
-          <p class="create-item-desc">粘贴提纲，自动帮你填表，省时省力</p>
-        </div>
+          <button type="button" class="create-item" @click="selectCreateMode('paste')">
+            <div class="create-icon">🧾</div>
+            <div class="create-body">
+              <p class="create-item-title">我已有活动方案</p>
+              <p class="create-item-desc">粘贴提纲，自动帮你填表，省时省力</p>
+            </div>
           </button>
           <button type="button" class="create-item" @click="selectCreateMode('assistant')">
             <div class="create-icon">🤖</div>
@@ -175,9 +175,37 @@
             </div>
           </button>
         </div>
-        <button type="button" class="create-close" @click="closeCreateSheet">取消</button>
-      </div>
+    <button type="button" class="create-close" @click="closeCreateSheet">取消</button>
+  </div>
+</div>
+
+<div v-if="showCopyPicker" class="create-overlay" @click.self="closeCopyPicker">
+  <div class="create-sheet copy-sheet">
+    <div class="copy-list">
+      <template v-if="copyEvents.length">
+        <button
+          v-for="item in copyEvents"
+          :key="item.id"
+          type="button"
+          class="copy-item"
+          @click="handleCopySelect(item.id)"
+        >
+          <div class="copy-meta">
+            <p class="copy-title">{{ getLocalizedText(item.title) || '历史活动' }}</p>
+            <p class="copy-time">{{ formatDate(item.startTime) }}</p>
+          </div>
+        </button>
+      </template>
+      <p v-else-if="!copyLoading && !copyError" class="empty-text">暂无历史活动</p>
+      <p v-if="copyError" class="empty-text">{{ copyError }}</p>
+      <p v-if="copyLoading" class="empty-text">加载中...</p>
     </div>
+    <div class="copy-actions">
+      <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">加载更多</button>
+      <button type="button" class="create-close" @click="closeCopyPicker">取消</button>
+    </div>
+  </div>
+</div>
   </div>
 </template>
 
@@ -190,26 +218,33 @@ import {
   fetchConsoleCommunityEvents,
   fetchCommunityBalance,
   fetchCommunityAiUsage,
+  fetchCommunityAnalytics,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
-import PageMarker from '../../../components/PageMarker.vue';
 // Inline SVG data URIs to avoid network requests and首屏闪现
 const defaultCommunityAvatar =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIxNCIgeTE9IjE0IiB4Mj0iMTA2IiB5Mj0iMTA2IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IiMyNTYzRUIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjMjJDNTVFIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSI0IiB5PSI0IiB3aWR0aD0iMTEyIiBoZWlnaHQ9IjExMiIgcng9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgPHJlY3QgeD0iMTgiIHk9IjMyIiB3aWR0aD0iODQiIGhlaWdodD0iNTYiIHJ4PSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC4xMiIvPgogIDxjaXJjbGUgY3g9IjQwIiBjeT0iNjAiIHI9IjEyIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8Y2lyY2xlIGN4PSI4MCIgY3k9IjYwIiByPSIxMiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC45Ii8+CiAgPHJlY3QgeD0iMzAiIHk9IjgwIiB3aWR0aD0iNjAiIGhlaWdodD0iNiIgcng9IjMiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNzUiLz4KICA8cGF0aCBkPSJNNjAgMjZjLTggMC0xNC41IDYuNS0xNC41IDE0LjVTNTIgNTUgNjAgNTVzMTQuNS02LjUgMTQuNS0xNC41UzY4IDI2IDYwIDI2WiIgZmlsbD0iIzBFQTVFOSIgZmlsbC1vcGFjaXR5PSIwLjI4Ii8+CiAgPHBhdGggZD0iTTYwIDMyYy01LjUgMC0xMCA0LjUtMTAgMTBzNC41IDEwIDEwIDEwIDEwLTQuNSAxMC0xMC00LjUtMTAtMTAtMTBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KPC9zdmc+Cg==';
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='; // transparent pixel to avoid placeholder art
 const defaultActionIcon =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjYiIHkxPSI2IiB4Mj0iNDIiIHkyPSI0MiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTIiIGZpbGw9InVybCgjZykiLz4KICA8cGF0aCBkPSJNMjQgMTR2MjBNMTQgMjRoMjAiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPgo=';
 const defaultEventCover =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
-import type { ConsoleCommunityDetail, ConsoleEventSummary } from '../../../types/api';
+import type { ConsoleCommunityDetail, ConsoleEventSummary, CommunityAnalytics } from '../../../types/api';
 
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
+const analytics = ref<CommunityAnalytics | null>(null);
 const showCommunityPicker = ref(false);
 const showCreateSheet = ref(false);
+const showCopyPicker = ref(false);
+const copyLoading = ref(false);
+const copyError = ref('');
+const copyEvents = ref<ConsoleEventSummary[]>([]);
+const copyPage = ref(0);
+const copyPageSize = 10;
 const pickerLoading = ref(false);
 const pricingPlanId = ref<string | null>(null);
 const monthRevenueText = ref<string>('¥0');
@@ -222,6 +257,8 @@ const managedCommunities = computed(() => communityStore.communities.value);
 const activeCommunityId = computed(() => communityStore.activeCommunityId.value);
 const communityName = computed(() => community.value?.name ?? '');
 const communityId = computed(() => communityStore.activeCommunityId.value);
+const dataReady = computed(() => !communityStore.loading.value && communityStore.loaded.value);
+const hasMultipleCommunities = computed(() => managedCommunities.value.length > 1);
 const hasCommunity = computed(() => Boolean(communityId.value));
 const communityAvatar = computed(() => {
   return heroLogoUrl.value || defaultCommunityAvatar;
@@ -240,18 +277,22 @@ const roleLabel = computed(() => {
 });
 const planLabel = computed(() => {
   const id = (pricingPlanId.value || '').toLowerCase();
-  if (!id) return '';
+  if (!id) return 'Free';
   if (id.includes('pro')) return 'Pro';
   if (id.includes('starter')) return 'Starter';
   if (id.includes('free')) return 'Free';
   return id;
 });
+const isFreePlan = computed(() => planLabel.value.toLowerCase().includes('free'));
+const planDisplay = computed(() => (isFreePlan.value ? 'Free · 1社群まで' : planLabel.value));
+const canCreateCommunity = computed(() => !isFreePlan.value || managedCommunities.value.length < 1);
 const aiMinutesSaved = ref<number | null>(null);
 
 const stats = computed(() => ({
   monthRevenueText: monthRevenueText.value,
-  eventCount: events.value.length,
-  registrationCount: '--',
+  pageViews: analytics.value?.pageViewsMonth ?? '--',
+  followerCount: analytics.value?.followerCount ?? '--',
+  registrationCount: analytics.value?.totalRegistrations ?? '--',
 }));
 
 const activeCommunityVersion = computed(() => communityStore.activeCommunityVersion.value);
@@ -305,6 +346,18 @@ const loadEvents = async () => {
     console.error('Failed to load console events', err);
   } finally {
     loading.value = false;
+  }
+};
+
+const loadAnalytics = async () => {
+  if (!communityId.value) {
+    analytics.value = null;
+    return;
+  }
+  try {
+    analytics.value = await fetchCommunityAnalytics(communityId.value);
+  } catch (err) {
+    analytics.value = null;
   }
 };
 
@@ -390,7 +443,7 @@ const selectCreateMode = (mode: 'paste' | 'assistant' | 'basic' | 'copy') => {
       router.push({ name: 'ConsoleMobileEventForm', params, query: { entry: 'basic' } });
       break;
     case 'copy':
-      router.push({ name: 'ConsoleMobileEventForm', params, query: { entry: 'copy' } });
+      void openCopyPicker();
       break;
     default:
       break;
@@ -398,9 +451,59 @@ const selectCreateMode = (mode: 'paste' | 'assistant' | 'basic' | 'copy') => {
   showCreateSheet.value = false;
 };
 
+const openCopyPicker = async () => {
+  if (!communityId.value) return;
+  showCopyPicker.value = true;
+  if (copyEvents.value.length || copyLoading.value) return;
+  await loadCopyPage();
+};
+
+const closeCopyPicker = () => {
+  showCopyPicker.value = false;
+};
+
+const handleCopySelect = (eventId: string) => {
+  if (!communityId.value) return;
+  router.push({
+    name: 'ConsoleMobileEventForm',
+    params: { communityId: communityId.value },
+    query: { entry: 'copy', copyEventId: eventId },
+  });
+  showCopyPicker.value = false;
+};
+
+const loadCopyPage = async () => {
+  if (!communityId.value || copyLoading.value) return;
+  copyLoading.value = true;
+  copyError.value = '';
+  try {
+    const list = await fetchConsoleCommunityEvents(communityId.value);
+    // emulate pagination client-side (backend already limits to latest 30)
+    const start = copyPage.value * copyPageSize;
+    const nextSlice = list.slice(start, start + copyPageSize);
+    if (nextSlice.length) {
+      copyEvents.value.push(...nextSlice);
+      copyPage.value += 1;
+    }
+  } catch (err: any) {
+    copyError.value = err?.message || '历史活动加载失败';
+  } finally {
+    copyLoading.value = false;
+  }
+};
+
 const goEventAssistant = () => {
   if (!communityId.value) return;
   router.push({ name: 'ConsoleMobileEventCreate', params: { communityId: communityId.value } });
+};
+
+const handleCreateClick = () => {
+  if (canCreateCommunity.value) {
+    closeCommunityPicker();
+    router.push({ name: 'ConsoleMobileCommunityCreate' });
+  } else {
+    goSubscription();
+  }
 };
 
 const formatDate = (start: string, end?: string) => {
@@ -465,6 +568,7 @@ onMounted(async () => {
     loadActiveCommunityDetail();
     fetchMonthBalance();
     fetchAiUsage();
+    loadAnalytics();
   }
 });
 
@@ -476,11 +580,13 @@ watch(
       loadActiveCommunityDetail();
       fetchMonthBalance();
       fetchAiUsage();
+      loadAnalytics();
     }
     if (!newId) {
       heroLogoUrl.value = null;
       monthRevenueText.value = '¥0';
       aiMinutesSaved.value = null;
+      analytics.value = null;
     }
   },
 );
@@ -490,6 +596,7 @@ watch(
   () => {
     if (communityId.value) {
       loadActiveCommunityDetail();
+      loadAnalytics();
     }
   },
 );
@@ -499,6 +606,7 @@ const loadActiveCommunityDetail = async () => {
     heroLogoUrl.value = null;
     pricingPlanId.value = null;
     monthRevenueText.value = '¥0';
+    analytics.value = null;
     heroLoading.value = false;
     return;
   }
@@ -511,10 +619,10 @@ const loadActiveCommunityDetail = async () => {
       typeof detail.description === 'object' && detail.description
         ? (detail.description as ConsoleCommunityDetail['description'])
         : null;
-    const logo = (descriptionObj as any)?.logoImageUrl || null;
+    const logo = (descriptionObj as any)?.logoImageUrl || detail.logoImageUrl || null;
     pricingPlanId.value = detail.pricingPlanId ?? null;
     if (currentRequestId === logoRequestId) {
-      heroLogoUrl.value = logo ? resolveAssetUrl(logo) : null;
+      heroLogoUrl.value = normalizeLogoUrl(logo);
     }
     fetchMonthBalance();
   } catch (err) {
@@ -527,6 +635,16 @@ const loadActiveCommunityDetail = async () => {
       heroLoading.value = false;
     }
   }
+};
+
+const normalizeLogoUrl = (raw?: string | null) => {
+  if (!raw) return null;
+  let v = raw.trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v) || /^data:/i.test(v)) return v;
+  if (!v.startsWith('/')) v = `/${v}`;
+  if (!v.startsWith('/uploads/')) v = `/uploads/${v.replace(/^\/+/, '')}`;
+  return resolveAssetUrl(v);
 };
 </script>
 
@@ -542,12 +660,20 @@ const loadActiveCommunityDetail = async () => {
 
 .top-bar {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
   background: #fff;
   border-radius: 12px;
-  padding: 20px 20px;
+  padding: 64px 20px 28px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+  position: relative;
+}
+
+.top-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .avatar-btn {
@@ -588,6 +714,52 @@ const loadActiveCommunityDetail = async () => {
   font-weight: 800;
   color: #0f172a;
   line-height: 1.2;
+}
+
+.top-actions {
+  margin-top: -10px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.portal-btn {
+  border: none;
+  color: #0f172a;
+  background: linear-gradient(135deg, #e0f2fe, #e0ecff);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 12px 28px rgba(37, 99, 235, 0.18);
+  width: 100%;
+  text-align: center;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0ea5e9;
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.plan-chip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.5);
+  background: #fff;
+  color: #2563eb;
+  font-weight: 700;
+  font-size: 12px;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
 }
 .top-title-row {
   display: flex;
@@ -633,9 +805,9 @@ const loadActiveCommunityDetail = async () => {
   box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
 }
 
-.stat-row {
+.stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   padding: 0 6px;
 }
@@ -706,6 +878,28 @@ const loadActiveCommunityDetail = async () => {
   opacity: 0.5;
   pointer-events: none;
 }
+.fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(94px + env(safe-area-inset-bottom, 0px));
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #22d3ee, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.28);
+}
+.fab--disabled {
+  opacity: 0.6;
+}
+.fab-plus {
+  width: 30px;
+  height: 30px;
+}
 .picker-overlay {
   position: fixed;
   inset: 0;
@@ -752,10 +946,33 @@ const loadActiveCommunityDetail = async () => {
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid transparent;
+  gap: 12px;
 }
 .picker-item.is-active {
   border-color: #0ea5e9;
   background: rgba(14, 165, 233, 0.15);
+}
+.picker-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+.picker-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.picker-meta {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 .picker-name {
   margin: 0;
@@ -778,8 +995,20 @@ const loadActiveCommunityDetail = async () => {
   color: #0f172a;
   text-decoration: none;
 }
+.picker-add.is-disabled {
+  pointer-events: all;
+  cursor: not-allowed;
+  background: rgba(15, 23, 42, 0.06);
+  border-style: solid;
+  color: #94a3b8;
+}
 .picker-add span {
   font-size: 18px;
+}
+.picker-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
 }
 .picker-empty {
   text-align: center;
@@ -798,6 +1027,7 @@ const loadActiveCommunityDetail = async () => {
 
 .create-sheet {
   width: 100%;
+  max-height: 75vh;
   background: #fff;
   border-radius: 20px 20px 0 0;
   padding: 18px 16px 24px;
@@ -818,6 +1048,70 @@ const loadActiveCommunityDetail = async () => {
   margin: 4px 0 0;
   font-size: 13px;
   color: #64748b;
+}
+
+.copy-sheet {
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+
+.copy-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.copy-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.copy-more {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.copy-item {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  text-align: left;
+}
+
+.copy-item:active {
+  background: #f8fafc;
+}
+
+.copy-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.copy-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.copy-time {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .create-list {
@@ -880,5 +1174,54 @@ const loadActiveCommunityDetail = async () => {
   background: rgba(15, 23, 42, 0.06);
   color: #0f172a;
   font-weight: 700;
+}
+.console-skeleton {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 10;
+}
+.sk-header {
+  height: 90px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.sk-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.sk-chip {
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.sk-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.sk-tile {
+  height: 120px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

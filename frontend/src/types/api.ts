@@ -21,6 +21,26 @@ export interface CommunitySummary {
   logoImageUrl?: string | null;
 }
 
+export interface CommunityTag {
+  id: string;
+  categoryId: string;
+  nameJa: string;
+  nameEn?: string | null;
+  nameZh?: string | null;
+  order: number;
+  active?: boolean;
+}
+
+export interface CommunityTagCategory {
+  id: string;
+  nameJa: string;
+  nameEn?: string | null;
+  nameZh?: string | null;
+  order: number;
+  active?: boolean;
+  tags: CommunityTag[];
+}
+
 export interface EventSummary {
   id: string;
   status: string;
@@ -419,6 +439,8 @@ export interface CommunityAnalytics {
   totalAttended: number;
   totalNoShow: number;
   attendanceRate: number;
+  followerCount?: number;
+  pageViewsMonth?: number;
 }
 
 export interface GeneratedEventContent {

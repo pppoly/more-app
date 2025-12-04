@@ -22,6 +22,11 @@ export class PermissionsService {
     }
   }
 
+  async isAdmin(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } });
+    return Boolean(user?.isAdmin);
+  }
+
   async assertCommunityManager(userId: string, communityId: string) {
     const community = await this.prisma.community.findUnique({ where: { id: communityId }, select: { ownerId: true } });
     if (!community) {

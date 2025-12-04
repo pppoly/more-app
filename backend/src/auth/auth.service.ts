@@ -246,6 +246,70 @@ export class AuthService {
     return { accessToken, user };
   }
 
+  async verifyLineIdToken(idToken: string) {
+    if (!this.lineConfig.channelId) {
+      throw new BadRequestException('LINE channel is not configured');
+    }
+    const { channelId } = this.lineConfig;
+    const url = 'https://api.line.me/oauth2/v2.1/verify';
+    const params = new URLSearchParams({
+      id_token: idToken,
+      client_id: channelId,
+    });
+    const { data } = await firstValueFrom(
+      this.httpService.post(url, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }),
+    );
+    return data as { sub?: string; name?: string; picture?: string };
+  }
+
+  async lineLiffLogin(
+    idToken: string,
+    profileHint?: { displayName?: string | null; pictureUrl?: string | null },
+  ) {
+    const verified = await this.verifyLineIdToken(idToken).catch(() => null);
+    const lineUserId = verified?.sub;
+    if (!lineUserId) {
+      throw new BadRequestException('Failed to verify LIFF token');
+    }
+    const displayName =
+      verified?.name?.trim() || profileHint?.displayName?.trim() || 'LINEユーザー';
+    const pictureUrl = verified?.picture || profileHint?.pictureUrl || null;
+
+    let user = await this.prisma.user.findFirst({
+      where: { lineUserId },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          lineUserId,
+          name: displayName,
+          language: 'ja',
+          preferredLocale: 'ja',
+        },
+      });
+    }
+
+    const storedAvatar = await this.saveLineAvatar(user.id, pictureUrl);
+    const updateData: Record<string, any> = {
+      name: displayName,
+      language: 'ja',
+      preferredLocale: 'ja',
+    };
+    if (storedAvatar) {
+      updateData.avatarUrl = storedAvatar;
+    }
+    user = await this.prisma.user.update({
+      where: { id: user.id },
+      data: updateData,
+    });
+
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken, user };
+  }
+
   private normalizeEmail(email: string | undefined | null) {
     if (!email) return '';
     const trimmed = email.trim().toLowerCase();

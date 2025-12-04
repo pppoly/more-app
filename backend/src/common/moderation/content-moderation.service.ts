@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { existsSync } from 'fs';
 import { ImageAnnotatorClient, protos as visionProtos } from '@google-cloud/vision';
 import { PredictionServiceClient } from '@google-cloud/aiplatform';
 
@@ -25,29 +26,19 @@ export class ContentModerationService {
   private visionClient: ImageAnnotatorClient | null = null;
   private vertexTextClient: PredictionServiceClient | null = null;
   private readonly projectId: string | undefined;
+  private readonly credentialsReady: boolean;
 
   constructor() {
     this.projectId = process.env.GOOGLE_PROJECT_ID;
-    try {
-      this.visionClient = new ImageAnnotatorClient();
-    } catch (err) {
-      this.logger.warn(`Vision client init failed: ${err instanceof Error ? err.message : String(err)}`);
-      this.visionClient = null;
-    }
-
-    try {
-      this.vertexTextClient = new PredictionServiceClient({ projectId: this.projectId });
-    } catch (err) {
-      this.logger.warn(`Vertex text moderation init failed: ${err instanceof Error ? err.message : String(err)}`);
-      this.vertexTextClient = null;
-    }
+    this.credentialsReady = this.ensureCredentials();
+    this.initClients();
   }
 
   async moderateText(text: string | null | undefined): Promise<ModerationResult> {
     if (!text || !text.trim()) {
       return { decision: 'approve' };
     }
-    if (!this.vertexTextClient) {
+    if (!this.vertexTextClient || !this.credentialsReady) {
       this.logger.warn('Vertex text moderation client unavailable; marking as needs_review');
       return { decision: 'needs_review', reason: 'moderation_unavailable' };
     }
@@ -84,7 +75,7 @@ export class ContentModerationService {
     if (!buffer || !buffer.length) {
       return { decision: 'approve' };
     }
-    if (!this.visionClient) {
+    if (!this.visionClient || !this.credentialsReady) {
       this.logger.warn('Vision client unavailable; marking image as needs_review');
       return { decision: 'needs_review', reason: 'vision_unavailable' };
     }
@@ -123,6 +114,41 @@ export class ContentModerationService {
         `Image moderation failed for ${filename ?? 'buffer'}: ${err instanceof Error ? err.message : String(err)}`,
       );
       return { decision: 'needs_review', reason: 'moderation_failed' };
+    }
+  }
+
+  private ensureCredentials() {
+    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credPath && !existsSync(credPath)) {
+      this.logger.warn(
+        `GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${credPath}. Moderation will be disabled.`,
+      );
+      return false;
+    }
+    if (!credPath && !process.env.GOOGLE_CLOUD_PROJECT && !this.projectId) {
+      this.logger.log('No explicit Google credential env found; falling back to ADC if available.');
+    }
+    return true;
+  }
+
+  private initClients() {
+    if (!this.credentialsReady) {
+      this.visionClient = null;
+      this.vertexTextClient = null;
+      return;
+    }
+    try {
+      this.visionClient = new ImageAnnotatorClient();
+    } catch (err) {
+      this.logger.warn(`Vision client init failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.visionClient = null;
+    }
+
+    try {
+      this.vertexTextClient = new PredictionServiceClient({ projectId: this.projectId });
+    } catch (err) {
+      this.logger.warn(`Vertex text moderation init failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.vertexTextClient = null;
     }
   }
 }

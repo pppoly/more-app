@@ -1,17 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { extname, join } from 'path';
-import { promises as fs } from 'fs';
 import type { Express } from 'express';
-import { UPLOAD_ROOT } from '../common/storage/upload-root';
 import { buildAssetUrl } from '../common/storage/asset-path';
-
-const AVATAR_UPLOAD_ROOT = join(UPLOAD_ROOT, 'avatars');
+import { AssetService } from '../asset/asset.service';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
 
 @Injectable()
 export class MeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assetService: AssetService,
+  ) {}
 
   async getMyEvents(userId: string) {
     const registrations = await this.prisma.eventRegistration.findMany({
@@ -82,14 +81,9 @@ export class MeService {
     if (!file?.buffer?.length) {
       throw new BadRequestException('無効な画像ファイルです');
     }
-    await fs.mkdir(AVATAR_UPLOAD_ROOT, { recursive: true });
-    const userDir = join(AVATAR_UPLOAD_ROOT, userId);
-    await fs.mkdir(userDir, { recursive: true });
-    const extension = extname(file.originalname?.toLowerCase() || '') || '.jpg';
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
-    const filePath = join(userDir, filename);
-    await fs.writeFile(filePath, file.buffer);
-    const avatarUrl = `/uploads/avatars/${userId}/${filename}`;
+    const tenantId = 'default'; // TODO: derive tenant from auth/request context if multi-tenant
+    const uploaded = await this.assetService.uploadUserAvatarFromBuffer({ userId, tenantId, file });
+    const avatarUrl = uploaded.publicUrl;
     return this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl },
