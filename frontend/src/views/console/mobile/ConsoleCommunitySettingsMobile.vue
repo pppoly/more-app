@@ -1,95 +1,92 @@
 <template>
-  <PageMarker label="P3" />
   <div class="community-settings">
-    <header class="hero-card" :class="`theme-${portalTheme}`">
-      <div class="hero-text">
-        <p class="hero-eyebrow">社群設定</p>
-        <h1>{{ form.name || 'コミュニティ' }}</h1>
-        <p class="hero-subtext">公開情報と AI が参照するプロフィールをここで管理します。</p>
-        <button class="portal-btn" type="button" @click="goPortal">
-          <span class="i-lucide-layout-template"></span>
-          ポータルをカスタマイズ
-        </button>
-      </div>
-      <span class="hero-status">{{ form.visibleLevel === 'private' ? '非公開' : '公開中' }}</span>
+    <header class="nav-bar">
+      <button class="nav-btn" type="button" @click="router.back()">
+        <span class="i-lucide-chevron-left"></span>
+      </button>
+      <div class="nav-title">{{ form.name || '社群設定' }}</div>
+      <button class="nav-btn nav-link" type="button" @click="goPortal">
+        ポータル
+      </button>
     </header>
 
     <form class="form-sections" @submit.prevent="handleSave">
-      <section class="form-card">
+      <section class="form-card sheet">
         <p class="card-label">基本情報</p>
-        <div class="ios-field">
-          <label>社群名称</label>
-          <input v-model="form.name" type="text" placeholder="Tokyo Community..." disabled />
+        <div class="list-row list-row--field">
+          <div class="list-meta">
+            <p class="list-title">社群名称</p>
+            <p class="list-desc">タップして編集</p>
+          </div>
+          <input v-model="form.name" type="text" class="list-input" placeholder="Tokyo Community..." />
         </div>
-        <div class="ios-field">
-          <label>Slug</label>
-          <input v-model="form.slug" type="text" disabled />
+        <div class="list-row list-row--field is-disabled">
+          <div class="list-meta">
+            <p class="list-title">Slug</p>
+            <p class="list-desc">URL 識別子</p>
+          </div>
+          <input v-model="form.slug" type="text" class="list-input" :disabled="!isCreateMode" />
         </div>
       </section>
 
-      <section class="form-card">
+      <section class="form-card sheet">
         <div class="card-head">
           <p class="card-label">ラベル</p>
-          <p class="card-hint">活動領域やキーワードをカンマ区切りで追加</p>
+          <p class="card-hint">最大 5 つまで選択</p>
         </div>
-        <div class="ios-field">
-          <label>キーワード</label>
-          <input v-model="form.labels" type="text" placeholder="多文化, 親子, コミュニティ" />
-        </div>
-        <div v-if="labelChips.length" class="chip-row">
-          <span v-for="chip in labelChips" :key="chip" class="chip">{{ chip }}</span>
-        </div>
+        <button type="button" class="list-row" @click="openTagSheet">
+          <div class="list-meta">
+            <p class="list-title">社群のタグ</p>
+            <p class="list-desc">タップして選択</p>
+          </div>
+          <div class="tag-badge-group">
+            <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
+            <span v-if="!labelChips.length" class="tag-placeholder">未選択</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
       </section>
 
-      <section class="form-card">
-        <div class="card-head">
-          <p class="card-label">公開範囲</p>
-          <p class="card-hint">ユーザー側にどこまで表示するかを選びます</p>
-        </div>
-        <div class="radio-group">
-          <label v-for="option in visibleOptions" :key="option.value" class="radio-tile">
-            <input v-model="form.visibleLevel" :value="option.value" type="radio" />
-            <div class="radio-content">
-              <p class="radio-title">{{ option.label }}</p>
-              <p class="radio-desc">{{ option.desc }}</p>
-            </div>
-          </label>
-        </div>
+      <section class="form-card sheet">
+        <button type="button" class="list-row" @click="visibilitySheetOpen = true">
+          <div class="list-meta">
+            <p class="list-title">公開範囲</p>
+            <p class="list-desc">ユーザーにどこまで見せるか</p>
+          </div>
+          <div class="visible-pill">
+            <span class="visible-label">{{ currentVisibleOption.label }}</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
       </section>
 
-      <section class="form-card">
+      <section class="form-card sheet">
         <p class="card-label">ビジュアル</p>
-        <div class="upload-grid">
-          <div class="upload-card">
-            <p class="upload-title">ロゴ</p>
-            <div class="upload-drop" @click="triggerLogoUpload">
-              <input ref="logoInput" type="file" accept="image/*" class="hidden-input" @change="handleLogoUpload" />
-              <div v-if="logoPreview" class="upload-preview">
-                <img :src="logoPreview" alt="logo preview" />
-              </div>
-              <div v-else class="upload-empty">
-                <span class="i-lucide-image-plus"></span>
-                <p>タップしてアップロード</p>
-              </div>
-            </div>
+        <button type="button" class="list-row" @click="triggerLogoUpload()">
+          <div class="list-meta">
+            <p class="list-title">ロゴ</p>
+            <p class="list-desc">1:1 正方形、透過推奨</p>
           </div>
-          <div class="upload-card">
-            <p class="upload-title">カバー画像</p>
-            <div class="upload-drop" @click="triggerCoverUpload">
-              <input ref="coverInput" type="file" accept="image/*" class="hidden-input" @change="handleCoverUpload" />
-              <div v-if="coverPreview" class="upload-preview">
-                <img :src="coverPreview" alt="cover preview" />
-              </div>
-              <div v-else class="upload-empty">
-                <span class="i-lucide-image-plus"></span>
-                <p>タップしてアップロード</p>
-              </div>
-            </div>
+          <div class="list-thumb">
+            <img v-if="logoPreview" :src="logoPreview" alt="logo preview" @error="handlePreviewError('logo')" />
+            <span v-else class="thumb-placeholder i-lucide-image"></span>
           </div>
-        </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
+        <button type="button" class="list-row" @click="triggerCoverUpload()">
+          <div class="list-meta">
+            <p class="list-title">カバー画像</p>
+            <p class="list-desc">16:9 横長、1MB 以内</p>
+          </div>
+          <div class="list-thumb list-thumb--wide">
+            <img v-if="coverPreview" :src="coverPreview" alt="cover preview" @error="handlePreviewError('cover')" />
+            <span v-else class="thumb-placeholder i-lucide-image"></span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
       </section>
 
-      <section class="form-card">
+      <section class="form-card sheet">
         <div class="card-head">
           <p class="card-label">社群紹介</p>
           <div class="card-head__right">
@@ -112,37 +109,131 @@
         {{ saving ? '保存中…' : '保存する' }}
       </button>
     </footer>
-    <button class="hero-back" type="button" @click="router.back()">
-      <span class="i-lucide-arrow-left"></span>
-    </button>
+      <button class="hero-back" type="button" @click="router.back()">
+        <span class="i-lucide-arrow-left"></span>
+      </button>
+    <input ref="logoInput" type="file" class="hidden-input" accept="image/*" @change="handleLogoUpload" />
+    <input ref="coverInput" type="file" class="hidden-input" accept="image/*" @change="handleCoverUpload" />
+    <ImageCropperModal
+      :model-value="showCropper"
+      :src="cropSource"
+      :aspect-ratio="cropAspect"
+      :result-width="cropResultWidth"
+      :result-type="cropTarget === 'logo' ? 'image/png' : 'image/jpeg'"
+      :show-circle-guide="cropTarget === 'logo'"
+      :loading="croppingLoading"
+      title="画像を調整"
+      confirm-text="保存する"
+      cancel-text="キャンセル"
+      @update:modelValue="(val) => (showCropper = val)"
+      @confirm="handleCropConfirm"
+      @cancel="resetCropper"
+    />
+
+    <transition name="fade">
+      <div v-if="tagSheetOpen" class="sheet-overlay" @click.self="tagSheetOpen = false">
+        <div class="sheet-panel sheet-panel--full">
+          <header class="sheet-head">
+            <p class="sheet-title">タグを選択（最大5つ）</p>
+            <button type="button" class="sheet-close" @click="tagSheetOpen = false">
+              <span class="i-lucide-x"></span>
+            </button>
+          </header>
+          <div class="tag-sheet">
+            <div v-if="tagLoading" class="tag-empty">読み込み中…</div>
+            <template v-else>
+              <div v-if="!tagCategories.length" class="tag-empty">タグが設定されていません</div>
+              <div v-for="cat in tagCategories" :key="cat.id" class="tag-group">
+                <p class="tag-group-title">{{ displayName(cat) }}</p>
+                <div class="tag-chip-list">
+                  <button
+                    v-for="tag in cat.tags"
+                    :key="tag.id"
+                    type="button"
+                    class="tag-chip"
+                    :class="{ 'is-selected': selectedTags.includes(displayName(tag)) }"
+                    @click="toggleTag(displayName(tag))"
+                  >
+                    <span class="tag-label">{{ displayName(tag) }}</span>
+                    <span v-if="selectedTags.includes(displayName(tag))" class="i-lucide-check"></span>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="sheet-actions">
+            <button type="button" class="ghost-btn" @click="tagSheetOpen = false">閉じる</button>
+            <button type="button" class="primary-btn" @click="tagSheetOpen = false">決定</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="fade">
+      <div v-if="visibilitySheetOpen" class="sheet-overlay" @click.self="visibilitySheetOpen = false">
+        <div class="sheet-panel">
+          <header class="sheet-head">
+            <p class="sheet-title">公開範囲を選択</p>
+            <button type="button" class="sheet-close" @click="visibilitySheetOpen = false">
+              <span class="i-lucide-x"></span>
+            </button>
+          </header>
+          <div class="visible-list">
+            <button
+              v-for="option in visibleOptions"
+              :key="option.value"
+              type="button"
+              class="visible-row"
+              :class="{ 'is-active': form.visibleLevel === option.value }"
+              @click="setVisible(option.value)"
+            >
+              <div class="visible-text">
+                <p class="visible-title">{{ option.label }}</p>
+                <p class="visible-desc">{{ option.desc }}</p>
+                <p v-if="option.note" class="visible-note">{{ option.note }}</p>
+              </div>
+              <span class="radio-indicator" :class="{ 'is-checked': form.visibleLevel === option.value }"></span>
+            </button>
+          </div>
+          <div class="sheet-actions">
+            <button type="button" class="ghost-btn" @click="visibilitySheetOpen = false">閉じる</button>
+            <button type="button" class="primary-btn" @click="visibilitySheetOpen = false">決定</button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, onActivated } from 'vue';
+import { computed, reactive, ref, onMounted, onActivated, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   fetchConsoleCommunity,
   updateConsoleCommunity,
   uploadCommunityAsset,
+  fetchCommunityTags,
+  createConsoleCommunity,
 } from '../../../api/client';
-import type { ConsoleCommunityDetail } from '../../../types/api';
+import type { ConsoleCommunityDetail, CommunityTagCategory } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import PageMarker from '../../../components/PageMarker.vue';
 import { useI18n } from 'vue-i18n';
+import { useToast } from '../../../composables/useToast';
+import ImageCropperModal from '../../../components/ImageCropperModal.vue';
 
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
-const communityId = route.params.communityId as string;
+const communityId = ref<string | null>((route.params.communityId as string) || null);
 const { t } = useI18n();
+const toast = useToast();
+const isCreateMode = computed(() => !communityId.value || communityId.value === 'new');
 
 const form = reactive({
   name: '',
   slug: '',
-  labels: '',
   visibleLevel: 'public',
   coverImageUrl: '',
   logoImageUrl: '',
@@ -157,40 +248,76 @@ const uploadingCover = ref(false);
 const uploadingLogo = ref(false);
 const portalTheme = ref('immersive');
 const themeOptions = ['clean', 'immersive', 'warm', 'collage'];
+const tagSheetOpen = ref(false);
+const tagCategories = ref<CommunityTagCategory[]>([]);
+const tagLoading = ref(false);
+const tagLoaded = ref(false);
+const visibilitySheetOpen = ref(false);
 
 const saving = ref(false);
 const error = ref<string | null>(null);
+const showCropper = ref(false);
+const cropSource = ref<string | null>(null);
+const cropTarget = ref<'cover' | 'logo' | null>(null);
+const selectedTags = ref<string[]>([]);
+
+const toggleTag = (tag: string) => {
+  const value = tag.trim();
+  if (!value) return;
+  const exists = selectedTags.value.includes(value);
+  if (exists) {
+    selectedTags.value = selectedTags.value.filter((t) => t !== value);
+    return;
+  }
+  if (selectedTags.value.length >= 5) {
+    return;
+  }
+  selectedTags.value = [...selectedTags.value, value];
+};
 
 const visibleOptions = [
-  { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
-  { value: 'semi-public', label: '社群限定', desc: 'Console / 既存メンバーのみ' },
-  { value: 'private', label: '非公開', desc: '運営メモ用・外部非公開' },
+  {
+    value: 'public',
+    label: '公開',
+    desc: '誰でも閲覧できる。ポータルや外部リンクからも表示されます。',
+  },
+  {
+    value: 'semi-public',
+    label: '社群限定',
+    desc: 'Console 内とフォロー/参加済みのユーザーだけが閲覧可能。',
+    note: 'メンバー = この社群をフォロー（参加）しているユーザー。',
+  },
+  {
+    value: 'private',
+    label: '非公開',
+    desc: '運営メモ用。外部/メンバーにも表示しません。',
+  },
 ];
 
-const labelChips = computed(() =>
-  form.labels
-    .split(',')
-    .map((label) => label.trim())
-    .filter(Boolean),
+const labelChips = computed(() => selectedTags.value.slice(0, 5));
+const currentVisibleOption = computed(
+  () => visibleOptions.find((o) => o.value === form.visibleLevel) ?? visibleOptions[0],
 );
 
 const loadCommunity = async () => {
-  if (!communityId) return;
+  if (isCreateMode.value || !communityId.value) return;
   try {
-    const detail = await fetchConsoleCommunity(communityId);
+    const detail = await fetchConsoleCommunity(communityId.value);
     form.name = detail.name;
     form.slug = detail.slug;
-    form.labels = (detail.labels || []).join(', ');
+    selectedTags.value = (detail.labels || []).slice(0, 5);
     form.visibleLevel = detail.visibleLevel ?? 'public';
-    form.coverImageUrl = detail.coverImageUrl || '';
-    coverPreview.value = form.coverImageUrl ? resolveAssetUrl(form.coverImageUrl) : null;
+    const coverRaw = detail.coverImageUrl || '';
+    form.coverImageUrl = normalizeManagedAsset(coverRaw);
+    coverPreview.value = form.coverImageUrl ? resolveAssetUrl(form.coverImageUrl) : coverRaw ? coverRaw : null;
     const descriptionObj =
       typeof detail.description === 'object' && detail.description
         ? (detail.description as ConsoleCommunityDetail['description']) as any
         : null;
     form.description = getLocalizedText(detail.description);
-    form.logoImageUrl = descriptionObj?.logoImageUrl ?? '';
-    logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : null;
+    const logoUrl = detail.logoImageUrl ?? descriptionObj?.logoImageUrl ?? '';
+    form.logoImageUrl = normalizeManagedAsset(logoUrl);
+    logoPreview.value = form.logoImageUrl ? resolveAssetUrl(form.logoImageUrl) : logoUrl || null;
     stripeOnboardLink.value = descriptionObj?._stripeOnboardLink ?? null;
     if (descriptionObj?._portalConfig && typeof descriptionObj._portalConfig.theme === 'string') {
       const theme = descriptionObj._portalConfig.theme;
@@ -199,6 +326,10 @@ const loadCommunity = async () => {
   } catch (err) {
     error.value = err instanceof Error ? err.message : '社群情報の取得に失敗しました';
   }
+};
+
+const setVisible = (value: string) => {
+  form.visibleLevel = value;
 };
 
 const buildDescription = () => ({
@@ -214,97 +345,125 @@ const triggerLogoUpload = () => logoInput.value?.click();
 
 const stripeOnboardLink = ref<string | null>(null);
 
-const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const { width, height } = img;
-        let cropWidth = width;
-        let cropHeight = cropWidth / aspectRatio;
-        if (cropHeight > height) {
-          cropHeight = height;
-          cropWidth = cropHeight * aspectRatio;
-        }
-        const startX = (width - cropWidth) / 2;
-        const startY = (height - cropHeight) / 2;
-        const outputWidth = Math.min(targetWidth, cropWidth);
-        const outputHeight = outputWidth / aspectRatio;
-        const canvas = document.createElement('canvas');
-        canvas.width = outputWidth;
-        canvas.height = outputHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas not supported'));
-          return;
-        }
-        ctx.drawImage(img, startX, startY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = reader.result as string;
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
+const cropAspect = computed(() => {
+  if (cropTarget.value === 'cover') return 16 / 9;
+  if (cropTarget.value === 'logo') return 1;
+  return 1;
+});
 
-const dataUrlToFile = async (dataUrl: string, filename: string) => {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+const loadTags = async () => {
+  if (tagLoaded.value || tagLoading.value) return;
+  tagLoading.value = true;
+  try {
+    const categories = await fetchCommunityTags();
+    tagCategories.value = categories.sort((a, b) => a.order - b.order);
+    tagLoaded.value = true;
+  } catch (err) {
+    console.warn('Failed to load tags', err);
+  } finally {
+    tagLoading.value = false;
+  }
 };
+
+const openTagSheet = async () => {
+  tagSheetOpen.value = true;
+  await loadTags();
+};
+
+const displayName = (item: { nameJa?: string | null; nameZh?: string | null; nameEn?: string | null }) => {
+  return item.nameJa || item.nameZh || item.nameEn || '';
+};
+
+const cropResultWidth = computed(() => (cropTarget.value === 'cover' ? 1280 : 512));
+const croppingLoading = computed(() => cropTarget.value === 'cover' ? uploadingCover.value : uploadingLogo.value);
 
 const handleCoverUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file || uploadingCover.value) return;
-  if (!communityId) {
-    error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
+  if (!communityId.value) {
+    error.value = 'コミュニティを先に保存してください。';
     return;
   }
-  uploadingCover.value = true;
-  try {
-    const dataUrl = await cropImage(file, 16 / 9, 1280);
-    coverPreview.value = dataUrl;
-    const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'cover');
-    form.coverImageUrl = imageUrl;
-    coverPreview.value = resolveAssetUrl(imageUrl);
-  } catch (err) {
-    console.warn(err);
-  } finally {
-    uploadingCover.value = false;
-  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    cropTarget.value = 'cover';
+    cropSource.value = reader.result as string;
+    showCropper.value = true;
+  };
+  reader.readAsDataURL(file);
+  target.value = '';
 };
 
 const handleLogoUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file || uploadingLogo.value) return;
-  if (!communityId) {
-    error.value = 'コミュニティ ID が取得できません。ページを再読み込みしてください。';
+  if (!communityId.value) {
+    error.value = 'コミュニティを先に保存してください。';
     return;
   }
-  uploadingLogo.value = true;
-  try {
-    const dataUrl = await cropImage(file, 1, 512);
-    logoPreview.value = dataUrl;
-    const uploadFile = await dataUrlToFile(dataUrl, `logo-${Date.now()}.jpg`);
-    const { imageUrl } = await uploadCommunityAsset(communityId, uploadFile, 'logo');
-    form.logoImageUrl = imageUrl;
-    logoPreview.value = resolveAssetUrl(imageUrl);
-  } catch (err) {
-    console.warn(err);
-  } finally {
-    uploadingLogo.value = false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    cropTarget.value = 'logo';
+    cropSource.value = reader.result as string;
+    showCropper.value = true;
+  };
+  reader.readAsDataURL(file);
+  target.value = '';
+};
+
+const resetCropper = () => {
+  showCropper.value = false;
+  cropSource.value = null;
+  cropTarget.value = null;
+};
+
+const handleCropConfirm = async (blob: Blob) => {
+  if (!cropTarget.value || !communityId.value) return;
+  const filename = `${cropTarget.value}-${Date.now()}.jpg`;
+  const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+
+  if (cropTarget.value === 'cover') {
+    uploadingCover.value = true;
+    try {
+    const { imageUrl } = await uploadCommunityAsset(communityId.value, file, 'cover');
+    const normalized = normalizeManagedAsset(imageUrl?.replace('/api/v1', '') ?? imageUrl);
+    form.coverImageUrl = normalized;
+    coverPreview.value = normalized ? resolveAssetUrl(normalized) : null;
+    } catch (err) {
+      console.warn(err);
+    } finally {
+      uploadingCover.value = false;
+      resetCropper();
+    }
+    return;
+  }
+
+  if (cropTarget.value === 'logo') {
+    uploadingLogo.value = true;
+    try {
+    const { imageUrl } = await uploadCommunityAsset(communityId.value, file, 'logo');
+    const normalized = normalizeManagedAsset(imageUrl?.replace('/api/v1', '') ?? imageUrl);
+    form.logoImageUrl = normalized;
+    logoPreview.value = normalized ? resolveAssetUrl(normalized) : null;
+    } catch (err) {
+      console.warn(err);
+    } finally {
+      uploadingLogo.value = false;
+      resetCropper();
+    }
   }
 };
 
 const handleSave = async () => {
-  if (!communityId) return;
   saving.value = true;
   error.value = null;
+  if (!form.name.trim() || !form.slug.trim()) {
+    error.value = '社群名称とSlugは必須です';
+    saving.value = false;
+    return;
+  }
   const payload = {
     labels: labelChips.value,
     visibleLevel: form.visibleLevel,
@@ -313,8 +472,24 @@ const handleSave = async () => {
     description: buildDescription(),
   };
   try {
-    await updateConsoleCommunity(communityId, payload);
-    await loadCommunity();
+    if (isCreateMode.value || !communityId.value) {
+      const created = await createConsoleCommunity({
+        name: form.name,
+        slug: form.slug,
+        labels: labelChips.value,
+        visibleLevel: form.visibleLevel,
+        description: buildDescription(),
+        coverImageUrl: form.coverImageUrl || null,
+      });
+      communityId.value = created.id;
+      toast.show('作成しました', 'success');
+      router.push({ name: 'ConsoleMobileCommunitySettings', params: { communityId: created.id } });
+    } else {
+      await updateConsoleCommunity(communityId.value, payload);
+      await loadCommunity();
+      toast.show('保存しました', 'success');
+      router.push({ name: 'ConsoleMobileHome' });
+    }
     await communityStore.loadCommunities(true);
     communityStore.refreshActiveCommunity();
   } catch (err) {
@@ -325,31 +500,111 @@ const handleSave = async () => {
 };
 
 const goPortal = () => {
-  if (!communityId) return;
-  router.push({ name: 'ConsoleMobileCommunityPortal', params: { communityId } });
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileCommunityPortal', params: { communityId: communityId.value } });
+};
+
+const handlePreviewError = (type: 'cover' | 'logo') => {
+  if (type === 'cover') {
+    coverPreview.value = null;
+  } else {
+    logoPreview.value = null;
+  }
+};
+
+const normalizeManagedAsset = (url?: string | null) => {
+  if (!url) return '';
+  let v = url.trim();
+  if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  // keep uploads prefix, only strip API prefix
+  if (v.startsWith('/api/v1/uploads')) {
+    v = v.replace('/api/v1', '');
+  } else if (v.startsWith('/api/v1/')) {
+    v = v.slice('/api/v1/'.length - 1);
+  }
+  if (v.startsWith('uploads/')) {
+    v = `/${v}`;
+  }
+  if (!v) return '';
+  return v;
 };
 
 onMounted(loadCommunity);
 onActivated(loadCommunity);
+watch(
+  () => route.params.communityId,
+  (val) => {
+    communityId.value = (val as string) || null;
+    if (!isCreateMode.value) {
+      loadCommunity();
+    }
+  },
+);
 </script>
 
 <style scoped>
 .community-settings {
-  min-height: 100vh;
-  background: #f4f6fb;
+  min-height: auto;
+  background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 100%);
   padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
+}
+.nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+.nav-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #0f172a;
+}
+.nav-btn.nav-link {
+  padding: 0 10px;
+  width: auto;
+  height: 36px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.nav-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  flex: 1;
+  text-align: center;
 }
 .hero-card {
   margin: 16px 16px 0;
-  padding: 18px;
+  padding: 20px 18px;
   border-radius: 24px;
-  background: linear-gradient(135deg, #0f3057, #45aee2);
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
   color: #f0f9ff;
-  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.2);
+  box-shadow: 0 24px 40px rgba(14, 165, 233, 0.18);
   position: relative;
 }
+.hero-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.14), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.12), transparent 35%);
+  pointer-events: none;
+}
 .hero-card.theme-clean {
-  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+  background: linear-gradient(135deg, #eef2ff, #e2e8f0);
   color: #0f172a;
 }
 .hero-card.theme-immersive {
@@ -381,13 +636,13 @@ onActivated(loadCommunity);
   border: none;
   border-radius: 14px;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.2);
   color: #f8fafc;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.14);
 }
 .hero-eyebrow {
   margin: 0;
@@ -425,10 +680,11 @@ onActivated(loadCommunity);
   background: #fff;
   border-radius: 20px;
   padding: 16px;
-  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 .card-label {
   margin: 0;
@@ -446,6 +702,61 @@ onActivated(loadCommunity);
   margin: 0;
   font-size: 12px;
   color: #64748b;
+}
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+}
+.list-row + .list-row {
+  margin-top: 10px;
+}
+.list-row--field {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.list-row.is-disabled {
+  opacity: 0.7;
+}
+.list-meta {
+  flex: 1;
+  min-width: 0;
+}
+.list-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.list-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.list-input {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 0;
+  font-size: 15px;
+  min-width: 120px;
+  max-width: 48%;
+  text-align: right;
+  margin-left: auto;
+  flex-shrink: 1;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+.list-input:focus {
+  outline: none;
+  box-shadow: none;
+  border-bottom-color: rgba(14, 165, 233, 0.7);
 }
 .card-head__right {
   display: flex;
@@ -475,11 +786,17 @@ onActivated(loadCommunity);
   color: #475569;
 }
 .ios-field input {
-  border: none;
-  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 14px;
-  padding: 12px;
+  padding: 12px 14px;
   font-size: 15px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ios-field input:focus {
+  outline: none;
+  border-color: rgba(14, 165, 233, 0.6);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.16);
 }
 .chip-row {
   display: flex;
@@ -493,10 +810,142 @@ onActivated(loadCommunity);
   font-size: 12px;
   color: #0f172a;
 }
+.tag-badge-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-height: 24px;
+  flex: 1;
+}
+.tag-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0ea5e9;
+  font-size: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+.tag-placeholder {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.thumb-placeholder {
+  font-size: 20px;
+  color: #94a3b8;
+}
+.list-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+}
+.list-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.list-thumb--wide {
+  width: 92px;
+  height: 64px;
+}
+.tag-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tag-group-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.tag-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 12px 0;
+  font-size: 13px;
+}
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 13px;
+}
+.tag-chip.is-selected {
+  border-color: rgba(14, 165, 233, 0.7);
+  background: rgba(14, 165, 233, 0.15);
+  color: #0f172a;
+}
 .radio-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.visible-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px 12px;
+  gap: 10px;
+}
+.visible-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  text-align: left;
+}
+.visible-row.is-active {
+  border-color: rgba(14, 165, 233, 0.6);
+  background: rgba(14, 165, 233, 0.12);
+}
+.visible-text {
+  flex: 1;
+  min-width: 0;
+}
+.visible-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.visible-desc {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+.visible-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.visible-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0ea5e9;
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.2);
 }
 .radio-tile {
   display: flex;
@@ -511,6 +960,26 @@ onActivated(loadCommunity);
 }
 .radio-content {
   flex: 1;
+}
+.radio-indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 23, 42, 0.25);
+}
+.radio-indicator.is-checked {
+  border-color: rgba(14, 165, 233, 0.8);
+  box-shadow: inset 0 0 0 4px rgba(14, 165, 233, 0.8);
+}
+.radio-indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 23, 42, 0.25);
+}
+.radio-indicator.is-checked {
+  border-color: rgba(14, 165, 233, 0.8);
+  box-shadow: inset 0 0 0 4px rgba(14, 165, 233, 0.8);
 }
 .radio-title {
   margin: 0;
@@ -545,10 +1014,18 @@ onActivated(loadCommunity);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.03);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), #fff);
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+.upload-drop:hover {
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.12);
+}
+.upload-drop:active {
+  transform: scale(0.98);
 }
 .hidden-input {
   position: absolute;
@@ -574,14 +1051,139 @@ onActivated(loadCommunity);
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
+  border-radius: 12px;
+}
+.tag-sheet {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.tag-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+}
+.tag-option.is-selected {
+  border-color: rgba(14, 165, 233, 0.6);
+  background: rgba(14, 165, 233, 0.12);
+}
+.tag-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #0ea5e9;
+}
+.tag-label {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
 }
 .form-card textarea {
-  border: none;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 16px;
   padding: 14px;
   font-size: 15px;
-  background: rgba(15, 23, 42, 0.04);
+  background: rgba(255, 255, 255, 0.9);
   resize: vertical;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.form-card textarea:focus {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.5);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 12px;
+  z-index: 80;
+}
+.sheet-panel {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 18px 18px 12px 12px;
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+.sheet-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.sheet-close {
+  border: none;
+  background: rgba(15, 23, 42, 0.06);
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #0f172a;
+}
+.sheet-preview {
+  padding: 12px 16px 0;
+}
+.sheet-preview img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 14px;
+  display: block;
+  background: #f8fafc;
+}
+.sheet-preview--logo img {
+  max-width: 180px;
+  margin: 0 auto;
+}
+.sheet-placeholder {
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  border-radius: 14px;
+  padding: 28px 16px;
+  text-align: center;
+  color: #94a3b8;
+  background: #f8fafc;
+}
+.sheet-actions {
+  padding: 14px 16px 16px;
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+.sheet-actions .ghost-btn,
+.sheet-actions .primary-btn {
+  border-radius: 12px;
+}
+.sheet-panel--full {
+  height: 90vh;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.sheet-panel--full .tag-sheet {
+  flex: 1;
+  max-height: none;
+  padding: 12px 16px 10px;
 }
 .form-error {
   color: #dc2626;

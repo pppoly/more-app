@@ -1,13 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Community, Prisma } from '@prisma/client';
-import { promises as fs } from 'fs';
-import { dirname } from 'path';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
 import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
-import { assetKeyToDiskPath, buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
+import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
+import { AssetService } from '../asset/asset.service';
 
 @Injectable()
 export class ConsoleCommunitiesService {
@@ -18,6 +16,7 @@ export class ConsoleCommunitiesService {
     private readonly permissions: PermissionsService,
     private readonly stripeService: StripeService,
     private readonly stripeOnboarding: StripeOnboardingService,
+    private readonly assetService: AssetService,
   ) {}
 
   private readonly defaultPortalConfig = {
@@ -66,7 +65,8 @@ export class ConsoleCommunitiesService {
       visibleLevel: community.visibleLevel,
       createdAt: community.createdAt,
       coverImageUrl: buildAssetUrl(community.coverImageUrl),
-      role: community.ownerId === userId ? 'owner' : community.members[0]?.role ?? 'admin',
+      logoImageUrl: this.getLogoUrl(community as any),
+      role: community.ownerId === userId ? 'owner' : (community as any).members?.[0]?.role ?? 'admin',
     }));
   }
 
@@ -141,6 +141,16 @@ export class ConsoleCommunitiesService {
     }>,
   ) {
     await this.permissions.assertCommunityManager(userId, communityId);
+    const needsDescription =
+      payload.description !== undefined || payload.logoImageUrl !== undefined;
+    const currentDescription = needsDescription
+      ? (
+          await this.prisma.community.findUnique({
+            where: { id: communityId },
+            select: { description: true },
+          })
+        )?.description
+      : undefined;
     const data: Prisma.CommunityUpdateInput = {};
     if (payload.name !== undefined) data.name = payload.name;
     if (payload.description !== undefined) data.description = payload.description;
@@ -150,7 +160,12 @@ export class ConsoleCommunitiesService {
       data.coverImageUrl = toAssetKey(payload.coverImageUrl) ?? payload.coverImageUrl;
     }
     if (payload.logoImageUrl !== undefined) {
-      data.description = await this.mergeLogoIntoDescription(communityId, payload.logoImageUrl);
+      const baseDescription =
+        payload.description !== undefined ? payload.description : currentDescription;
+      data.description = this.mergeLogoIntoDescription(baseDescription, payload.logoImageUrl);
+    } else if (payload.description !== undefined) {
+      // ensure description updates apply when logo unchanged
+      data.description = payload.description;
     }
 
     const updated = await this.prisma.community.update({ where: { id: communityId }, data });
@@ -168,15 +183,34 @@ export class ConsoleCommunitiesService {
   }
 
   private decorateCommunity(community: Community) {
-    return { ...community, coverImageUrl: buildAssetUrl(community.coverImageUrl) };
+    return {
+      ...community,
+      coverImageUrl: buildAssetUrl(community.coverImageUrl),
+      logoImageUrl: this.getLogoUrl(community),
+    };
   }
 
-  private async mergeLogoIntoDescription(communityId: string, logoImageUrl: string | null) {
-    const current = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { description: true },
-    });
-    const desc = current?.description && typeof current.description === 'object' ? { ...(current.description as any) } : {};
+  private getLogoUrl(community: Community): string | null {
+    const desc = community.description as any;
+    const rawFromDesc =
+      desc && typeof desc === 'object' && typeof desc.logoImageUrl === 'string' ? desc.logoImageUrl : null;
+    const rawFromPortal =
+      desc && typeof desc === 'object' && desc._portalConfig && typeof desc._portalConfig.logoImageUrl === 'string'
+        ? desc._portalConfig.logoImageUrl
+        : null;
+    const rawTop = typeof (community as any).logoImageUrl === 'string' ? (community as any).logoImageUrl : null;
+    const rawLogo = rawFromDesc || rawFromPortal || rawTop;
+    return buildAssetUrl(rawLogo);
+  }
+
+  private mergeLogoIntoDescription(
+    baseDescription: Prisma.InputJsonValue | null | undefined,
+    logoImageUrl: string | null,
+  ) {
+    const desc =
+      baseDescription && typeof baseDescription === 'object'
+        ? { ...(baseDescription as Record<string, any>) }
+        : {};
     if (logoImageUrl === null) {
       delete desc.logoImageUrl;
       if (desc._portalConfig) delete desc._portalConfig.logoImageUrl;
@@ -264,17 +298,35 @@ export class ConsoleCommunitiesService {
     if (!file.mimetype.startsWith('image/')) {
       throw new BadRequestException('画像のみアップロードできます');
     }
-    const folder = type === 'logo' ? 'logos' : 'covers';
-    const ext = this.getExtension(file.originalname) || 'jpg';
-    const filename = `${randomUUID()}.${ext}`;
-    const imageKey = `communities/${communityId}/${folder}/${filename}`;
-    const filePath = assetKeyToDiskPath(imageKey);
-    if (filePath) {
-      await fs.mkdir(dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, file.buffer);
+    const role = type === 'logo' ? 'logo' : 'cover';
+    const { asset, publicUrl } = await this.assetService.uploadImageFromBuffer({
+      userId,
+      tenantId: communityId,
+      resourceType: 'community',
+      resourceId: communityId,
+      role,
+      file,
+    });
+
+    // persist to community immediately so subsequent GET has latest paths
+    if (type === 'cover') {
+      await this.prisma.community.update({
+        where: { id: communityId },
+        data: { coverImageUrl: publicUrl },
+      });
+    } else if (type === 'logo') {
+      const community = await this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { description: true },
+      });
+      const merged = this.mergeLogoIntoDescription(community?.description ?? {}, publicUrl);
+      await this.prisma.community.update({
+        where: { id: communityId },
+        data: { description: merged },
+      });
     }
-    const imageUrl = buildAssetUrl(imageKey);
-    return { imageKey, imageUrl };
+
+    return { assetId: asset.id, imageUrl: publicUrl, variants: asset.variants ?? null };
   }
 
   private getExtension(filename: string) {
@@ -329,6 +381,9 @@ export class ConsoleCommunitiesService {
     const totalRegistrations = registrations.length;
     const totalAttended = registrations.filter((reg) => reg.attended).length;
     const totalNoShow = registrations.filter((reg) => reg.noShow).length;
+    const followerCount = await this.prisma.communityMember.count({
+      where: { communityId, status: 'active' },
+    });
     return {
       communityId,
       totalEvents,
@@ -336,6 +391,8 @@ export class ConsoleCommunitiesService {
       totalAttended,
       totalNoShow,
       attendanceRate: totalRegistrations ? totalAttended / totalRegistrations : 0,
+      followerCount,
+      pageViewsMonth: 0,
     };
   }
 

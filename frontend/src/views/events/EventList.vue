@@ -1,7 +1,7 @@
 <template>
   <section class="events-mobile">
     <header class="app-bar">
-      <div class="logo-circle">M</div>
+      <img :src="brandLogo" alt="More" class="logo-circle" />
     </header>
 
     <div class="search-section">
@@ -65,8 +65,10 @@ import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import brandLogoUrl from '../../assets/images/logo1.svg';
 
 const router = useRouter();
+const brandLogo = brandLogoUrl;
 
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
@@ -161,15 +163,15 @@ onMounted(loadEvents);
 }
 
 .logo-circle {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: var(--color-primary);
-  color: #fff;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  display: inline-block;
+  object-fit: contain;
+  box-shadow: none;
 }
 
 .user-avatar {

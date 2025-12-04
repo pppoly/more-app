@@ -8,12 +8,15 @@
     <p v-else-if="error" class="status error">{{ error }}</p>
 
     <div v-else-if="community" class="portal-shell">
-      <header class="portal-nav">
-        <button v-if="showConsoleBack" class="nav-back" type="button" @click="goBack">返回</button>
-        <div class="nav-title">{{ community.name }}</div>
-        <span class="nav-placeholder" />
-      </header>
       <article v-if="showHero" class="portal-hero" :style="heroStyle">
+        <button
+          v-if="showConsoleBack"
+          class="nav-back nav-back--overlay"
+          type="button"
+          @click="goBack"
+        >
+          返回
+        </button>
         <div class="portal-hero__overlay"></div>
         <div class="portal-hero__content">
           <div class="portal-hero__avatar" :style="avatarStyle">
@@ -93,6 +96,7 @@ import { fetchCommunityBySlug, fetchCommunityFollowStatus, followCommunity, unfo
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
@@ -111,24 +115,33 @@ const toast = useToast();
 const heroFallbackImage = computed(
   () =>
     resourceConfig.getStringValue('mobile.communityPortal.heroImage') ||
-    (slotMap['mobile.communityPortal.heroImage'].defaultValue as string),
+    (slotMap['mobile.communityPortal.heroImage'].defaultValue as string) ||
+    defaultCommunityImage,
 );
-const heroOverlay = 'linear-gradient(180deg, rgba(15, 23, 42, 0.35), rgba(3, 7, 18, 0.75))';
+const heroOverlay = computed(() => {
+  if (themeName.value === 'clean') {
+    return 'linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.9))';
+  }
+  if (themeName.value === 'warm') {
+    return 'linear-gradient(180deg, rgba(255,247,237,0.55), rgba(254,215,170,0.9))';
+  }
+  return 'linear-gradient(180deg, rgba(15, 23, 42, 0.35), rgba(3, 7, 18, 0.75))';
+});
 
 const composeHeroBackground = (source: string, fallback: string) => {
   if (!source) {
-    return `${heroOverlay}, url(${fallback})`;
+    return `${heroOverlay.value}, url(${fallback})`;
   }
   if (/gradient/i.test(source) && source.includes('url(')) {
     return source;
   }
   if (source.includes('url(')) {
-    return `${heroOverlay}, ${source}`;
+    return `${heroOverlay.value}, ${source}`;
   }
   if (/gradient/i.test(source)) {
     return source;
   }
-  return `${heroOverlay}, url(${source})`;
+  return `${heroOverlay.value}, url(${source})`;
 };
 
 const loadCommunity = async (value: string) => {
@@ -192,14 +205,30 @@ const avatarInitial = computed(() => (community.value?.name ? community.value.na
 const onAvatarError = () => {
   avatarFailed.value = true;
 };
-const avatarStyle = computed(() => ({
-  backgroundImage: avatarSrc.value ? `url(${avatarSrc.value})` : 'linear-gradient(135deg, #0f172a, #1e293b)',
-  backgroundSize: 'cover',
-  backgroundPosition: 'center',
-  backgroundRepeat: 'no-repeat',
-}));
+const avatarStyle = computed(() => {
+  const hasImage = avatarSrc.value && !avatarFailed.value;
+  if (hasImage) {
+    return {
+      background: 'transparent',
+    };
+  }
+  return {
+    backgroundImage: `linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(59, 130, 246, 0.28)), url(${defaultCommunityImage})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+  };
+});
 
-const themeName = computed(() => community.value?.portalConfig?.theme || 'immersive');
+const themeName = computed(() => {
+  const configured = community.value?.portalConfig?.theme;
+  const allowed = ['clean', 'immersive', 'warm', 'collage'];
+  // 默认保持 clean；如果配置是 immersive 但没有封面，会让背景过暗，这里只在有封面时才允许 immersive。
+  if (configured === 'immersive' && !community.value?.coverImageUrl) {
+    return 'clean';
+  }
+  return allowed.includes(configured ?? '') ? configured : 'clean';
+});
 const themeClass = computed(() => `portal-theme-${themeName.value}`);
 const layoutOrder = computed(() => {
   const layout = community.value?.portalConfig?.layout;
@@ -350,7 +379,7 @@ const toggleFollow = async () => {
   padding: 0 12px 32px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
   overflow-x: hidden;
   box-sizing: border-box;
 }
@@ -375,6 +404,17 @@ const toggleFollow = async () => {
   font-weight: 700;
   font-size: 15px;
   padding: 6px 4px;
+}
+.nav-back--overlay {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 2;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.32);
+  color: #fff;
+  backdrop-filter: blur(4px);
 }
 .nav-title {
   position: absolute;
@@ -491,28 +531,38 @@ const toggleFollow = async () => {
   padding: 20px;
 }
 .portal-hero__avatar {
-  width: 96px;
-  height: 96px;
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.8);
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.45);
-  display: grid;
-  place-items: center;
-  font-size: 32px;
-  font-weight: 800;
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(3px);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: none;
 }
-.portal-hero__avatar img {
+.portal-hero__avatar img,
+.portal-hero__avatar span {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
+  border-radius: 50%;
+}
+.portal-hero__avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(59, 130, 246, 0.28));
+  color: #0f172a;
+  font-weight: 800;
 }
 
 .info-card {
-  margin-top: -12px;
+  margin-top: 16px;
   background: #fff;
   border-radius: 16px;
   padding: 22px 18px 18px;
@@ -615,13 +665,14 @@ const toggleFollow = async () => {
   gap: 12px;
 }
 .news-card {
+  margin-top: 16px;
   background: #fff;
   border-radius: 16px;
-  padding: 14px 16px;
+  padding: 16px 16px 18px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid #e2e8f0;
 }
 .news-card__head h2 {
@@ -632,15 +683,15 @@ const toggleFollow = async () => {
 .news-card__marquee {
   overflow: hidden;
   position: relative;
-  height: 72px;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+  height: 120px;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 .news-card__track {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  animation: news-vertical 12s linear infinite;
+  gap: 12px;
+  animation: news-vertical 14s linear infinite;
 }
 .news-card__item {
   font-size: 14px;
@@ -682,6 +733,9 @@ const toggleFollow = async () => {
   display: block;
   margin-top: 4px;
   color: #94a3b8;
+}
+.event-gallery {
+  margin-top: 16px;
 }
 
 .event-gallery {

@@ -81,4 +81,15 @@ export class AuthController {
     }
     return this.authService.verifyEmailLoginCode(body.email, body.code);
   }
+
+  @Post('line/liff-login')
+  async lineLiffLogin(@Body() body: { idToken?: string; displayName?: string; pictureUrl?: string }) {
+    if (!body?.idToken) {
+      throw new BadRequestException('idToken is required');
+    }
+    return this.authService.lineLiffLogin(body.idToken, {
+      displayName: body.displayName,
+      pictureUrl: body.pictureUrl,
+    });
+  }
 }

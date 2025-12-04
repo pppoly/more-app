@@ -26,7 +26,9 @@ function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return true;
   }
-  return window.innerWidth < 768 || /Mobile|Android|iPhone/i.test(navigator.userAgent);
+  const ua = navigator.userAgent || '';
+  // 更宽容的移动检测，适配 LIFF / WebView 等内嵌浏览器
+  return window.innerWidth < 1024 || /Mobile|Android|iPhone|iPod|iPad|Line/i.test(ua);
 }
 
 const loadMobileOrDesktop = (
@@ -70,13 +72,11 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/events',
     name: 'events',
-    component: loadMobileOrDesktop(
-      () => import('../views/mobile/MobileEvents.vue'),
-      () => import('../views/events/EventList.vue'),
-    ),
+    component: () => import('../views/mobile/MobileEvents.vue'),
     meta: {
       title: 'イベント',
       layout: 'mobile-user',
+      hideShellHeader: true,
       hideShellActions: true,
       keepAlive: true,
       devPageName: '活动列表',
@@ -252,7 +252,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'communities/new',
         name: 'ConsoleMobileCommunityCreate',
-        component: () => import('../views/console/mobile/ConsoleCommunityCreateMobile.vue'),
+        component: () => import('../views/console/mobile/ConsoleCommunitySettingsMobile.vue'),
         meta: {
           hideTabbar: true,
           hideShellHeader: true,
@@ -500,7 +500,13 @@ const routes: RouteRecordRaw[] = [
     path: '/admin',
     name: 'admin-home',
     component: AdminHome,
-    meta: { requiresAuth: true, requiresAdmin: true, devPageName: '管理员后台' },
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideShellHeader: true,
+      flushContent: true,
+      devPageName: '管理员后台',
+    },
   },
   {
     path: '/admin/resources',
@@ -509,7 +515,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
       devPageName: '资源配置',
     },
   },
@@ -520,7 +527,6 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      hideTabbar: true,
       hideShellHeader: true,
       devPageName: '资源配置详情',
     },
@@ -530,7 +536,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/ai',
     name: 'admin-ai-overview',
     component: () => import('../views/admin/AdminAiOverview.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, devPageName: 'AI 使用概览' },
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 使用概览' },
   },
   {
     path: '/admin/ai/console',
@@ -539,7 +545,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
       devPageName: 'AI 控制台',
     },
   },
@@ -550,7 +557,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
       devPageName: 'AI Prompt 管理',
     },
   },
@@ -558,8 +566,38 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/ai/:moduleId',
     name: 'admin-ai-detail',
     component: () => import('../views/admin/AdminAiModuleDetail.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideTabbar: true, devPageName: 'AI 使用详情' },
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 使用详情' },
     props: true,
+  },
+  {
+    path: '/admin/events/reviews',
+    name: 'admin-event-reviews',
+    component: () => import('../views/admin/AdminEventReviews.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '事件審査' },
+  },
+  {
+    path: '/admin/payments',
+    name: 'admin-payments',
+    component: () => import('../views/admin/AdminPayments.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '決済モニター' },
+  },
+  {
+    path: '/admin/users',
+    name: 'admin-users',
+    component: () => import('../views/admin/AdminUsers.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'ユーザー管理' },
+  },
+  {
+    path: '/admin/events',
+    name: 'admin-events',
+    component: () => import('../views/admin/AdminEvents.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'イベント管理' },
+  },
+  {
+    path: '/admin/communities',
+    name: 'admin-communities',
+    component: () => import('../views/admin/AdminCommunities.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'コミュニティ管理' },
   },
   {
     path: '/community/:slug',

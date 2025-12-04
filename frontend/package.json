@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:liff": "vite --mode liff --base /liff/ --host --open /liff/index.html",
+    "build:liff": "vite build --mode liff --base /liff/ --outDir dist-liff"
   },
   "dependencies": {
     "@stripe/stripe-js": "^4.3.0",

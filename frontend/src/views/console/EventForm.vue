@@ -5,6 +5,13 @@
       <h1 class="mobile-nav__title">イベント作成</h1>
       <span class="mobile-nav__placeholder" />
     </header>
+    <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
+      <div class="review-badge">{{ reviewStatusLabel }}</div>
+      <p class="review-text">
+        {{ reviewMessage }}
+        <span v-if="reviewReason">理由: {{ reviewReason }}</span>
+      </p>
+    </div>
     <Teleport to="body">
       <div v-if="showPastePanel" class="paste-full-overlay">
         <div class="paste-full-card">
@@ -654,6 +661,9 @@
 </template>
 
 <script setup lang="ts">
+// Google Maps types for global "google" loaded via script
+declare const google: typeof import('google.maps');
+
 import { computed, reactive, ref, onMounted, onUnmounted, onActivated, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -686,6 +696,7 @@ import {
   CONSOLE_AI_EVENT_DRAFT_KEY,
   CONSOLE_EVENT_SCROLL_KEY,
   CONSOLE_EVENT_LANG_KEY,
+  LEGACY_EVENT_LANG_KEY,
   CONSOLE_EVENT_NOTE_CONTEXT_KEY,
   CONSOLE_EVENT_NOTE_RESULT_KEY,
   CONSOLE_EVENT_FORM_DRAFT_KEY,
@@ -876,6 +887,26 @@ const pasteCompliance = ref<string[]>([]);
 const pasteResultLoading = ref(false);
 const storedParsedResult = ref<{ title?: string; description?: string; rules?: string; advice?: string[]; compliance?: string[] } | null>(null);
 const manualLocationMode = ref(false);
+const reviewStatus = ref<string | null>(null);
+const reviewReason = ref<string | null>(null);
+const reviewStatusLabel = computed(() => {
+  switch (reviewStatus.value) {
+    case 'approved':
+      return '承認済み';
+    case 'rejected':
+      return '差し戻し';
+    case 'pending_review':
+      return '審査中';
+    default:
+      return '';
+  }
+});
+const reviewMessage = computed(() => {
+  if (reviewStatus.value === 'rejected') return '修正して再度送信してください。';
+  if (reviewStatus.value === 'pending_review') return '審査中です。公開までお待ちください。';
+  if (reviewStatus.value === 'approved') return '審査済みです。更新しても自動で再審査されます。';
+  return '';
+});
 
 const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
@@ -1060,7 +1091,8 @@ const switchContentLang = (lang: ContentLang) => {
 
 const loadStoredLang = () => {
   try {
-    const stored = sessionStorage.getItem(CONSOLE_EVENT_LANG_KEY);
+    const stored =
+      sessionStorage.getItem(CONSOLE_EVENT_LANG_KEY) || sessionStorage.getItem(LEGACY_EVENT_LANG_KEY);
     if (!stored) return;
     if (supportedContentLangs.includes(stored as ContentLang)) {
       activeContentLang.value = stored as ContentLang;
@@ -1078,6 +1110,12 @@ const persistLang = () => {
     console.warn('Failed to persist lang', err);
   }
 };
+watch(
+  () => activeContentLang.value,
+  () => {
+    persistLang();
+  },
+);
 watch(
   () => form.title,
   (val) => {
@@ -1433,6 +1471,8 @@ const load = async () => {
   }
   try {
     const event = await fetchConsoleEvent(eventId.value);
+    reviewStatus.value = (event as any).reviewStatus || null;
+    reviewReason.value = (event as any).reviewReason || null;
     applyEventDetailToForm(event, { syncCommunity: true, setSubtitle: true, includeGalleries: true });
     if (!event.galleries?.length) {
       await reloadGallery();
@@ -1782,6 +1822,7 @@ const togglePaste = (state?: boolean) => {
 const handleEntryFromQuery = async () => {
   if (entryHandled.value) return;
   const entry = route.query.entry as string | undefined;
+  const copyEventId = route.query.copyEventId as string | undefined;
   if (!entry) return;
   entryHandled.value = true;
   switch (entry) {
@@ -1814,7 +1855,11 @@ const handleEntryFromQuery = async () => {
       scrollToSection('basic');
       break;
     case 'copy':
-      await openCopyOverlay();
+      if (copyEventId) {
+        await handleCopyFromEvent(copyEventId);
+      } else {
+        await openCopyOverlay();
+      }
       break;
     default:
       break;
@@ -1968,15 +2013,18 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
   if (!detail.galleries?.length) return;
   revokeLocalCoverPreviews();
   const gallerySlice = detail.galleries.slice(0, MAX_COVERS);
+  let successCount = 0;
   const tasks = gallerySlice.map(async (item, index) => {
     try {
       const resolvedUrl = resolveAssetUrl(item.imageUrl);
+      if (!resolvedUrl) return;
       const response = await fetch(resolvedUrl, { credentials: 'include' });
       if (!response.ok) return;
       const blob = await response.blob();
-      const extension = blob.type.includes('png') ? 'png' : 'jpg';
+      const mime = blob.type || 'image/jpeg';
+      const extension = mime.includes('png') ? 'png' : 'jpg';
       const fileName = `copied-${Date.now()}-${index}.${extension}`;
-      const rawFile = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+      const rawFile = new File([blob], fileName, { type: mime });
       const file = await downscaleImageFile(rawFile);
       const id = `${fileName}-${Math.random().toString(36).slice(2)}`;
       pendingCoverFiles.value.push({ id, file });
@@ -1986,11 +2034,15 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
         imageUrl: objectUrl,
         order: index,
       });
+      successCount += 1;
     } catch (err) {
-      showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
+      // ignore this image, continue
     }
   });
   await Promise.all(tasks);
+  if (!successCount) {
+    showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
+  }
 };
 
 const openCopyOverlay = async () => {
@@ -2218,6 +2270,8 @@ const initMap = async () => {
       if (pos) {
         form.locationLat = pos.lat();
         form.locationLng = pos.lng();
+        form.locationText = '場所を更新しました。住所を確認してください。';
+        locationSearchText.value = form.locationText;
       }
     });
     if (locationSearchInputRef.value) {
@@ -2556,6 +2610,13 @@ const persistEvent = async (status: 'draft' | 'open') => {
     return;
   }
 
+  if (status === 'open' && reviewStatus.value && ['pending_review', 'rejected'].includes(reviewStatus.value)) {
+    error.value = reviewStatus.value === 'rejected' ? '内容未通过审核，请修改后再提交审核' : '审核中，暂不可发布';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+
   if (coverDisplayItems.value.length === 0 && status === 'open') {
     error.value = '发布前请至少上传一张封面（第一张为主图）';
     submitting.value = false;
@@ -2578,9 +2639,9 @@ const persistEvent = async (status: 'draft' | 'open') => {
     descriptionHtml: form.descriptionHtml,
     originalLanguage: activeContentLang.value,
     category: form.category || null,
-    locationText: form.locationText,
-    locationLat: form.locationLat,
-    locationLng: form.locationLng,
+    locationText: form.locationText || '',
+    locationLat: typeof form.locationLat === 'number' ? form.locationLat : null,
+    locationLng: typeof form.locationLng === 'number' ? form.locationLng : null,
     startTime: toIso(form.startTime),
     endTime: toIso(form.endTime),
     regStartTime: toIso(form.regStartTime),
@@ -2709,6 +2770,7 @@ const handleCoverUpload = async (ev: Event) => {
     await reloadGallery();
     input.value = '';
   } catch (err) {
+    console.error('cover upload failed', err);
     showCoverError(parseCoverUploadError(err));
   } finally {
     uploadingCover.value = false;
@@ -2746,6 +2808,7 @@ const uploadPendingCovers = async (targetEventId: string) => {
     revokeLocalCoverPreviews();
     return true;
   } catch (err) {
+    console.error('pending cover upload failed', err);
     const message = parseCoverUploadError(err);
     showCoverError(message, 'warning');
     return false;
@@ -2867,6 +2930,42 @@ onActivated(() => {
 .mobile-nav__placeholder {
   width: 48px;
   display: block;
+}
+.review-banner {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #c2410c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(194, 65, 12, 0.2);
+}
+.review-banner.pending_review {
+  background: #fff7ed;
+  color: #c2410c;
+}
+.review-banner.rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.2);
+}
+.review-banner.approved {
+  background: #ecfdf3;
+  color: #166534;
+  border-color: rgba(22, 101, 52, 0.25);
+}
+.review-badge {
+  font-weight: 800;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+}
+.review-text {
+  margin: 0;
+  font-size: 13px;
 }
 .console-section {
   display: flex;

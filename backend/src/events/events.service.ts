@@ -17,6 +17,7 @@ export class EventsService {
       where: {
         visibility: 'public',
         status: 'open',
+        reviewStatus: 'approved',
       },
       orderBy: {
         startTime: 'asc',
@@ -196,7 +197,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException('Event not found');
     }
-    if (['pending_review', 'rejected'].includes(event.status)) {
+    if (['pending_review', 'rejected'].includes(event.status) || ['pending_review', 'rejected'].includes((event as any).reviewStatus)) {
       throw new ForbiddenException('Event is not available');
     }
 

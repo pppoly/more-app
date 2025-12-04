@@ -13,9 +13,28 @@ import { OrganizersModule } from './organizers/organizers.module';
 import { StripeModule } from './stripe/stripe.module';
 import { BillingModule } from './billing/billing.module';
 import { I18nModule } from './i18n/i18n.module';
+import { AdminPaymentsController } from './admin/admin-payments.controller';
+import { AdminPaymentsOpsController } from './admin/admin-payments-ops.controller';
+import { AdminUsersController } from './admin/admin-users.controller';
+import { AdminCommunitiesController } from './admin/admin-communities.controller';
+import { AdminEventsListController } from './admin/admin-events-list.controller';
+import { AdminCommunityTagsController } from './admin/admin-community-tags.controller';
+import { AssetModule } from './asset/asset.module';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
+    ...(process.env.REDIS_HOST && process.env.REDIS_PORT
+      ? [
+          BullModule.forRoot({
+            connection: {
+              host: process.env.REDIS_HOST,
+              port: Number(process.env.REDIS_PORT),
+              enableReadyCheck: false,
+            },
+          }),
+        ]
+      : []),
     BillingModule,
     StripeModule,
     PrismaModule,
@@ -28,8 +47,9 @@ import { I18nModule } from './i18n/i18n.module';
     AiModule,
     OrganizersModule,
     I18nModule,
+    AssetModule,
   ],
-  controllers: [HealthController, HelloController],
+  controllers: [HealthController, HelloController, AdminPaymentsController, AdminPaymentsOpsController, AdminUsersController, AdminCommunitiesController, AdminEventsListController, AdminCommunityTagsController],
   providers: [],
 })
 export class AppModule {}

@@ -1,8 +1,18 @@
 import { computed, reactive } from 'vue';
-import { devLogin as apiDevLogin, fetchMe, setAccessToken as applyClientToken } from '../api/client';
+import {
+  devLogin as apiDevLogin,
+  fetchMe,
+  lineLiffLogin,
+  onUnauthorized,
+  setAccessToken as applyClientToken,
+  setRequestHeaderProvider,
+} from '../api/client';
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
+import { APP_TARGET, LIFF_ID } from '../config';
+import { loadLiff } from '../utils/liff';
+import { reportError } from '../utils/reporting';
 
 interface AuthState {
   user: UserProfile | null;
@@ -19,6 +29,8 @@ const state = reactive<AuthState>({
 });
 
 let initialized = false;
+let handlingUnauthorized = false;
+let liffLoginPromise: Promise<void> | null = null;
 const { setLocale } = useLocale();
 
 function applyUserLocale(profile: UserProfile | null) {
@@ -44,12 +56,84 @@ function setToken(token: string | null) {
   }
 }
 
+setRequestHeaderProvider(() => ({
+  'X-App-Target': APP_TARGET,
+}));
+
+async function ensureLiffLogin() {
+  if (APP_TARGET !== 'liff' || !hasWindow()) return;
+  if (!LIFF_ID) {
+    console.warn('LIFF_ID is not configured; skip LIFF login.');
+    return;
+  }
+  if (liffLoginPromise) return liffLoginPromise;
+  liffLoginPromise = (async () => {
+    state.initializing = true;
+    try {
+      const liff = await loadLiff(LIFF_ID);
+      if (!liff.isLoggedIn()) {
+        liff.login({ redirectUri: window.location.href });
+        return;
+      }
+      const idToken = liff.getIDToken();
+      if (!idToken) {
+        liff.login({ redirectUri: window.location.href });
+        return;
+      }
+      const profile = await liff.getProfile().catch(() => null);
+      const response = await lineLiffLogin({
+        idToken,
+        displayName: profile?.displayName,
+        pictureUrl: profile?.pictureUrl,
+      });
+      setToken(response.accessToken);
+      state.user = normalizeUser(response.user);
+      applyUserLocale(state.user);
+    } catch (error) {
+      console.error('LIFF login failed', error);
+      reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      state.initializing = false;
+      liffLoginPromise = null;
+    }
+  })();
+  return liffLoginPromise;
+}
+
+function handleUnauthorized() {
+  if (handlingUnauthorized) return;
+  handlingUnauthorized = true;
+  setToken(null);
+  state.user = null;
+  if (APP_TARGET === 'liff') {
+    ensureLiffLogin().finally(() => {
+      handlingUnauthorized = false;
+    });
+    return;
+  }
+  if (typeof window !== 'undefined') {
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+    const loginUrl = `/auth/login?redirect=${redirect}`;
+    if (window.location.pathname !== '/auth/login') {
+      window.location.href = loginUrl;
+    }
+  }
+  setTimeout(() => {
+    handlingUnauthorized = false;
+  }, 500);
+}
+
+onUnauthorized(() => handleUnauthorized());
+
 async function restoreSession() {
   if (initialized) return;
   initialized = true;
   if (!hasWindow()) return;
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
+    if (APP_TARGET === 'liff') {
+      await ensureLiffLogin();
+    }
     return;
   }
   setToken(stored);
@@ -61,6 +145,9 @@ async function restoreSession() {
     console.error('Failed to restore session', error);
     setToken(null);
     state.user = null;
+    if (APP_TARGET === 'liff') {
+      await ensureLiffLogin();
+    }
   } finally {
     state.initializing = false;
   }
@@ -98,6 +185,8 @@ export function useAuth() {
     state.user = null;
   };
 
+  const loginWithLiff = async () => ensureLiffLogin();
+
   return {
     user: computed(() => state.user),
     accessToken: computed(() => state.accessToken),
@@ -107,6 +196,7 @@ export function useAuth() {
     setUserProfile,
     logout,
     setToken,
+    loginWithLiff,
   };
 }
 

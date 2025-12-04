@@ -1,193 +1,153 @@
 <template>
-  <main class="resource-overview">
-    <section class="hero">
-      <p class="hero-chip">资源配置 · Admin</p>
-      <h1>按模块管理品牌素材</h1>
-      <p class="hero-desc">
-        这里罗列了所有资源分组。点击卡片进入二级页面，可为对应页面更新 Logo、图标或占位图。需要跨设备同步时，先在详情页导出 JSON。
-      </p>
-      <p class="hero-tip">共 {{ groups.length }} 个分组 · {{ totalSlots }} 个资源位</p>
-    </section>
+  <main class="admin-resources">
+    <header class="page-head">
+      <div>
+        <p class="eyebrow">资源配置</p>
+        <h1>アセット管理</h1>
+        <p class="subhead">Logo / 图标 / 占位图</p>
+      </div>
+      <button class="ghost" type="button" :disabled="loading" @click="load">
+        <span class="i-lucide-refresh-cw"></span> 更新
+      </button>
+    </header>
 
-    <section class="group-grid">
-      <article
-        v-for="group in groups"
-        :key="group.pageId"
-        class="group-card"
-      >
-        <div class="group-card__head">
-          <p class="group-eyebrow">页面 / 模块</p>
-          <h2>{{ group.page }}</h2>
-          <p class="group-count">包含 {{ group.slots.length }} 个资源位</p>
-        </div>
-        <ul class="group-highlights">
-          <li v-for="slot in group.previewSlots" :key="slot.id">
-            <span class="slot-label">{{ slot.label }}</span>
-            <span class="slot-position">{{ slot.position }}</span>
-          </li>
-          <li v-if="group.slots.length > group.previewSlots.length" class="slot-more">
-            +{{ group.slots.length - group.previewSlots.length }} 项
-          </li>
-        </ul>
-        <button type="button" class="manage-button" @click="openGroup(group.pageId)">
-          进入配置
-          <span class="i-lucide-arrow-right"></span>
-        </button>
-      </article>
+    <section class="card">
+      <div v-if="loading" class="empty">読み込み中…</div>
+      <div v-else-if="error" class="empty error">{{ error }}</div>
+      <div v-else-if="!groups.length" class="empty">データがありません。</div>
+      <div v-else class="card-list">
+        <article v-for="group in groups" :key="group.id" class="resource-card">
+          <div class="card-top">
+            <div>
+              <p class="eyebrow">{{ group.id }}</p>
+              <h3>{{ group.name }}</h3>
+            </div>
+            <span class="pill pill-info">{{ group.items?.length ?? 0 }} 項目</span>
+          </div>
+          <p class="meta">{{ group.description || '—' }}</p>
+          <div class="actions">
+            <button class="ghost" type="button" @click="openGroup(group.id)">詳細</button>
+          </div>
+        </article>
+      </div>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useResourceConfig } from '../../composables/useResourceConfig';
+import { fetchResourceGroups } from '../../api/client';
+import type { ResourceGroup } from '../../types/api';
 
-const { slots } = useResourceConfig();
 const router = useRouter();
+const loading = ref(false);
+const error = ref<string | null>(null);
+const groups = ref<ResourceGroup[]>([]);
 
-const groups = computed(() => {
-  const groupMap = new Map<string, { page: string; pageId: string; slots: typeof slots }>();
-  slots.forEach((slot) => {
-    if (!groupMap.has(slot.pageId)) {
-      groupMap.set(slot.pageId, { page: slot.page, pageId: slot.pageId, slots: [] });
-    }
-    groupMap.get(slot.pageId)!.slots.push(slot);
-  });
-  return Array.from(groupMap.values()).map((group) => ({
-    ...group,
-    previewSlots: group.slots.slice(0, 3),
-  }));
-});
-
-const totalSlots = computed(() => slots.length);
-
-const openGroup = (pageId: string) => {
-  router.push({ name: 'admin-resource-group', params: { groupId: pageId } });
+const load = async () => {
+  loading.value = true;
+  error.value = null;
+  try {
+    groups.value = await fetchResourceGroups();
+  } catch (err) {
+    error.value = 'ロードに失敗しました';
+  } finally {
+    loading.value = false;
+  }
 };
+
+const openGroup = (id: string) => {
+  router.push({ name: 'admin-resource-group', params: { groupId: id } });
+};
+
+onMounted(load);
 </script>
 
 <style scoped>
-.resource-overview {
+.admin-resources {
   min-height: 100vh;
-  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(100px + env(safe-area-inset-bottom, 0px));
+  padding: 12px;
+  background: #f8fafc;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  background: linear-gradient(180deg, #eef2ff 0%, #ffffff 40%, #ffffff 100%);
+  gap: 12px;
+  color: #0f172a;
 }
-
-.hero {
-  border-radius: 28px;
-  padding: 24px;
-  background: #0f172a;
-  color: #fff;
-  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.35);
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
 }
-
-.hero-chip {
-  font-size: 0.85rem;
+.eyebrow {
+  font-size: 12px;
+  color: #475569;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.8;
-  margin-bottom: 6px;
 }
-
-.hero h1 {
-  font-size: 1.5rem;
-  margin-bottom: 8px;
+.page-head h1 {
+  margin: 4px 0;
 }
-
-.hero-desc {
-  opacity: 0.85;
-  line-height: 1.5;
-  margin-bottom: 8px;
+.subhead {
+  margin: 0;
+  color: #475569;
 }
-
-.hero-tip {
-  font-size: 0.85rem;
-  color: #bfdbfe;
-}
-
-.group-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.group-card {
-  border-radius: 20px;
-  padding: 18px;
+.ghost {
+  border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+.empty {
+  padding: 18px;
+  color: #475569;
+}
+.empty.error {
+  color: #b91c1c;
+}
+.card-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-
-.group-eyebrow {
-  font-size: 0.85rem;
-  color: #64748b;
-}
-
-.group-count {
-  font-size: 0.9rem;
-  color: #94a3b8;
-}
-
-.group-highlights {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.resource-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-
-.group-highlights li {
+.card-top {
   display: flex;
   justify-content: space-between;
-  font-size: 0.9rem;
-  color: #475569;
-}
-
-.slot-label {
-  font-weight: 600;
-}
-
-.slot-position {
-  color: #94a3b8;
-  font-size: 0.8rem;
-  max-width: 50%;
-  text-align: right;
-}
-
-.slot-more {
-  font-size: 0.85rem;
-  color: #94a3b8;
-}
-
-.manage-button {
-  margin-top: 4px;
-  border-radius: 999px;
-  padding: 10px 14px;
-  background: #0f172a;
-  color: #fff;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
-
-@media (min-width: 768px) {
-  .resource-overview {
-    padding-left: 32px;
-    padding-right: 32px;
-  }
-  .group-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
-  }
+.meta {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.pill-info {
+  background: #eef2ff;
+  color: #312e81;
 }
 </style>

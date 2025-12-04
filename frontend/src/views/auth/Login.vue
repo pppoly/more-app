@@ -1,65 +1,27 @@
 <template>
-  <div class="login-page">
-    <section class="login-card">
-      <h2>测试环境快捷登录</h2>
-      <p>输入任意用户名即可体验完整流程。</p>
-      <label>
-        显示名称
-        <input v-model="devName" type="text" placeholder="例如：MORE Test User" />
-      </label>
-      <button type="button" class="primary" :disabled="loading" @click="handleDevLogin">
-        {{ loading ? '登录中...' : '一键体验' }}
-      </button>
-      <p v-if="error" class="error">{{ error }}</p>
-    </section>
+<div class="login-page">
+  <section class="login-card">
+    <h2>使用 LINE 登录</h2>
+    <p>推荐生产环境使用，完成 LINE 授权后自动登录。</p>
+    <button type="button" class="line-button" @click="handleLineLogin">
+      <span class="i-simple-icons-line"></span>
+      LINE 登录
+    </button>
+  </section>
 
-    <div class="divider">
-      <span>或</span>
-    </div>
-
-    <section class="login-card email-card">
-      <h2>邮箱注册 / 登录</h2>
-      <p>输入邮箱获取 6 位验证码，验证通过即可登录。</p>
-      <label>
-        邮箱地址
-        <input v-model="email" type="email" placeholder="test@example.com" />
-        <p v-if="emailError" class="error">{{ emailError }}</p>
-      </label>
-      <button
-        type="button"
-        class="primary"
-        :disabled="emailSending"
-        @click="handleSendEmailCode"
-      >
-        {{ emailSending ? '发送中...' : emailSent ? '重新发送' : '发送验证码' }}
-      </button>
-      <div v-if="emailSent" class="code-block">
-        <label>
-          验证码
-          <input v-model="emailCode" type="text" placeholder="输入 6 位数字" />
-        </label>
-        <button
-          type="button"
-          class="secondary"
-          :disabled="verifyingEmail"
-          @click="handleVerifyEmailCode"
-        >
-          {{ verifyingEmail ? '验证中...' : '确认登录' }}
-        </button>
-      </div>
-      <p v-if="emailStatusError" class="status">{{ emailStatusError }}</p>
-      <p v-if="emailStatus" class="info">{{ emailStatus }}</p>
-    </section>
-
-    <section class="login-card line-card">
-      <h2>使用 LINE 登录</h2>
-      <p>推荐生产环境使用，完成 LINE 授权后自动登录。</p>
-      <button type="button" class="line-button" @click="handleLineLogin">
-        <span class="i-simple-icons-line"></span>
-        LINE 登录
-      </button>
-    </section>
-  </div>
+  <section v-if="APP_TARGET !== 'liff'" class="login-card">
+    <h2>测试环境快捷登录</h2>
+    <p>输入任意用户名即可体验完整流程。</p>
+    <label>
+      显示名称
+      <input v-model="devName" type="text" placeholder="例如：MORE Test User" />
+    </label>
+    <button type="button" class="primary" :disabled="loading" @click="handleDevLogin">
+      {{ loading ? '登录中...' : '一键体验' }}
+    </button>
+    <p v-if="error" class="error">{{ error }}</p>
+  </section>
+</div>
 </template>
 
 <script setup lang="ts">
@@ -67,22 +29,13 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
-import { sendEmailLoginCode, verifyEmailLoginCode } from '../../api/client';
 import { needsProfileSetup } from '../../utils/profileSetup';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, APP_TARGET } from '../../config';
 
 const auth = useAuth();
 const route = useRoute();
 const router = useRouter();
 const devName = ref('');
-const email = ref('');
-const emailCode = ref('');
-const emailSending = ref(false);
-const verifyingEmail = ref(false);
-const emailStatus = ref('');
-const emailStatusError = ref('');
-const emailError = ref('');
-const emailSent = ref(false);
 const loading = ref(false);
 const error = ref('');
 
@@ -120,61 +73,24 @@ const handleDevLogin = async () => {
   }
 };
 
-const handleLineLogin = () => {
+const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
+  if (APP_TARGET === 'liff') {
+    loading.value = true;
+    error.value = '';
+    try {
+      await auth.loginWithLiff();
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'LINE 登录失败';
+    } finally {
+      loading.value = false;
+    }
+    return;
+  }
   window.localStorage.setItem(LOGIN_FLOW_STORAGE_KEY, 'line');
   window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, redirectTarget.value || '/');
   const backendOrigin = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
   window.location.href = `${backendOrigin}/api/v1/auth/line/redirect`;
-};
-
-const handleSendEmailCode = async () => {
-  if (!email.value.trim()) {
-    emailError.value = '请输入邮箱地址';
-    return;
-  }
-  if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email.value.trim())) {
-    emailError.value = '邮箱格式不正确';
-    return;
-  }
-  emailError.value = '';
-  emailStatus.value = '';
-  emailStatusError.value = '';
-  emailSending.value = true;
-  try {
-    await sendEmailLoginCode(email.value.trim());
-    emailSent.value = true;
-    emailStatus.value = `验证码已发送至 ${email.value.trim()}，请输入邮件中的 6 位数字。`;
-    emailStatusError.value = '';
-  } catch (err) {
-    emailStatusError.value = err instanceof Error ? err.message : '发送验证码失败';
-  } finally {
-    emailSending.value = false;
-  }
-};
-
-const handleVerifyEmailCode = async () => {
-  if (!email.value.trim() || !emailCode.value.trim()) {
-    emailStatusError.value = '请输入邮箱和验证码';
-    return;
-  }
-  if (!/^\d{6}$/.test(emailCode.value.trim())) {
-    emailStatusError.value = '请输入 6 位数字验证码';
-    return;
-  }
-  verifyingEmail.value = true;
-  emailStatus.value = '';
-  emailStatusError.value = '';
-  try {
-    const result = await verifyEmailLoginCode(email.value.trim(), emailCode.value.trim());
-    auth.setToken(result.accessToken);
-    await auth.fetchCurrentUser();
-    await finishLoginFlow('email');
-  } catch (err) {
-    emailStatusError.value = err instanceof Error ? err.message : '验证失败';
-  } finally {
-    verifyingEmail.value = false;
-  }
 };
 
 </script>

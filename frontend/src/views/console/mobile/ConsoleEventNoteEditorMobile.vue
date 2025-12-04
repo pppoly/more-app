@@ -1,6 +1,5 @@
 <template>
   <section class="note-editor">
-    <PageMarker label="P5" />
     <header class="note-editor__nav">
       <button type="button" class="nav-btn ghost" @click="handleCancel">取消</button>
       <p>活动详情</p>
@@ -86,7 +85,6 @@ import {
   CONSOLE_EVENT_NOTE_CONTEXT_KEY,
   CONSOLE_EVENT_NOTE_RESULT_KEY,
 } from '../../../constants/console';
-import PageMarker from '../../../components/PageMarker.vue';
 
 type NoteBlock =
   | {

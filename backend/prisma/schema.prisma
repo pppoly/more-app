@@ -22,6 +22,7 @@ model User {
   updatedAt     DateTime            @updatedAt
   isOrganizer   Boolean             @default(false)
   isAdmin       Boolean             @default(false)
+  status        String              @default("active")
   communities   Community[]         @relation("CommunityOwner")
   memberships   CommunityMember[]
   registrations EventRegistration[]
@@ -50,6 +51,7 @@ model Community {
   stripeAccountOnboarded Boolean    @default(false)
   stripeSubscriptionId String?
   stripeCustomerId String?
+  status         String             @default("active")
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   owner          User               @relation("CommunityOwner", fields: [ownerId], references: [id])
@@ -58,6 +60,33 @@ model Community {
   events         Event[]
   payments       Payment[]
   aiEventDraftLogs AiEventDraftLog[]
+}
+
+model CommunityTagCategory {
+  id        String   @id @default(cuid())
+  nameJa    String
+  nameEn    String?
+  nameZh    String?
+  order     Int      @default(1000)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tags      CommunityTag[]
+}
+
+model CommunityTag {
+  id          String   @id @default(cuid())
+  categoryId  String
+  nameJa      String
+  nameEn      String?
+  nameZh      String?
+  order       Int      @default(1000)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  category    CommunityTagCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
 }
 
 model CommunityMember {
@@ -98,6 +127,10 @@ model Event {
   visibility             String
   requireApproval        Boolean              @default(false)
   status                 String
+  reviewStatus           String               @default("pending_review")
+  reviewReason           String?
+  reviewReviewedAt       DateTime?
+  reviewReviewerId       String?
   registrationFormSchema Json?
   config                 Json?
   refundPolicy           Json?
@@ -173,6 +206,7 @@ model Payment {
   registrationId          String?  @unique
   amount                  Int
   platformFee             Int      @default(0)
+  feePercent              Float?
   currency                String   @default("jpy")
   status                  String   @default("pending")
   method                  String   @default("stripe")
@@ -290,4 +324,35 @@ model AiEventDraftLog {
   createdAt    DateTime  @default(now())
   community    Community @relation(fields: [communityId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
+}
+
+// Managed asset for UGC images/files
+model ManagedAsset {
+  id               String   @id @default(cuid())
+  tenantId         String
+  ownerId          String
+  resourceType     String
+  resourceId       String?
+  role             String?
+  bucket           String
+  objectKey        String
+  originalName     String?
+  mimeType         String
+  size             Int
+  hash             String?
+  variants         Json?
+  width            Int?
+  height           Int?
+  status           String   @default("pending")
+  moderationStatus String   @default("pending")
+  moderationReason String?
+  visibility       String   @default("public")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  @@index([resourceType, resourceId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([tenantId])
 }

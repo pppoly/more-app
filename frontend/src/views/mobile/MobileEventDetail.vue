@@ -68,7 +68,7 @@
                 <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
                 <span class="view-count">{{ viewCountLabel }}</span>
               </div>
-              <div class="event-hero-actions">
+              <div v-if="showHeaderActions" class="event-hero-actions">
                 <button class="event-action-icon" type="button" @click="shareEvent">
                   <span class="i-lucide-share-2"></span>
                 </button>
@@ -304,6 +304,8 @@ import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
+import { APP_TARGET, LIFF_ID } from '../../config';
+import { loadLiff } from '../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -462,7 +464,6 @@ const detail = computed(() => {
         : event.value.locationText
           ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.locationText)}`
           : null,
-    locationText: event.value.locationText,
     participantCount,
     showParticipants: config.showRegistrationStatus !== false,
     config,
@@ -677,6 +678,29 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  if (APP_TARGET === 'liff') {
+    if (!LIFF_ID) {
+      showUiMessage('LINE 設定を確認してください');
+      return;
+    }
+    try {
+      const liff = await loadLiff(LIFF_ID);
+      const url = typeof window !== 'undefined' ? window.location.href : '';
+      const title =
+        getLocalizedText(detail.value.title, preferredLangs.value) ||
+        (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
+      if (liff.shareTargetPicker) {
+        await liff.shareTargetPicker([{ type: 'text', text: `${title}\n${url}` }]);
+      } else if (liff.sendMessages) {
+        await liff.sendMessages([{ type: 'text', text: `${title}\n${url}` }]);
+      }
+      showUiMessage('LINE で共有しました');
+    } catch (err) {
+      console.error('Failed to share via LIFF', err);
+      showUiMessage('LINE 共有に失敗しました');
+    }
+    return;
+  }
   const payload = { title: detail.value.title, url: window.location.href };
 
   // 1) 原生分享（优先）
@@ -959,6 +983,8 @@ const formatTimeRange = (start?: string, end?: string) => {
   return `${formatLongDate(start)} ${startTime} 〜 ${formatLongDate(end)} ${endTime}`;
 };
 
+const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+
 const pad = (value: number) => value.toString().padStart(2, '0');
 
 const formatCalendarDate = (value?: string) => {
@@ -1021,6 +1047,7 @@ watch(
 .event-detail-page {
   background-color: var(--m-color-bg);
   min-height: 100vh;
+  padding: 0 10px calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 .event-state {
@@ -1033,7 +1060,7 @@ watch(
 }
 
 .event-skeleton {
-  padding: 18px 16px 80px;
+  padding: 18px 0 60px;
 }
 
 .skeleton-hero {
@@ -1217,13 +1244,14 @@ watch(
 
 .event-cover-wrapper {
   position: relative;
-  margin: 0;
+  margin: 0 0 0 -16px;
+  width: calc(100% + 32px);
   padding-top: env(safe-area-inset-top, 0px);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
   background-color: #0f172a10;
 }
@@ -1578,7 +1606,7 @@ watch(
 }
 
 .event-content--with-footer {
-  padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 
 .participant-wall {

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48px" height="48px" viewBox="0 0 48 48" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>编组 3</title>
+    <defs>
+        <linearGradient x1="50%" y1="0%" x2="50%" y2="100%" id="linearGradient-1">
+            <stop stop-color="#0E8AD7" offset="0%"></stop>
+            <stop stop-color="#2CB9B3" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="页面-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="个人" transform="translate(-164.000000, -431.000000)">
+            <g id="编组-4" transform="translate(12.000000, 412.000000)">
+                <g id="编组-2备份" transform="translate(121.000000, 0.000000)">
+                    <g id="编组-3" transform="translate(31.000000, 19.000000)">
+                        <rect id="矩形" fill="#E1F3FC" x="0" y="0" width="48" height="48" rx="12"></rect>
+                        <g id="编组-8" transform="translate(16.000000, 16.000000)" stroke="url(#linearGradient-1)" stroke-linejoin="round" stroke-width="1.2">
+                            <rect id="矩形" x="0" y="0" width="17" height="17" rx="2"></rect>
+                            <path d="M4.77940369,8 C4.90942128,8 7.42263921,8 12.3190575,8 M8.54923058,4.23017311 C8.54923058,4.36019071 8.54923058,6.87340864 8.54923058,11.7698269" id="形状结合"></path>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

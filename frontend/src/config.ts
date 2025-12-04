@@ -10,5 +10,7 @@ const resolveApiBaseUrl = () => {
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
-
+export const APP_TARGET = import.meta.env.VITE_APP_TARGET || 'web';
+export const LINE_CHANNEL_ID = import.meta.env.VITE_LINE_CHANNEL_ID || '';
+export const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
 export const DEV_LOGIN_SECRET = import.meta.env.VITE_DEV_LOGIN_SECRET || '';

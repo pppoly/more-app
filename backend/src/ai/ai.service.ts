@@ -140,6 +140,12 @@ export interface AiUsageDetailResponse {
   }>;
 }
 
+export interface AiCommunityUsage {
+  communityId: string;
+  totalAiCallsThisMonth: number;
+  estimatedMinutesSaved: number;
+}
+
 export interface TranslateTextItem {
   key: string;
   text: string;
@@ -624,6 +630,20 @@ export class AiService {
         turnCount: log.turnCount,
         createdAt: log.createdAt,
       })),
+    };
+  }
+
+  async getCommunityUsage(communityId: string): Promise<AiCommunityUsage> {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const total = await this.prisma.aiEventDraftLog.count({
+      where: { communityId, createdAt: { gte: monthStart } },
+    });
+    const estimatedMinutesSaved = total * 3;
+    return {
+      communityId,
+      totalAiCallsThisMonth: total,
+      estimatedMinutesSaved,
     };
   }
 

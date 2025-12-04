@@ -1,5 +1,4 @@
 <template>
-  <PageMarker label="P2" />
   <div class="community-form">
     <header class="hero-card">
       <button class="hero-back" type="button" @click="goBack">
@@ -121,7 +120,6 @@ import { createConsoleCommunity, fetchConsoleCommunity, updateConsoleCommunity, 
 import type { ConsoleCommunityDetail } from '../../../types/api';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import PageMarker from '../../../components/PageMarker.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -278,8 +276,8 @@ const handleCoverUpload = async (event: Event) => {
     const uploadFile = await dataUrlToFile(dataUrl, `cover-${Date.now()}.jpg`);
     if (isEdit.value && communityId.value) {
       const { imageUrl } = await uploadCommunityAsset(communityId.value, uploadFile, 'cover');
-      form.coverImageUrl = imageUrl;
-      coverPreview.value = resolveAssetUrl(imageUrl);
+      form.coverImageUrl = imageUrl?.replace('/api/v1', '') ?? imageUrl;
+      coverPreview.value = resolveAssetUrl(form.coverImageUrl);
       pendingCoverFile.value = null;
     } else {
       pendingCoverFile.value = uploadFile;
@@ -308,8 +306,8 @@ const handleSubmit = async () => {
     const updates: Record<string, any> = {};
     if (pendingCoverFile.value) {
       const { imageUrl } = await uploadCommunityAsset(targetId, pendingCoverFile.value, 'cover');
-      form.coverImageUrl = imageUrl;
-      coverPreview.value = resolveAssetUrl(imageUrl);
+      form.coverImageUrl = imageUrl?.replace('/api/v1', '') ?? imageUrl;
+      coverPreview.value = resolveAssetUrl(form.coverImageUrl);
       pendingCoverFile.value = null;
       updates.coverImageUrl = imageUrl;
     }

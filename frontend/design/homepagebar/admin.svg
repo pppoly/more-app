@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24px" height="24px" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>icon/资源</title>
+    <g id="icon/资源" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <rect id="矩形复制" fill="#FFFFFF" opacity="0" x="0" y="0" width="24" height="24"></rect>
+        <g id="资源" transform="translate(3.000000, 2.500000)" stroke="#999999" stroke-width="1.6">
+            <circle id="椭圆形" cx="9.5" cy="9.5" r="9.5"></circle>
+            <circle id="椭圆形" cx="9.5" cy="9.5" r="4.31818182"></circle>
+            <circle id="椭圆形" fill="#FFFFFF" cx="15.9772727" cy="2.15909091" r="2.15909091"></circle>
+            <circle id="椭圆形复制" fill="#FFFFFF" cx="3.02272727" cy="16.8409091" r="2.15909091"></circle>
+        </g>
+    </g>
+</svg>

@@ -21,6 +21,26 @@ export interface CommunitySummary {
   logoImageUrl?: string | null;
 }
 
+export interface CommunityTag {
+  id: string;
+  categoryId: string;
+  nameJa: string;
+  nameEn?: string | null;
+  nameZh?: string | null;
+  order: number;
+  active?: boolean;
+}
+
+export interface CommunityTagCategory {
+  id: string;
+  nameJa: string;
+  nameEn?: string | null;
+  nameZh?: string | null;
+  order: number;
+  active?: boolean;
+  tags: CommunityTag[];
+}
+
 export interface EventSummary {
   id: string;
   status: string;
@@ -183,6 +203,7 @@ export interface ConsolePaymentItem {
   registrationId?: string | null;
   amount: number;
   platformFee: number;
+  feePercent?: number | null;
   status: string;
   method: string;
   createdAt: string;
@@ -266,6 +287,8 @@ export interface ConsoleEventSummary {
   endTime?: string;
   status: string;
   visibility: string;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
   coverImageUrl?: string | null;
 }
 
@@ -286,6 +309,10 @@ export interface ConsoleEventDetail extends ConsoleEventSummary {
   registrationFormSchema?: RegistrationFormField[] | null;
   config?: Record<string, any> | null;
   coverType?: string | null;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
+  reviewReviewedAt?: string | null;
+  reviewReviewerId?: string | null;
   ticketTypes: Array<{
     id: string;
     name: LocalizedContent;
@@ -412,6 +439,8 @@ export interface CommunityAnalytics {
   totalAttended: number;
   totalNoShow: number;
   attendanceRate: number;
+  followerCount?: number;
+  pageViewsMonth?: number;
 }
 
 export interface GeneratedEventContent {
@@ -586,6 +615,26 @@ export interface AiModuleUsageSummary {
 export interface AiUsageSummaryResponse {
   generatedAt: string;
   modules: AiModuleUsageSummary[];
+}
+
+export interface AiCommunityUsage {
+  communityId: string;
+  totalAiCallsThisMonth: number;
+  estimatedMinutesSaved: number;
+}
+
+export interface AdminEventReviewItem {
+  id: string;
+  title: LocalizedContent;
+  status: string;
+  reviewStatus?: string | null;
+  reviewReason?: string | null;
+  updatedAt: string;
+  community?: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 }
 
 export interface AiAssistantSessionSummary {

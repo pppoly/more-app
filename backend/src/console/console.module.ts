@@ -13,10 +13,32 @@ import { AiModule } from '../ai/ai.module';
 import { ConsolePaymentsController } from './console-payments.controller';
 import { ConsoleEventDraftController } from './console-event-draft.controller';
 import { ConsoleEventDraftService } from './console-event-draft.service';
+import { ConsoleAiController } from './console-ai.controller';
+import { ConsoleCommunityTagsController } from './console-community-tags.controller';
+import { AdminEventsController } from './admin-events.controller';
+import { ContentModerationService } from '../common/moderation/content-moderation.service';
+import { AssetModule } from '../asset/asset.module';
 
 @Module({
-  imports: [StripeModule, PaymentsModule, NotificationModule, AiModule],
-  controllers: [ConsoleEventsController, ConsoleCommunitiesController, ConsoleEventAssistantController, ConsolePaymentsController, ConsoleEventDraftController],
-  providers: [ConsoleEventsService, ConsoleCommunitiesService, ConsoleEventAssistantService, PermissionsService, ConsoleEventDraftService],
+  imports: [StripeModule, PaymentsModule, NotificationModule, AiModule, AssetModule],
+  controllers: [
+    ConsoleEventsController,
+    ConsoleCommunitiesController,
+    ConsoleEventAssistantController,
+    ConsolePaymentsController,
+    ConsoleEventDraftController,
+    ConsoleAiController,
+    AdminEventsController,
+    ConsoleCommunityTagsController,
+  ],
+  providers: [
+    ConsoleEventsService,
+    ConsoleCommunitiesService,
+    ConsoleEventAssistantService,
+    PermissionsService,
+    ConsoleEventDraftService,
+    ContentModerationService,
+  ],
+  exports: [ConsoleEventsService, ContentModerationService],
 })
 export class ConsoleModule {}

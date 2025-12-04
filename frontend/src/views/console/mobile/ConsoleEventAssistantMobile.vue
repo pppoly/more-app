@@ -1,5 +1,4 @@
 <template>
-  <PageMarker label="P6" />
   <div v-if="thinkingOverlay" class="assistant-wait">
     <div class="code-rain">
       <span v-for="n in 80" :key="n" class="code-char" :style="codeStyle(n)">▉</span>
@@ -357,7 +356,6 @@ import type {
 import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { getLocalizedText } from '../../../utils/i18nContent';
-import PageMarker from '../../../components/PageMarker.vue';
 import { useToast } from '../../../composables/useToast';
 
 type ChatRole = 'user' | 'assistant';
