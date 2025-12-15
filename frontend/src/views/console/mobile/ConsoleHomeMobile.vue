@@ -881,7 +881,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .fab {
   position: fixed;
   right: 16px;
-  bottom: calc(94px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   width: 68px;
   height: 68px;
   border-radius: 50%;

@@ -11,7 +11,7 @@
         </div>
         <div class="me-hero__info">
           <p class="me-hero__title">{{ user?.name || 'ゲスト' }}</p>
-          <p class="me-hero__subtitle">{{ isOrganizer ? '主理人' : '一般ユーザー' }}</p>
+          <p class="me-hero__subtitle">{{ isOrganizer ? '主催者' : '一般ユーザー' }}</p>
         </div>
       </div>
     </section>
@@ -92,7 +92,7 @@ const goSettings = () => router.push({ name: 'MobileSettings' });
 
 const serviceEntries = computed(() => [
   { title: '参加したイベント', description: '予約・チケット', cta: '見る', icon: new URL('../../assets/我的的活动.svg', import.meta.url).href, action: goMyEvents },
-  { title: '我的社群', description: '关注的社群列表', cta: '进入', icon: new URL('../../assets/我的社群.svg', import.meta.url).href, action: goMyCommunities },
+  { title: 'マイコミュニティ', description: 'フォロー中のコミュニティ一覧', cta: '入る', icon: new URL('../../assets/我的社群.svg', import.meta.url).href, action: goMyCommunities },
   { title: '支払い履歴', description: 'お支払い記録', cta: '見る', icon: new URL('../../assets/付款记录.svg', import.meta.url).href, action: goMyPayments },
   { title: 'お気に入りイベント', description: 'お気に入り', cta: '見る', icon: new URL('../../assets/关注的活动.svg', import.meta.url).href, action: goFavorites },
   { title: '設定', description: 'アプリ環境', cta: '開く', icon: new URL('../../assets/设置.svg', import.meta.url).href, action: goSettings },
@@ -161,7 +161,7 @@ const handleCropConfirm = async (blob: Blob) => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
 .me-hero {
@@ -171,8 +171,8 @@ const handleCropConfirm = async (blob: Blob) => {
 .me-hero__card {
   background: linear-gradient(135deg, #0fb4e2 10%, #1fc3b0 60%, #f5c75c);
   margin: 0;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 14px;
-  border-radius: 0 0 12px 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 18px;
+  border-radius: 0 0 16px 16px;
   color: #fff;
   box-shadow: none;
   display: flex;
@@ -190,8 +190,8 @@ const handleCropConfirm = async (blob: Blob) => {
   border: none;
   width: 52px;
   height: 52px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -231,12 +231,12 @@ const handleCropConfirm = async (blob: Blob) => {
 .me-hero__info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .me-hero__subtitle {
   font-size: 13px;
-  opacity: 0.9;
+  opacity: 0.86;
   margin: 0;
 }
 
@@ -327,8 +327,8 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon img {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
