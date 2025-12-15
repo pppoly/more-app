@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useAuth } from '../../composables/useAuth';
 import { fetchMyOrganizerApplication, submitOrganizerApplication } from '../../api/client';
 import type { OrganizerApplicationStatus } from '../../types/api';
@@ -204,6 +204,29 @@ const onTouchEnd = () => {
   touchDeltaX = 0;
 };
 
+let autoTimer: number | null = null;
+const startAuto = () => {
+  stopAuto();
+  autoTimer = window.setInterval(() => {
+    const total = slides.value.length;
+    currentIndex.value = currentIndex.value >= total - 1 ? 0 : currentIndex.value + 1;
+  }, 5000);
+};
+const stopAuto = () => {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+  }
+};
+
+onMounted(() => {
+  startAuto();
+});
+
+onUnmounted(() => {
+  stopAuto();
+});
+
 const submit = async () => {
   if (!user.value) {
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
@@ -237,7 +260,7 @@ const submit = async () => {
 <style scoped>
 .apply-page {
   background: #f4f6fb;
-  min-height: 100vh;
+  height: 100vh;
   overflow: hidden;
   padding: 12px 0 100px;
   display: flex;
