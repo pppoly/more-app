@@ -9,48 +9,83 @@
         <div class="sk-tile" v-for="n in 6" :key="`tile-${n}`"></div>
       </div>
     </div>
-    <section class="top-bar">
+    <section class="top-bar" :class="{ 'top-bar--empty': !hasCommunity }">
       <div class="top-main">
-        <button class="avatar-btn" type="button" @click="goCommunitySettings">
-          <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" loading="lazy" />
+        <button
+          class="avatar-btn"
+          type="button"
+          @click="hasCommunity ? goCommunitySettings() : goCreateCommunity()"
+        >
+          <img
+            v-if="hasCommunity"
+            :key="communityId || 'default'"
+            :src="communityAvatar"
+            alt="avatar"
+            loading="lazy"
+          />
+          <span v-else class="avatar-placeholder">+</span>
         </button>
-        <div class="top-text" @click="goCommunitySettings">
-          <p class="top-label">社群</p>
+        <div class="top-text" @click="hasCommunity ? goCommunitySettings() : goCreateCommunity()">
+          <p class="top-label">{{ hasCommunity ? '社群' : 'まだコミュニティがありません' }}</p>
           <div class="top-title-row">
             <h1 class="top-title">
-              {{ communityName || '未選択のコミュニティ' }}
-              <span v-if="roleLabel" class="role-chip">{{ roleLabel }}</span>
+              {{ hasCommunity ? communityName : 'コミュニティを作成' }}
+              <span v-if="hasCommunity && roleLabel" class="role-chip">{{ roleLabel }}</span>
             </h1>
-            <button v-if="planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
+            <button v-if="hasCommunity && planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
               {{ planDisplay }}
             </button>
           </div>
-          <p class="top-role">{{ hasCommunity ? 'タップして設定を開く' : 'まずはコミュニティを登録' }}</p>
+          <p class="top-role">
+            {{
+              hasCommunity
+                ? 'タップして設定を開く'
+                : 'イベントを公開するにはコミュニティを登録してください'
+            }}
+          </p>
         </div>
         <button
-          :class="['pill-btn', hasCommunity ? '' : 'pill-btn--primary']"
+          v-if="hasCommunity"
+          class="pill-btn"
           type="button"
           @click="openCommunityPicker"
         >
-          <span class="i-lucide-sparkles" v-if="!hasCommunity"></span>
           切り替え
+        </button>
+        <button
+          v-else
+          class="pill-btn pill-btn--primary"
+          type="button"
+          @click="goCreateCommunity"
+        >
+          新規作成
         </button>
       </div>
       <div class="stat-inline">
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月の収入</p>
-          <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '¥0' }}</p>
+          <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '--' }}</p>
         </div>
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月のイベント</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
         </div>
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">申込数</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
         </div>
       </div>
     </section>
+
+    <button
+      v-if="hasCommunity"
+      type="button"
+      class="portal-bar"
+      @click="goPublicPortal"
+    >
+      コミュニティページへ
+      <span class="i-lucide-chevron-right"></span>
+    </button>
 
     <button
       class="fab"
@@ -825,6 +860,12 @@ const normalizeLogoUrl = (raw?: string | null) => {
   border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
+.stat-inline-item.is-empty {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.8);
+}
 
 .stat-label {
   margin: 0;
@@ -844,6 +885,22 @@ const normalizeLogoUrl = (raw?: string | null) => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding: 4px;
+}
+.portal-bar {
+  margin: 8px 0 0;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+  pointer-events: auto;
 }
 
 .action-tile {
@@ -889,7 +946,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .fab {
   position: fixed;
   right: 16px;
-  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  /* 48px above the tab bar top to avoid overlap; tab bar ≈72px tall */
+  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   width: 68px;
   height: 68px;
   border-radius: 50%;

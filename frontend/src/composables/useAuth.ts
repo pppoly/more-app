@@ -13,6 +13,7 @@ import { useLocale } from './useLocale';
 import { APP_TARGET, LIFF_ID } from '../config';
 import { loadLiff } from '../utils/liff';
 import { reportError } from '../utils/reporting';
+import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 
 interface AuthState {
   user: UserProfile | null;
@@ -32,6 +33,7 @@ let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
 const { setLocale } = useLocale();
+const consoleCommunityStore = useConsoleCommunityStore();
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
@@ -48,6 +50,9 @@ function hasWindow(): boolean {
 function setToken(token: string | null) {
   state.accessToken = token;
   applyClientToken(token);
+  if (!token) {
+    consoleCommunityStore.resetCommunities();
+  }
   if (!hasWindow()) return;
   if (token) {
     window.localStorage.setItem(TOKEN_KEY, token);
@@ -163,6 +168,7 @@ export function useAuth() {
       setToken(response.accessToken);
       state.user = normalizeUser(response.user);
       applyUserLocale(state.user);
+      consoleCommunityStore.loadCommunities(true).catch(() => undefined);
     } finally {
       state.initializing = false;
     }
@@ -183,6 +189,7 @@ export function useAuth() {
   const logout = () => {
     setToken(null);
     state.user = null;
+    consoleCommunityStore.resetCommunities();
   };
 
   const loginWithLiff = async () => ensureLiffLogin();

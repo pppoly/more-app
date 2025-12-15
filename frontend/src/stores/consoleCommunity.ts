@@ -107,6 +107,17 @@ function ensureActiveCommunity() {
   }
 }
 
+function resetCommunities() {
+  state.communities = [];
+  state.activeCommunityId = null;
+  state.loading = false;
+  state.loaded = false;
+  state.error = null;
+  loadPromise = null;
+  bumpActiveCommunityVersion();
+  persistActive(null);
+}
+
 function hasCommunity(id: string) {
   return state.communities.some((community) => community.id === id);
 }
@@ -132,5 +143,6 @@ export function useConsoleCommunityStore() {
     hasCommunity,
     getActiveCommunity,
     refreshActiveCommunity,
+    resetCommunities,
   };
 }

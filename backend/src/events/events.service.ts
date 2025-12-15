@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildAssetUrl } from '../common/storage/asset-path';
+import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 
 interface CreateRegistrationDto {
   ticketTypeId?: string;
@@ -423,10 +423,17 @@ export class EventsService {
         order: true,
       },
     });
-    return gallery.map((item) => ({
-      ...item,
-      imageUrl: buildAssetUrl(item.imageUrl),
-    }));
+    return gallery
+      .map((item) => {
+        const normalized = buildAssetUrl(item.imageUrl);
+        return normalized
+          ? {
+              ...item,
+              imageUrl: normalized,
+            }
+          : null;
+      })
+      .filter((item): item is { id: string; imageUrl: string; order: number } => Boolean(item));
   }
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
     if (!content) return '';

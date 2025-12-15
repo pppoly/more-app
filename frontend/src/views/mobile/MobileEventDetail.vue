@@ -20,7 +20,13 @@
         <section class="event-hero">
           <div class="event-hero__overlay"></div>
           <div class="event-cover-wrapper" :style="heroBackgroundStyle">
-            <div class="event-carousel">
+            <div
+              class="event-carousel"
+              @touchstart.passive="handleTouchStart"
+              @touchmove.passive="handleTouchMove"
+              @touchend="handleTouchEnd"
+              @touchcancel="handleTouchEnd"
+            >
               <div
                 v-for="(slide, index) in heroSlides"
                 :key="slide.id || slide.imageUrl || index"
@@ -82,7 +88,6 @@
                 </button>
               </div>
             </div>
-            <p v-if="ctaHint" class="event-hero-hint">{{ ctaHint }}</p>
             <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
@@ -289,6 +294,9 @@ import {
   fetchEventById,
   fetchEventGallery,
   fetchMyEvents,
+  fetchCommunityFollowStatus,
+  followCommunity,
+  unfollowCommunity,
 } from '../../api/client';
 import type {
   EventDetail,
@@ -642,6 +650,7 @@ const loadEvent = async () => {
     const [detailData, galleryData] = await Promise.all([fetchEventById(eventId.value), fetchEventGallery(eventId.value)]);
     event.value = detailData;
     gallery.value = galleryData;
+    await loadFollowState();
   } catch (err) {
     error.value = '活动加载失败，请稍后再试';
   } finally {
@@ -669,6 +678,13 @@ watch(
   () => heroSlides.value.length,
   () => {
     activeSlide.value = 0;
+  },
+);
+
+watch(
+  () => detail.value?.community?.id,
+  () => {
+    loadFollowState();
   },
 );
 
@@ -784,9 +800,69 @@ const openCalendar = () => {
 };
 
 const isFollowingCommunity = ref(false);
-const toggleFollow = () => {
-  isFollowingCommunity.value = !isFollowingCommunity.value;
-  showUiMessage(isFollowingCommunity.value ? '已关注' : '已取消关注');
+const loadFollowState = async () => {
+  if (!detail.value?.community?.id) return;
+  try {
+    const status = await fetchCommunityFollowStatus(detail.value.community.id);
+    isFollowingCommunity.value = !!status.following;
+  } catch {
+    isFollowingCommunity.value = false;
+  }
+};
+
+const toggleFollow = async () => {
+  if (!detail.value?.community?.id) return;
+  if (!user.value) {
+    router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
+    return;
+  }
+  try {
+    if (isFollowingCommunity.value) {
+      await unfollowCommunity(detail.value.community.id);
+      isFollowingCommunity.value = false;
+      showUiMessage('已取消关注');
+    } else {
+      await followCommunity(detail.value.community.id);
+      isFollowingCommunity.value = true;
+      showUiMessage('已关注');
+    }
+  } catch (err) {
+    showUiMessage(err instanceof Error ? err.message : '操作失败');
+  }
+};
+
+// Swipe to change hero slide
+let touchStartX = 0;
+let touchStartY = 0;
+let touchDeltaX = 0;
+const SWIPE_THRESHOLD = 40;
+
+const handleTouchStart = (e: TouchEvent) => {
+  if (!e.touches.length) return;
+  const touch = e.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  touchDeltaX = 0;
+};
+
+const handleTouchMove = (e: TouchEvent) => {
+  if (!e.touches.length) return;
+  const touch = e.touches[0];
+  touchDeltaX = touch.clientX - touchStartX;
+};
+
+const handleTouchEnd = () => {
+  if (!heroSlides.value.length) return;
+  const horizontalSwipe = Math.abs(touchDeltaX) > SWIPE_THRESHOLD;
+  if (!horizontalSwipe) return;
+  if (touchDeltaX < 0) {
+    goNextSlide();
+  } else {
+    goPrevSlide();
+  }
+  touchStartX = 0;
+  touchStartY = 0;
+  touchDeltaX = 0;
 };
 
 const groupAvatarStyle = computed(() => {
@@ -1047,7 +1123,11 @@ watch(
 .event-detail-page {
   background-color: var(--m-color-bg);
   min-height: 100vh;
-  padding: 0 10px calc(60px + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0 0 calc(60px + env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
 }
 
 .event-state {
@@ -1502,6 +1582,7 @@ watch(
   background: transparent;
   padding: 0;
   text-align: left;
+  flex: 1;
 }
 
 .group-avatar {
@@ -1533,6 +1614,10 @@ watch(
   gap: 6px;
   background: rgba(15, 23, 42, 0.05);
   color: var(--m-color-text-primary);
+  flex-shrink: 0;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .group-follow.is-active {
@@ -1806,7 +1891,7 @@ watch(
   letter-spacing: 0.01em;
   background: #0090d9;
   color: #fff;
-  box-shadow: 0 15px 30px rgba(0, 144, 217, 0.35);
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1825,7 +1910,7 @@ watch(
 
 .rails-cta:active:not(:disabled) {
   transform: scale(0.98);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
+  box-shadow: none;
 }
 
 .rails-cta:disabled {

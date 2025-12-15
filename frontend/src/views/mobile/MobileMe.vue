@@ -169,6 +169,18 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .me-hero {
   padding: 0;
+  position: relative;
+}
+
+.me-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(env(safe-area-inset-top, 0px) + 70px);
+  background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
+  z-index: 0;
 }
 
 .me-hero__card {
@@ -185,6 +197,8 @@ const handleCropConfirm = async (blob: Blob) => {
   box-sizing: border-box;
   overflow: hidden;
   min-height: 128px;
+  position: relative;
+  z-index: 1;
 }
 
 .me-hero__avatar-wrap {

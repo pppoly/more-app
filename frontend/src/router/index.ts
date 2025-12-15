@@ -188,6 +188,11 @@ const routes: RouteRecordRaw[] = [
     component: OrganizerApply,
     meta: {
       devPageName: '主理人申请',
+      layout: 'mobile-user',
+      mobileOnly: true,
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
     },
   },
   {
