@@ -29,6 +29,11 @@ export class MeService {
         amount: true,
         attended: true,
         noShow: true,
+        payment: {
+          select: {
+            status: true,
+          },
+        },
         event: {
           select: {
             id: true,
@@ -62,10 +67,23 @@ export class MeService {
       const { galleries: _omit, ...eventData } = event as typeof event & {
         galleries?: { imageUrl: string | null }[];
       };
+      const paymentStatusFromPayment = (registration as any)?.payment?.status;
+      const derivedPaymentStatus =
+        (rest.amount ?? 0) === 0
+          ? 'paid'
+          : rest.paymentStatus === 'paid'
+            ? 'paid'
+            : rest.paymentStatus === 'refunded'
+              ? 'refunded'
+              : ['paid', 'succeeded', 'captured'].includes(paymentStatusFromPayment || '')
+                ? 'paid'
+                : paymentStatusFromPayment === 'refunded'
+                  ? 'refunded'
+                  : rest.paymentStatus || 'unpaid';
       return {
         registrationId: rest.id,
         status: rest.status,
-        paymentStatus: rest.paymentStatus,
+        paymentStatus: derivedPaymentStatus,
         amount: rest.amount,
         attended: rest.attended,
         noShow: rest.noShow,

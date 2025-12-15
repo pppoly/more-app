@@ -601,7 +601,7 @@ watch(
   transform: translateX(10px);
 }
 .tabbar__icon-img {
-  width: 37px;
-  height: 37px;
+  width: 32px;
+  height: 32px;
 }
 </style>

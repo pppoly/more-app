@@ -378,11 +378,21 @@ const displayName = (item: { nameJa?: string | null; nameZh?: string | null; nam
 const cropResultWidth = computed(() => (cropTarget.value === 'cover' ? 1280 : 512));
 const croppingLoading = computed(() => cropTarget.value === 'cover' ? uploadingCover.value : uploadingLogo.value);
 
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    reader.readAsDataURL(file);
+  });
+
 const ensureCommunityReady = async () => {
   if (communityId.value) return communityId.value;
-  if (!form.name.trim() || !form.slug.trim()) {
-    error.value = '先填写社群名称和 Slug，才能上传图片。';
-    return null;
+  if (!form.name.trim()) {
+    form.name = '未命名社群';
+  }
+  if (!form.slug.trim()) {
+    form.slug = `community-${Date.now().toString(36)}`;
   }
   try {
     creatingFromUpload.value = true;
@@ -397,7 +407,6 @@ const ensureCommunityReady = async () => {
     communityId.value = created.id;
     await communityStore.loadCommunities(true);
     communityStore.refreshActiveCommunity();
-    router.replace({ name: 'ConsoleMobileCommunitySettings', params: { communityId: created.id } });
     toast.show('社群已保存，可继续上传图片', 'success');
     return created.id;
   } catch (err) {
@@ -419,13 +428,14 @@ const handleCoverUpload = async (event: Event) => {
       return;
     }
   }
-  const reader = new FileReader();
-  reader.onload = () => {
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
     cropTarget.value = 'cover';
-    cropSource.value = reader.result as string;
+    cropSource.value = dataUrl;
     showCropper.value = true;
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '画像の読み込みに失敗しました';
+  }
   target.value = '';
 };
 
@@ -440,13 +450,14 @@ const handleLogoUpload = async (event: Event) => {
       return;
     }
   }
-  const reader = new FileReader();
-  reader.onload = () => {
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
     cropTarget.value = 'logo';
-    cropSource.value = reader.result as string;
+    cropSource.value = dataUrl;
     showCropper.value = true;
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '画像の読み込みに失敗しました';
+  }
   target.value = '';
 };
 

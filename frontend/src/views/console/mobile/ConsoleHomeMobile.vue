@@ -15,6 +15,7 @@
           <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" loading="lazy" />
         </button>
         <div class="top-text" @click="goCommunitySettings">
+          <p class="top-label">社群</p>
           <div class="top-title-row">
             <h1 class="top-title">
               {{ communityName || '未選択のコミュニティ' }}
@@ -32,29 +33,23 @@
           @click="openCommunityPicker"
         >
           <span class="i-lucide-sparkles" v-if="!hasCommunity"></span>
-          社群
+          切り替え
         </button>
       </div>
-      <button v-if="hasCommunity" type="button" class="portal-btn" @click="goPublicPortal">进入我的社群页面</button>
-    </section>
-
-    <section class="stat-grid">
-      <article class="stat-chip">
-        <p class="stat-label">今月の収入</p>
-        <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '---' }}</p>
-      </article>
-      <article class="stat-chip">
-        <p class="stat-label">今月の閲覧</p>
-        <p class="stat-value">{{ hasCommunity ? stats.pageViews : '--' }}</p>
-      </article>
-      <article class="stat-chip">
-        <p class="stat-label">フォロー数</p>
-        <p class="stat-value">{{ hasCommunity ? stats.followerCount : '--' }}</p>
-      </article>
-      <article class="stat-chip">
-        <p class="stat-label">申込数</p>
-        <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
-      </article>
+      <div class="stat-inline">
+        <div class="stat-inline-item">
+          <p class="stat-label">今月の収入</p>
+          <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '¥0' }}</p>
+        </div>
+        <div class="stat-inline-item">
+          <p class="stat-label">今月のイベント</p>
+          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+        </div>
+        <div class="stat-inline-item">
+          <p class="stat-label">申込数</p>
+          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+        </div>
+      </div>
     </section>
 
     <button
@@ -651,8 +646,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
 <style scoped>
 .console-home {
   min-height: 100vh;
-  padding: calc(0.6rem + env(safe-area-inset-top, 0px)) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
-  background: #f7f7fb;
+  padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
+  background: #f4f6fb;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -663,27 +658,28 @@ const normalizeLogoUrl = (raw?: string | null) => {
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 64px 20px 28px;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+  background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
+  border-radius: 14px;
+  padding: 18px 14px 16px;
+  box-shadow: 0 12px 24px rgba(34, 210, 255, 0.14);
   position: relative;
 }
 
 .top-main {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .avatar-btn {
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   border-radius: 12px;
   border: none;
   padding: 0;
   overflow: hidden;
   background: transparent;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
 }
 
@@ -692,6 +688,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
   height: 100%;
   object-fit: cover;
   display: block;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
 }
 
 .top-text {
@@ -700,19 +698,20 @@ const normalizeLogoUrl = (raw?: string | null) => {
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
+  color: #f8fbff;
 }
 
 .top-label {
   margin: 0;
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: rgba(248, 251, 255, 0.8);
 }
 
 .top-title {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
-  color: #0f172a;
+  color: #ffffff;
   line-height: 1.2;
 }
 
@@ -725,12 +724,12 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .portal-btn {
   border: none;
   color: #0f172a;
-  background: linear-gradient(135deg, #e0f2fe, #e0ecff);
-  border-radius: 14px;
-  padding: 14px 16px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 12px 14px;
   font-weight: 700;
   font-size: 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 12px 28px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
   width: 100%;
   text-align: center;
 }
@@ -742,8 +741,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
   margin-left: 10px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(14, 165, 233, 0.12);
-  color: #0ea5e9;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
   font-size: 12px;
   font-weight: 700;
   vertical-align: middle;
@@ -754,12 +753,14 @@ const normalizeLogoUrl = (raw?: string | null) => {
   right: 12px;
   padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(37, 99, 235, 0.5);
-  background: #fff;
-  color: #2563eb;
+  background: rgba(255, 255, 255, 0.32);
+  color: #0f172a;
   font-weight: 700;
   font-size: 12px;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
 }
 .top-title-row {
   display: flex;
@@ -768,28 +769,28 @@ const normalizeLogoUrl = (raw?: string | null) => {
   flex-wrap: wrap;
 }
 .plan-chip {
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
-  background: #0ea5e9;
-  color: #fff;
+  background: rgba(255, 255, 255, 0.32);
+  color: #0f172a;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.65);
   cursor: pointer;
 }
 
 .top-role {
   margin: 0;
-  font-size: 12px;
-  color: #64748b;
+  font-size: 11px;
+  color: rgba(248, 251, 255, 0.92);
 }
 
 .pill-btn {
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.65);
   border-radius: 999px;
-  padding: 8px 12px;
-  background: #fff;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.9);
   color: #0f172a;
   font-size: 12px;
   font-weight: 600;
@@ -799,37 +800,39 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .pill-btn--primary {
-  border: none;
-  background: linear-gradient(135deg, #0090d9, #22bbaa);
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(0, 144, 217, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
 }
 
-.stat-grid {
+.stat-inline {
+  margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 0 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.stat-chip {
-  background: #fff;
+.stat-inline-item {
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  padding: 10px 8px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .stat-label {
   margin: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: rgba(19, 75, 58, 0.9);
 }
 
 .stat-value {
   margin: 2px 0 0;
   font-size: 16px;
   font-weight: 700;
-  color: #0f172a;
+  color: #0b4f8f;
 }
 
 .action-grid {
@@ -841,10 +844,11 @@ const normalizeLogoUrl = (raw?: string | null) => {
 
 .action-tile {
   border: none;
-  border-radius: 12px;
-  background: #fff;
+  border-radius: 14px;
+  background: #f3fbff;
   padding: 16px 12px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 18px rgba(24, 128, 200, 0.08);
+  border: 1px solid #cfe9ff;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -853,25 +857,25 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .action-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.06);
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: #dff3ff;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .action-icon img {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
 }
 
 .action-title {
   margin: 0;
   font-size: 13px;
   font-weight: 700;
-  color: var(--m-color-text-primary);
+  color: #0f172a;
 }
 
 .action-tile.is-disabled {
