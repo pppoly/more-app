@@ -250,7 +250,13 @@ export class AssetService {
       data: { status: 'uploaded' },
     });
 
-    await this.imageQueue.add(PROCESS_IMAGE_JOB, { assetId: asset.id });
+    // 队列若不可用（如 Redis 未启动），不阻断主流程
+    try {
+      await this.imageQueue.add(PROCESS_IMAGE_JOB, { assetId: asset.id });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('queue add failed, skip image processing', err);
+    }
 
     return {
       asset,

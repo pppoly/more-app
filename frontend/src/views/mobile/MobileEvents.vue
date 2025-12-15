@@ -447,24 +447,20 @@ onMounted(loadEvents);
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 999px;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(2px);
+  padding: 0;
 }
 .avatar-row img {
   width: 28px;
   height: 28px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.7);
 }
 .avatar-more {
   padding: 4px 8px;
   border-radius: 999px;
-  background: #f8fafc;
-  color: #334155;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
   font-size: 11px;
   font-weight: 700;
 }

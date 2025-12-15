@@ -255,6 +255,7 @@ const tagLoaded = ref(false);
 const visibilitySheetOpen = ref(false);
 
 const saving = ref(false);
+const creatingFromUpload = ref(false);
 const error = ref<string | null>(null);
 const showCropper = ref(false);
 const cropSource = ref<string | null>(null);
@@ -377,21 +378,64 @@ const displayName = (item: { nameJa?: string | null; nameZh?: string | null; nam
 const cropResultWidth = computed(() => (cropTarget.value === 'cover' ? 1280 : 512));
 const croppingLoading = computed(() => cropTarget.value === 'cover' ? uploadingCover.value : uploadingLogo.value);
 
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    reader.readAsDataURL(file);
+  });
+
+const ensureCommunityReady = async () => {
+  if (communityId.value) return communityId.value;
+  if (!form.name.trim()) {
+    form.name = '未命名社群';
+  }
+  if (!form.slug.trim()) {
+    form.slug = `community-${Date.now().toString(36)}`;
+  }
+  try {
+    creatingFromUpload.value = true;
+    const created = await createConsoleCommunity({
+      name: form.name,
+      slug: form.slug,
+      labels: labelChips.value,
+      visibleLevel: form.visibleLevel,
+      description: buildDescription(),
+      coverImageUrl: form.coverImageUrl || null,
+    });
+    communityId.value = created.id;
+    await communityStore.loadCommunities(true);
+    communityStore.refreshActiveCommunity();
+    toast.show('社群已保存，可继续上传图片', 'success');
+    return created.id;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '社群保存に失敗しました';
+    return null;
+  } finally {
+    creatingFromUpload.value = false;
+  }
+};
+
 const handleCoverUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file || uploadingCover.value) return;
   if (!communityId.value) {
-    error.value = 'コミュニティを先に保存してください。';
-    return;
+    const id = await ensureCommunityReady();
+    if (!id) {
+      target.value = '';
+      return;
+    }
   }
-  const reader = new FileReader();
-  reader.onload = () => {
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
     cropTarget.value = 'cover';
-    cropSource.value = reader.result as string;
+    cropSource.value = dataUrl;
     showCropper.value = true;
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '画像の読み込みに失敗しました';
+  }
   target.value = '';
 };
 
@@ -400,16 +444,20 @@ const handleLogoUpload = async (event: Event) => {
   const file = target.files?.[0];
   if (!file || uploadingLogo.value) return;
   if (!communityId.value) {
-    error.value = 'コミュニティを先に保存してください。';
-    return;
+    const id = await ensureCommunityReady();
+    if (!id) {
+      target.value = '';
+      return;
+    }
   }
-  const reader = new FileReader();
-  reader.onload = () => {
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
     cropTarget.value = 'logo';
-    cropSource.value = reader.result as string;
+    cropSource.value = dataUrl;
     showCropper.value = true;
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '画像の読み込みに失敗しました';
+  }
   target.value = '';
 };
 
@@ -459,6 +507,10 @@ const handleCropConfirm = async (blob: Blob) => {
 const handleSave = async () => {
   saving.value = true;
   error.value = null;
+  if (creatingFromUpload.value) {
+    saving.value = false;
+    return;
+  }
   if (!form.name.trim() || !form.slug.trim()) {
     error.value = '社群名称とSlugは必須です';
     saving.value = false;

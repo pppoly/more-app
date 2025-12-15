@@ -1,23 +1,23 @@
 <template>
 <div class="login-page">
   <section class="login-card">
-    <h2>使用 LINE 登录</h2>
-    <p>推荐生产环境使用，完成 LINE 授权后自动登录。</p>
+    <h2>LINEでログイン</h2>
+    <p>本番利用に推奨。LINE認証後に自動ログインします。</p>
     <button type="button" class="line-button" @click="handleLineLogin">
       <span class="i-simple-icons-line"></span>
-      LINE 登录
+      LINEログイン
     </button>
   </section>
 
   <section v-if="APP_TARGET !== 'liff'" class="login-card">
-    <h2>测试环境快捷登录</h2>
-    <p>输入任意用户名即可体验完整流程。</p>
+    <h2>テスト環境クイックログイン</h2>
+    <p>任意の表示名を入力するとフローを体験できます。</p>
     <label>
-      显示名称
-      <input v-model="devName" type="text" placeholder="例如：MORE Test User" />
+      表示名
+      <input v-model="devName" type="text" placeholder="例：MORE Test User" />
     </label>
     <button type="button" class="primary" :disabled="loading" @click="handleDevLogin">
-      {{ loading ? '登录中...' : '一键体验' }}
+      {{ loading ? 'ログイン中...' : 'ワンクリック体験' }}
     </button>
     <p v-if="error" class="error">{{ error }}</p>
   </section>
@@ -58,7 +58,7 @@ const finishLoginFlow = async (mode: string) => {
 
 const handleDevLogin = async () => {
   if (!devName.value.trim()) {
-    error.value = '请输入显示名称';
+    error.value = '表示名を入力してください';
     return;
   }
   error.value = '';
@@ -67,7 +67,7 @@ const handleDevLogin = async () => {
     await auth.loginDev(devName.value.trim());
     await finishLoginFlow('dev');
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '登录失败';
+    error.value = err instanceof Error ? err.message : 'ログインに失敗しました';
   } finally {
     loading.value = false;
   }
@@ -81,7 +81,7 @@ const handleLineLogin = async () => {
     try {
       await auth.loginWithLiff();
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'LINE 登录失败';
+      error.value = err instanceof Error ? err.message : 'LINEログインに失敗しました';
     } finally {
       loading.value = false;
     }
