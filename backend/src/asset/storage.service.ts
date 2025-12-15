@@ -1,7 +1,7 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { Storage, GetSignedUrlConfig } from '@google-cloud/storage';
-import { mkdir, stat, writeFile, readFile } from 'fs/promises';
-import { join, dirname } from 'path';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
 import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
 interface PresignParams {
@@ -30,26 +30,20 @@ export class StorageService {
   private storage: Storage;
   private bucketName: string;
   private cdnBase: string;
-  private useLocal: boolean;
-  private localRoot: string;
-  private fallbackToLocal: boolean;
+  private uploadsPrefix: string;
+  private isLocal: boolean;
 
   constructor() {
     this.storage = new Storage();
-    this.bucketName = process.env.GCS_BUCKET || '';
+    const forceLocal = process.env.FORCE_LOCAL_UPLOADS === 'true';
+    this.bucketName = process.env.GCS_BUCKET || 'local';
     this.cdnBase = process.env.CDN_BASE_URL || '';
-    this.useLocal = !this.bucketName;
-    this.localRoot = UPLOAD_ROOT;
-    this.fallbackToLocal = this.useLocal;
-
-    if (this.useLocal) {
-      // eslint-disable-next-line no-console
-      console.warn('[StorageService] GCS_BUCKET is not set. Using local disk storage under', this.localRoot);
-    }
+    this.uploadsPrefix = (process.env.UPLOADS_HTTP_PREFIX || 'uploads').replace(/^\/+|\/+$/g, '');
+    this.isLocal = forceLocal || !process.env.GCS_BUCKET;
   }
 
   getDefaultBucket() {
-    return this.bucketName || 'local';
+    return this.bucketName;
   }
 
   getEnvPrefix() {
@@ -63,6 +57,11 @@ export class StorageService {
     return 'jpg';
   }
 
+  private buildLocalUrl(objectKey: string) {
+    const cleanKey = objectKey.replace(/^\/+/, '');
+    return `/${this.uploadsPrefix}/${cleanKey}`;
+  }
+
   buildObjectKey(params: BuildKeyParams) {
     const yyyy = params.now.getFullYear();
     const mm = String(params.now.getMonth() + 1).padStart(2, '0');
@@ -71,8 +70,8 @@ export class StorageService {
   }
 
   async getPresignedUploadUrl(params: PresignParams): Promise<PresignResult> {
-    if (this.useLocal) {
-      throw new InternalServerErrorException('Presigned uploads require GCS_BUCKET; running in local storage mode');
+    if (this.isLocal) {
+      throw new BadRequestException('Local storage mode does not support presigned uploads');
     }
     try {
       const bucket = this.storage.bucket(params.bucket);
@@ -96,11 +95,11 @@ export class StorageService {
   }
 
   async headObject(bucket: string, objectKey: string) {
-    if (this.useLocal) {
+    if (this.isLocal) {
+      const fullPath = join(UPLOAD_ROOT, objectKey);
       try {
-        const target = join(this.localRoot, objectKey);
-        const stats = await stat(target);
-        return { size: stats.size };
+        const info = await stat(fullPath);
+        return { size: info.size };
       } catch {
         return null;
       }
@@ -113,9 +112,9 @@ export class StorageService {
   }
 
   async download(bucket: string, objectKey: string): Promise<Buffer> {
-    if (this.useLocal) {
-      const target = join(this.localRoot, objectKey);
-      return readFile(target);
+    if (this.isLocal) {
+      const fullPath = join(UPLOAD_ROOT, objectKey);
+      return readFile(fullPath);
     }
     const file = this.storage.bucket(bucket).file(objectKey);
     const [buf] = await file.download();
@@ -129,37 +128,28 @@ export class StorageService {
     contentType: string;
     makePublic?: boolean;
   }) {
-    if (this.useLocal) {
-      const target = join(this.localRoot, params.objectKey);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, params.buffer);
-      return this.buildPublicUrl(params.bucket, params.objectKey);
+    if (this.isLocal) {
+      const cleanKey = params.objectKey.replace(/^\/+/, '');
+      const fullPath = join(UPLOAD_ROOT, cleanKey);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, params.buffer);
+      return this.buildLocalUrl(cleanKey);
     }
-    try {
-      const bucket = this.storage.bucket(params.bucket);
-      const file = bucket.file(params.objectKey);
-      await file.save(params.buffer, {
-        contentType: params.contentType,
-        resumable: false,
-      });
-      if (params.makePublic) {
-        await file.makePublic();
-      }
-      return this.buildPublicUrl(params.bucket, params.objectKey);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[StorageService] GCS upload failed, falling back to local disk:', err);
-      this.fallbackToLocal = true;
-      const target = join(this.localRoot, params.objectKey);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, params.buffer);
-      return this.buildPublicUrl(params.bucket, params.objectKey);
+    const bucket = this.storage.bucket(params.bucket);
+    const file = bucket.file(params.objectKey);
+    await file.save(params.buffer, {
+      contentType: params.contentType,
+      resumable: false,
+    });
+    if (params.makePublic) {
+      await file.makePublic();
     }
+    return this.buildPublicUrl(params.bucket, params.objectKey);
   }
 
   buildPublicUrl(bucket: string, objectKey: string) {
-    if (this.useLocal || this.fallbackToLocal) {
-      return `/uploads/${objectKey}`;
+    if (this.isLocal) {
+      return this.buildLocalUrl(objectKey);
     }
     if (this.cdnBase) {
       return `${this.cdnBase}/${objectKey}`;
