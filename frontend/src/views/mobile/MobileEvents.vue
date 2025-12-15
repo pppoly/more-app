@@ -320,9 +320,13 @@ onMounted(loadEvents);
 
 <style scoped>
 .events-page {
-  min-height: 100vh;
+  min-height: auto;
   background: #f3f4f6;
-  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 .app-bar {
   position: sticky;

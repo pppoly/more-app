@@ -156,12 +156,15 @@ const handleCropConfirm = async (blob: Blob) => {
 
 <style scoped>
 .mobile-me {
+  width: 100%;
+  max-width: 100vw;
   padding: 0 0 4rem;
-  background: #f3f4f6;
+  background: #f5f6fa;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-x: hidden;
 }
 
 .me-hero {
@@ -169,16 +172,19 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .me-hero__card {
-  background: linear-gradient(135deg, #0fb4e2 10%, #1fc3b0 60%, #f5c75c);
+  background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
   margin: 0;
-  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 18px;
-  border-radius: 0 0 16px 16px;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 16px;
+  border-radius: 0 0 12px 12px;
   color: #fff;
-  box-shadow: none;
+  box-shadow: 0 10px 24px rgba(34, 210, 255, 0.1);
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-height: 128px;
 }
 
 .me-hero__avatar-wrap {
@@ -188,10 +194,10 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .me-hero__avatar {
   border: none;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.5);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -202,6 +208,7 @@ const handleCropConfirm = async (blob: Blob) => {
   overflow: hidden;
   cursor: pointer;
   position: relative;
+  box-shadow: none;
 }
 
 .me-hero__avatar img {
@@ -281,6 +288,7 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .section-block {
   padding: 12px 16px 0;
+  box-sizing: border-box;
 }
 
 .section-title {
@@ -293,10 +301,12 @@ const handleCropConfirm = async (blob: Blob) => {
 .service-sheet {
   margin: 0;
   background: #fff;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 6px 0;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
   border: 1px solid rgba(15, 23, 42, 0.04);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .service-row {
@@ -310,14 +320,14 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row + .service-row {
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid rgba(230, 234, 239, 0.9);
 }
 
 .service-row__icon {
-  width: 40px;
-  height: 40px;
+  width: 37px;
+  height: 37px;
   border-radius: 12px;
-  background: #edf1f5;
+  background: #e9f5ff;
   color: #0f172a;
   display: inline-flex;
   align-items: center;
@@ -327,8 +337,8 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon img {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
@@ -358,11 +368,11 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .service-row__cta {
   font-size: 13px;
-  font-weight: 600;
-  color: #1f2937;
-  background: #edf1f5;
-  padding: 6px 12px;
-  border-radius: 999px;
+  font-weight: 700;
+  color: #4b5563;
+  background: #f1f1f1;
+  padding: 8px 18px 7px;
+  border-radius: 16px;
 }
 
 .service-row:active {

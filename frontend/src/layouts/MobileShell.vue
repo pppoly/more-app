@@ -302,11 +302,14 @@ watch(
 .mobile-shell {
   min-height: 100vh;
   width: 100%;
+  max-width: 100vw;
   display: flex;
   flex-direction: column;
   background: #f3f4f6;
   color: #0f172a;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
+  box-sizing: border-box;
 }
 .mobile-shell--fixed {
   height: 100vh;
@@ -395,7 +398,11 @@ watch(
   flex: 1;
   background: #f3f4f6;
   color: #0f172a;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__content--tabbed {
@@ -418,17 +425,27 @@ watch(
 .mobile-shell__view {
   min-height: 100%;
   height: auto;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__view--fixed {
   height: 100%;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 :deep(.mobile-shell__view--fixed > *) {
   height: 100%;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__tabbar {
@@ -442,16 +459,21 @@ watch(
   background: #ffffff;
   border-top: none;
   box-shadow: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
 }
 
 .tabbar {
   margin: 0;
   width: 100%;
+  max-width: 100%;
   display: flex;
   gap: 8px;
   background: #ffffff;
   padding: 10px 0;
   border-radius: 0;
+  box-sizing: border-box;
 }
 
 .tabbar__item {
@@ -601,7 +623,7 @@ watch(
   transform: translateX(10px);
 }
 .tabbar__icon-img {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
 }
 </style>

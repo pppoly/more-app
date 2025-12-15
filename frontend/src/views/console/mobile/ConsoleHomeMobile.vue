@@ -646,11 +646,15 @@ const normalizeLogoUrl = (raw?: string | null) => {
 <style scoped>
 .console-home {
   min-height: 100vh;
-  padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
+  padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem calc(16px + env(safe-area-inset-bottom, 0px));
   background: #f4f6fb;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .top-bar {
@@ -885,7 +889,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .fab {
   position: fixed;
   right: 16px;
-  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   width: 68px;
   height: 68px;
   border-radius: 50%;

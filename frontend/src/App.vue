@@ -157,6 +157,9 @@ const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
   color: #1f2933;
   min-height: 100vh;
   background: #f6f8fb;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .dev-page-overlay {
