@@ -1,10 +1,7 @@
 <template>
   <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
-    <header v-if="isMobileLayout" class="mobile-nav">
-      <button type="button" class="mobile-nav__back" @click="goBack">戻る</button>
-      <h1 class="mobile-nav__title">イベント作成</h1>
-      <span class="mobile-nav__placeholder" />
-    </header>
+    <ConsoleTopBar v-if="isMobileLayout" title="イベント作成" @back="goBack" />
+    <p v-if="isMobileLayout && aiPrefillNotice" class="ai-hint">{{ aiPrefillNotice }}</p>
     <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
@@ -17,10 +14,10 @@
         <div class="paste-full-card">
           <header class="paste-full-head">
             <div>
-              <p class="paste-full-title">粘贴你的活动草案</p>
-              <p class="paste-full-subtitle">一键提取标题/简介/规则并填好表单，省去重复输入</p>
+              <p class="paste-full-title">下書きを貼り付ける</p>
+              <p class="paste-full-subtitle">タイトル・説明・ルールを AI が読み取り、フォームに反映します</p>
             </div>
-            <button type="button" class="paste-close" @click="togglePaste(false)">关闭</button>
+            <button type="button" class="paste-close" @click="togglePaste(false)">閉じる</button>
           </header>
           <textarea
             v-model="pastedDraft"
@@ -30,12 +27,12 @@
             rows="10"
           ></textarea>
           <div class="paste-actions">
-            <button type="button" class="ios-chip" @click="pastedDraft = ''">清空</button>
+            <button type="button" class="ios-chip" @click="pastedDraft = ''">クリア</button>
             <button type="button" class="btn ghost small" @click="goToEventAssistant">
-              我想先跟 AI 讨论
+              AI と相談する
             </button>
             <button type="button" class="btn solid small" @click="checkPastedDraft">
-              自动填表
+              自動で反映
             </button>
           </div>
           <p v-if="draftCheckMessage" class="status muted mt-2">{{ draftCheckMessage }}</p>
@@ -45,34 +42,41 @@
 
     <Teleport to="body">
       <div v-if="showPasteResult" class="paste-result-overlay" @click.self="closePasteResult">
-        <div class="paste-result-card">
-          <h3 class="paste-result-title">已帮你填好核心信息</h3>
-          <p class="paste-result-subtitle">可以在表单里继续完善时间、地点、票价等细节</p>
+        <div class="paste-review-card">
+          <header class="paste-review-head">
+            <p class="paste-review-title">内容をご確認ください</p>
+            <p class="paste-review-subtitle">修正は AI に任せるか、フォームで調整できます。</p>
+          </header>
+
           <div v-if="pasteResultLoading" class="paste-result-loading">
             <span class="spinner"></span>
-            <p>AI 正在生成建议…</p>
+            <p>AI が読み取り中です…</p>
           </div>
           <template v-else>
-            <div class="paste-result-list" v-if="pasteFilledFields.length">
-              <p class="eyebrow">填入的内容</p>
+            <section class="review-checklist">
+              <p class="eyebrow">確認リスト</p>
               <ul>
-                <li v-for="item in pasteFilledFields" :key="item">· {{ item }}</li>
+                <li v-for="item in checklistItems" :key="item.id" class="check-item">
+                  <span :class="['status-dot', item.done ? 'done' : 'pending']"></span>
+                  <div class="check-text">
+                    <p class="check-label">{{ item.label }}</p>
+                    <p v-if="item.note" class="check-note">{{ item.note }}</p>
+                  </div>
+                  <span class="check-state">{{ item.done ? '読み取り済み' : '後で確認' }}</span>
+                </li>
               </ul>
-            </div>
-            <div class="paste-result-hints">
-              <p class="eyebrow">下一步建议</p>
-              <ul>
-                <li v-for="tip in pasteAdvice" :key="tip">· {{ tip }}</li>
-              </ul>
-              <p class="eyebrow mt-2">合规提示</p>
-              <ul>
-                <li v-for="tip in pasteCompliance" :key="tip">· {{ tip }}</li>
-              </ul>
-  </div>
-</template>
-          <div class="paste-result-actions">
-            <button type="button" class="btn ghost small" @click="goToEventAssistant">补充细节，找 AI</button>
-            <button type="button" class="btn solid small" @click="closePasteResult">去表单确认</button>
+            </section>
+
+            <section v-if="firstAdvice || firstCompliance" class="review-hints">
+              <p class="eyebrow">気になる点</p>
+              <p v-if="firstAdvice" class="hint-text">{{ firstAdvice }}</p>
+              <p v-if="firstCompliance" class="hint-text">{{ firstCompliance }}</p>
+            </section>
+          </template>
+
+          <div class="paste-review-actions">
+            <button type="button" class="ghost-link" @click="goToEventAssistant">AI にもう一度任せる</button>
+            <button type="button" class="primary-next" @click="closePasteResult">フォームで確認する</button>
           </div>
         </div>
       </div>
@@ -117,7 +121,7 @@
       <div v-if="coverDisplayItems.length" class="hero-cover-strip">
         <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
           <img :src="item.imageUrl" alt="cover" />
-          <span v-if="index === 0" class="hero-cover-main">主图</span>
+          <span v-if="index === 0" class="hero-cover-main">カバー</span>
           <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
         </figure>
         <button
@@ -127,7 +131,7 @@
           @click.stop="triggerCoverPicker"
         >
           <span>+</span>
-          <p>继续添加</p>
+          <p>さらに追加</p>
         </button>
       </div>
       <button
@@ -137,7 +141,7 @@
         @click.stop="triggerCoverPicker"
       >
         <span>+</span>
-        <p>添加优质图片</p>
+        <p>写真を追加</p>
       </button>
       <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
       <p v-if="coverError" class="status error">{{ coverError }}</p>
@@ -154,7 +158,7 @@
     <div v-if="uploadingCover" class="cover-upload-overlay">
       <div class="cover-upload-box">
         <span class="cover-upload-spinner"></span>
-        <p>封面上传中...</p>
+        <p>カバーをアップロード中...</p>
       </div>
     </div>
 
@@ -185,17 +189,6 @@
     </section>
 
     <form class="form" @submit.prevent="handleSubmit">
-      <!-- Category -->
-      <section class="ios-panel" ref="sectionCategory">
-        <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openCategorySheet">
-            <span class="ios-label">カテゴリ</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.category }">
-              {{ categoryLabel }}
-            </span>
-          </button>
-        </div>
-      </section>
 
       <!-- Basic info -->
       <section class="ios-panel" ref="sectionBasic">
@@ -205,7 +198,7 @@
             <input
               type="text"
               class="ios-inline-input ios-inline-input--text"
-              placeholder="请输入"
+              placeholder="入力してください"
               ref="titleInputRef"
               v-model="form.title"
             />
@@ -234,37 +227,45 @@
               </span>
             </template>
           </div>
-          <div class="ios-row ios-row--helper">
+          <p class="location-inline-hint">
             <button
               type="button"
-              class="ios-link"
-              @click.stop="manualLocationMode = !manualLocationMode"
+              class="link-btn"
+              @click.prevent="manualLocationMode = false; openLocationPicker()"
             >
-              {{ manualLocationMode ? '地図から選ぶ' : '見つからない場合は手入力' }}
+              地図で選択
             </button>
-          </div>
+            <span class="divider">｜</span>
+            <button
+              type="button"
+              class="link-btn"
+              @click.prevent="manualLocationMode = true; focusMainInline('locationText')"
+            >
+              見つからない場合は手入力
+            </button>
+          </p>
           <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('startTime')">
             <span class="ios-label">開始日時</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.startTime }">
-              {{ form.startTime ? formatDisplayDate(form.startTime) : '请设置' }}
+              {{ form.startTime ? formatDisplayDate(form.startTime) : '設定してください' }}
             </span>
           </button>
           <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('endTime')">
             <span class="ios-label">終了日時</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.endTime }">
-              {{ form.endTime ? formatDisplayDate(form.endTime) : '请设置' }}
+              {{ form.endTime ? formatDisplayDate(form.endTime) : '設定してください' }}
             </span>
           </button>
           <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regStartTime')">
             <span class="ios-label">受付開始</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regStartTime }">
-              {{ form.regStartTime ? formatDisplayDate(form.regStartTime) : '请设置' }}
+              {{ form.regStartTime ? formatDisplayDate(form.regStartTime) : '設定してください' }}
             </span>
           </button>
           <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regEndTime')">
             <span class="ios-label">受付締切</span>
             <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regEndTime }">
-              {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '请设置' }}
+              {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '設定してください' }}
             </span>
           </button>
         </div>
@@ -278,7 +279,7 @@
             <input
               type="tel"
               class="ios-inline-input"
-              placeholder="请设置"
+              placeholder="設定してください"
               inputmode="numeric"
               pattern="[0-9]*"
               ref="minParticipantsInputRef"
@@ -291,7 +292,7 @@
             <input
               type="tel"
               class="ios-inline-input"
-              placeholder="请设置"
+              placeholder="設定してください"
               inputmode="numeric"
               pattern="[0-9]*"
               ref="maxParticipantsInputRef"
@@ -302,9 +303,64 @@
         </div>
       </section>
 
-      <!-- Config -->
-      <section class="ios-panel" ref="sectionConfig">
+      <!-- Rich text -->
+      <section class="ios-panel" ref="sectionRichText">
         <div class="ios-form">
+          <button
+            type="button"
+            class="ios-row ios-row--action ios-row--textarea ios-row--rich-note"
+            @click="openRichTextEditor"
+          >
+            <span class="ios-label">イベント詳細</span>
+            <span class="ios-value ios-rich-text__preview" :class="{ 'ios-value--placeholder': !richTextPreview }">
+              {{ richTextPreview || '編集してください' }}
+            </span>
+            <span v-if="richTextImageCount" class="ios-suffix ios-chip ios-chip--tight">{{ richTextImageCount }} 枚</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Ticket -->
+      <section class="ios-panel" ref="sectionTickets">
+        <div class="ios-form">
+          <div class="ios-row ios-row--builder-line">
+            <span class="ios-label">参加費</span>
+            <input
+              type="tel"
+              class="ios-inline-input"
+              placeholder="無料イベント"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              ref="ticketPriceInputRef"
+              :value="ticketPriceDisplay"
+              @input="handleTicketInput"
+            />
+            <span v-if="form.ticketPrice != null" class="ios-suffix">円</span>
+          </div>
+        </div>
+      </section>
+
+      <div
+        class="advanced-toggle"
+        v-if="isMobileLayout"
+        role="button"
+        tabindex="0"
+        @click="showAdvancedMobile = !showAdvancedMobile"
+        @keydown.enter.prevent="showAdvancedMobile = !showAdvancedMobile"
+      >
+        <span>{{ showAdvancedMobile ? '詳細設定を閉じる' : '詳細設定（後でOK）' }}</span>
+        <span class="i-lucide-chevron-down" :class="{ rotate: showAdvancedMobile }"></span>
+      </div>
+
+      <!-- Config -->
+      <section class="ios-panel" v-if="!isMobileLayout || showAdvancedMobile" ref="sectionConfig">
+        <div class="ios-form">
+          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openCategorySheet">
+            <span class="ios-label">カテゴリ</span>
+            <span class="ios-value ios-value--secondary" :class="{ 'ios-value--placeholder': !form.category }">
+              {{ categoryLabel }}
+            </span>
+          </button>
           <button type="button" class="ios-row ios-row--action" @click="form.requireApproval = !form.requireApproval">
             <span class="ios-label">参加承認</span>
             <span class="ios-value ios-value--switch">
@@ -355,7 +411,7 @@
             <span class="ios-label">返金ポリシー</span>
             <textarea
               class="ios-inline-input ios-inline-input--textarea"
-              placeholder="请输入"
+              placeholder="入力してください"
               ref="refundPolicyInputRef"
               v-model="form.config.refundPolicy"
               rows="2"
@@ -365,7 +421,7 @@
             <span class="ios-label">注意事項 · {{ langLabel(activeContentLang) }}</span>
             <textarea
               class="ios-inline-input ios-inline-input--textarea"
-              placeholder="例：安全须知、携带物品、集合规则"
+              placeholder="例：安全上の注意・持ち物・集合ルール"
               v-model="form.config.riskNoticeText"
               rows="2"
             ></textarea>
@@ -373,58 +429,21 @@
         </div>
       </section>
 
-      <!-- Rich text -->
-      <section class="ios-panel" ref="sectionRichText">
-        <div class="ios-form">
-          <button
-            type="button"
-            class="ios-row ios-row--action ios-row--textarea ios-row--rich-note"
-            @click="openRichTextEditor"
-          >
-            <span class="ios-label">活动详情</span>
-            <span class="ios-value ios-rich-text__preview" :class="{ 'ios-value--placeholder': !richTextPreview }">
-              {{ richTextPreview || '请编辑' }}
-            </span>
-            <span v-if="richTextImageCount" class="ios-suffix ios-chip ios-chip--tight">{{ richTextImageCount }} 张图</span>
-          </button>
-        </div>
-      </section>
-
-      <!-- Ticket -->
-      <section class="ios-panel" ref="sectionTickets">
-        <div class="ios-form">
-          <div class="ios-row ios-row--builder-line">
-            <span class="ios-label">参加費</span>
-            <input
-              type="tel"
-              class="ios-inline-input"
-              placeholder="免费活动"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              ref="ticketPriceInputRef"
-              :value="ticketPriceDisplay"
-              @input="handleTicketInput"
-            />
-            <span v-if="form.ticketPrice != null" class="ios-suffix">円</span>
-          </div>
-        </div>
-      </section>
-
       <!-- Dynamic form -->
-      <section class="ios-panel ios-panel--builder" ref="sectionForm">
+      <section class="ios-panel ios-panel--builder" v-if="!isMobileLayout || showAdvancedMobile" ref="sectionForm">
         <div class="ios-builder-head">
           <div class="builder-title">
-            <p class="builder-eyebrow">报名表单</p>
+            <p class="builder-eyebrow">申込フォーム</p>
             <p v-if="!registrationFields.length" class="builder-hint">{{ builderHintText }}</p>
           </div>
-          <button type="button" class="ios-add-btn" @click="addField">＋ 新增项目</button>
+          <button type="button" class="ios-add-btn" @click="addField">＋ 項目を追加</button>
         </div>
         <div class="builder-quick">
-          <span class="builder-quick__label">常用字段</span>
+          <span class="builder-quick__label">よく使う項目</span>
           <div class="builder-quick__chips">
-            <button type="button" class="quick-chip" @click="addPresetField('name')">姓名</button>
-            <button type="button" class="quick-chip" @click="addPresetField('phone')">电话</button>
-            <button type="button" class="quick-chip" @click="addPresetField('email')">邮箱</button>
+            <button type="button" class="quick-chip" @click="addPresetField('name')">氏名</button>
+            <button type="button" class="quick-chip" @click="addPresetField('phone')">電話</button>
+            <button type="button" class="quick-chip" @click="addPresetField('email')">メール</button>
           </div>
         </div>
         <article
@@ -433,49 +452,49 @@
           class="ios-field-set"
         >
           <div class="ios-field-set__head">
-            <p>问题 {{ index + 1 }}</p>
+            <p>質問 {{ index + 1 }}</p>
             <button type="button" class="ios-field-card__delete" @click="removeField(field.uuid)">
-              删除
+              削除
             </button>
           </div>
           <div class="ios-field-set__body">
             <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'label')">
-              <span class="ios-label">标题</span>
+              <span class="ios-label">タイトル</span>
               <input
                 class="ios-inline-input"
                 :data-field="`label-${field.uuid}`"
-                placeholder="例：姓名"
+                placeholder="例：氏名"
                 v-model="field.label"
               />
             </div>
             <div class="ios-row ios-row--builder-line">
-              <span class="ios-label">类型</span>
+              <span class="ios-label">タイプ</span>
               <select v-model="field.type" class="ios-inline-select">
-                <option value="text">单行</option>
-                <option value="textarea">多行</option>
+                <option value="text">テキスト</option>
+                <option value="textarea">テキスト（複数行）</option>
                 <option value="number">数字</option>
-                <option value="date">日期</option>
-                <option value="phone">电话</option>
-                <option value="email">邮箱</option>
-                <option value="select">下拉</option>
-                <option value="singleChoice">单选</option>
-                <option value="multiChoice">多选</option>
-                <option value="checkbox">同意勾选</option>
+                <option value="date">日付</option>
+                <option value="phone">電話</option>
+                <option value="email">メール</option>
+                <option value="select">プルダウン</option>
+                <option value="singleChoice">単一選択</option>
+                <option value="multiChoice">複数選択</option>
+                <option value="checkbox">同意チェック</option>
               </select>
             </div>
             <div class="ios-row ios-row--builder-line">
-              <span class="ios-label">必填</span>
+              <span class="ios-label">必須</span>
               <label class="ios-toggle">
                 <input type="checkbox" v-model="field.required" />
                 <span></span>
               </label>
             </div>
             <div class="ios-row ios-row--builder-line" @click="focusFieldInput(field.uuid, 'placeholder')">
-              <span class="ios-label">提示</span>
+              <span class="ios-label">ヒント</span>
               <input
                 class="ios-inline-input"
                 :data-field="`placeholder-${field.uuid}`"
-                placeholder="例：请填写参加动机"
+                placeholder="例：参加の動機を記入してください"
                 v-model="field.placeholder"
               />
             </div>
@@ -503,11 +522,9 @@
           class="ios-add-btn ios-add-btn--full"
           @click="addField"
         >
-          ＋ 新增项目
+          ＋ 項目を追加
         </button>
-        <div v-else class="hint">
-          暂无字段，点击“新增项目”开始设置。
-        </div>
+        <div v-else class="hint">項目がありません。「項目を追加」から設定してください。</div>
       </section>
 
       <div class="actions" v-if="!isMobileLayout">
@@ -520,16 +537,8 @@
     </form>
 
     <div v-if="isMobileLayout" class="bottom-nav">
-      <button type="button" class="nav-btn ghost" :disabled="!eventId" @click="handlePreview">
-        预览活动
-      </button>
-      <button
-        type="button"
-        class="nav-btn secondary"
-        :disabled="submitting"
-        @click="handleSaveDraft"
-      >
-        {{ actionLoading === 'draft' ? '保存中…' : '保存草稿' }}
+      <button type="button" class="nav-btn text" :disabled="submitting" @click="handleSaveDraft">
+        {{ actionLoading === 'draft' ? '保存中…' : '下書きを保存' }}
       </button>
       <button
         type="button"
@@ -537,7 +546,7 @@
         :disabled="submitting"
         @click="handlePublish"
       >
-        {{ actionLoading === 'publish' ? '发布中…' : '发布活动' }}
+        {{ actionLoading === 'publish' ? '公開中…' : 'イベントを公開' }}
       </button>
     </div>
 
@@ -550,9 +559,9 @@
         }"
       >
         <header class="field-sheet-head">
-          <button type="button" @click="closeFieldEditor">取消</button>
+          <button type="button" @click="closeFieldEditor">キャンセル</button>
           <p>{{ fieldMeta[editingField].label }}</p>
-          <button type="button" class="highlight" @click="confirmFieldEditor">完成</button>
+          <button type="button" class="highlight" @click="confirmFieldEditor">完了</button>
         </header>
         <div class="field-sheet-body">
           <input
@@ -594,9 +603,9 @@
     <div v-if="showCategorySheet" class="field-modal" @click.self="closeCategorySheet">
       <div class="field-sheet">
         <header class="field-sheet-head">
-          <button type="button" @click="closeCategorySheet">取消</button>
-          <p>选择类别</p>
-          <button type="button" class="highlight" @click="confirmCategorySheet">完成</button>
+          <button type="button" @click="closeCategorySheet">キャンセル</button>
+          <p>カテゴリを選択</p>
+          <button type="button" class="highlight" @click="confirmCategorySheet">完了</button>
         </header>
         <div class="field-sheet-body">
           <div class="select-option-list">
@@ -623,12 +632,12 @@
             <span class="i-lucide-x"></span>
           </button>
           <div>
-            <p class="copy-sheet-title">选择要复制的活动</p>
-            <p class="copy-sheet-desc">会带入所有字段，发布前请再确认</p>
+            <p class="copy-sheet-title">コピーするイベントを選択</p>
+            <p class="copy-sheet-desc">項目を引き継ぎます。公開前に確認してください。</p>
           </div>
         </header>
         <div class="copy-sheet-body">
-          <p v-if="copyLoading" class="copy-status">加载历史活动中…</p>
+          <p v-if="copyLoading" class="copy-status">履歴のイベントを読み込み中…</p>
           <p v-else-if="copyError" class="copy-status error">{{ copyError }}</p>
           <template v-else>
             <button
@@ -649,9 +658,7 @@
                 class="copy-spinner"
               ></span>
             </button>
-            <p v-if="!copyEventItems.length" class="copy-status">
-              暂无可复制的活动。
-            </p>
+            <p v-if="!copyEventItems.length" class="copy-status">コピーできるイベントがありません。</p>
           </template>
         </div>
       </div>
@@ -683,6 +690,7 @@ import {
 } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import type {
   RegistrationFormField,
   EventGalleryItem,
@@ -826,19 +834,19 @@ const backLink = computed<RouteLocationRaw>(() =>
 const aiPrefillNotice = ref<string | null>(null);
 const aiChecklist = ref<Array<{ id: string; text: string; checked: boolean }>>([]);
 const aiConfirmQuestions = ref<Array<{ id: string; text: string; checked: boolean }>>([]);
-const builderHintText = '设置报名表里需要填写的问题，顺序即为用户看到的顺序。';
+const builderHintText = 'フォームに欲しい項目を並べてください。順番はそのまま表示されます。';
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
-const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 压缩后预期安全值
-const MAX_COVER_DIMENSION = 1920; // 最大长边
+const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
+const MAX_COVER_DIMENSION = 1920; // 最大長辺
 const MIN_COVER_WIDTH = 1200;
 const MIN_COVER_HEIGHT = 675;
 const TARGET_ASPECT = 16 / 9;
 const COVER_COMPRESS_QUALITY = 0.82;
 const COVER_FALLBACK_QUALITY = 0.7;
-const COVER_RULES_TEXT = '封面必填 · 16:9（至少 1200×675），单张 ≤10MB，最多 9 张，第一张为主图';
+const COVER_RULES_TEXT = '16:9 推奨・最初の1枚がカバーになります';
 const coverDisplayItems = computed(() =>
   eventId.value ? galleries.value : localCoverPreviews.value,
 );
@@ -878,7 +886,7 @@ const pastedDraft = ref('');
 const draftCheckMessage = ref('');
 const pastedPreview = ref<{ title: string; description: string; rules: string } | null>(null);
 const showPastePanel = ref(false);
-const pastePlaceholder = '粘贴你的活动标题/简介/规则，AI 自动帮你填进表单';
+const pastePlaceholder = 'イベントの下書きを貼り付ければ AI がフォームに反映します';
 const pasteInputRef = ref<HTMLTextAreaElement | null>(null);
 const showPasteResult = ref(false);
 const pasteFilledFields = ref<string[]>([]);
@@ -887,12 +895,22 @@ const pasteCompliance = ref<string[]>([]);
 const pasteResultLoading = ref(false);
 const storedParsedResult = ref<{ title?: string; description?: string; rules?: string; advice?: string[]; compliance?: string[] } | null>(null);
 const manualLocationMode = ref(false);
+const checklistItems = computed(() => [
+  { id: 'title', label: 'イベントタイトル', note: null, done: true },
+  { id: 'desc', label: 'イベント説明', note: null, done: true },
+  { id: 'risk', label: '注意事項・リスク', note: null, done: true },
+  { id: 'place', label: '場所', note: null, done: true },
+  { id: 'time', label: '開始 / 終了時間', note: null, done: true },
+  { id: 'visibility', label: '公開範囲', note: null, done: true },
+]);
+const firstAdvice = computed(() => pasteAdvice.value[0] || '');
+const firstCompliance = computed(() => pasteCompliance.value[0] || '');
 const reviewStatus = ref<string | null>(null);
-const reviewReason = ref<string | null>(null);
-const reviewStatusLabel = computed(() => {
-  switch (reviewStatus.value) {
-    case 'approved':
-      return '承認済み';
+  const reviewReason = ref<string | null>(null);
+  const reviewStatusLabel = computed(() => {
+    switch (reviewStatus.value) {
+      case 'approved':
+        return '承認済み';
     case 'rejected':
       return '差し戻し';
     case 'pending_review':
@@ -901,12 +919,13 @@ const reviewStatusLabel = computed(() => {
       return '';
   }
 });
-const reviewMessage = computed(() => {
-  if (reviewStatus.value === 'rejected') return '修正して再度送信してください。';
-  if (reviewStatus.value === 'pending_review') return '審査中です。公開までお待ちください。';
-  if (reviewStatus.value === 'approved') return '審査済みです。更新しても自動で再審査されます。';
-  return '';
-});
+  const reviewMessage = computed(() => {
+    if (reviewStatus.value === 'rejected') return '修正して再度送信してください。';
+    if (reviewStatus.value === 'pending_review') return '審査中です。公開までお待ちください。';
+    if (reviewStatus.value === 'approved') return '審査済みです。更新しても自動で再審査されます。';
+    return '';
+  });
+  const showAdvancedMobile = ref(false);
 
 const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
@@ -944,10 +963,10 @@ const fetchPasteInsights = async (draft: string) => {
   pasteAdvice.value = [];
   pasteCompliance.value = [];
   const baseLanguage = detectLang(draft || form.title || form.description);
-  const prompt = `你是活动策划助手，请阅读用户的活动草案，输出 JSON，字段：filled (已自动填的字段), advice (给主理人的下一步建议，简洁), compliance (风险/合规提醒，简洁)。只返回 JSON，勿输出其他文字。草案：${draft}`;
+  const prompt = `あなたはイベント企画アシスタントです。ユーザーの草案を読み、JSON を出力してください。フィールド: filled（自動で補完した項目）, advice（主催者への次の一手アドバイス、簡潔に）, compliance（リスク/コンプライアンスの注意点、簡潔に）。JSON のみを返してください。他の文字は出力しないでください。草案：${draft}`;
   const payload: EventAssistantRequest = {
     baseLanguage,
-    topic: '活动草案填表',
+    topic: 'イベント草案入力',
     audience: 'organizer',
     style: 'concise',
     details: draft,
@@ -967,10 +986,10 @@ const fetchPasteInsights = async (draft: string) => {
   } catch (err) {
     console.warn('fetchPasteInsights failed', err);
     if (!pasteAdvice.value.length) {
-      pasteAdvice.value = ['检查时间、地点、封面图，确保参与者信息完整', '设置报名表、票价和退款说明，减少沟通成本'];
+      pasteAdvice.value = ['時間・場所・カバー画像を確認し、参加者に必要な情報を揃えてください', '申込フォーム・料金・返金説明を設定して、やり取りの手間を減らしてください'];
     }
     if (!pasteCompliance.value.length) {
-      pasteCompliance.value = ['避免敏感/受限内容，遵守当地法规与场地要求', '明示退款/风险提示，线下活动预留紧急联系信息'];
+      pasteCompliance.value = ['センシティブ/制限コンテンツを避け、現地の規制や会場ルールを守ってください', '返金/リスクの注意を明示し、オフラインの場合は緊急連絡手段を用意してください'];
     }
   } finally {
     pasteResultLoading.value = false;
@@ -979,22 +998,22 @@ const fetchPasteInsights = async (draft: string) => {
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
-  title: { label: 'タイトル', type: 'text', placeholder: '请输入 >' },
-  description: { label: 'ショート説明', type: 'textarea', placeholder: '请输入 >' },
+  title: { label: 'タイトル', type: 'text', placeholder: '入力してください' },
+  description: { label: 'ショート説明', type: 'textarea', placeholder: '入力してください' },
   startTime: { label: '開始日時', type: 'datetime' },
   endTime: { label: '終了日時', type: 'datetime' },
   regStartTime: { label: '受付開始', type: 'datetime' },
   regEndTime: { label: '受付締切', type: 'datetime' },
-  minParticipants: { label: '最低参加人数', type: 'number', placeholder: '请输入 >' },
-  maxParticipants: { label: '最大参加人数', type: 'number', placeholder: '请输入 >' },
-  ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: '请输入 >' },
+  minParticipants: { label: '最低参加人数', type: 'number', placeholder: '入力してください' },
+  maxParticipants: { label: '最大参加人数', type: 'number', placeholder: '入力してください' },
+  ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: '入力してください' },
   visibility: { label: '公開範囲', type: 'select' },
   visibleRange: { label: 'Console 可視範囲', type: 'select' },
   refundPolicy: { label: '返金ポリシー', type: 'textarea', placeholder: '例：イベント3日前まで全額返金' },
 };
 
 const categoryOptions = [
-  { label: '徒步越野', value: 'hiking' },
+  { label: 'アウトドア', value: 'hiking' },
   { label: 'ランニング', value: 'running' },
   { label: 'サイクリング', value: 'cycling' },
   { label: 'キャンプ', value: 'camping' },
@@ -1007,7 +1026,7 @@ const showCategorySheet = ref(false);
 const categoryDraft = ref('');
 const categoryLabel = computed(() => {
   const found = categoryOptions.find((cat) => cat.value === form.category);
-  return found?.label || '请选择';
+  return found?.label || '選択してください';
 });
 
 const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: string }>>> = {
@@ -1026,7 +1045,7 @@ const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: stri
 const getSelectLabel = (key: 'visibility' | 'visibleRange', value?: string | null) => {
   const list = selectOptions[key] || [];
   const target = list.find((item) => item.value === value);
-  return target?.label || '选择';
+  return target?.label || '選択してください';
 };
 
 const stripHtml = (value: string) => value.replace(/<[^>]*>/g, '');
@@ -1041,7 +1060,7 @@ const langLabel = (lang: ContentLang) => {
     case 'en':
       return 'EN';
     case 'zh':
-      return '中文';
+      return '中国語';
     default:
       return 'JP';
   }
@@ -1143,11 +1162,11 @@ watch(
 const aiFieldLabel = (target: AiTargetKey) => {
   switch (target) {
     case 'title':
-      return '标题';
+      return 'タイトル';
     case 'rules':
-      return '注意事项';
+      return '注意事項';
     default:
-      return '详情';
+      return '詳細';
   }
 };
 const pickLocalized = (field: any, lang: ContentLang) => {
@@ -1211,11 +1230,11 @@ const requestAiSuggestion = async (target: AiTargetKey) => {
           : result.description;
     const text = pickLocalized(field, activeContentLang.value);
     if (!text) {
-      throw new Error('AI 没有返回内容，请稍后再试');
+      throw new Error('AI の応答がありませんでした。時間をおいて再試行してください。');
     }
     aiPreview.value = { target, text, lang: activeContentLang.value };
   } catch (err) {
-    aiError.value = err instanceof Error ? err.message : 'AI 生成失败，请稍后重试';
+    aiError.value = err instanceof Error ? err.message : 'AI 生成に失敗しました。時間をおいて再試行してください。';
   } finally {
     aiLoading[target] = false;
   }
@@ -1241,7 +1260,7 @@ const applyAiSuggestion = (target: AiTargetKey) => {
 };
 
 const formatDisplayDate = (value: string) => {
-  if (!value) return '请设置';
+  if (!value) return '設定してください';
   try {
     return new Date(value).toLocaleString('ja-JP', {
       month: 'short',
@@ -1351,19 +1370,21 @@ const applyAiDraft = (draft: any) => {
   }
   aiChecklist.value = toChecklistItems(draft.checklist || []);
   aiConfirmQuestions.value = toChecklistItems(draft.confirmQuestions || []);
-  aiPrefillNotice.value = 'AI 草稿を読み込みました。各項目を確認してください。';
+  aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
 };
 
 const loadAiDraftFromSession = () => {
-  if (isEdit.value) return;
+  if (isEdit.value) return false;
   const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
-  if (!raw) return;
+  if (!raw) return false;
   try {
     const parsed = JSON.parse(raw);
     applyAiDraft(parsed);
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    return true;
   } catch (err) {
     console.warn('Failed to parse AI draft', err);
+    return false;
   }
 };
 
@@ -1545,7 +1566,7 @@ watch(
 
 const setEndShortcut = (hours: number) => {
   if (!form.startTime) {
-    error.value = '请先设置开始时间';
+    error.value = '開始日時を先に設定してください';
     return;
   }
   const start = new Date(form.startTime);
@@ -1555,7 +1576,7 @@ const setEndShortcut = (hours: number) => {
 
 const setRegDeadlineShortcut = (minutesBeforeStart: number) => {
   if (!form.startTime) {
-    error.value = '请先设置开始时间';
+    error.value = '開始日時を先に設定してください';
     return;
   }
   const start = new Date(form.startTime);
@@ -1571,9 +1592,9 @@ const presetFields: Record<
   'name' | 'phone' | 'email',
   { label: string; type: string; placeholder: string }
 > = {
-  name: { label: '姓名', type: 'text', placeholder: '请填写姓名' },
-  phone: { label: '电话', type: 'phone', placeholder: '例：09012345678' },
-  email: { label: '邮箱', type: 'email', placeholder: 'example@example.com' },
+  name: { label: '氏名', type: 'text', placeholder: '氏名を入力してください' },
+  phone: { label: '電話', type: 'phone', placeholder: '例：09012345678' },
+  email: { label: 'メール', type: 'email', placeholder: 'example@example.com' },
 };
 
 const addPresetField = (key: keyof typeof presetFields) => {
@@ -1630,9 +1651,9 @@ const copyStatusLabel = (status: string) => {
     case 'open':
       return '受付中';
     case 'closed':
-      return '已结束';
+      return '終了';
     default:
-      return '草稿';
+      return '下書き';
   }
 };
 
@@ -1668,7 +1689,7 @@ const checkPastedDraft = async (auto = false) => {
   }
   const preview = extractFromPastedDraft(text);
   pastedPreview.value = preview;
-  draftCheckMessage.value = '草案を検出しました。表单に自動で反映しました。';
+  draftCheckMessage.value = '草案を検出しました。フォームに自動反映しました。';
   await applyPastedPreview(true);
 };
 
@@ -1679,23 +1700,23 @@ const applyPastedPreview = async (auto = false) => {
   if (title) {
     form.title = title;
     setLangContent('title', activeContentLang.value, title);
-    pasteFilledFields.value.push('活动标题');
+    pasteFilledFields.value.push('イベントタイトル');
   }
   if (description) {
     form.description = description;
     form.descriptionHtml = `<p>${description}</p>`;
     setLangContent('description', activeContentLang.value, description);
     descriptionHtmlByLang[activeContentLang.value] = form.descriptionHtml;
-    pasteFilledFields.value.push('活动简介');
+    pasteFilledFields.value.push('イベント説明');
   }
   if (rules) {
     form.config.riskNoticeText = rules;
     setLangContent('rules', activeContentLang.value, rules);
-    pasteFilledFields.value.push('注意事项/风险提示');
+    pasteFilledFields.value.push('注意事項/リスク');
   }
   pastedPreview.value = null;
-  draftCheckMessage.value = '表单に反映しました。内容を確認してください。';
-  aiPrefillNotice.value = '已根据你的草案填入标题/简介/规则，记得检查时间、票价、报名表等细节。';
+  draftCheckMessage.value = 'フォームに反映しました。内容を確認してください。';
+  aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
   showPastePanel.value = false;
   if (!auto) {
     await fetchPasteInsights(pastedDraft.value || `${title || ''}\n${description || ''}\n${rules || ''}`);
@@ -1715,7 +1736,7 @@ const applyParsedResult = async (result: Record<string, any>) => {
   if (title) {
     form.title = title;
     setLangContent('title', activeContentLang.value, title);
-    pasteFilledFields.value.push('活动标题');
+    pasteFilledFields.value.push('イベントタイトル');
   }
   const description = pick<string>('description', 'description');
   if (description) {
@@ -1723,43 +1744,43 @@ const applyParsedResult = async (result: Record<string, any>) => {
     form.descriptionHtml = `<p>${description}</p>`;
     setLangContent('description', activeContentLang.value, description);
     descriptionHtmlByLang[activeContentLang.value] = form.descriptionHtml;
-    pasteFilledFields.value.push('活动简介');
+    pasteFilledFields.value.push('イベント説明');
   }
   const rules = pick<string>('rules', 'rules');
   if (rules) {
     form.config.riskNoticeText = rules;
     setLangContent('rules', activeContentLang.value, rules);
-    pasteFilledFields.value.push('注意事项/风险提示');
+    pasteFilledFields.value.push('注意事項/リスク');
   }
   const category = pick<string>('category', 'category');
   if (category) {
     form.category = category;
-    pasteFilledFields.value.push('分类');
+    pasteFilledFields.value.push('カテゴリ');
   }
   const locationText = pick<string>('locationText', 'location_text');
   if (locationText) {
     form.locationText = locationText;
-    pasteFilledFields.value.push('地点');
+    pasteFilledFields.value.push('場所');
   }
   const startTime = pick<string>('startTime', 'start_time');
   if (startTime) {
     form.startTime = startTime;
-    pasteFilledFields.value.push('开始时间');
+    pasteFilledFields.value.push('開始時間');
   }
   const endTime = pick<string>('endTime', 'end_time');
   if (endTime) {
     form.endTime = endTime;
-    pasteFilledFields.value.push('结束时间');
+    pasteFilledFields.value.push('終了時間');
   }
   const regStartTime = pick<string>('regStartTime', 'reg_start_time');
   if (regStartTime) {
     form.regStartTime = regStartTime;
-    pasteFilledFields.value.push('报名开始');
+    pasteFilledFields.value.push('受付開始');
   }
   const regEndTime = pick<string>('regEndTime', 'reg_end_time');
   if (regEndTime) {
     form.regEndTime = regEndTime;
-    pasteFilledFields.value.push('报名截止');
+    pasteFilledFields.value.push('受付締切');
   }
   const minParticipants = pick<number>('minParticipants', 'min_participants');
   if (minParticipants != null) {
@@ -1769,41 +1790,41 @@ const applyParsedResult = async (result: Record<string, any>) => {
   const maxParticipants = pick<number>('maxParticipants', 'max_participants');
   if (maxParticipants != null) {
     form.maxParticipants = maxParticipants;
-    pasteFilledFields.value.push('最高人数');
+    pasteFilledFields.value.push('最大人数');
   }
   const ticketPrice = pick<number>('ticketPrice', 'ticket_price');
   if (ticketPrice != null) {
     form.ticketPrice = ticketPrice;
-    pasteFilledFields.value.push('票价');
+    pasteFilledFields.value.push('参加費');
   }
   const visibility = pick<string>('visibility', 'visibility');
   if (visibility) {
     form.visibility = visibility;
-    pasteFilledFields.value.push('可见性');
+    pasteFilledFields.value.push('公開範囲');
   }
   const visibleRange = pick<string>('visibleRange', 'visible_range');
   if (visibleRange) {
     form.config.visibleRange = visibleRange;
-    pasteFilledFields.value.push('Console 可视范围');
+    pasteFilledFields.value.push('Console 可視範囲');
   }
   const refundPolicy = pick<string>('refundPolicy', 'refund_policy');
   if (refundPolicy) {
     form.config.refundPolicy = refundPolicy;
-    pasteFilledFields.value.push('退款政策');
+    pasteFilledFields.value.push('返金ポリシー');
   }
   const ticketTypes = pick<any[]>('ticketTypes', 'ticket_types');
   if (Array.isArray(ticketTypes) && ticketTypes.length) {
     form.ticketTypes = ticketTypes as any;
-    pasteFilledFields.value.push('票务配置');
+    pasteFilledFields.value.push('チケット設定');
   }
   const regForm = pick<any[]>('registrationForm', 'registration_form');
   if (Array.isArray(regForm) && regForm.length) {
     form.registrationForm = regForm as any;
-    pasteFilledFields.value.push('报名表');
+    pasteFilledFields.value.push('申込フォーム');
   }
   pasteAdvice.value = (pick<string[]>('advice', 'advice') || []).filter(Boolean);
   pasteCompliance.value = (pick<string[]>('compliance', 'compliance') || []).filter(Boolean);
-  aiPrefillNotice.value = '已根据你的草案填入标题/简介/规则，记得检查时间、票价、报名表等细节。';
+  aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
   showPastePanel.value = false;
   showPasteResult.value = true;
 };
@@ -1821,8 +1842,16 @@ const togglePaste = (state?: boolean) => {
 
 const handleEntryFromQuery = async () => {
   if (entryHandled.value) return;
+  aiPrefillNotice.value = null;
   const entry = route.query.entry as string | undefined;
   const copyEventId = route.query.copyEventId as string | undefined;
+  const source = route.query.source as string | undefined;
+  if (source === 'ai-assistant') {
+    const applied = loadAiDraftFromSession();
+    if (applied) {
+      aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
+    }
+  }
   if (!entry) return;
   entryHandled.value = true;
   switch (entry) {
@@ -1880,7 +1909,7 @@ const closePasteResult = () => {
 const parseCoverUploadError = (err: unknown) => {
   const status = (err as any)?.response?.status;
   if (status === 413) {
-    return '这张图片太大了，换一张更小的照片或截图再试';
+    return '画像が大きすぎます。もう少し小さい写真やスクリーンショットでお試しください。';
   }
   const isNetwork = (err as any)?.message === 'Network Error';
   const isCors =
@@ -1888,12 +1917,12 @@ const parseCoverUploadError = (err: unknown) => {
     (err as any)?.message?.includes?.('Failed to fetch') ||
     (err as any)?.message?.includes?.('ERR_FAILED');
   if (isCors) {
-    return '网络不稳定，换个网络或稍后再试';
+    return '通信が不安定です。ネットワークを変えるか時間をおいて再試行してください。';
   }
   if (isNetwork) {
-    return '网络不稳定，换个网络或稍后再试';
+    return '通信が不安定です。ネットワークを変えるか時間をおいて再試行してください。';
   }
-  return err instanceof Error ? err.message : '封面上传失败，请重试';
+  return err instanceof Error ? err.message : 'カバー画像のアップロードに失敗しました。再試行してください。';
 };
 
 const showCoverError = (message: string, type: 'error' | 'warning' = 'error') => {
@@ -1906,7 +1935,7 @@ const toJpegBlob = (canvas: HTMLCanvasElement, quality: number) =>
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error('压缩失败'));
+          reject(new Error('圧縮に失敗しました'));
           return;
         }
         resolve(blob);
@@ -1924,7 +1953,7 @@ const downscaleImageFile = (file: File) =>
       img.onload = async () => {
         try {
           if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
-            reject(new Error('图片太小了，换一张更清晰的照片（至少 1200×675）'));
+            reject(new Error('画像が小さすぎます。最低でも 1200×675 の画像を使用してください。'));
             return;
           }
 
@@ -1951,7 +1980,7 @@ const downscaleImageFile = (file: File) =>
             canvas.width = Math.round(width);
             canvas.height = Math.round(height);
             const ctx = canvas.getContext('2d');
-            if (!ctx) throw new Error('无法压缩图片');
+            if (!ctx) throw new Error('画像を圧縮できませんでした');
             ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
             return toJpegBlob(canvas, quality);
           };
@@ -1969,14 +1998,14 @@ const downscaleImageFile = (file: File) =>
           }
 
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
-            // 最后一次兜底：进一步缩小分辨率
+            // 最终のフォールバック：さらに解像度を下げる
             targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * 0.75));
             targetHeight = Math.round(targetWidth / TARGET_ASPECT);
             blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
           }
 
           if (blob.size > MAX_COVER_SIZE) {
-            reject(new Error('这张图片太大，已经帮你压缩过了，再换一张更小的照片试试'));
+            reject(new Error('画像がまだ大きすぎます。さらに小さい画像でお試しください。'));
             return;
           }
 
@@ -1988,10 +2017,10 @@ const downscaleImageFile = (file: File) =>
           reject(err);
         }
       };
-      img.onerror = () => reject(new Error('无法读取图片'));
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
       img.src = reader.result as string;
     };
-    reader.onerror = () => reject(new Error('无法读取图片'));
+    reader.onerror = () => reject(new Error('画像を読み込めませんでした'));
     reader.readAsDataURL(file);
   });
 
@@ -2002,7 +2031,7 @@ const loadCopyEvents = async () => {
   try {
     copyEvents.value = await fetchConsoleCommunityEvents(eventCommunityId.value);
   } catch (err) {
-    copyError.value = err instanceof Error ? err.message : '无法加载历史活动，请稍后再试';
+    copyError.value = err instanceof Error ? err.message : '過去のイベントを読み込めませんでした。時間をおいて再試行してください。';
   } finally {
     copyLoading.value = false;
   }
@@ -2041,13 +2070,13 @@ const importGalleryToPending = async (detail: ConsoleEventDetail) => {
   });
   await Promise.all(tasks);
   if (!successCount) {
-    showCoverError('历史封面导入失败，请手动重新上传一张清晰的封面');
+    showCoverError('過去のカバー画像を取り込めませんでした。手動でクリアな画像をアップロードしてください。');
   }
 };
 
 const openCopyOverlay = async () => {
   if (!eventCommunityId.value) {
-    error.value = '请选择社群后再复制历史活动';
+    error.value = 'コミュニティを選択してから履歴イベントをコピーしてください。';
     return;
   }
   showCopyOverlay.value = true;
@@ -2072,10 +2101,10 @@ const handleCopyFromEvent = async (sourceEventId: string) => {
     if (!eventId.value) {
       await importGalleryToPending(detail);
     }
-    aiPrefillNotice.value = `已复制「${getLocalizedText(detail.title) || '历史活动'}」内容，请根据实际情况调整。`;
+    aiPrefillNotice.value = null;
     showCopyOverlay.value = false;
   } catch (err) {
-    copyError.value = err instanceof Error ? err.message : '复制失败，请稍后再试';
+    copyError.value = err instanceof Error ? err.message : 'コピーに失敗しました。時間をおいて再試行してください。';
   } finally {
     copySelectingId.value = null;
   }
@@ -2544,14 +2573,14 @@ const persistEvent = async (status: 'draft' | 'open') => {
         return persistEvent(status);
       }
     }
-    error.value = '请先设置开始和结束时间';
+    error.value = '開始・終了時間を先に設定してください';
     submitting.value = false;
     actionLoading.value = null;
     return;
   }
 
   if (start.getTime() < now.getTime() - 5 * 60 * 1000) {
-    error.value = '开始时间需要晚于当前时间';
+    error.value = '開始時間は現在時刻より後に設定してください';
     submitting.value = false;
     actionLoading.value = null;
     return;
@@ -2576,7 +2605,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
   }
 
   if (regStart && regStart > start) {
-    error.value = '报名开始时间不能晚于活动开始';
+    error.value = '受付開始はイベント開始より前に設定してください';
     submitting.value = false;
     actionLoading.value = null;
     return;
@@ -2584,13 +2613,13 @@ const persistEvent = async (status: 'draft' | 'open') => {
 
   if (regEnd) {
     if (regStart && regEnd < regStart) {
-      error.value = '报名截止需晚于报名开始时间';
+      error.value = '受付締切は受付開始より後に設定してください';
       submitting.value = false;
       actionLoading.value = null;
       return;
     }
     if (regEnd > start) {
-      error.value = '报名截止应早于活动开始';
+      error.value = '受付締切はイベント開始より前に設定してください';
       submitting.value = false;
       actionLoading.value = null;
       return;
@@ -2604,21 +2633,24 @@ const persistEvent = async (status: 'draft' | 'open') => {
   syncContentMap(activeContentLang.value);
   const descriptionText = stripHtml(form.descriptionHtml || '').trim() || form.description.trim();
   if (!descriptionText) {
-    error.value = '请填写活动详情';
+    error.value = 'イベント詳細を入力してください';
     submitting.value = false;
     actionLoading.value = null;
     return;
   }
 
   if (status === 'open' && reviewStatus.value && ['pending_review', 'rejected'].includes(reviewStatus.value)) {
-    error.value = reviewStatus.value === 'rejected' ? '内容未通过审核，请修改后再提交审核' : '审核中，暂不可发布';
+    error.value =
+      reviewStatus.value === 'rejected'
+        ? '内容が承認されませんでした。修正してから再提出してください。'
+        : '審査中のため公開できません。';
     submitting.value = false;
     actionLoading.value = null;
     return;
   }
 
   if (coverDisplayItems.value.length === 0 && status === 'open') {
-    error.value = '发布前请至少上传一张封面（第一张为主图）';
+    error.value = '公開前に少なくとも1枚のカバー画像（最初の1枚がメイン）を追加してください';
     submitting.value = false;
     actionLoading.value = null;
     sectionCover.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2627,7 +2659,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
 
   const htmlSize = form.descriptionHtml?.length ?? 0;
   if (htmlSize > 400_000) {
-    error.value = '活动详情内嵌图片过大，请删除部分图片或缩短内容后再试';
+    error.value = '本文内の画像が大きすぎます。画像を減らすか内容を短くしてください。';
     submitting.value = false;
     actionLoading.value = null;
     return;
@@ -2668,7 +2700,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
           },
         ],
       });
-      flashSaveStatus(status === 'open' ? '已发布' : '已保存');
+      flashSaveStatus(status === 'open' ? '公開しました' : '保存しました');
       if (status === 'open') {
         goToPublishSuccess(eventId.value, 'list');
       }
@@ -2686,7 +2718,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
       if (pendingCoverFiles.value.length) {
         const uploaded = await uploadPendingCovers(event.id);
         if (!uploaded) {
-          showCoverError('活动已保存，但封面未能上传，请稍后在编辑页重新添加。', 'warning');
+          showCoverError('イベントは保存しましたがカバーのアップロードに失敗しました。編集ページで再度追加してください。', 'warning');
         }
       }
       // after first creation, lock to this event id for subsequent saves
@@ -2717,7 +2749,7 @@ const handleSubmit = () => handlePublish();
 
 const handlePreview = () => {
   if (!eventId.value) {
-    error.value = '请先保存草稿后再预览活动';
+    error.value = '先に下書きを保存してからプレビューしてください';
     return;
   }
   router.push({ name: 'event-detail', params: { eventId: eventId.value } });
@@ -2728,7 +2760,7 @@ const handleCoverUpload = async (ev: Event) => {
   if (!input.files || !input.files.length) return;
   const existing = coverDisplayItems.value.length;
   if (existing >= MAX_COVERS) {
-    showCoverError('最多可上传 9 张图片');
+    showCoverError('アップロードは最大9枚までです');
     input.value = '';
     return;
   }
@@ -2736,7 +2768,7 @@ const handleCoverUpload = async (ev: Event) => {
   const valid: File[] = [];
   for (const file of files) {
     if (!file.type?.startsWith('image/')) {
-      showCoverError('仅支持上传 jpg/png/webp 图片');
+      showCoverError('対応形式は jpg/png/webp のみです');
       continue;
     }
     try {
@@ -2746,7 +2778,7 @@ const handleCoverUpload = async (ev: Event) => {
       showCoverError(
         err instanceof Error
           ? err.message
-          : '上传失败，这张图太大或不合适，换一张手机照片/截图再试',
+          : 'アップロードに失敗しました。画像が大きすぎるか不適切です。スマホ写真など別の画像でお試しください',
       );
       continue;
     }
@@ -2787,7 +2819,7 @@ const handleDeleteCover = async (coverId: string) => {
   try {
     galleries.value = await deleteEventCover(eventId.value, coverId);
   } catch (err) {
-    showCoverError(err instanceof Error ? err.message : '封面删除失败，请重试');
+    showCoverError(err instanceof Error ? err.message : 'カバー削除に失敗しました。再試行してください');
   } finally {
     uploadingCover.value = false;
   }
@@ -2818,10 +2850,10 @@ const uploadPendingCovers = async (targetEventId: string) => {
 };
 
 const applyAssistantDraftFromStorage = () => {
-  if (eventId.value) return;
+  if (eventId.value) return false;
   try {
     const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
-    if (!raw) return;
+    if (!raw) return false;
     const stored = JSON.parse(raw);
     if (stored?.title && !form.title) {
       form.title = stored.title;
@@ -2844,8 +2876,11 @@ const applyAssistantDraftFromStorage = () => {
     if (stored?.category && !form.category) {
       form.category = stored.category;
     }
+    aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
+    return true;
   } catch (err) {
     console.warn('Failed to apply AI draft', err);
+    return false;
   } finally {
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   }
@@ -2856,7 +2891,9 @@ onMounted(async () => {
   loadStoredLang();
   await load();
   await handleEntryFromQuery(); // handle entry after load to ensure refs ready
-  applyAssistantDraftFromStorage();
+    if (!aiPrefillNotice.value) {
+      applyAssistantDraftFromStorage();
+    }
   // prevent auto scroll/restore on mobile initial load
   window.scrollTo({ top: 0 });
   applyFormDraftFromStorage();
@@ -2927,6 +2964,11 @@ onActivated(() => {
   text-align: center;
   flex: 1;
 }
+.ai-hint {
+  margin: 8px 12px 4px;
+  font-size: 12px;
+  color: #475569;
+}
 .mobile-nav__placeholder {
   width: 48px;
   display: block;
@@ -2974,7 +3016,15 @@ onActivated(() => {
   padding: 0 0.75rem;
 }
 .console-section--mobile {
-  padding: 0;
+  padding: 0 0 90px;
+}
+.console-section--mobile .form {
+  gap: 0.9rem;
+  padding: 0 12px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+.console-section--mobile .ios-form {
+  margin-bottom: 12px;
 }
 .section-header {
   display: flex;
@@ -3017,6 +3067,25 @@ select {
   padding: 0.85rem;
   font-size: 0.9rem;
   color: #0f172a;
+}
+.location-inline-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.location-inline-hint .divider {
+  color: #94a3b8;
+}
+.link-btn {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0;
 }
 .ai-helper {
   display: flex;
@@ -3514,7 +3583,7 @@ select {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
   overflow: hidden;
 }
 
@@ -4349,8 +4418,9 @@ select {
 }
 
 .hero-cover-rules {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font-size: 12px;
+  line-height: 1.35;
   color: rgba(236, 245, 255, 0.7);
 }
 
@@ -4418,12 +4488,12 @@ select {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.05));
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  padding: 18px;
+  padding: 14px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   color: #ecf5ff;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   backdrop-filter: blur(8px);
 }
 
@@ -4587,7 +4657,7 @@ select {
   padding: 16px;
   z-index: 95;
 }
-.paste-result-card {
+.paste-review-card {
   width: min(640px, 92vw);
   background: #fff;
   border-radius: 20px;
@@ -4595,39 +4665,135 @@ select {
   padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
-.paste-result-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 800;
-}
-.paste-result-subtitle {
-  margin: 2px 0 6px;
-  font-size: 13px;
-  color: #475569;
-}
-.paste-result-list ul,
-.paste-result-hints ul {
-  margin: 6px 0 0;
-  padding-left: 0;
-  list-style: none;
+.paste-review-head {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.paste-review-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
   color: #0f172a;
 }
-.paste-result-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.paste-review-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
 }
 .paste-result-loading {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+.review-checklist {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.03);
+}
+.review-checklist ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.check-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
+}
+.status-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #e2e8f0;
+}
+.status-dot.done {
+  background: #22c55e;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1);
+}
+.status-dot.pending {
+  background: #e2e8f0;
+}
+.check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.check-label {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+  font-weight: 600;
+}
+.check-note {
+  margin: 0;
+  font-size: 12px;
   color: #475569;
+}
+.check-state {
+  font-size: 12px;
+  color: #2563eb;
+  font-weight: 700;
+}
+.review-hints {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 247, 237, 0.9);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+.hint-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.5;
+}
+.paste-review-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.ghost-link,
+.primary-next {
+  height: 46px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  width: 100%;
+}
+.ghost-link {
+  background: transparent;
+  color: #475569;
+}
+.primary-next {
+  background: #0ea5e9;
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
 }
 .spinner {
   width: 18px;
@@ -4749,22 +4915,22 @@ select {
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
   gap: 10px;
-  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
-  background: linear-gradient(180deg, rgba(246, 251, 255, 0.2) 0%, rgba(246, 251, 255, 0.95) 45%, #f6fbff 100%);
-  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.1);
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.08);
   z-index: 40;
 }
 
 .nav-btn {
-  flex: 1;
   padding: 14px 10px;
-  border-radius: 999px;
+  border-radius: 12px;
   border: none;
   font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.15);
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
   cursor: pointer;
 }
 
@@ -4773,22 +4939,47 @@ select {
   cursor: not-allowed;
 }
 
-.nav-btn.ghost {
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  color: #0f172a;
+.nav-btn.text {
+  background: transparent;
+  border: none;
+  color: #475569;
   box-shadow: none;
-}
-
-.nav-btn.secondary {
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.15);
-  color: #0f172a;
 }
 
 .nav-btn.primary {
   background: linear-gradient(135deg, #0090d9, #0ccbaf);
   color: #fff;
+}
+
+.advanced-toggle {
+  margin: 12px 12px 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+}
+.advanced-toggle span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.advanced-toggle .i-lucide-chevron-down {
+  transition: transform 0.2s ease;
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+}
+.advanced-toggle .rotate {
+  transform: rotate(180deg);
 }
 
 @media (max-width: 768px) {

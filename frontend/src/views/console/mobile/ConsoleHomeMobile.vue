@@ -69,28 +69,25 @@
       <div class="stat-inline">
         <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月の収入</p>
-          <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '--' }}</p>
+          <p class="stat-value">{{ statDisplay.revenue }}</p>
         </div>
         <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月のイベント</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
+          <p class="stat-value">{{ statDisplay.events }}</p>
         </div>
         <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">申込数</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '--' }}</p>
+          <p class="stat-value">{{ statDisplay.registrations }}</p>
         </div>
       </div>
     </section>
 
-    <button
-      v-if="hasCommunity"
-      type="button"
-      class="portal-bar"
-      @click="goPublicPortal"
-    >
-      コミュニティページへ
-      <span class="i-lucide-chevron-right"></span>
-    </button>
+    <section class="task-tip" :class="{ 'task-tip--empty': !hasCommunity }">
+      <p class="task-title">現在のフォーカス</p>
+      <p class="task-text">
+        {{ hasCommunity ? nextActionHint : 'まずコミュニティを登録し、プロフィールを整えましょう。' }}
+      </p>
+    </section>
 
     <button
       class="fab"
@@ -122,6 +119,64 @@
         </div>
         <p class="action-title">チェックイン</p>
       </button>
+    </section>
+
+    <button
+      v-if="hasCommunity"
+      type="button"
+      class="portal-link"
+      @click="goPublicPortal"
+    >
+      コミュニティページへ
+      <span class="i-lucide-chevron-right"></span>
+    </button>
+
+    <section class="cards-grid">
+      <article class="panel">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">最近のイベント</p>
+            <p class="panel-sub">
+              {{ displayEvents.length ? '最新のアクティビティ' : 'まだイベントはありません' }}
+            </p>
+          </div>
+        </header>
+        <div v-if="displayEvents.length" class="event-list">
+          <button
+            v-for="event in displayEvents"
+            :key="event.id"
+            type="button"
+            class="event-item"
+            @click="openManage(event.id)"
+          >
+            <div class="event-cover">
+              <img :src="event.coverUrl" alt="" loading="lazy" />
+            </div>
+            <div class="event-body">
+              <p class="event-title">{{ event.title }}</p>
+              <p class="event-meta">{{ event.dateTimeText }} · {{ event.entrySummary }}</p>
+            </div>
+            <span class="event-status">{{ statusLabel(event.status) }}</span>
+          </button>
+        </div>
+        <div v-else class="empty-card">
+          <p class="empty-title">まだ告知していません</p>
+          <p class="empty-desc">最初のイベントを作成すると、このエリアに最近の進捗が表示されます。</p>
+        </div>
+      </article>
+
+      <article v-if="!displayEvents.length" class="panel ai-card">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">AI アシスタント</p>
+            <p class="panel-sub">一言入力で次のステップを提案します</p>
+          </div>
+        </header>
+        <div class="ai-hint">
+          <p class="ai-text">「今週末に30人向けの交流会を開きたい。場所は渋谷。」と送るだけで、募集文とチェックリストを返します。</p>
+          <p class="ai-subtext">質問は1つずつ。AIが次の確認事項を案内するので迷いません。</p>
+        </div>
+      </article>
     </section>
 
     <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
@@ -321,6 +376,33 @@ const isFreePlan = computed(() => planLabel.value.toLowerCase().includes('free')
 const planDisplay = computed(() => (isFreePlan.value ? 'Free · コミュニティ1つまで' : planLabel.value));
 const canCreateCommunity = computed(() => !isFreePlan.value || managedCommunities.value.length < 1);
 const aiMinutesSaved = ref<number | null>(null);
+const nextActionHint = computed(() => {
+  if (!hasCommunity.value) return 'コミュニティを登録して、プロフィールを整えましょう';
+  if (events.value.length) return '次のイベントのタイトルと日程を決めて公開準備を進めましょう';
+  return 'まずはイベントを1本作成して、仲間に共有してみましょう';
+});
+const statDisplay = computed(() => {
+  const revenue = hasCommunity.value
+    ? monthRevenueText.value === '¥0' || monthRevenueText.value === '--'
+      ? 'まだありません'
+      : monthRevenueText.value
+    : 'まだありません';
+  const eventCountText = hasCommunity.value
+    ? events.value.length
+      ? `${events.value.length} 件`
+      : 'まだありません'
+    : 'まだありません';
+  const registrationRaw = stats.value.registrationCount;
+  const registrationText =
+    hasCommunity.value && registrationRaw !== '--' && registrationRaw !== 0
+      ? `${registrationRaw} 件`
+      : 'まだありません';
+  return {
+    revenue,
+    events: eventCountText,
+    registrations: registrationText,
+  };
+});
 
 const stats = computed(() => ({
   monthRevenueText: monthRevenueText.value,
@@ -700,23 +782,23 @@ const normalizeLogoUrl = (raw?: string | null) => {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 16px;
+  gap: 12px;
   background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
   border-radius: 14px;
-  padding: 18px 14px 16px;
-  box-shadow: 0 12px 24px rgba(34, 210, 255, 0.14);
+  padding: 14px 12px 12px;
+  box-shadow: 0 10px 22px rgba(34, 210, 255, 0.12);
   position: relative;
 }
 
 .top-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .avatar-btn {
-  width: 60px;
-  height: 60px;
+  width: 54px;
+  height: 54px;
   border-radius: 12px;
   border: none;
   padding: 0;
@@ -844,9 +926,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .stat-inline-item {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  padding: 10px 8px;
+  padding: 8px 8px;
   text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
@@ -861,13 +943,13 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .stat-label {
   margin: 0;
   font-size: 12px;
-  color: rgba(19, 75, 58, 0.9);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .stat-value {
   margin: 2px 0 0;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   color: #0b4f8f;
 }
 
@@ -877,21 +959,168 @@ const normalizeLogoUrl = (raw?: string | null) => {
   gap: 12px;
   padding: 4px;
 }
-.portal-bar {
-  margin: 8px 0 0;
-  width: 100%;
-  border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #0f172a;
-  padding: 12px 16px;
+
+.cards-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel-head h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.panel-label {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.panel-sub {
+  margin: 2px 0 0;
   font-size: 14px;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-  pointer-events: auto;
+  color: #0f172a;
+}
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.event-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.event-cover {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.event-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.event-meta {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.event-status {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.empty-card {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px dashed #d8e4f4;
+  background: #f8fafc;
+}
+
+.empty-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.empty-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.ai-card {
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+  border-color: #e0e7ff;
+}
+
+.ai-hint {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-text {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
+.ai-subtext {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.portal-link {
+  margin: 6px 2px 2px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  align-self: flex-start;
+}
+
+.portal-link span {
+  color: #94a3b8;
 }
 
 .action-tile {
@@ -957,6 +1186,33 @@ const normalizeLogoUrl = (raw?: string | null) => {
   width: 30px;
   height: 30px;
 }
+
+.task-tip {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px dashed #d8e4f4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.task-tip--empty {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+.task-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+}
+.task-text {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
 .picker-overlay {
   position: fixed;
   inset: 0;

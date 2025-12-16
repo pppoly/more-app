@@ -3,21 +3,28 @@
     <button type="button" class="topbar-back" aria-label="戻る" @click="$emit('back')">
       <img :src="backIcon" alt="" aria-hidden="true" />
     </button>
-    <p class="topbar-title">{{ t(titleKey) }}</p>
+    <p class="topbar-title">{{ titleText }}</p>
     <span class="topbar-placeholder" aria-hidden="true"></span>
   </header>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import backIcon from '../../assets/icons/arrow-back.svg';
 
-defineProps<{
-  titleKey: string;
+const props = defineProps<{
+  titleKey?: string;
+  title?: string;
   sticky?: boolean;
 }>();
 
 const { t } = useI18n();
+const titleText = computed(() => {
+  if (props.title) return props.title;
+  if (props.titleKey) return t(props.titleKey);
+  return '';
+});
 </script>
 
 <style scoped>

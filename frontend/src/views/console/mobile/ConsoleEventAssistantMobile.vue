@@ -1,246 +1,110 @@
 <template>
-  <div v-if="thinkingOverlay" class="assistant-wait">
-    <div class="code-rain">
-      <span v-for="n in 80" :key="n" class="code-char" :style="codeStyle(n)">▉</span>
-    </div>
-    <div class="wait-grid">
-      <span v-for="n in 9" :key="n" class="wait-bar" :style="{ animationDelay: `${n * 0.08}s` }"></span>
-    </div>
-    <p class="wait-text">まもなく超強力な AI に接続します。少しだけお待ちください。</p>
-  </div>
-  <div class="assistant-screen" :style="screenStyle">
-    <section class="assistant-chat-surface">
-      <div class="chat-tools">
-        <span class="status-chip">{{ assistantStatusText }}</span>
-        <span class="mode-chip">{{ stageLabels[currentStage] }}</span>
-        <span class="prompt-chip" v-if="aiResult">Prompt {{ lastPromptVersion }}</span>
-        <button type="button" class="history-toggle" @click="toggleHistory">
-          <span class="i-lucide-clock-4"></span>
-          {{ historyPreview ? '收起历史' : '会话历史' }}
-        </button>
-      </div>
-      <section v-if="shouldShowGuide" class="assistant-guide">
-        <p class="guide-title">SOCIALMORE AI 使用说明</p>
-        <ol>
-          <li><strong>Speak</strong>：随便说出你的想法或需求。</li>
-          <li><strong>Guide</strong>：AI Coach/Editor 会提问，逐条回答即可。</li>
-          <li><strong>Write</strong>：完成提问后，AI 会生成方案，并可一键送表单或存草案。</li>
-        </ol>
-        <button v-if="chatMessages.length" type="button" class="guide-dismiss" @click="toggleGuide">
-          收起说明
-        </button>
-      </section>
-      <button
-        v-else
-        type="button"
-        class="guide-inline-toggle"
-        @click="toggleGuide"
-      >
-        <span class="i-lucide-info"></span>
-        查看使用说明
-      </button>
-      <div v-if="showHistory" class="history-overlay" @click.self="toggleHistory">
-        <section class="history-sheet">
-          <header class="history-head">
-            <div>
-              <p class="history-title">历史草案</p>
-              <p class="history-subtitle">最近 10 条保存的 AI 方案</p>
-            </div>
-            <button type="button" class="history-close" @click="toggleHistory">关闭</button>
-          </header>
-          <div v-if="!historyEntries.length" class="history-empty">まだ保存された履歴がありません</div>
-          <div v-else class="history-list">
-            <article
-              v-for="entry in historyEntries"
-              :key="entry.id"
-              :class="['history-item', historyPreview?.id === entry.id ? 'is-active' : '']"
-              @click="previewHistoryEntry(entry)"
-            >
-              <div class="history-item-body">
-                <h4>{{ entry.title || '無題の案' }}</h4>
-                <p>{{ entry.summary }}</p>
-              </div>
-              <span class="history-item-time">
-                {{ new Date(entry.createdAt).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
-              </span>
-            </article>
-          </div>
-          <div v-if="historyPreview" class="history-preview">
-            <h4>{{ historyPreview.title || '無題の案' }}</h4>
-            <p class="history-preview-summary">{{ historyPreview.summary || '暂无摘要' }}</p>
-            <p class="history-preview-desc" v-if="historyPreview.description">{{ historyPreview.description }}</p>
-            <p class="history-preview-note">载入将把该草案插入当前对话；送到表单则直接打开活动编辑页并填入 AI 提案。</p>
-            <div class="history-preview-links">
-              <button type="button" class="history-preview-link" @click="openPlanPreview(historyPreview.raw)">
-                方案预览
-              </button>
-            </div>
-            <div class="history-preview-actions">
-              <button type="button" class="primary ghost" @click="restoreHistoryToChat(historyPreview)">
-                载入到对话
-              </button>
-              <button type="button" class="primary gradient" @click="applyProposalToForm(historyPreview.raw)">
-                送到表单
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
+  <div class="assistant-shell" :style="screenStyle">
+    <ConsoleTopBar class="assistant-topbar" title="活动助手" :sticky="true" @back="goBack" />
+
+    <section class="chat-surface">
       <div class="chat-log" ref="chatLogRef">
+        <div
+          v-for="(intro, idx) in introMessages"
+          :key="`intro-${idx}`"
+          class="chat-bubble chat-bubble--assistant chat-bubble--intro"
+        >
+          <p class="chat-text">{{ intro }}</p>
+        </div>
+
         <div
           v-for="msg in chatMessages"
           :key="msg.id"
-          :class="['chat-bubble', msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--assistant']"
+          :class="[
+            'chat-bubble',
+            msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--assistant',
+            msg.role === 'assistant' && msg.id === currentQuestionId ? 'is-current-question' : '',
+            msg.role === 'assistant' && msg.id !== currentQuestionId ? 'is-previous' : '',
+          ]"
         >
-          <div v-if="msg.type === 'text'" class="chat-text-block">
+          <div v-if="msg.type === 'text'" class="chat-stack">
             <p class="chat-text">{{ msg.content }}</p>
             <button
               v-if="msg.action === 'direct-form'"
               type="button"
-              class="chat-inline-link"
+              class="inline-link"
               @click="goToForm(false)"
             >
               直接配置表单
             </button>
-            <div v-if="msg.options?.length" class="chat-options">
-              <p class="chat-options-title">当前需要回答的核心问题</p>
-              <p class="chat-options-question">{{ msg.options[0] }}</p>
-              <p v-if="msg.options.length > 1" class="chat-options-note">
-                还有其他问题，将在你回答完这一条后继续提出。
-              </p>
-            </div>
-            <div v-if="msg.thinkingSteps?.length" class="thinking-collapsible">
-              <button type="button" class="thinking-toggle" @click="toggleThinking(msg.id)">
-                <span>AI 思考过程</span>
-                <span class="thinking-toggle__action">{{ expandedThinkingId === msg.id ? '收起' : '展开' }}</span>
-              </button>
-              <div v-show="expandedThinkingId === msg.id" class="thinking-inline">
-                <p class="thinking-inline-title">AI 思考过程</p>
-                <ol>
+            <div v-if="msg.options?.length && msg.id === currentQuestionId" class="chat-follow-up">
+              <p class="follow-up-label">下一步</p>
+              <p class="follow-up-text">{{ msg.options[0] }}</p>
+              <div class="follow-up-actions">
+                <button
+                  v-for="(option, idx) in msg.options"
+                  :key="`${msg.id}-option-${idx}`"
+                  type="button"
+                  class="ghost-link"
+                  @click="handleOptionSelect(option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+              <div v-if="msg.thinkingSteps?.length" class="hint-row-inline">
+                <button type="button" class="hint-toggle" @click="toggleThinking(msg.id)">
+                  <span>ヒントを見る</span>
+                  <span class="hint-toggle__state">{{ expandedThinkingId === msg.id ? '隠す' : '表示' }}</span>
+                </button>
+                <ol v-if="expandedThinkingId === msg.id" class="thinking-list">
                   <li v-for="(step, idx) in msg.thinkingSteps" :key="`${msg.id}-thinking-${idx}`">
-                    <span class="thinking-inline-index">{{ idx + 1 }}</span>
-                    <span class="thinking-inline-text">{{ step }}</span>
+                    <span class="dot"></span>
+                    <span>{{ step }}</span>
                   </li>
                 </ol>
               </div>
             </div>
-            <div v-if="msg.coachPrompts?.length" class="coach-prompts">
-              <p class="coach-prompts-title">下一步灵感（Coach）</p>
-              <ol>
-                <li v-for="(prompt, idx) in msg.coachPrompts" :key="`${msg.id}-coach-${idx}`">
-                  {{ prompt }}
-                </li>
-              </ol>
-            </div>
-            <div v-if="msg.editorChecklist?.length" class="editor-checklist">
-              <p class="editor-checklist-title">需要补充/确认（Editor）</p>
-              <ul>
-                <li v-for="(item, idx) in msg.editorChecklist" :key="`${msg.id}-editor-${idx}`">
-                  <label>
-                    <input type="checkbox" disabled />
-                    <span>{{ item }}</span>
-                  </label>
-                </li>
+            <div v-if="msg.writerSummary" class="summary-block">
+              <p class="summary-eyebrow">AI 草稿摘要</p>
+              <ul class="summary-list">
+                <li v-if="msg.writerSummary.headline"><strong>标题</strong>{{ msg.writerSummary.headline }}</li>
+                <li v-if="msg.writerSummary.audience"><strong>受众</strong>{{ msg.writerSummary.audience }}</li>
+                <li v-if="msg.writerSummary.logistics"><strong>细节</strong>{{ msg.writerSummary.logistics }}</li>
+                <li v-if="msg.writerSummary.riskNotes"><strong>风险</strong>{{ msg.writerSummary.riskNotes }}</li>
+                <li v-if="msg.writerSummary.nextSteps"><strong>下一步</strong>{{ msg.writerSummary.nextSteps }}</li>
               </ul>
             </div>
-            <div v-if="msg.writerSummary" class="writer-summary">
-              <p class="writer-summary-title">草稿摘要（Writer）</p>
-              <div class="writer-summary-grid">
-                <p v-if="msg.writerSummary.headline"><strong>标题</strong>{{ msg.writerSummary.headline }}</p>
-                <p v-if="msg.writerSummary.audience"><strong>受众</strong>{{ msg.writerSummary.audience }}</p>
-                <p v-if="msg.writerSummary.logistics"><strong>细节</strong>{{ msg.writerSummary.logistics }}</p>
-                <p v-if="msg.writerSummary.riskNotes"><strong>风险</strong>{{ msg.writerSummary.riskNotes }}</p>
-                <p v-if="msg.writerSummary.nextSteps"><strong>下一步</strong>{{ msg.writerSummary.nextSteps }}</p>
-              </div>
-              <div v-if="msg.confirmQuestions?.length" class="writer-confirm">
-                <p class="writer-confirm-label">请确认：</p>
-                <ul>
-                  <li v-for="(question, idx) in msg.confirmQuestions" :key="`${msg.id}-confirm-${idx}`">
-                    {{ question }}
-                  </li>
-                </ul>
-              </div>
-            </div>
           </div>
-          <div
-            v-else
-            class="proposal-card"
-            :class="{ 'proposal-card--clickable': Boolean(msg.payload?.raw) }"
-            @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)"
-          >
-            <p class="proposal-title">{{ msg.payload?.title }}</p>
-            <p class="proposal-desc">{{ msg.payload?.description }}</p>
-            <p class="proposal-hint" v-if="msg.payload?.raw">点击查看完整草案</p>
+          <div v-else class="proposal-bubble" @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)">
+            <div class="proposal-head">
+              <p class="proposal-title">{{ msg.payload?.title }}</p>
+              <p class="proposal-desc">{{ msg.payload?.description }}</p>
+            </div>
+            <div class="proposal-actions" v-if="msg.payload?.raw">
+              <button type="button" class="ghost-link" @click.stop="applyProposalToForm(msg.payload?.raw)">
+                送到表单
+              </button>
+              <button type="button" class="ghost-link" @click.stop="saveProposalDraft(msg.payload?.raw)">
+                保存草案
+              </button>
+              <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
+                查看全文
+              </button>
+            </div>
           </div>
           <span class="chat-meta">{{ msg.createdAt }}</span>
         </div>
-      </div>
-      <div v-if="aiLoading" class="thinking-banner">
-        <span class="thinking-spinner"></span>
-        <p>AI 正在思考...</p>
-      </div>
-      <div v-if="aiError" class="assistant-error">{{ aiError }}</div>
-    </section>
 
-    <section v-if="aiResult" class="final-plan-card">
-      <header class="final-plan-header">
-        <div>
-          <p class="final-plan-label">AI 活动方案</p>
-          <p class="final-plan-title">{{ finalPlanTitle }}</p>
+        <div v-if="aiLoading" class="chat-bubble chat-bubble--assistant chat-bubble--typing">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <p class="chat-text">AI 正在整理想法…</p>
         </div>
-        <button type="button" class="plan-preview-link" @click="openPlanPreview(aiResult)">方案预览</button>
-      </header>
-      <div class="final-plan-section" v-if="extractText(aiResult.description)">
-        <p class="final-plan-subtitle">活动亮点</p>
-        <p class="final-plan-text">{{ extractText(aiResult.description) }}</p>
-      </div>
-      <div class="final-plan-grid">
-        <article v-if="aiResult.notes && extractText(aiResult.notes)">
-          <p class="final-plan-subtitle">备注/准备</p>
-          <p class="final-plan-text">{{ extractText(aiResult.notes) }}</p>
-        </article>
-        <article v-if="aiResult.riskNotice && extractText(aiResult.riskNotice)">
-          <p class="final-plan-subtitle">风险提示</p>
-          <p class="final-plan-text">{{ extractText(aiResult.riskNotice) }}</p>
-        </article>
-      </div>
-      <div class="final-plan-section" v-if="finalPlanLogistics.length">
-        <p class="final-plan-subtitle">时间 & 地点</p>
-        <ul class="final-plan-list">
-          <li v-for="item in finalPlanLogistics" :key="`logistics-${item.label}`">
-            <strong>{{ item.label }}：</strong>{{ item.value }}
-          </li>
-        </ul>
-      </div>
-      <div class="final-plan-section" v-if="finalPlanTickets.length">
-        <p class="final-plan-subtitle">票务设置</p>
-        <ul class="final-plan-ticket-list">
-          <li v-for="(ticket, idx) in finalPlanTickets" :key="`ticket-${idx}`" class="final-plan-ticket">
-            <span>{{ ticket.name }}</span>
-            <span>{{ formatTicketPrice(ticket.price) }}</span>
-          </li>
-        </ul>
-      </div>
-      <div class="final-plan-section" v-if="finalPlanRequirements.length">
-        <p class="final-plan-subtitle">参加要求</p>
-        <ul class="final-plan-list">
-          <li v-for="(req, idx) in finalPlanRequirements" :key="`req-${idx}`">
-            {{ req.label }}{{ req.type === 'must' ? '（必需）' : '' }}
-          </li>
-        </ul>
-      </div>
-      <div class="final-plan-section" v-if="finalPlanFormFields.length">
-        <p class="final-plan-subtitle">报名表字段</p>
-        <ul class="final-plan-list">
-          <li v-for="(field, idx) in finalPlanFormFields" :key="`form-${idx}`">
-            {{ field.label }} · {{ field.type }}{{ field.required ? '（必填）' : '' }}
-          </li>
-        </ul>
+        <div v-if="aiError" class="chat-bubble chat-bubble--assistant chat-bubble--error">
+          <p class="chat-text">{{ aiError }}</p>
+        </div>
+
       </div>
     </section>
 
-    <div class="assistant-bottom">
-      <div class="chat-input-row">
+    <footer class="input-bar">
+      <div class="input-shell">
         <input
           ref="chatInputRef"
           v-model="chatDraft"
@@ -249,21 +113,12 @@
           :placeholder="currentPrompt"
           @keyup.enter="handleSend('enter')"
         />
-        <button class="chat-voice" type="button">
-          <span class="chat-button-label">语音</span>
-        </button>
         <button class="chat-send" type="button" @click="handleSend('button')" :disabled="!chatDraft.trim()">
-          <span class="chat-button-label">发送</span>
+          <span class="i-lucide-send"></span>
         </button>
       </div>
-
-      <section class="final-plan-actions" v-if="aiResult">
-        <button class="primary gradient" type="button" :disabled="!communityId" @click="goToForm(true)">
-          送到表单
-        </button>
-        <button class="primary" type="button" @click="saveProposalDraft(aiResult!)">保存草案</button>
-      </section>
-    </div>
+      <p class="input-hint">随便输入一句，AI 会继续追问或生成方案</p>
+    </footer>
   </div>
   <teleport to="body">
     <transition name="fade">
@@ -357,6 +212,7 @@ import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useToast } from '../../../composables/useToast';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
@@ -366,6 +222,7 @@ interface ChatMessage {
   type: ChatMessageType;
   content: string;
   createdAt: string;
+  includeInContext?: boolean;
   action?: 'direct-form';
   options?: string[];
   thinkingSteps?: string[];
@@ -397,14 +254,14 @@ const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
 const communityId = computed(() => route.params.communityId as string | undefined);
-const communityName = computed(() => {
-  const id = communityId.value;
-  if (!id) return '';
-  const match = communityStore.communities.value.find((item) => item.id === id);
-  return match?.name ?? '';
-});
 const activeCommunityDetail = ref<ConsoleCommunityDetail | null>(null);
 const introConversationStarted = ref(false);
+const welcomeText = '欢迎回来，直接说出活动想法即可开始。';
+const leadPrompts = [
+  '先告诉我你在计划什么活动场景？',
+  '希望吸引谁参加？有没有必须提前说明的限制？',
+  '有确定的时间、地点或氛围吗？随便描述就好。',
+];
 
 const qaState = reactive({
   baseLanguage: 'ja',
@@ -436,6 +293,8 @@ const questions = [
 const chatMessages = ref<ChatMessage[]>([]);
 const chatLogRef = ref<HTMLElement | null>(null);
 const keyboardOffset = ref(0);
+const autoScrollEnabled = ref(true);
+const currentQuestionId = ref<string | null>(null);
 const screenStyle = computed(() => ({
   '--keyboard-offset': `${keyboardOffset.value}px`,
 }));
@@ -448,18 +307,15 @@ const planPreview = ref<(GeneratedEventContent & { summary?: string }) | null>(n
 const currentQuestionIndex = ref(0);
 const savingLog = ref(false);
 const historyEntries = ref<AssistantHistoryEntry[]>([]);
-const historyPreview = ref<AssistantHistoryEntry | null>(null);
-const showHistory = ref(false);
-const showGuide = ref(true);
 const expandedThinkingId = ref<string | null>(null);
 const lastAssistantStatus = ref<EventAssistantStatus>('collecting');
 const lastPromptVersion = ref('coach-v2');
 const currentStage = ref<EventAssistantStage>('coach');
 const pendingQuestion = ref<string | null>(null);
 const stageLabels: Record<EventAssistantStage, string> = {
-  coach: '模式：Coach（点火）',
-  editor: '模式：Editor（打灯）',
-  writer: '模式：Writer（草稿确认）',
+  coach: '探索对话',
+  editor: '补充细节',
+  writer: '生成草案',
 };
 const lastTurnCount = ref(0);
 const lastLanguage = ref('ja');
@@ -545,6 +401,18 @@ const formatTicketPrice = (price?: number) => {
   if (price == null) return '免费';
   return `¥${price.toLocaleString('ja-JP')}`;
 };
+const formatDateTime = (value: string) => {
+  try {
+    return new Date(value).toLocaleString('ja-JP', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
+};
 
 const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   title: qaState.topic || '',
@@ -555,8 +423,6 @@ const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   ticketTypes: [],
   registrationFormSchema: [],
 }));
-const shouldShowGuide = computed(() => showGuide.value);
-
 const currentPrompt = computed(() => {
   if (pendingQuestion.value) {
     return pendingQuestion.value;
@@ -578,30 +444,10 @@ watch(
   },
 );
 
-watch(
-  () => chatMessages.value.length,
-  (len, prev) => {
-    if (prev === 0 && len > 0) {
-      showGuide.value = false;
-    }
-  },
-);
-
-watch(
-  () => showHistory.value,
-  (visible) => {
-    if (visible) {
-      historyPreview.value = historyEntries.value[0] ?? null;
-    } else {
-      historyPreview.value = null;
-    }
-  },
-);
-
-const scrollChatToBottom = () => {
+const scrollChatToBottom = (force = false) => {
   nextTick(() => {
     const container = chatLogRef.value;
-    if (container) {
+    if (container && (autoScrollEnabled.value || force)) {
       container.scrollTop = container.scrollHeight;
     }
   });
@@ -619,9 +465,11 @@ const pushMessage = (
   editorChecklist?: string[],
   writerSummary?: EventAssistantReply['writerSummary'],
   confirmQuestions?: string[],
+  extras?: { includeInContext?: boolean },
 ) => {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   chatMessages.value.push({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id,
     role,
     type,
     content,
@@ -634,17 +482,31 @@ const pushMessage = (
     editorChecklist,
     writerSummary,
     confirmQuestions,
+    includeInContext: extras?.includeInContext ?? true,
   });
   if (chatMessages.value.length > 200) {
     chatMessages.value.shift();
   }
   scrollChatToBottom();
+  return id;
+};
+
+const seedWelcomeMessages = () => {
+  if (chatMessages.value.some((msg) => msg.content === welcomeText)) return;
+  pushMessage('assistant', 'text', welcomeText);
+  const question = leadPrompts[0];
+  const messageId = pushMessage('assistant', 'text', question, undefined, undefined, [question], undefined, undefined, undefined, undefined, {
+    includeInContext: true,
+  });
+  pendingQuestion.value = question;
+  currentQuestionId.value = messageId;
 };
 
 const loadActiveCommunityDetail = async () => {
   if (!communityId.value) {
     activeCommunityDetail.value = null;
     introConversationStarted.value = false;
+    seedWelcomeMessages();
     await startIntroConversation();
     return;
   }
@@ -655,6 +517,7 @@ const loadActiveCommunityDetail = async () => {
     activeCommunityDetail.value = null;
   } finally {
     introConversationStarted.value = false;
+    seedWelcomeMessages();
     await startIntroConversation();
   }
 };
@@ -675,8 +538,10 @@ const startIntroConversation = async () => {
 
 const handleSend = async (source: 'button' | 'enter' = 'button') => {
   if (!chatDraft.value.trim() || aiLoading.value) return;
+  autoScrollEnabled.value = true;
   const content = chatDraft.value.trim();
   chatDraft.value = '';
+  currentQuestionId.value = null;
   if (source === 'button') {
     chatInputRef.value?.blur();
     keyboardOffset.value = 0;
@@ -711,6 +576,14 @@ const handleChatAnswer = async (text: string) => {
   await requestAssistantReply(text);
 };
 
+const handleOptionSelect = async (option: string) => {
+  if (!option || aiLoading.value) return;
+  autoScrollEnabled.value = true;
+  currentQuestionId.value = null;
+  pushMessage('user', 'text', option);
+  await handleChatAnswer(option);
+};
+
 const requestAssistantReply = async (userText: string, options?: { overrideSummary?: string }) => {
   aiError.value = null;
   const qaSummary = options?.overrideSummary ?? buildQaSummary(userText);
@@ -735,6 +608,8 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
   try {
     const result = await requestEventAssistantReply(payload);
     const steps = Array.isArray(result.thinkingSteps) ? result.thinkingSteps : [];
+    const nextQuestion = result.options?.[0] ?? null;
+    const optionList = nextQuestion ? [nextQuestion] : undefined;
     lastAssistantStatus.value = result.status;
     lastPromptVersion.value = result.promptVersion;
     lastTurnCount.value = result.turnCount;
@@ -745,20 +620,21 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
     latestChecklist.value = result.editorChecklist ?? [];
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
   const stageIsWriter = result.stage === 'writer';
-  pushMessage(
+  const messageId = pushMessage(
     'assistant',
     'text',
     result.message,
     undefined,
     undefined,
-    result.options,
+    optionList,
     steps,
     result.coachPrompts,
     result.editorChecklist,
     stageIsWriter ? result.writerSummary : undefined,
     result.confirmQuestions,
   );
-    pendingQuestion.value = result.options?.[0] ?? null;
+    pendingQuestion.value = nextQuestion;
+    currentQuestionId.value = optionList ? messageId : null;
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
     const shouldPrepareProposal =
       (result.status === 'ready' || result.status === 'options' || Boolean(result.proposal)) &&
@@ -925,36 +801,6 @@ const applyProposalToForm = (raw?: GeneratedEventContent & { summary?: string })
   if (!raw) return;
   aiResult.value = { ...raw, summary: raw.summary || buildQaSummary() };
   goToForm(true);
-  showHistory.value = false;
-  historyPreview.value = null;
-};
-
-const previewHistoryEntry = (entry: AssistantHistoryEntry) => {
-  historyPreview.value = entry;
-};
-
-const restoreHistoryToChat = (entry: AssistantHistoryEntry | null) => {
-  if (!entry) return;
-  aiResult.value = { ...entry.raw, summary: entry.summary };
-  pushMessage('assistant', 'proposal', '', {
-    title: entry.title,
-    description: entry.description,
-    raw: aiResult.value,
-  });
-  showHistory.value = false;
-  historyPreview.value = null;
-  scrollChatToBottom();
-};
-
-const toggleHistory = () => {
-  showHistory.value = !showHistory.value;
-  if (!showHistory.value) {
-    historyPreview.value = null;
-  }
-};
-
-const toggleGuide = () => {
-  showGuide.value = !showGuide.value;
 };
 
 const toggleThinking = (messageId: string) => {
@@ -999,6 +845,7 @@ const buildQaSummary = (latestInput?: string) => {
 
 const buildConversationContext = () => {
   return chatMessages.value
+    .filter((msg) => msg.includeInContext !== false)
     .slice(-8)
     .map((msg) => {
       const speaker = msg.role === 'user' ? 'User' : 'Assistant';
@@ -1012,13 +859,16 @@ const buildConversationContext = () => {
 };
 
 const buildConversationMessages = () => {
-  return chatMessages.value.slice(-10).map((msg) => ({
-    role: msg.role,
-    content:
-      msg.type === 'text'
-        ? msg.content
-        : `提案: ${msg.payload?.title ?? ''} ${msg.payload?.description ?? ''}`,
-  }));
+  return chatMessages.value
+    .filter((msg) => msg.includeInContext !== false)
+    .slice(-10)
+    .map((msg) => ({
+      role: msg.role,
+      content:
+        msg.type === 'text'
+          ? msg.content
+          : `提案: ${msg.payload?.title ?? ''} ${msg.payload?.description ?? ''}`,
+    }));
 };
 
 const getProfileValue = (value: string | undefined | null, key: keyof typeof profileDefaults.value) => {
@@ -1035,6 +885,10 @@ const extractText = (content: any) => {
     return content.original as string;
   }
   return '';
+};
+
+const goBack = () => {
+  router.back();
 };
 
 const goToForm = (useAi: boolean) => {
@@ -1077,6 +931,20 @@ onMounted(async () => {
   }
   loadHistoryEntries();
   await loadActiveCommunityDetail();
+  nextTick(() => {
+    const container = chatLogRef.value;
+    if (!container) return;
+    const handleScroll = () => {
+      if (!container) return;
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+      autoScrollEnabled.value = nearBottom;
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    onUnmounted(() => {
+      container?.removeEventListener('scroll', handleScroll);
+    });
+  });
 });
 
 if (typeof window !== 'undefined' && window.visualViewport) {
@@ -1094,594 +962,379 @@ if (typeof window !== 'undefined' && window.visualViewport) {
     window.visualViewport?.removeEventListener('scroll', handleViewport);
   });
 }
-
-const thinkingOverlay = ref(true);
-const codeStyle = (n: number) => ({
-  left: `${(n * 7) % 100}%`,
-  '--rx': `${((n * 13) % 40) - 20}%`,
-  animationDelay: `${(n % 20) * 0.12}s`,
-} as any);
-onMounted(() => {
-  setTimeout(() => {
-    thinkingOverlay.value = false;
-  }, 5000);
-});
 </script>
 
 <style scoped>
-.assistant-screen {
+.assistant-shell {
   position: fixed;
   inset: 0;
-  height: 100vh;
-  display: grid;
-  grid-template-rows: 1fr auto;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
   color: #0f172a;
-  background: var(--m-color-bg, #f8fafc);
   --keyboard-offset: 0px;
-  overflow-x: hidden;
 }
 
 @supports (height: 100dvh) {
-  .assistant-screen {
+  .assistant-shell {
     height: 100dvh;
     min-height: 100dvh;
   }
 }
 
-.assistant-wait {
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(0, 144, 217, 0.9), rgba(34, 187, 170, 0.88), rgba(228, 194, 80, 0.8));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  z-index: 999;
-  color: #dfefff;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  overflow: hidden;
-}
-.assistant-wait .code-rain {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.code-char {
-  position: absolute;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.35);
-  animation: rainChar 2.4s linear infinite;
-  text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
-  mix-blend-mode: screen;
-}
-.assistant-wait::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.08) 0,
-      rgba(255, 255, 255, 0.08) 10px,
-      rgba(255, 255, 255, 0) 10px,
-      rgba(255, 255, 255, 0) 20px
-    ),
-    repeating-linear-gradient(
-      45deg,
-      rgba(255, 255, 255, 0.05) 0,
-      rgba(255, 255, 255, 0.05) 12px,
-      rgba(255, 255, 255, 0) 12px,
-      rgba(255, 255, 255, 0) 24px
-    );
-  animation: scan-bg 3s linear infinite;
-  opacity: 0.5;
-}
-.assistant-wait::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 60%, rgba(255, 255, 255, 0.12), transparent 55%);
-}
-.wait-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 12px);
-  gap: 6px;
-}
-.wait-bar {
-  width: 12px;
-  height: 28px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #0090d9, #00b7c6);
-  animation: pulse-bar 1s infinite ease-in-out;
-  box-shadow: 0 0 10px rgba(0, 181, 233, 0.3);
-}
-.wait-text {
-  margin: 0;
-  font-size: 14px;
-  letter-spacing: 0.4px;
-  color: #e8f5ff;
-}
-@keyframes pulse-bar {
-  0%,
-  100% {
-    transform: scaleY(0.4);
-    opacity: 0.65;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-@keyframes scan-bg {
-  0% {
-    transform: translateX(-10%);
-  }
-  100% {
-    transform: translateX(10%);
-  }
-}
-@keyframes rainY {
-  0% {
-    transform: translateY(-20%);
-  }
-  100% {
-    transform: translateY(20%);
-  }
-}
-@keyframes rainX {
-  0% {
-    transform: translateX(-5%);
-  }
-  100% {
-    transform: translateX(5%);
-  }
-}
-@keyframes rainChar {
-  0% {
-    transform: translate3d(var(--rx), -20%, 0) scale(1);
-    opacity: 0.1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-  100% {
-    transform: translate3d(var(--rx), 120%, 0) scale(0.9);
-    opacity: 0;
-  }
+.assistant-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
-.assistant-chat-surface {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px 8px;
-  overflow: hidden;
-  touch-action: pan-y;
-  box-sizing: border-box;
-  max-width: 100vw;
+.chat-surface {
+  flex: 1;
+  min-height: 0;
 }
 
-.chat-tools {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 16px;
-}
-
-.prompt-chip {
-  font-size: 11px;
-  color: #94a3b8;
-  background: rgba(148, 163, 184, 0.15);
-  border-radius: 999px;
-  padding: 4px 10px;
-}
-
-.status-chip {
-  font-size: 12px;
-  color: #0f172a;
-  background: rgba(14, 165, 233, 0.15);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-weight: 600;
-}
-
-.mode-chip {
-  font-size: 11px;
-  color: #0f172a;
-  background: rgba(226, 232, 240, 0.6);
-  border-radius: 999px;
-  padding: 4px 10px;
-}
-
-.history-toggle {
-  border: 1px solid #e2e8f0;
-  border-radius: var(--app-border-radius);
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
-  font-size: 12px;
-  padding: 6px 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.history-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(2, 6, 23, 0.65);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 16px);
-  z-index: 40;
-}
-
-.history-sheet {
-  width: min(640px, 100%);
-  border-radius: 28px 28px 0 0;
-  background: #fff;
-  box-shadow: 0 -20px 50px rgba(2, 6, 23, 0.35);
-  padding: 18px 20px calc(env(safe-area-inset-bottom, 0px) + 18px);
-  max-height: calc(80vh);
+.chat-log {
+  height: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.history-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-.history-head p {
-  margin: 0;
-  font-weight: 600;
-  color: #0f172a;
-}
-.history-title {
-  font-size: 16px;
-}
-.history-subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #94a3b8;
-}
-.history-close {
-  border: none;
-  background: transparent;
-  color: #0ea5e9;
-  font-size: 12px;
-}
-
-.history-empty {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.history-item {
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  cursor: pointer;
-}
-.history-item.is-active {
-  border-color: #0ea5e9;
-  background: rgba(14, 165, 233, 0.08);
-}
-.history-item h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.history-item p {
-  margin: 0 0 6px;
-  font-size: 13px;
-  color: #475569;
-  line-height: 1.5;
-}
-.history-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  color: #94a3b8;
-  gap: 8px;
-}
-.history-actions {
-  display: flex;
-  gap: 6px;
-}
-.history-item-time {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.history-preview {
-  margin-top: 6px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(248, 250, 252, 0.9);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.history-preview-summary {
-  margin: 0;
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.5;
-}
-
-.history-preview-desc {
-  margin: 0;
-  font-size: 14px;
-  color: #1f2937;
-  line-height: 1.6;
-}
-
-.history-preview-note {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.history-preview-links {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.history-preview-link {
-  border: none;
-  background: rgba(15, 23, 42, 0.06);
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 6px 14px;
-  border-radius: 999px;
-}
-
-.history-preview-link:active {
-  opacity: 0.7;
-}
-
-.history-preview-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.history-preview-actions .primary {
-  flex: 1;
-  justify-content: center;
-}
-
-.chat-log {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 0 4px 8px;
-  align-items: stretch;
-  overflow-x: hidden;
+  padding: 12px 14px 120px;
+  box-sizing: border-box;
 }
 
 .chat-bubble {
-  width: 100%;
-  font-size: 16px;
-  line-height: 1.7;
-  color: #0f172a;
-  padding: 0;
-  border: none;
-}
-.chat-bubble--assistant {
-  align-self: stretch;
-  text-align: left;
-}
-.chat-bubble--user {
-  align-self: stretch;
-  font-weight: 600;
-  text-align: right;
+  max-width: 92%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  box-sizing: border-box;
+  word-break: break-word;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
 }
 
-.chat-text-block {
+.chat-bubble--assistant {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.chat-bubble.is-current-question {
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.08);
+}
+
+.chat-bubble.is-previous {
+  opacity: 0.85;
+}
+
+.chat-bubble--assistant.chat-bubble--typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-bubble--assistant.chat-bubble--error {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(254, 242, 242, 0.9);
+  color: #b91c1c;
+}
+
+.chat-bubble--user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #111827, #0f172a);
+  color: #f8fafc;
+  border: none;
+}
+
+.chat-stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  width: 100%;
+  gap: 10px;
 }
 
 .chat-text {
   margin: 0;
   white-space: pre-line;
-  width: 100%;
-  word-break: break-word;
-}
-.chat-bubble--user .chat-text-block {
-  align-items: flex-end;
-  text-align: right;
-}
-
-.chat-inline-link {
-  border: none;
-  background: transparent;
-  color: #0ea5e9;
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: underline;
-  padding: 0;
-}
-.chat-inline-link:disabled {
-  opacity: 0.5;
-}
-
-.chat-options {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  margin-top: 10px;
-  border-radius: 16px;
-  background: rgba(224, 231, 255, 0.85);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  padding: 12px 14px;
-}
-
-.chat-options-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  color: #4338ca;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.chat-options-question {
-  margin: 0;
-  font-size: 15px;
-  color: #1e1b4b;
-  font-weight: 600;
   line-height: 1.6;
 }
 
-.chat-options-note {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: #57534e;
-}
-
-.final-plan-card {
-  margin: 12px 16px 0;
-  padding: 16px;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  max-height: 320px;
-  overflow-y: auto;
-  box-sizing: border-box;
-  max-width: calc(100vw - 32px);
-}
-
-.final-plan-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.final-plan-label {
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  color: #64748b;
-}
-
-.final-plan-title {
-  margin: 4px 0 10px;
-  font-size: 18px;
+.inline-link {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
   font-weight: 700;
-  color: #0f172a;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
 }
 
-.final-plan-section {
-  margin-bottom: 12px;
+.chat-follow-up {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(224, 231, 255, 0.6);
+  border: 1px dashed rgba(99, 102, 241, 0.4);
 }
 
-.final-plan-subtitle {
+.follow-up-label {
   margin: 0 0 4px;
   font-size: 12px;
-  color: #475569;
-  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #4338ca;
+  text-transform: uppercase;
 }
 
-.final-plan-text {
+.follow-up-text {
   margin: 0;
-  font-size: 13px;
-  color: #0f172a;
+  font-weight: 700;
+  color: #312e81;
   line-height: 1.5;
 }
 
-.final-plan-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+.follow-up-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.final-plan-grid article {
-  padding: 10px 12px;
+.hint-row-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.thinking-shell {
   border-radius: 14px;
-  background: rgba(248, 250, 252, 0.8);
-  border: 1px solid rgba(203, 213, 225, 0.6);
+  background: rgba(244, 247, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 10px 12px;
 }
 
-.final-plan-list {
-  margin: 0;
-  padding-left: 16px;
-  font-size: 13px;
-  color: #0f172a;
-}
-.final-plan-list li {
-  margin: 4px 0;
-}
-.final-plan-list strong {
-  font-weight: 600;
-}
-
-.final-plan-ticket-list {
-  list-style: none;
-  margin: 0;
+.hint-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-weight: 700;
   padding: 0;
+}
+
+.hint-toggle__state {
+  font-size: 12px;
+  color: #2563eb;
+}
+
+.thinking-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.final-plan-ticket {
+.thinking-list li {
   display: flex;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.04);
-  font-size: 13px;
-}
-
-.plan-preview-link {
-  border: none;
-  background: rgba(15, 23, 42, 0.07);
+  gap: 8px;
+  align-items: flex-start;
   color: #0f172a;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 999px;
+  font-size: 14px;
 }
 
-.plan-preview-link:active {
-  opacity: 0.7;
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563eb;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.summary-block {
+  border-radius: 14px;
+  background: rgba(255, 247, 237, 0.9);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  padding: 10px 12px;
+}
+
+.summary-eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #b45309;
+  text-transform: uppercase;
+}
+
+.summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+  color: #7c2d12;
+}
+
+.summary-list strong {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+.proposal-bubble {
+  background: linear-gradient(135deg, #eef2ff, #e0f2fe);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 16px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proposal-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.proposal-title {
+  margin: 0;
+  font-weight: 800;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.proposal-desc {
+  margin: 0;
+  color: #1f2937;
+  white-space: pre-line;
+  line-height: 1.55;
+}
+
+.proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ghost-link {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 700;
+}
+
+.chat-meta {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 10px;
+  background: #cbd5e1;
+  animation: dotPulse 1s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dotPulse {
+  0% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+}
+
+.input-bar {
+  padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  background: rgba(255, 255, 255, 0.92);
+  border-top: 1px solid rgba(15, 23, 42, 0.05);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.06);
+  transform: translateY(calc(var(--keyboard-offset, 0px) * -1));
+  transition: transform 0.2s ease;
+}
+
+.input-shell {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.chat-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.chat-input::placeholder {
+  color: #94a3b8;
+}
+
+.chat-input:focus {
+  outline: none;
+}
+
+.chat-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+}
+
+.chat-send:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.input-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .plan-preview-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.65);
-  backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1693,25 +1346,25 @@ onMounted(() => {
   width: min(620px, 92vw);
   max-height: 90vh;
   background: #fff;
-  border-radius: 28px;
-  padding: 24px;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.35);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .plan-preview-head {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-start;
 }
 
 .plan-preview-label {
   margin: 0;
   font-size: 12px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.18em;
   color: #94a3b8;
   text-transform: uppercase;
 }
@@ -1719,7 +1372,7 @@ onMounted(() => {
 .plan-preview-title {
   margin: 4px 0 0;
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 800;
   color: #0f172a;
   line-height: 1.3;
 }
@@ -1727,11 +1380,10 @@ onMounted(() => {
 .plan-preview-close {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.4);
-  background: transparent;
+  background: #fff;
   color: #0f172a;
-  font-size: 1.1rem;
 }
 
 .plan-preview-scroll {
@@ -1739,7 +1391,7 @@ onMounted(() => {
   padding-right: 4px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .plan-preview-section {
@@ -1802,501 +1454,13 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.thinking-inline {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  align-self: stretch;
-  margin-top: 10px;
-  border-radius: 16px;
-  background: rgba(244, 247, 255, 0.92);
-  padding: 12px 14px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-.thinking-inline-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: #475569;
-  text-transform: uppercase;
-}
-
-.thinking-inline ol {
-  margin: 0;
-  padding-left: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.thinking-inline li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #0f172a;
-}
-
-.thinking-inline-index {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, 0.12);
-  font-size: 10px;
-  font-weight: 700;
-  color: #2563eb;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.thinking-inline-text {
-  flex: 1;
-  line-height: 1.55;
-  font-size: 13px;
-  word-break: break-word;
-}
-
-.thinking-collapsible {
-  width: 100%;
-}
-
-.thinking-toggle {
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(226, 232, 240, 0.4);
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.thinking-toggle__action {
-  font-size: 12px;
-  color: #2563eb;
-}
-
-.coach-prompts {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  align-self: stretch;
-  margin-top: 10px;
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: rgba(219, 234, 254, 0.9);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-}
-
-.coach-prompts-title {
-  margin: 0 0 6px;
-  font-size: 14px;
-  color: #1d4ed8;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.coach-prompts ol {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: #1e3a8a;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.editor-checklist {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  margin-top: 10px;
-  border-radius: 16px;
-  padding: 12px 14px;
-  background: rgba(240, 253, 250, 0.95);
-  border: 1px dashed rgba(15, 118, 110, 0.5);
-}
-
-.editor-checklist-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  color: #0f766e;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.editor-checklist ul {
-  margin: 0;
-  padding-left: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.editor-checklist li label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: #0f766e;
-}
-
-.editor-checklist input {
-  width: 16px;
-  height: 16px;
-}
-
-.writer-summary {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  margin-top: 12px;
-  border-radius: 18px;
-  padding: 16px 18px;
-  background: rgba(255, 247, 237, 0.95);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  align-self: stretch;
-}
-
-.writer-summary-title {
-  margin: 0 0 12px;
-  font-size: 15px;
-  color: #a16207;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.writer-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-.writer-summary-grid p {
-  margin: 0;
-  color: #7c2d12;
-}
-
-.writer-summary-grid strong {
-  display: block;
-  font-size: 13px;
-  text-transform: uppercase;
-  color: #b45309;
-}
-
-.writer-confirm {
-  margin-top: 10px;
-  border-top: 1px solid rgba(251, 191, 36, 0.4);
-  padding-top: 8px;
-}
-
-.writer-confirm-label {
-  margin: 0 0 4px;
-  font-size: 12px;
-  color: #92400e;
-}
-
-.writer-confirm ul {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: #7c2d12;
-  font-size: 13px;
-}
-
-.chat-meta {
-  display: block;
-  font-size: 11px;
-  margin-top: 4px;
-  color: #94a3b8;
-}
-
-.chat-typing {
-  font-size: 12px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-}
-
-.typing-dots {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.typing-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 10px;
-  background: #94a3b8;
-  animation: dotPulse 1s infinite ease-in-out;
-}
-
-.typing-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes dotPulse {
-  0% {
-    opacity: 0.2;
-    transform: translateY(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
-  100% {
-    opacity: 0.2;
-    transform: translateY(0);
-  }
-}
-
-.proposal-card {
-  background: rgba(226, 232, 240, 0.55);
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  transition: background 0.2s ease;
-}
-.proposal-card--clickable {
-  cursor: pointer;
-}
-.proposal-card--clickable:active {
-  background: rgba(148, 163, 184, 0.25);
-}
-.proposal-title {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.proposal-desc {
-  margin: 0;
-  font-size: 13px;
-  color: #1f2937;
-  white-space: pre-line;
-}
-.proposal-hint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: #475569;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.assistant-bottom {
-  padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.8), rgba(255, 255, 255, 1));
-  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transform: translateY(calc(var(--keyboard-offset, 0px) * -1));
-  transition: transform 0.2s ease;
-}
-
-.chat-input-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #dbeafe;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
-}
-
-.chat-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: #0f172a;
-  font-size: 14px;
-  padding: 0;
-}
-.chat-input::placeholder {
-  color: #94a3b8;
-}
-.chat-input:focus {
-  outline: none;
-}
-
-.chat-voice,
-.chat-send {
-  width: 42px;
-  height: 42px;
-  border: none;
-  border-radius: var(--app-border-radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-}
-
-.chat-voice {
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-  color: #fff;
-  border: none;
-}
-
-.chat-send {
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-  color: #fff;
-}
-.chat-send:disabled {
-  opacity: 0.4;
-}
-
-.chat-button-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
-
-.assistant-guide {
-  margin: 12px 16px 0;
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-}
-
-.guide-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  color: #475569;
-  letter-spacing: 0.1em;
-}
-
-.assistant-guide ol {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 12px;
-  color: #1e293b;
-}
-
-.assistant-guide li {
-  margin: 4px 0;
-}
-
-.assistant-guide strong {
-  color: #2563eb;
-}
-
-.guide-dismiss {
-  margin-top: 8px;
-  border: none;
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.12);
-  align-self: flex-start;
-}
-
-.guide-inline-toggle {
-  margin: 8px 16px 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px dashed rgba(37, 99, 235, 0.4);
-  background: rgba(15, 23, 42, 0.02);
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-}
-
-.assistant-error {
-  font-size: 12px;
-  color: #f87171;
-  text-align: center;
-}
-
-.thinking-banner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  font-size: 12px;
-  color: #475569;
-}
-
-.thinking-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(71, 85, 105, 0.3);
-  border-top-color: #475569;
-  border-radius: 10px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.primary {
-  border-radius: var(--app-border-radius);
-  padding: 15px;
-  font-size: 16px;
-  font-weight: 600;
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid #dbe4f5;
-}
-.primary.gradient {
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-  color: #fff;
-  border: none;
-}
-.primary.ghost {
-  background: rgba(15, 23, 42, 0.05);
-  border: 1px dashed #cbd5f5;
-  color: #0f172a;
-}
-.primary:disabled {
-  opacity: 0.4;
-}
-
-.final-plan-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 12px 16px 24px;
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
-const formatDateTime = (value: string) => {
-  try {
-    return new Date(value).toLocaleString('ja-JP', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return value;
-  }
-};
