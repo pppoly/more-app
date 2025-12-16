@@ -1,103 +1,57 @@
 <template>
-  <div class="subscription-page" :class="{ 'subscription-page--payment': Boolean(paymentClientSecret) }">
+  <div class="subscription-page beta-mode">
     <template v-if="!paymentClientSecret">
-      <header class="app-bar">
-        <button class="ghost-btn" type="button" @click="router.back()">
-          <span class="i-lucide-arrow-left" />
-        </button>
-        <div class="app-bar__title">
-          <h1>{{ t('subscription.title') }}</h1>
+      <header class="beta-banner">
+        <span class="badge">β</span>
+        <div>
+          <p class="beta-title">βテスト中</p>
+          <p class="beta-desc">将来有料となる機能を、現在は無料で利用できます</p>
         </div>
-        <button class="ghost-btn" type="button" @click="reload" :disabled="loading || paying">
-          <span class="i-lucide-refresh-ccw" />
-        </button>
       </header>
 
-      <div class="page-body">
-        <section v-if="upgradeSuccessPlanId" class="success-card">
-          <p class="eyebrow">アップグレード完了</p>
-          <h2>{{ upgradeSuccessName }}</h2>
-          <ul>
-            <li>AI コンテンツ & 翻訳の上限が拡張されました</li>
-            <li>プラットフォーム手数料は {{ upgradeSuccessFee }} になりました</li>
-            <li>コンテンツ審査が有効です。安心して公開できます</li>
+      <main class="beta-body">
+        <section class="status-card">
+          <p class="eyebrow">現在の利用状況</p>
+          <div class="status-pill">Free（βテスト）</div>
+          <p class="status-copy">
+            今は内測期間のため、通常は有料となる機能も無料で利用できます。事前にお知らせなく課金することはありません。
+          </p>
+          <p class="status-hint">安心してイベント運営を続けてください。</p>
+        </section>
+
+        <section class="future-card">
+          <div class="future-head">
+            <p class="eyebrow">将来予定のプラン（参考）</p>
+          </div>
+          <ul class="future-list">
+            <li>
+              <div class="future-name">Starter（予定）</div>
+              <div class="future-meta">月額 ¥2,480 / 小〜中規模向け</div>
+            </li>
+            <li>
+              <div class="future-name">Pro（予定）</div>
+              <div class="future-meta">月額 ¥9,800 / 本格運用・収益化向け</div>
+            </li>
+            <li>
+              <div class="future-name">Enterprise</div>
+              <div class="future-meta">お問い合わせ</div>
+            </li>
           </ul>
-          <button class="primary" type="button" @click="goCommunitySettings">
-            プロフィールを最適化する
-          </button>
+          <p class="fine-print">※ 正式リリース時に内容・価格が変更される可能性があります</p>
         </section>
 
-        <section class="summary-card">
-          <div class="summary-row">
-            <p class="eyebrow">{{ t('subscription.currentCommunity') }}</p>
-            <span v-if="activeCommunity" class="pill">{{ activeCommunity.name }}</span>
-            <span v-else class="pill muted">{{ t('subscription.noCommunity') }}</span>
+        <section class="perk-card">
+          <div class="perk-icon">⭐</div>
+          <div>
+            <p class="perk-title">早期主催者特典</p>
+            <p class="perk-desc">βテスト参加者には、正式リリース時の優遇を予定しています。</p>
           </div>
-          <div class="summary-row" v-if="activeCommunity">
-            <p class="eyebrow">{{ t('subscription.currentPlan') }}</p>
-            <span class="pill primary">{{ activePlanName }}</span>
-          </div>
-          <p class="summary-fee" v-if="activeCommunity">{{ activePlanFee }}</p>
-          <button v-if="activeCommunity" class="summary-upgrade" type="button" @click="scrollToPlans">
-            {{ t('subscription.cta.upgrade') }}
-            <span class="i-lucide-chevron-down" />
-          </button>
-          <p class="fine-print">{{ t('subscription.feeNote') }}</p>
         </section>
 
-        <div v-if="loading" class="empty">{{ t('subscription.loading') }}</div>
-        <div v-else-if="!communityId" class="empty">
-          <p>{{ t('subscription.noCommunity') }}</p>
-        </div>
-
-        <section v-else ref="planStackRef" class="plan-stack">
-          <article
-            v-for="plan in displayPlans"
-            :key="plan.id"
-            class="plan-card"
-            :class="plan.cardClass"
-          >
-            <div class="plan-header">
-              <div>
-                <p class="eyebrow">{{ plan.guide.audience }}</p>
-                <h2>{{ plan.guide.name }}</h2>
-              </div>
-              <span v-if="plan.id === activePlanId" class="status-chip">{{ t('subscription.cta.current') }}</span>
-            </div>
-            <p class="price">{{ plan.guide.price }}</p>
-            <div class="fee-chips">
-              <span class="chip">{{ t('subscription.platformFee') }} {{ plan.guide.platformFee }}</span>
-              <span class="chip">{{ t('subscription.stripeFee') }} {{ plan.guide.stripeFee }}</span>
-            </div>
-            <ul class="feature-list">
-              <li v-for="feature in plan.guide.features" :key="feature">{{ feature }}</li>
-            </ul>
-            <button
-              v-if="plan.selectable"
-              class="plan-cta"
-              :class="{ active: plan.id === activePlanId }"
-              type="button"
-              :disabled="submittingId === plan.id || paying || !plan.available || plan.id === activePlanId"
-              @click="plan.available && plan.id !== activePlanId && startSubscribe(plan.id)"
-            >
-              <span v-if="!plan.available">{{ t('subscription.cta.comingSoon') }}</span>
-              <span v-else-if="submittingId === plan.id">{{ t('subscription.cta.processing') }}</span>
-              <span v-else-if="paymentPlanId === plan.id">{{ t('subscription.cta.pay') }}</span>
-              <span v-else-if="plan.id === activePlanId">{{ t('subscription.cta.current') }}</span>
-              <span v-else>{{ t('subscription.cta.upgrade') }}</span>
-            </button>
-            <a
-              v-else
-              class="plan-cta outline"
-              href="mailto:hi@socialmore.com?subject=Enterprise"
-            >
-              {{ t('subscription.cta.contact') }}
-            </a>
-          </article>
-        </section>
-
-        <p v-if="error" class="error">{{ error }}</p>
-      </div>
+        <button class="secondary cta-continue" type="button" @click="router.back()">
+          このまま使う
+        </button>
+      </main>
     </template>
 
     <template v-else>
@@ -753,5 +707,148 @@ const confirmPayment = async () => {
   background: #cbd5e1;
   border-radius: 999px;
   margin: 0 auto 10px;
+}
+
+/* β モード専用レイアウト */
+.beta-mode {
+  padding: 16px;
+  background: #f8fafc;
+}
+.beta-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #e0f9f3, #e8f7ff);
+  border: 1px solid rgba(34, 197, 94, 0.12);
+  box-shadow: 0 10px 24px rgba(34, 197, 94, 0.15);
+}
+.beta-banner .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 800;
+}
+.beta-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+.beta-desc {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #0f172a;
+}
+.beta-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.status-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+.status-pill {
+  display: inline-flex;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e0f2fe, #e0f9f3);
+  color: #0b2b1a;
+  font-weight: 800;
+  margin: 8px 0;
+}
+.status-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #0f172a;
+}
+.status-hint {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+.future-card {
+  background: #f8fafc;
+  border: 1px dashed rgba(15, 23, 42, 0.15);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+.future-head .eyebrow {
+  margin: 0 0 4px;
+}
+.future-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.future-name {
+  font-weight: 800;
+  color: #0f172a;
+}
+.future-meta {
+  color: #475569;
+  font-size: 13px;
+}
+.fine-print {
+  margin: 2px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+.perk-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff7e6, #fffaf3);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  box-shadow: 0 10px 24px rgba(234, 179, 8, 0.12);
+}
+.perk-icon {
+  font-size: 20px;
+}
+.perk-title {
+  margin: 0;
+  font-weight: 800;
+}
+.perk-desc {
+  margin: 2px 0 0;
+  color: #4b5563;
+  font-size: 13px;
+}
+.cta-continue {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 800;
+  box-shadow: none;
+}
+.beta-mode .plan-stack,
+.beta-mode .summary-card,
+.beta-mode .success-card,
+.beta-mode .summary-upgrade,
+.beta-mode .price,
+.beta-mode .fee-chips,
+.beta-mode .plan-cta {
+  display: none !important;
 }
 </style>

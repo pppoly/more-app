@@ -19,15 +19,15 @@
     "access": {
       "logo": "MORE Console",
       "managing": "管理中のコミュニティ",
-      "roleOwner": "主理人",
+      "roleOwner": "主催者",
       "roleAdmin": "管理者",
       "noCommunities": "まだ管理できるコミュニティがありません。",
       "create": "コミュニティを作成",
-      "loginRequired": "主理人コンソールを利用するにはログインが必要です。",
-      "loginCta": "ログイン / 主理人申請",
-      "applyRequired": "主理人申請が必要です",
+      "loginRequired": "主催者コンソールを利用するにはログインが必要です。",
+      "loginCta": "ログイン / 主催者申請",
+      "applyRequired": "主催者申請が必要です",
       "applyHint": "申請が承認されるとコンソール機能を利用できます。",
-      "applyCta": "主理人申請ページへ",
+      "applyCta": "主催者申請ページへ",
       "noManagedTitle": "管理対象のコミュニティがありません",
       "noManagedHint": "まずはコミュニティを作成してみましょう。",
       "createNew": "新しいコミュニティを作成"
@@ -122,15 +122,15 @@
     "access": {
       "logo": "MORE Console",
       "managing": "管理中のコミュニティ",
-      "roleOwner": "主理人",
+      "roleOwner": "主催者",
       "roleAdmin": "管理者",
       "noCommunities": "まだ管理できるコミュニティがありません。",
       "create": "コミュニティを作成",
-      "loginRequired": "主理人コンソールを利用するにはログインが必要です。",
-      "loginCta": "ログイン / 主理人申請",
-      "applyRequired": "主理人申請が必要です",
+      "loginRequired": "主催者コンソールを利用するにはログインが必要です。",
+      "loginCta": "ログイン / 主催者申請",
+      "applyRequired": "主催者申請が必要です",
       "applyHint": "申請が承認されるとコンソール機能を利用できます。",
-      "applyCta": "主理人申請ページへ",
+      "applyCta": "主催者申請ページへ",
       "noManagedTitle": "管理対象のコミュニティがありません",
       "noManagedHint": "まずはコミュニティを作成してみましょう。",
       "createNew": "新しいコミュニティを作成"
@@ -185,7 +185,7 @@
       }
     },
     "me": {
-      "organizer": "主理人",
+      "organizer": "主催者",
       "avatar": {
         "title": "プロフィール画像",
         "cancel": "キャンセル",
@@ -266,7 +266,7 @@
       }
     },
     "form": {
-      "title": "主理人申請",
+      "title": "主催者申請",
       "desc": "理由を簡単に教えてください。送信後すぐに承認されます。",
       "reason": "申請理由",
       "reasonPlaceholder": "どのような活動を予定していますか？",

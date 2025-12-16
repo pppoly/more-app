@@ -1,0 +1,28 @@
+++ frontend/src/assets/organizer-apply/pain4.svg
+<svg viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="p4a" x1="50" y1="60" x2="250" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFEAD1"/>
+      <stop offset="1" stop-color="#FFF6EA"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="32" width="272" height="256" rx="82" fill="url(#p4a)"/>
+  <ellipse cx="160" cy="222" rx="82" ry="22" fill="#E9D8C0" fill-opacity=".5"/>
+  <g fill="#E6D4B8">
+    <ellipse cx="118" cy="206" rx="24" ry="12"/>
+    <ellipse cx="152" cy="196" rx="30" ry="14"/>
+    <ellipse cx="188" cy="206" rx="28" ry="12"/>
+    <ellipse cx="170" cy="214" rx="22" ry="10" fill="#DCC6A9"/>
+  </g>
+  <path d="M160 206c-6-18-4-34 6-46" stroke="#9CC39B" stroke-width="4" stroke-linecap="round"/>
+  <path d="M150 196c-2-16 6-30 20-34" stroke="#8DB889" stroke-width="3" stroke-linecap="round"/>
+  <path d="M160 206s-8-14-2-26 16-18 24-12" stroke="#7AAE7B" stroke-width="3" stroke-linecap="round"/>
+  <path d="M158 182c4-12 12-18 20-10" stroke="#6AA16E" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="160" cy="164" r="6" fill="#7AAE7B"/>
+  <path d="M160 164c2-10 8-18 16-14" stroke="#6AA16E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M152 212c-6 10-16 16-30 14" stroke="#C5B396" stroke-width="3" stroke-linecap="round"/>
+  <path d="M176 212c6 10 16 16 30 14" stroke="#C5B396" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="102" cy="94" r="18" fill="#FFF6EA" fill-opacity=".8"/>
+  <circle cx="224" cy="96" r="14" fill="#FFEBD6" fill-opacity=".7"/>
+  <circle cx="246" cy="230" r="10" fill="#F2E3CC" fill-opacity=".8"/>
+</svg>

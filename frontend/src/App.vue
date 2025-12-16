@@ -40,7 +40,7 @@
             >
               Console
             </RouterLink>
-            <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
+            <RouterLink v-else-if="user" to="/organizer/apply">主催者申請</RouterLink>
             <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
             <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
           </nav>
@@ -67,7 +67,7 @@
                 class="apply-link"
                 to="/organizer/apply"
               >
-                主理人申請
+                主催者申請
               </RouterLink>
               <button type="button" @click="logout">Logout</button>
             </div>

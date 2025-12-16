@@ -13,9 +13,10 @@
           v-if="showConsoleBack"
           class="nav-back nav-back--overlay"
           type="button"
+          aria-label="戻る"
           @click="goBack"
         >
-          返回
+          <img :src="backIcon" class="nav-back__icon" alt="" aria-hidden="true" />
         </button>
         <div class="portal-hero__overlay"></div>
         <div class="portal-hero__content">
@@ -31,8 +32,8 @@
         <div class="info-tags" v-if="heroLabels.length">
           <span v-for="label in heroLabels" :key="label">#{{ label }}</span>
         </div>
-        <button class="follow-btn" type="button" :disabled="followBusy" @click="toggleFollow">
-          {{ following ? '已关注' : '关注社群' }}
+        <button class="follow-btn" :class="{ 'is-following': following }" type="button" :disabled="followBusy" @click="toggleFollow">
+          {{ following ? 'フォロー中' : 'フォロー' }}
         </button>
         <div class="member-row" v-if="memberAvatars.length">
           <div class="member-track">
@@ -47,42 +48,48 @@
           {{ descriptionText }}
         </p>
         <button v-if="shouldTruncate" class="toggle" type="button" @click="descriptionExpanded = !descriptionExpanded">
-          {{ descriptionExpanded ? '收起' : '展开' }}
+          {{ descriptionExpanded ? '閉じる' : 'もっと見る' }}
         </button>
       </article>
 
       <article v-if="newsItemsLimited.length" class="news-card">
-        <div class="news-card__head">
-          <h2>社群动态</h2>
+        <div class="section-head">
+          <h2>最近の動き</h2>
         </div>
-        <div class="news-card__marquee">
-          <div class="news-card__track">
-            <div v-for="(item, idx) in newsItemsLoop" :key="`news-${idx}`" class="news-card__item">
-              {{ item }}
+        <ul class="timeline">
+          <li v-for="(item, idx) in newsItemsLimited" :key="`news-${idx}`" class="timeline__item">
+            <span class="timeline__dot"></span>
+            <div class="timeline__body">
+              <p class="timeline__title">
+                <span class="flag" :class="item.status === 'open' ? 'flag--open' : 'flag--closed'">
+                  {{ item.status === 'open' ? '受付中' : '終了' }}
+                </span>
+                {{ item.title }}
+              </p>
+              <p class="timeline__meta">{{ item.date }}</p>
             </div>
-          </div>
-        </div>
+          </li>
+        </ul>
       </article>
 
       <section v-if="showEvents" class="event-gallery">
-        <div class="event-gallery__head">
-          <h2>社群活动</h2>
-          <span class="count" v-if="formattedEvents.length">{{ formattedEvents.length }} 场</span>
+        <div class="section-head">
+          <h2>イベント</h2>
+          <span class="count" v-if="formattedEvents.length">{{ formattedEvents.length }} 件</span>
         </div>
-        <div class="event-gallery__track">
-          <article v-for="event in formattedEvents" :key="event.id" class="event-tile">
-            <div class="event-tile__cover" :style="eventCoverStyle(event)">
-              <div class="event-tile__shade">
-                <div class="event-tile__status" :class="event.statusClass">{{ event.statusLabel }}</div>
-                <div class="event-tile__title">{{ event.title }}</div>
-                <div class="event-tile__meta">{{ event.date }} · {{ event.locationText || '地点待定' }}</div>
-              </div>
+        <div class="event-list" v-if="featuredEvents.length">
+          <article v-for="event in featuredEvents" :key="event.id" class="event-card">
+            <div class="event-card__cover" :style="eventCoverStyle(event)"></div>
+            <div class="event-card__body">
+              <span class="event-card__status" :class="event.statusClass">{{ event.statusLabel }}</span>
+              <h3 class="event-card__title">{{ event.title }}</h3>
+              <p class="event-card__meta">{{ event.date }} ・ {{ event.locationText || '場所未定' }}</p>
             </div>
           </article>
         </div>
-        <div v-if="!formattedEvents.length" class="empty-panel">
-          <p>还没有对外招募的活动。</p>
-          <span>关注社群，及时收到新活动。</span>
+        <div v-else class="empty-panel">
+          <p>公開中のイベントはまだありません。</p>
+          <span>フォローすると新しいイベントが届きます。</span>
         </div>
       </section>
     </div>
@@ -100,6 +107,7 @@ import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
+import backIcon from '../../assets/icons/arrow-back.svg';
 
 const route = useRoute();
 const router = useRouter();
@@ -146,7 +154,7 @@ const composeHeroBackground = (source: string, fallback: string) => {
 
 const loadCommunity = async (value: string) => {
   if (!value) {
-    error.value = '社群不存在';
+    error.value = 'コミュニティが見つかりません';
     return;
   }
   loading.value = true;
@@ -156,7 +164,7 @@ const loadCommunity = async (value: string) => {
     community.value = data;
     following.value = Boolean(data.isFollowing);
   } catch (err) {
-    error.value = '社群不存在或已下线';
+    error.value = 'コミュニティが存在しないか、非公開です';
   } finally {
     loading.value = false;
   }
@@ -177,7 +185,7 @@ const followBusy = ref(false);
 const hasFollowState = computed(() => Boolean(community.value?.id));
 
 const descriptionExpanded = ref(false);
-const descriptionText = computed(() => getLocalizedText(community.value?.description) || '简介准备中。');
+const descriptionText = computed(() => getLocalizedText(community.value?.description) || '紹介文は準備中です。');
 const shouldTruncate = computed(() => descriptionText.value.length > 80);
 const avatarFailed = ref(false);
 
@@ -238,25 +246,30 @@ const layoutOrder = computed(() => {
 
 const showHero = computed(() => layoutOrder.value.includes('hero'));
 const showEvents = computed(() => layoutOrder.value.some((b) => ['upcoming', 'past'].includes(b)));
-const heroLabels = computed(() => community.value?.labels ?? []);
+// デザイン上は多すぎると散らかるため、最大 5 件まで表示
+const heroLabels = computed(() => (community.value?.labels ?? []).slice(0, 5));
 
 const formattedEvents = computed(() =>
   (community.value?.events ?? []).map((event) => ({
     ...event,
-    title: getLocalizedText(event.title) || '活动',
-    date: new Date(event.startTime).toLocaleString('zh-CN', {
+    title: getLocalizedText(event.title) || 'イベント',
+    date: new Date(event.startTime).toLocaleString('ja-JP', {
       month: 'numeric',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     }),
-    statusLabel: event.status === 'open' ? '报名中' : '已结束',
+    statusLabel: event.status === 'open' ? '受付中' : '終了',
     statusClass: event.status === 'open' ? 'open' : 'closed',
   })),
 );
 
 const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.status === 'open'));
 const pastEvents = computed(() => formattedEvents.value.filter((event) => event.status !== 'open'));
+const featuredEvents = computed(() => {
+  const combined = [...upcomingEvents.value, ...pastEvents.value];
+  return combined.slice(0, 3);
+});
 const memberAvatars = computed(() =>
   (community.value?.members ?? []).map((member) => ({
     id: member.id,
@@ -269,13 +282,13 @@ const memberCount = computed(() => community.value?.memberCount ?? memberAvatars
 const newsItems = computed(() => {
   const events = formattedEvents.value;
   if (!events.length) return [];
-  return events.slice(0, 6).map((event) => {
-    const flag = event.status === 'open' ? '招募中' : '回顾';
-    return `${flag} · ${event.title} · ${event.date}`;
-  });
+  return events.slice(0, 4).map((event) => ({
+    title: event.title,
+    date: new Date(event.startTime).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
+    status: event.status as 'open' | 'closed',
+  }));
 });
-const newsItemsLimited = computed(() => newsItems.value.slice(0, 3));
-const newsItemsLoop = computed(() => [...newsItemsLimited.value, ...newsItemsLimited.value]);
+const newsItemsLimited = computed(() => newsItems.value.slice(0, 4));
 const eventCoverStyle = (event: any) => {
   const cover = event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl as string) : heroFallbackImage.value;
   return {
@@ -305,7 +318,7 @@ const goBack = () => {
   if (history.length > 1) {
     router.back();
   } else {
-    router.push('/console');
+    router.replace({ name: 'events' });
   }
 };
 
@@ -328,7 +341,7 @@ watch(
 
 const ensureAuthed = async () => {
   if (accessToken.value) return true;
-  toast.show('请先登录再关注社群', { type: 'info' });
+  toast.show('フォローにはログインが必要です', { type: 'info' });
   router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
   return false;
 };
@@ -348,7 +361,7 @@ const toggleFollow = async () => {
     await fetchCurrentUser();
   } catch (err) {
     console.error(err);
-    toast.show('操作失败，请稍后重试', { type: 'error' });
+    toast.show('処理に失敗しました。しばらくしてからお試しください。', { type: 'error' });
   } finally {
     followBusy.value = false;
   }
@@ -362,7 +375,7 @@ const toggleFollow = async () => {
   --chip-border: rgba(255, 255, 255, 0.35);
   --hero-overlay-from: rgba(15, 23, 42, 0.22);
   --hero-overlay-to: rgba(15, 23, 42, 0.55);
-  background: linear-gradient(180deg, #f7f7fb 0%, #eef2f7 100%);
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 48%, #f8fafc 100%);
   min-height: 100vh;
   color: #0f172a;
   overflow-x: hidden;
@@ -403,7 +416,10 @@ const toggleFollow = async () => {
   color: #2563eb;
   font-weight: 700;
   font-size: 15px;
-  padding: 6px 4px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .nav-back--overlay {
   position: absolute;
@@ -411,10 +427,14 @@ const toggleFollow = async () => {
   left: 16px;
   z-index: 2;
   border-radius: 12px;
-  padding: 8px 10px;
-  background: rgba(15, 23, 42, 0.32);
+  padding: 6px;
+  background: rgba(15, 23, 42, 0.18);
   color: #fff;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+}
+.nav-back__icon {
+  width: 20px;
+  height: 20px;
 }
 .nav-title {
   position: absolute;
@@ -489,21 +509,20 @@ const toggleFollow = async () => {
 
 .portal-hero {
   position: relative;
-  min-height: 200px;
-  border-radius: 0;
+  min-height: 180px;
+  border-radius: 0 0 20px 20px;
   overflow: hidden;
   background-size: cover;
   background-position: center;
   box-shadow: none;
-  margin: 0;
-  width: 100vw;
-  left: 50%;
-  transform: translateX(-50%);
+  margin: 0 -12px;
+  width: calc(100% + 24px);
 }
 .portal-hero__overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--hero-overlay-from), var(--hero-overlay-to));
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.28), rgba(15, 23, 42, 0.62));
+  backdrop-filter: blur(10px);
   z-index: 0;
 }
 .portal-hero__content {
@@ -531,16 +550,16 @@ const toggleFollow = async () => {
   padding: 20px;
 }
 .portal-hero__avatar {
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
   overflow: hidden;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: none;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
 }
 .portal-hero__avatar img,
 .portal-hero__avatar span {
@@ -562,11 +581,11 @@ const toggleFollow = async () => {
 }
 
 .info-card {
-  margin-top: 16px;
+  margin-top: 14px;
   background: #fff;
-  border-radius: 16px;
-  padding: 22px 18px 18px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  padding: 20px 18px 18px;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -585,21 +604,27 @@ const toggleFollow = async () => {
   flex-wrap: wrap;
 }
 .info-tags span {
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 13px;
+  background: #edf2f7;
+  color: #334155;
+  font-weight: 600;
+  font-size: 12px;
 }
 .follow-btn {
-  border: none;
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  color: #fff;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #0f172a;
   font-weight: 700;
   border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+  padding: 11px 12px;
+  box-shadow: none;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.follow-btn.is-following {
+  background: #eef2f7;
+  border-color: #e2e8f0;
+  color: #0f172a;
 }
 .member-row {
   display: flex;
@@ -659,11 +684,6 @@ const toggleFollow = async () => {
   align-self: center;
 }
 
-.events-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .news-card {
   margin-top: 16px;
   background: #fff;
@@ -675,51 +695,77 @@ const toggleFollow = async () => {
   gap: 12px;
   border: 1px solid #e2e8f0;
 }
-.news-card__head h2 {
-  margin: 4px 0 0;
-  font-size: 17px;
-  font-weight: 800;
-}
-.news-card__marquee {
-  overflow: hidden;
-  position: relative;
-  height: 120px;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-}
-.news-card__track {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: news-vertical 14s linear infinite;
-}
-.news-card__item {
-  font-size: 14px;
-  color: #0f172a;
-  background: #f8fafc;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+.section-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.news-card__item::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  flex-shrink: 0;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+.section-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
 }
-@keyframes news-vertical {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(-50%);
-  }
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.timeline__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+.timeline__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #22c55e);
+  box-shadow: 0 0 0 6px rgba(79, 70, 229, 0.08);
+  margin-top: 6px;
+}
+.timeline__body {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.timeline__title {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+.timeline__meta {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+.flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.flag--open {
+  background: #ecfdf3;
+  color: #166534;
+}
+.flag--closed {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 .empty-panel {
   border: 1px dashed #cbd5f5;
@@ -736,22 +782,9 @@ const toggleFollow = async () => {
 }
 .event-gallery {
   margin-top: 16px;
-}
-
-.event-gallery {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.event-gallery__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.event-gallery__head h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 800;
 }
 .count {
   padding: 4px 10px;
@@ -761,62 +794,55 @@ const toggleFollow = async () => {
   font-weight: 700;
   font-size: 12px;
 }
-.event-gallery__track {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 1fr);
+.event-list {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  -webkit-overflow-scrolling: touch;
 }
-.event-tile {
-  border-radius: 14px;
+.event-card {
+  background: #fff;
+  border-radius: 16px;
   overflow: hidden;
-  background: #0f172a;
-  min-height: 180px;
-  position: relative;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
 }
-.event-tile__cover {
-  position: relative;
-  inset: 0;
+.event-card__cover {
   width: 100%;
-  height: 100%;
+  padding-top: 56%;
   background-size: cover;
   background-position: center;
 }
-.event-tile__shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 20%, rgba(0, 0, 0, 0.65) 90%);
-  color: #fff;
+.event-card__body {
+  padding: 14px 14px 16px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 16px;
+  gap: 8px;
 }
-.event-tile__title {
-  font-weight: 800;
-  font-size: 16px;
-}
-.event-tile__meta {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-}
-.event-tile__status {
+.event-card__status {
   align-self: flex-start;
-  padding: 4px 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #e2f3ff;
-  background: rgba(255, 255, 255, 0.12);
+  background: #ecfdf3;
+  color: #166534;
 }
-.event-tile__status.closed {
-  color: rgba(255, 255, 255, 0.82);
+.event-card__status.closed {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.event-card__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.event-card__meta {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
 }
 
 @media (min-width: 960px) {
@@ -824,13 +850,13 @@ const toggleFollow = async () => {
     padding: 0 28px 32px;
   }
   .portal-hero {
-    min-height: 260px;
+    min-height: 240px;
+    margin: 0 auto;
+    width: 100%;
+    border-radius: 0 0 24px 24px;
   }
   .community-name {
     font-size: 28px;
-  }
-  .slider-track {
-    grid-auto-columns: minmax(280px, 1fr);
   }
 }
 </style>

@@ -26,13 +26,18 @@
           <span v-else class="avatar-placeholder">+</span>
         </button>
         <div class="top-text" @click="hasCommunity ? goCommunitySettings() : goCreateCommunity()">
-          <p class="top-label">{{ hasCommunity ? '社群' : 'まだコミュニティがありません' }}</p>
+          <p class="top-label">{{ hasCommunity ? 'コミュニティ' : 'まだコミュニティがありません' }}</p>
           <div class="top-title-row">
             <h1 class="top-title">
               {{ hasCommunity ? communityName : 'コミュニティを作成' }}
               <span v-if="hasCommunity && roleLabel" class="role-chip">{{ roleLabel }}</span>
             </h1>
-            <button v-if="hasCommunity && planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
+            <button
+              v-if="hasCommunity && planLabel"
+              class="plan-chip"
+              type="button"
+              @click.stop="goSubscription"
+            >
               {{ planDisplay }}
             </button>
           </div>
@@ -103,26 +108,26 @@
         <div class="action-icon">
           <img :src="defaultActionIcon" alt="" loading="lazy" />
         </div>
-        <p class="action-title">活动管理</p>
+        <p class="action-title">イベント管理</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">
           <img :src="defaultActionIcon" alt="" loading="lazy" />
         </div>
-        <p class="action-title">收益入金</p>
+        <p class="action-title">入金・振込</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
         <div class="action-icon">
           <img :src="defaultActionIcon" alt="" />
         </div>
-        <p class="action-title">验票扫码</p>
+        <p class="action-title">チェックイン</p>
       </button>
     </section>
 
     <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
       <div class="picker-sheet">
         <header class="picker-head">
-          <p class="picker-title">社群を切り替え</p>
+          <p class="picker-title">コミュニティを切り替え</p>
           <button type="button" class="picker-close" @click="closeCommunityPicker">
             <span class="i-lucide-x"></span>
           </button>
@@ -153,7 +158,7 @@
               </div>
               <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
             </button>
-            <p v-if="!managedCommunities.length" class="picker-empty">まだ社群がありません。</p>
+            <p v-if="!managedCommunities.length" class="picker-empty">まだコミュニティがありません。</p>
             <button
               type="button"
               class="picker-add"
@@ -161,9 +166,9 @@
               @click="handleCreateClick"
             >
               <span class="i-lucide-plus"></span>
-              {{ canCreateCommunity ? '新しい社群を登録' : 'プランをアップグレード' }}
+              {{ canCreateCommunity ? '新しいコミュニティを登録' : 'プランをアップグレード' }}
             </button>
-            <p v-if="!canCreateCommunity" class="picker-hint">Free プランでは社群は 1 つまでです。アップグレードで増やせます。</p>
+            <p v-if="!canCreateCommunity" class="picker-hint">Free プランではコミュニティは 1 つまでです。アップグレードで増やせます。</p>
           </template>
         </div>
       </div>
@@ -172,40 +177,40 @@
     <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
       <div class="create-sheet">
         <header class="create-head">
-          <p class="create-title">怎么开始？</p>
-          <p class="create-subtitle">先选一个最省事的方式</p>
+          <p class="create-title">今回は、考えなくて大丈夫です</p>
+          <p class="create-subtitle">AIと一緒に、いちばん楽な方法から始められます</p>
         </header>
         <div class="create-list">
+          <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('assistant')">
+            <div class="create-badge">おすすめ</div>
+            <div class="create-icon create-icon--accent">🤖</div>
+            <div class="create-body">
+              <p class="create-item-title">AIと一緒に作る</p>
+              <p class="create-item-desc">質問に答えるだけで、イベントの中身がほぼ完成します</p>
+            </div>
+          </button>
           <button type="button" class="create-item" @click="selectCreateMode('paste')">
             <div class="create-icon">🧾</div>
             <div class="create-body">
-              <p class="create-item-title">我已有活动方案</p>
-              <p class="create-item-desc">粘贴提纲，自动帮你填表，省时省力</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('assistant')">
-            <div class="create-icon">🤖</div>
-            <div class="create-body">
-              <p class="create-item-title">我只有想法</p>
-              <p class="create-item-desc">AI 一起讨论，几句口述生成活动内容</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('basic')">
-            <div class="create-icon">✍️</div>
-            <div class="create-body">
-              <p class="create-item-title">直接填活动</p>
-              <p class="create-item-desc">按表单一步步填写，熟悉流程最快</p>
+              <p class="create-item-title">下書きを貼って相談する</p>
+              <p class="create-item-desc">すでにメモや文章がある人向け</p>
             </div>
           </button>
           <button type="button" class="create-item" @click="selectCreateMode('copy')">
             <div class="create-icon">📄</div>
             <div class="create-body">
-              <p class="create-item-title">复制一个历史活动</p>
-              <p class="create-item-desc">复用以前的配置，几秒办同款</p>
+              <p class="create-item-title">過去のイベントをコピー</p>
+              <p class="create-item-desc">以前とほぼ同じ内容なら</p>
+            </div>
+          </button>
+          <button type="button" class="create-item" @click="selectCreateMode('basic')">
+            <div class="create-icon">✍️</div>
+            <div class="create-body">
+              <p class="create-item-title">ゼロから作成</p>
+              <p class="create-item-desc">フォームに沿って、すべて自分で入力します</p>
             </div>
           </button>
         </div>
-    <button type="button" class="create-close" @click="closeCreateSheet">取消</button>
   </div>
 </div>
 
@@ -226,13 +231,12 @@
           </div>
         </button>
       </template>
-      <p v-else-if="!copyLoading && !copyError" class="empty-text">暂无历史活动</p>
+      <p v-else-if="!copyLoading && !copyError" class="empty-text">過去のイベントはまだありません</p>
       <p v-if="copyError" class="empty-text">{{ copyError }}</p>
-      <p v-if="copyLoading" class="empty-text">加载中...</p>
+      <p v-if="copyLoading" class="empty-text">読み込み中…</p>
     </div>
     <div class="copy-actions">
-      <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">加载更多</button>
-      <button type="button" class="create-close" @click="closeCopyPicker">取消</button>
+      <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">もっと見る</button>
     </div>
   </div>
 </div>
@@ -314,7 +318,7 @@ const planLabel = computed(() => {
   return id;
 });
 const isFreePlan = computed(() => planLabel.value.toLowerCase().includes('free'));
-const planDisplay = computed(() => (isFreePlan.value ? 'Free · 1社群まで' : planLabel.value));
+const planDisplay = computed(() => (isFreePlan.value ? 'Free · コミュニティ1つまで' : planLabel.value));
 const canCreateCommunity = computed(() => !isFreePlan.value || managedCommunities.value.length < 1);
 const aiMinutesSaved = ref<number | null>(null);
 
@@ -516,7 +520,7 @@ const loadCopyPage = async () => {
       copyPage.value += 1;
     }
   } catch (err: any) {
-    copyError.value = err?.message || '历史活动加载失败';
+    copyError.value = err?.message || '過去のイベントを読み込めませんでした';
   } finally {
     copyLoading.value = false;
   }
@@ -786,21 +790,6 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-weight: 700;
   vertical-align: middle;
 }
-.plan-chip {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.32);
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.01em;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
-  cursor: pointer;
-}
 .top-title-row {
   display: flex;
   align-items: center;
@@ -808,6 +797,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   flex-wrap: wrap;
 }
 .plan-chip {
+  position: static;
   padding: 6px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.32);
@@ -817,6 +807,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   letter-spacing: 0.01em;
   border: 1px solid rgba(255, 255, 255, 0.65);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .top-role {
@@ -1199,6 +1190,12 @@ const normalizeLogoUrl = (raw?: string | null) => {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   text-align: left;
 }
+.create-item--recommend {
+  border: 1px solid #bedfff;
+  background: linear-gradient(135deg, #f2f7ff, #ffffff);
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.16);
+  min-height: 120px;
+}
 
 .create-icon {
   width: 44px;
@@ -1209,6 +1206,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
   align-items: center;
   justify-content: center;
   font-size: 20px;
+}
+.create-icon--accent {
+  background: linear-gradient(135deg, #e0f2ff, #d5e9ff);
 }
 
 .create-body {
@@ -1229,6 +1229,17 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-size: 13px;
   color: #475569;
   line-height: 1.4;
+}
+
+.create-badge {
+  grid-column: 1 / -1;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
 }
 
 .create-close {

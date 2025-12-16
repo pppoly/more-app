@@ -7,7 +7,7 @@
             <div class="visual">
               <div class="blob blob-1"></div>
               <div class="blob blob-2"></div>
-              <div class="figure" :class="'figure-' + (slide.mood || 'calm')"></div>
+              <img :src="illustrations[slide.id]" class="slide-illust" alt="" aria-hidden="true" />
             </div>
             <div class="copy">
               <p v-if="index === 0" class="pill pill--light">{{ t('organizerApply.badge') }}</p>
@@ -36,25 +36,34 @@
       </button>
     </div>
 
-    <div v-if="showForm" class="modal-mask" @click.self="closeForm">
-      <div class="modal-sheet">
-        <div class="sheet-header">
-          <div class="sheet-handle"></div>
+    <div v-if="showForm" class="apply-modal" @click.self="closeForm">
+      <div class="apply-modal__sheet">
+        <button type="button" class="apply-modal__close" @click="closeForm" aria-label="close">×</button>
+        <div class="apply-modal__header">
+          <div class="apply-modal__handle"></div>
           <h3>{{ t('organizerApply.form.title') }}</h3>
-          <p class="sheet-desc">{{ t('organizerApply.form.desc') }}</p>
+          <p class="apply-modal__desc">{{ t('organizerApply.form.desc') }}</p>
         </div>
-        <form class="sheet-form" @submit.prevent="submit">
-          <label>
-            {{ t('organizerApply.form.reason') }} <span class="required">*</span>
-            <textarea v-model="form.reason" rows="4" required :placeholder="t('organizerApply.form.reasonPlaceholder')"></textarea>
+        <form class="apply-modal__form" @submit.prevent="submit">
+          <label class="apply-field">
+            <span class="apply-field__label">{{ t('organizerApply.form.reason') }} <span class="required">*</span></span>
+            <textarea
+              v-model="form.reason"
+              rows="4"
+              required
+              :placeholder="t('organizerApply.form.reasonPlaceholder')"
+            ></textarea>
           </label>
-          <label>
-            {{ t('organizerApply.form.experience') }}
-            <textarea v-model="form.experience" rows="3" :placeholder="t('organizerApply.form.experiencePlaceholder')"></textarea>
+          <label class="apply-field">
+            <span class="apply-field__label">{{ t('organizerApply.form.experience') }}</span>
+            <textarea
+              v-model="form.experience"
+              rows="3"
+              :placeholder="t('organizerApply.form.experiencePlaceholder')"
+            ></textarea>
           </label>
-          <p v-if="message" class="status">{{ message }}</p>
-          <div class="sheet-actions">
-            <button type="button" class="secondary secondary--ghost" @click="closeForm">{{ t('common.cancel') }}</button>
+          <p v-if="message" class="status status--inline">{{ message }}</p>
+          <div class="apply-modal__actions">
             <button type="submit" class="primary" :disabled="submitting">
               {{ submitting ? t('organizerApply.ctaProgress') : t('organizerApply.form.submit') }}
             </button>
@@ -72,6 +81,15 @@ import { fetchMyOrganizerApplication, submitOrganizerApplication } from '../../a
 import type { OrganizerApplicationStatus } from '../../types/api';
 import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import illustCover from '../../assets/organizer-apply/cover.svg';
+import illustPain1 from '../../assets/organizer-apply/pain1.svg';
+import illustPain2 from '../../assets/organizer-apply/pain2.svg';
+import illustPain3 from '../../assets/organizer-apply/pain3.svg';
+import illustPain4 from '../../assets/organizer-apply/pain4.svg';
+import illustTurn from '../../assets/organizer-apply/turn.svg';
+import illustHope from '../../assets/organizer-apply/hope.svg';
+import illustAi from '../../assets/organizer-apply/ai.svg';
+import illustCta from '../../assets/organizer-apply/cta.svg';
 
 const auth = useAuth();
 const user = auth.user;
@@ -79,6 +97,17 @@ const initializing = auth.initializing;
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
+const illustrations: Record<string, string> = {
+  cover: illustCover,
+  pain1: illustPain1,
+  pain2: illustPain2,
+  pain3: illustPain3,
+  pain4: illustPain4,
+  turn: illustTurn,
+  hope: illustHope,
+  ai: illustAi,
+  cta: illustCta,
+};
 
 const status = ref<OrganizerApplicationStatus | null>(null);
 const loadingStatus = ref(false);
@@ -219,21 +248,19 @@ const stopAuto = () => {
   }
 };
 
-onMounted(() => {
-  startAuto();
-});
-
-onUnmounted(() => {
-  stopAuto();
-});
-
 const submit = async () => {
   if (!user.value) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(
+        'organizerApply:draft',
+        JSON.stringify({ reason: form.reason ?? '', experience: form.experience ?? '' }),
+      );
+    }
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
     return;
   }
   if (!form.reason.trim()) {
-    message.value = t('organizer.apply.form.reasonRequired');
+    message.value = t('organizerApply.form.reasonRequired');
     return;
   }
   submitting.value = true;
@@ -243,17 +270,41 @@ const submit = async () => {
       reason: form.reason.trim(),
       experience: form.experience.trim() || undefined,
     });
-    message.value = t('organizer.apply.form.success');
+    message.value = t('organizerApply.form.success');
     showForm.value = false;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('organizerApply:draft');
+    }
     await auth.fetchCurrentUser();
     await loadStatus();
   } catch (error) {
     console.error(error);
-    message.value = t('organizer.apply.form.error');
+    message.value = t('organizerApply.form.error');
   } finally {
     submitting.value = false;
   }
 };
+
+onMounted(() => {
+  startAuto();
+  if (typeof window !== 'undefined') {
+    const raw = localStorage.getItem('organizerApply:draft');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { reason?: string; experience?: string };
+        form.reason = parsed.reason || '';
+        form.experience = parsed.experience || '';
+        showForm.value = true;
+      } catch {
+        // ignore
+      }
+    }
+  }
+});
+
+onUnmounted(() => {
+  stopAuto();
+});
 
 </script>
 
@@ -262,14 +313,18 @@ const submit = async () => {
   background: #f4f6fb;
   height: 100vh;
   overflow: hidden;
-  padding: 12px 0 100px;
+  padding: 12px 0 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  position: relative;
+  touch-action: pan-x;
 }
 .swiper {
   width: 100%;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 .swiper-track {
   display: flex;
@@ -285,7 +340,7 @@ const submit = async () => {
   border-radius: 20px;
   padding: 32px 20px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  min-height: calc(70vh - 40px);
+  min-height: calc(60vh);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -333,12 +388,13 @@ const submit = async () => {
   border: none;
   border-radius: 999px;
   padding: 14px 16px;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 17px;
   color: #fff;
   background: linear-gradient(135deg, #2563eb, #22c55e);
   text-align: center;
   width: 100%;
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.25);
+  box-shadow: none;
 }
 .cta-button {
   margin-top: 8px;
@@ -364,27 +420,17 @@ const submit = async () => {
   bottom: -80px;
   left: -60px;
 }
-.figure {
-  position: absolute;
-  width: 140px;
-  height: 140px;
-  border-radius: 24px;
-  top: 24px;
-  left: 24px;
-  background: linear-gradient(160deg, #ffffffaa, #ffffff33);
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.1);
-  transform: rotate(-4deg);
-}
-.figure::after {
-  content: '';
-  position: absolute;
-  inset: 18px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #ffffff88, transparent);
-}
 .copy {
   position: relative;
   z-index: 1;
+}
+.slide-illust {
+  position: absolute;
+  inset: 24px 24px auto auto;
+  width: 200px;
+  height: auto;
+  filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.12));
+  opacity: 0.9;
 }
 .mood-blue .blob-1 {
   background: #9dd2ff;
@@ -445,7 +491,7 @@ const submit = async () => {
 .secondary--ghost {
   background: #f8fafc;
 }
-.modal-mask {
+.apply-modal {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.35);
@@ -455,7 +501,7 @@ const submit = async () => {
   z-index: 30;
   padding: 0 10px 10px;
 }
-.modal-sheet {
+.apply-modal__sheet {
   width: 100%;
   background: #fff;
   border-radius: 20px 20px 0 0;
@@ -463,31 +509,45 @@ const submit = async () => {
   box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.18);
   max-width: 480px;
   margin: 0 auto;
+  position: relative;
 }
-.sheet-header {
+.apply-modal__close {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  color: #1f2937;
+}
+.apply-modal__header {
   text-align: center;
   margin-bottom: 12px;
 }
-.sheet-handle {
+.apply-modal__handle {
   width: 44px;
   height: 4px;
   border-radius: 999px;
   background: #e2e8f0;
   margin: 0 auto 10px;
 }
-.sheet-desc {
+.apply-modal__desc {
   margin: 6px 0 0;
   color: #475569;
   font-size: 13px;
 }
-.sheet-form {
+.apply-modal__form {
   display: flex;
   flex-direction: column;
   gap: 12px;
   width: 100%;
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  list-style-type: none;
 }
-.sheet-form label {
+.apply-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -495,8 +555,16 @@ const submit = async () => {
   color: #0f172a;
   font-size: 14px;
   width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  list-style-type: none;
 }
-.sheet-form textarea {
+.apply-field__label {
+  display: inline-flex;
+  gap: 4px;
+}
+.apply-field textarea {
   width: 100%;
   border-radius: 12px;
   border: 1px solid #cbd5e1;
@@ -505,8 +573,10 @@ const submit = async () => {
   background: #f8fafc;
   min-height: 96px;
   box-sizing: border-box;
+  list-style: none;
+  list-style-type: none;
 }
-.sheet-actions {
+.apply-modal__actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -514,6 +584,7 @@ const submit = async () => {
 }
 .status {
   color: #334155;
+  margin: 0;
 }
 .apply-bottom {
   position: fixed;
@@ -527,15 +598,18 @@ const submit = async () => {
   z-index: 20;
   display: flex;
   justify-content: center;
+  pointer-events: none;
 }
 .apply-bottom .primary {
   max-width: 480px;
+  pointer-events: auto;
+  box-shadow: none;
 }
 .dots {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-bottom: 70px; /* leave space for bottom CTA */
+  margin: 6px 0 78px;
 }
 .dot {
   width: 8px;

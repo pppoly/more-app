@@ -1,0 +1,25 @@
+<svg viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="cta1" x1="60" y1="60" x2="260" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CFE9FF"/>
+      <stop offset="1" stop-color="#E8F6FF"/>
+    </linearGradient>
+    <linearGradient id="door" x1="140" y1="96" x2="196" y2="238" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".95"/>
+      <stop offset=".6" stop-color="#DDF1FF" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#BFE6FF" stop-opacity=".8"/>
+    </linearGradient>
+  </defs>
+  <rect x="26" y="26" width="268" height="268" rx="84" fill="url(#cta1)"/>
+  <circle cx="86" cy="86" r="16" fill="#F2FBFF" fill-opacity=".8"/>
+  <circle cx="238" cy="94" r="14" fill="#D6EDFF" fill-opacity=".8"/>
+  <circle cx="250" cy="230" r="10" fill="#D3ECFF" fill-opacity=".7"/>
+  <rect x="124" y="92" width="92" height="156" rx="20" fill="#F7FCFF" stroke="#CFE5F7" stroke-width="3"/>
+  <rect x="136" y="110" width="68" height="132" rx="16" fill="url(#door)" stroke="#B9D9F3" stroke-width="2"/>
+  <rect x="148" y="122" width="44" height="112" rx="12" fill="#E6F4FF" stroke="#B9D9F3" stroke-width="2"/>
+  <path d="M160 210h24" stroke="#8BBDEB" stroke-width="4" stroke-linecap="round"/>
+  <path d="M110 248h100" stroke="#B5D9F2" stroke-width="10" stroke-linecap="round"/>
+  <path d="M128 258h64" stroke="#9CCBF0" stroke-width="8" stroke-linecap="round"/>
+  <path d="M220 176c12 0 22 10 22 22v12" stroke="#9ACCF2" stroke-width="6" stroke-linecap="round"/>
+  <path d="M102 190c-10 0-18 8-18 18v12" stroke="#9ACCF2" stroke-width="6" stroke-linecap="round"/>
+</svg>

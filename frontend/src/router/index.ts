@@ -187,7 +187,7 @@ const routes: RouteRecordRaw[] = [
     name: 'organizer-apply',
     component: OrganizerApply,
     meta: {
-      devPageName: '主理人申请',
+      devPageName: '主催者申請',
       layout: 'mobile-user',
       mobileOnly: true,
       hideShellHeader: true,

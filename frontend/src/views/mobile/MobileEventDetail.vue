@@ -18,7 +18,12 @@
     <template v-else-if="detail">
       <main class="m-event-content event-content--with-footer">
         <section class="event-hero">
-          <div class="event-hero__overlay"></div>
+          <div class="event-hero__overlay">
+            <button class="event-back-btn" type="button" aria-label="戻る" @click="goBack">
+              <img :src="backIcon" class="event-back-icon" alt="" aria-hidden="true" />
+            </button>
+            <div class="overlay-spacer"></div>
+          </div>
           <div class="event-cover-wrapper" :style="heroBackgroundStyle">
             <div
               class="event-carousel"
@@ -314,6 +319,7 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
 import { loadLiff } from '../../utils/liff';
+import backIcon from '../../assets/icons/arrow-back.svg';
 
 const route = useRoute();
 const router = useRouter();
@@ -617,8 +623,8 @@ const ctaHint = computed(() => {
   }
   if (registrationItem.value) {
     switch (registrationItem.value.status) {
-      case 'pending':
-        return '申込済み：主理人の承認をお待ちください。';
+    case 'pending':
+      return '申込済み：主催者の承認をお待ちください。';
       case 'approved':
         return '承認済み：参加が確定しました。';
       case 'rejected':
@@ -688,8 +694,24 @@ watch(
   },
 );
 
+const fallbackRoute = computed(() =>
+  detail.value?.communitySlug
+    ? { name: 'community-portal', params: { slug: detail.value.communitySlug } }
+    : { name: 'events' },
+);
+
+const canGoBack = () => {
+  if (typeof window === 'undefined') return false;
+  const historyState = router.options?.history?.state as { back?: string } | undefined;
+  return Boolean((historyState && historyState.back) || window.history.length > 1);
+};
+
 const goBack = () => {
-  router.back();
+  if (canGoBack()) {
+    router.back();
+    return;
+  }
+  router.replace(fallbackRoute.value);
 };
 
 const shareEvent = async () => {
@@ -1320,6 +1342,30 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px;
+}
+.event-back-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+}
+.event-back-btn:active {
+  opacity: 0.8;
+}
+.overlay-spacer {
+  width: 40px;
+  height: 40px;
+}
+.event-back-icon {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
 }
 
 .event-cover-wrapper {
