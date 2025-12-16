@@ -1,7 +1,6 @@
 <template>
   <div class="app-shell">
-    <header v-if="showBrandTopBar" class="app-shell__top app-shell__top--sticky">
-      <div class="app-shell__safe-top" />
+    <header v-if="showBrandTopBar" class="app-shell__top app-shell__top--sticky" ref="topbarEl">
       <div class="app-shell__bar">
         <img :src="logoSrc" alt="brand logo" class="app-shell__logo" />
         <span v-if="debugText" class="app-shell__debug">{{ debugText }}</span>
@@ -9,7 +8,7 @@
     </header>
 
     <main class="app-shell__body">
-      <div class="app-shell__content" :style="contentPaddingStyle">
+      <div class="app-shell__content" :style="contentPaddingStyle" ref="contentEl">
         <slot />
       </div>
     </main>
@@ -20,26 +19,79 @@
         <slot name="tabs" />
       </div>
     </nav>
+
+    <div v-if="debugFlag" class="app-shell__debug-overlay">
+      <p>isLiffEntry: {{ isLiffEntry }}</p>
+      <p>isInClient: {{ isLiffClient }}</p>
+      <p>uaLine: {{ uaLine }}</p>
+      <p>topbarHeight: {{ topbarHeight }}px</p>
+      <p>contentPaddingTop: {{ contentPaddingTop }}px</p>
+      <p>oldHeaderCount: {{ oldHeaderCount }}</p>
+      <p>initialURL: {{ initialURL }}</p>
+      <p>finalURL: {{ finalURL }}</p>
+      <p>didRedirect: {{ didRedirect }}</p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, useSlots } from 'vue';
+import { computed, onMounted, ref, useSlots, watch } from 'vue';
 
 const props = defineProps<{
   showBrandTopBar?: boolean;
   logoSrc: string;
   debugText?: string;
+  debugFlag?: boolean;
+  isLiffClient?: boolean;
+  uaLine?: boolean;
+  isLiffEntry?: boolean;
 }>();
 
 const slots = useSlots();
 const hasTabs = computed(() => Boolean(slots.tabs));
-const contentPaddingStyle = computed(() => {
-  if (props.showBrandTopBar) {
-    return { paddingTop: 'calc(52px + env(safe-area-inset-top, 0px))' };
+const topbarEl = ref<HTMLElement | null>(null);
+const contentEl = ref<HTMLElement | null>(null);
+const topbarHeight = ref(0);
+const contentPaddingTop = ref(0);
+const oldHeaderCount = ref(0);
+const initialURL = ref('');
+const finalURL = ref('');
+const didRedirect = ref(false);
+
+const contentPaddingStyle = computed(() => ({
+  paddingTop: '0px',
+}));
+
+const measure = () => {
+  topbarHeight.value = topbarEl.value?.getBoundingClientRect().height || 0;
+  const style = contentEl.value ? window.getComputedStyle(contentEl.value) : null;
+  const pt = style ? parseFloat(style.paddingTop || '0') : 0;
+  contentPaddingTop.value = Number.isFinite(pt) ? pt : 0;
+  if (props.debugFlag) {
+    const headers = Array.from(document.querySelectorAll('.mobile-shell__header'));
+    oldHeaderCount.value = headers.length;
+    if (oldHeaderCount.value > 0) {
+      console.warn('[debug] Found legacy headers', oldHeaderCount.value, headers.map((el) => el.className));
+    }
   }
-  return {};
+};
+
+onMounted(() => {
+  if (typeof window !== 'undefined' && (window as any).__URL_TRACE) {
+    const trace = (window as any).__URL_TRACE;
+    initialURL.value = trace.initialURL ?? '';
+    finalURL.value = trace.finalURL ?? '';
+    didRedirect.value = !!trace.didRedirect;
+  }
+  measure();
 });
+
+watch(
+  () => props.showBrandTopBar,
+  () => {
+    measure();
+  },
+);
 </script>
 
 <style scoped>
@@ -61,12 +113,9 @@ const contentPaddingStyle = computed(() => {
   z-index: 1200;
 }
 
-.app-shell__safe-top {
-  height: env(safe-area-inset-top, 0px);
-}
-
 .app-shell__bar {
-  height: 52px;
+  height: calc(52px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,5 +167,18 @@ const contentPaddingStyle = computed(() => {
   align-items: center;
   justify-content: space-around;
   padding: 0 12px;
+}
+
+.app-shell__debug-overlay {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  z-index: 1400;
+  line-height: 1.4;
 }
 </style>

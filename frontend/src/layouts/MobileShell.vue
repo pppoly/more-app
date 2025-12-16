@@ -1,12 +1,10 @@
 <template>
 <div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': forceHideHeader }">
-  <BrandTopBar
-    v-if="forceHideHeader && showBrandTopBar"
-    :logo-src="brandLogo || defaultLogo"
-    :show-debug="showBrandDebug"
-    :debug-text="brandDebugText"
-  />
-  <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
+  <header
+    v-if="routeReady && !forceHideHeader && !showBrandTopBar && !route.meta?.hideShellHeader"
+    class="mobile-shell__header"
+    :style="headerSafeAreaStyle"
+  >
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
       <span v-else>創</span>
@@ -105,7 +103,6 @@ import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
-import BrandTopBar from '../components/common/BrandTopBar.vue';
 
 const props = defineProps<{ forceHideHeader?: boolean; showBrandTopBar?: boolean; showBrandDebug?: boolean; brandDebugText?: string }>();
 const route = useRoute();
@@ -119,13 +116,7 @@ const scrollPositions = new Map<string, number>();
 const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
-const defaultLogo = new URL('../assets/images/logo1.svg', import.meta.url).href;
-const contentTopPaddingStyle = computed(() => {
-  if (props.forceHideHeader && props.showBrandTopBar) {
-    return { paddingTop: 'calc(52px + env(safe-area-inset-top, 0px))' };
-  }
-  return {};
-});
+const contentTopPaddingStyle = computed(() => ({}));
 
 const tabIcons = {
   events: {

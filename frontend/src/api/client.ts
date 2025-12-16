@@ -276,6 +276,17 @@ export async function lineLiffTokenLogin(payload: {
   return data;
 }
 
+export async function lineLiffProfileLogin(payload: {
+  lineUserId: string;
+  displayName?: string | null;
+  pictureUrl?: string | null;
+}): Promise<DevLoginResponse> {
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff-profile', payload, {
+    headers: { 'X-LIFF-ENTRY': '1' },
+  });
+  return data;
+}
+
 export async function sendAnalyticsEvents(events: AnalyticsEventInput[]) {
   if (!events.length) return { success: true, stored: 0 };
   const { data } = await apiClient.post<AnalyticsEventResponse>('/analytics/events', { events });

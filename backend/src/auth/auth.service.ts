@@ -147,6 +147,15 @@ export class AuthService {
 
   async exchangeLineToken(code: string) {
     const { channelId, channelSecret, redirectUri } = this.lineConfig;
+    if (!channelId) {
+      throw new BadRequestException('LINE_CHANNEL_ID is missing');
+    }
+    if (!channelSecret) {
+      throw new BadRequestException('LINE_CHANNEL_SECRET is missing');
+    }
+    if (!redirectUri) {
+      throw new BadRequestException('LINE_REDIRECT_URI is missing');
+    }
     const url = 'https://api.line.me/oauth2/v2.1/token';
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -321,10 +330,24 @@ export class AuthService {
     return { accessToken: signed, user };
   }
 
-  private async upsertLineUser(lineUserId: string, displayName: string, pictureUrl?: string | null) {
+  async lineLiffProfile(lineUserId: string, displayName?: string | null, pictureUrl?: string | null) {
+    const name = displayName?.trim() || 'LINEユーザー';
+    const user = await this.upsertLineUser(lineUserId, name, pictureUrl, { preserveExistingProfile: true });
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken, user };
+  }
+
+  private async upsertLineUser(
+    lineUserId: string,
+    displayName: string,
+    pictureUrl?: string | null,
+    options?: { preserveExistingProfile?: boolean },
+  ) {
     let user = await this.prisma.user.findFirst({
       where: { lineUserId },
     });
+
+    const preserve = options?.preserveExistingProfile ?? false;
 
     if (!user) {
       user = await this.prisma.user.create({
@@ -337,19 +360,25 @@ export class AuthService {
       });
     }
 
-    const storedAvatar = await this.saveLineAvatar(user.id, pictureUrl);
-    const updateData: Record<string, any> = {
-      name: displayName,
-      language: 'ja',
-      preferredLocale: 'ja',
-    };
-    if (storedAvatar) {
+    const shouldStoreAvatar = !preserve || !user.avatarUrl;
+    const storedAvatar = shouldStoreAvatar ? await this.saveLineAvatar(user.id, pictureUrl) : null;
+    const updateData: Record<string, any> = {};
+
+    if (!preserve || !user.name) {
+      updateData.name = displayName;
+    }
+    updateData.language = 'ja';
+    updateData.preferredLocale = 'ja';
+    if (storedAvatar && (!preserve || !user.avatarUrl)) {
       updateData.avatarUrl = storedAvatar;
     }
-    user = await this.prisma.user.update({
-      where: { id: user.id },
-      data: updateData,
-    });
+
+    if (Object.keys(updateData).length > 0) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
+    }
 
     return user;
   }

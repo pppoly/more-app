@@ -7,6 +7,7 @@ const LIFF_INIT_TIMEOUT_MS = 10_000;
 
 const isLiffReady = ref(false);
 const hasWindow = () => typeof window !== 'undefined';
+const isLiffClientCapable = ref(false);
 
 let initStarted = false;
 let finalized = false;
@@ -58,11 +59,16 @@ export async function loadLiff(liffId?: string): Promise<typeof liff> {
     bootstrapLiff();
   }
   await readyPromise;
+  try {
+    isLiffClientCapable.value = !!(liff.isInClient && liff.isInClient());
+  } catch {
+    isLiffClientCapable.value = false;
+  }
   return liff;
 }
 
 export const liffInstance = liff;
-export { isLiffReady };
+export { isLiffReady, isLiffClientCapable };
 
 export async function getLiffProfile(): Promise<{
   userId: string;

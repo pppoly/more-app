@@ -1,5 +1,13 @@
-import { computed, reactive } from 'vue';
-import { devLogin as apiDevLogin, fetchMe, lineLiffTokenLogin, onUnauthorized, setAccessToken as applyClientToken, setRequestHeaderProvider } from '../api/client';
+import { computed, reactive, ref } from 'vue';
+import {
+  devLogin as apiDevLogin,
+  fetchMe,
+  lineLiffProfileLogin,
+  lineLiffTokenLogin,
+  onUnauthorized,
+  setAccessToken as applyClientToken,
+  setRequestHeaderProvider,
+} from '../api/client';
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
@@ -26,9 +34,11 @@ const state = reactive<AuthState>({
 let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
+let liffProfilePromise: Promise<void> | null = null;
 const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
+const needsLiffOpen = ref(false);
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
@@ -65,6 +75,45 @@ function redirectToLineOauth() {
   const redirectUri = window.location.href;
   const url = `${backendBase}/api/v1/auth/line/redirect?redirect=${encodeURIComponent(redirectUri)}`;
   window.location.href = url;
+}
+
+async function loginWithLiffProfile(isLiffEntry: boolean) {
+  if (!isLiffEntry || state.accessToken) return;
+  if (!LIFF_ID) return;
+  if (liffProfilePromise) return liffProfilePromise;
+  liffProfilePromise = (async () => {
+    try {
+      const liff = await loadLiff(LIFF_ID);
+      if (!isLiffReady.value) {
+        needsLiffOpen.value = true;
+        return;
+      }
+      if (!liff.isInClient || !liff.isInClient()) {
+        needsLiffOpen.value = true;
+        return;
+      }
+      const profile = await liff.getProfile().catch(() => null);
+      if (!profile?.userId) {
+        needsLiffOpen.value = true;
+        return;
+      }
+      const response = await lineLiffProfileLogin({
+        lineUserId: profile.userId,
+        displayName: profile.displayName,
+        pictureUrl: profile.pictureUrl,
+      });
+      setToken(response.accessToken);
+      state.user = normalizeUser(response.user);
+      applyUserLocale(state.user);
+      needsLiffOpen.value = false;
+    } catch (error) {
+      console.warn('LIFF profile login failed', error);
+      needsLiffOpen.value = true;
+    } finally {
+      liffProfilePromise = null;
+    }
+  })();
+  return liffProfilePromise;
 }
 
 async function ensureLiffLogin() {
@@ -224,6 +273,8 @@ export function useAuth() {
     logout,
     setToken,
     loginWithLiff,
+    loginWithLiffProfile,
+    needsLiffOpen: computed(() => needsLiffOpen.value),
   };
 }
 
