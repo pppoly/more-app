@@ -1,7 +1,6 @@
 <template>
   <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
     <ConsoleTopBar v-if="isMobileLayout" title="イベント作成" @back="goBack" />
-    <p v-if="isMobileLayout && aiPrefillNotice" class="ai-hint">{{ aiPrefillNotice }}</p>
     <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
@@ -78,6 +77,16 @@
             <button type="button" class="ghost-link" @click="goToEventAssistant">AI にもう一度任せる</button>
             <button type="button" class="primary-next" @click="closePasteResult">フォームで確認する</button>
           </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="isMobileLayout && showMobileNotice && aiPrefillNotice" class="mobile-notice-overlay" @click.self="showMobileNotice = false">
+        <div class="mobile-notice-card">
+          <p class="mobile-notice-title">AI からの提案</p>
+          <p class="mobile-notice-text">{{ aiPrefillNotice }}</p>
+          <button type="button" class="mobile-notice-btn" @click="showMobileNotice = false">OK</button>
         </div>
       </div>
     </Teleport>
@@ -162,7 +171,7 @@
       </div>
     </div>
 
-    <section v-else-if="aiPrefillNotice" class="ai-prefill">
+    <section v-else-if="aiPrefillNotice && !isMobileLayout" class="ai-prefill">
       <p>{{ aiPrefillNotice }}</p>
     </section>
 
@@ -837,6 +846,7 @@ const aiConfirmQuestions = ref<Array<{ id: string; text: string; checked: boolea
 const builderHintText = 'フォームに欲しい項目を並べてください。順番はそのまま表示されます。';
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
+const showMobileNotice = ref(false);
 const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
 const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
@@ -1371,6 +1381,9 @@ const applyAiDraft = (draft: any) => {
   aiChecklist.value = toChecklistItems(draft.checklist || []);
   aiConfirmQuestions.value = toChecklistItems(draft.confirmQuestions || []);
   aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
+  if (isMobileLayout) {
+    showMobileNotice.value = true;
+  }
 };
 
 const loadAiDraftFromSession = () => {
@@ -2910,6 +2923,15 @@ watch(
 );
 
 watch(
+  () => aiPrefillNotice.value,
+  (val) => {
+    if (isMobileLayout && val) {
+      showMobileNotice.value = true;
+    }
+  },
+);
+
+watch(
   () => eventCommunityId.value,
   () => {
     copyEvents.value = [];
@@ -3322,6 +3344,53 @@ select {
   font-size: 15px;
   font-weight: 700;
   color: #0f172a;
+}
+
+.mobile-notice-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 80;
+}
+
+.mobile-notice-card {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-notice-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.mobile-notice-text {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
+.mobile-notice-btn {
+  margin-top: 4px;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #2563eb, #22c55e);
+  color: #fff;
+  font-weight: 700;
 }
 
 .ios-add-btn {

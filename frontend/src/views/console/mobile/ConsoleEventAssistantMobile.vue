@@ -1,17 +1,32 @@
 <template>
   <div class="assistant-shell" :style="screenStyle">
-    <ConsoleTopBar class="assistant-topbar" title="活动助手" :sticky="true" @back="goBack" />
+    <div class="assistant-topbar-wrap">
+      <ConsoleTopBar class="assistant-topbar" title="イベントアシスタント" :sticky="true" @back="goBack" />
+      <div class="top-actions" v-if="communityId">
+        <button type="button" class="new-session-btn" @click="startNewConversation">
+          ＋ 新しい相談
+        </button>
+        <button
+          type="button"
+          class="history-btn"
+          @click="goHistory"
+          aria-label="履歴"
+          title="履歴"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M4 8.5c0-2.485 2.21-4.5 4.933-4.5h6.134C17.79 4 20 6.015 20 8.5v7c0 2.485-2.21 4.5-4.933 4.5H8.933C6.21 20 4 17.985 4 15.5v-7Z" />
+            <path d="M8 6.5V4" stroke-linecap="round" />
+            <path d="M16 6.5V4" stroke-linecap="round" />
+            <path d="M8 10.5h8" stroke-linecap="round" />
+            <path d="M8 14h5" stroke-linecap="round" />
+            <path d="M8 17.5h3" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
 
     <section class="chat-surface">
       <div class="chat-log" ref="chatLogRef">
-        <div
-          v-for="(intro, idx) in introMessages"
-          :key="`intro-${idx}`"
-          class="chat-bubble chat-bubble--assistant chat-bubble--intro"
-        >
-          <p class="chat-text">{{ intro }}</p>
-        </div>
-
         <div
           v-for="msg in chatMessages"
           :key="msg.id"
@@ -30,10 +45,10 @@
               class="inline-link"
               @click="goToForm(false)"
             >
-              直接配置表单
+              すぐにフォームを編集
             </button>
             <div v-if="msg.options?.length && msg.id === currentQuestionId" class="chat-follow-up">
-              <p class="follow-up-label">下一步</p>
+              <p class="follow-up-label">次の質問</p>
               <p class="follow-up-text">{{ msg.options[0] }}</p>
               <div class="follow-up-actions">
                 <button
@@ -60,13 +75,13 @@
               </div>
             </div>
             <div v-if="msg.writerSummary" class="summary-block">
-              <p class="summary-eyebrow">AI 草稿摘要</p>
+              <p class="summary-eyebrow">AI 下書きサマリー</p>
               <ul class="summary-list">
-                <li v-if="msg.writerSummary.headline"><strong>标题</strong>{{ msg.writerSummary.headline }}</li>
-                <li v-if="msg.writerSummary.audience"><strong>受众</strong>{{ msg.writerSummary.audience }}</li>
-                <li v-if="msg.writerSummary.logistics"><strong>细节</strong>{{ msg.writerSummary.logistics }}</li>
-                <li v-if="msg.writerSummary.riskNotes"><strong>风险</strong>{{ msg.writerSummary.riskNotes }}</li>
-                <li v-if="msg.writerSummary.nextSteps"><strong>下一步</strong>{{ msg.writerSummary.nextSteps }}</li>
+                <li v-if="msg.writerSummary.headline"><strong>タイトル</strong>{{ msg.writerSummary.headline }}</li>
+                <li v-if="msg.writerSummary.audience"><strong>対象</strong>{{ msg.writerSummary.audience }}</li>
+                <li v-if="msg.writerSummary.logistics"><strong>詳細</strong>{{ msg.writerSummary.logistics }}</li>
+                <li v-if="msg.writerSummary.riskNotes"><strong>リスク</strong>{{ msg.writerSummary.riskNotes }}</li>
+                <li v-if="msg.writerSummary.nextSteps"><strong>次のステップ</strong>{{ msg.writerSummary.nextSteps }}</li>
               </ul>
             </div>
           </div>
@@ -77,13 +92,13 @@
             </div>
             <div class="proposal-actions" v-if="msg.payload?.raw">
               <button type="button" class="ghost-link" @click.stop="applyProposalToForm(msg.payload?.raw)">
-                送到表单
+                フォームに反映
               </button>
               <button type="button" class="ghost-link" @click.stop="saveProposalDraft(msg.payload?.raw)">
-                保存草案
+                下書きを保存
               </button>
               <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
-                查看全文
+                全文を見る
               </button>
             </div>
           </div>
@@ -94,7 +109,7 @@
           <span class="typing-dot"></span>
           <span class="typing-dot"></span>
           <span class="typing-dot"></span>
-          <p class="chat-text">AI 正在整理想法…</p>
+          <p class="chat-text">AI がアイデアを整理しています…</p>
         </div>
         <div v-if="aiError" class="chat-bubble chat-bubble--assistant chat-bubble--error">
           <p class="chat-text">{{ aiError }}</p>
@@ -117,7 +132,7 @@
           <span class="i-lucide-send"></span>
         </button>
       </div>
-      <p class="input-hint">随便输入一句，AI 会继续追问或生成方案</p>
+      <p class="input-hint">ひとこと送ると、AI が質問を続けたり案を出します</p>
     </footer>
   </div>
   <teleport to="body">
@@ -126,7 +141,7 @@
         <section class="plan-preview-panel">
           <header class="plan-preview-head">
             <div>
-              <p class="plan-preview-label">AI 草案</p>
+              <p class="plan-preview-label">AI 下書き</p>
               <p class="plan-preview-title">{{ previewPlanTitle }}</p>
             </div>
             <button type="button" class="plan-preview-close" @click="closePlanPreview">
@@ -135,21 +150,21 @@
           </header>
           <div class="plan-preview-scroll">
             <article class="plan-preview-section" v-if="previewPlanDescription">
-              <p class="plan-preview-subtitle">活动亮点</p>
+              <p class="plan-preview-subtitle">イベントのポイント</p>
               <p class="plan-preview-text">{{ previewPlanDescription }}</p>
             </article>
             <div class="plan-preview-grid">
               <article v-if="previewPlanNotes">
-                <p class="plan-preview-subtitle">备注/准备</p>
+                <p class="plan-preview-subtitle">備考 / 準備</p>
                 <p class="plan-preview-text">{{ previewPlanNotes }}</p>
               </article>
               <article v-if="previewPlanRisk">
-                <p class="plan-preview-subtitle">风险提示</p>
+                <p class="plan-preview-subtitle">リスク</p>
                 <p class="plan-preview-text">{{ previewPlanRisk }}</p>
               </article>
             </div>
             <article class="plan-preview-section" v-if="previewPlanLogistics.length">
-              <p class="plan-preview-subtitle">时间 & 地点</p>
+              <p class="plan-preview-subtitle">時間・場所</p>
               <ul class="plan-preview-list">
                 <li v-for="item in previewPlanLogistics" :key="`preview-logistics-${item.label}`">
                   <strong>{{ item.label }}：</strong>{{ item.value }}
@@ -157,7 +172,7 @@
               </ul>
             </article>
             <article class="plan-preview-section" v-if="previewPlanTickets.length">
-              <p class="plan-preview-subtitle">票务设置</p>
+              <p class="plan-preview-subtitle">チケット設定</p>
               <ul class="plan-preview-ticket-list">
                 <li v-for="(ticket, idx) in previewPlanTickets" :key="`preview-ticket-${idx}`">
                   <span>{{ ticket.name }}</span>
@@ -166,18 +181,18 @@
               </ul>
             </article>
             <article class="plan-preview-section" v-if="previewPlanRequirements.length">
-              <p class="plan-preview-subtitle">参加要求</p>
+              <p class="plan-preview-subtitle">参加要件</p>
               <ul class="plan-preview-list">
                 <li v-for="(req, idx) in previewPlanRequirements" :key="`preview-req-${idx}`">
-                  {{ req.label }}{{ req.type === 'must' ? '（必需）' : '' }}
+                  {{ req.label }}{{ req.type === 'must' ? '（必須）' : '' }}
                 </li>
               </ul>
             </article>
             <article class="plan-preview-section" v-if="previewPlanFormFields.length">
-              <p class="plan-preview-subtitle">报名表字段</p>
+              <p class="plan-preview-subtitle">申込フォーム項目</p>
               <ul class="plan-preview-list">
                 <li v-for="(field, idx) in previewPlanFormFields" :key="`preview-form-${idx}`">
-                  {{ field.label }} · {{ field.type }}{{ field.required ? '（必填）' : '' }}
+                  {{ field.label }} · {{ field.type }}{{ field.required ? '（必須）' : '' }}
                 </li>
               </ul>
             </article>
@@ -197,6 +212,7 @@ import {
   fetchAssistantProfileDefaults,
   generateEventContent,
   requestEventAssistantReply,
+  fetchEventAssistantLogs,
   saveEventAssistantLog,
   fetchConsoleCommunity,
 } from '../../../api/client';
@@ -248,19 +264,21 @@ interface AssistantHistoryEntry {
 
 const HISTORY_STORAGE_KEY = 'console-ai-assistant-history';
 const DRAFT_STORAGE_KEY = 'console-ai-assistant-drafts';
+const RESUME_WINDOW_HOURS = 24;
 
 const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
 const communityId = computed(() => route.params.communityId as string | undefined);
+const forceNewSession = computed(() => route.query.newSession === '1');
 const activeCommunityDetail = ref<ConsoleCommunityDetail | null>(null);
 const introConversationStarted = ref(false);
-const welcomeText = '欢迎回来，直接说出活动想法即可开始。';
+const welcomeText = 'おかえりなさい。どんなイベントを作りたいか教えてください。';
 const leadPrompts = [
-  '先告诉我你在计划什么活动场景？',
-  '希望吸引谁参加？有没有必须提前说明的限制？',
-  '有确定的时间、地点或氛围吗？随便描述就好。',
+  'まず、どんなイベントを考えていますか？',
+  '誰に来てほしいですか？参加条件はありますか？',
+  '日時や場所、雰囲気が決まっていればゆるく教えてください。',
 ];
 
 const qaState = reactive({
@@ -313,20 +331,23 @@ const lastPromptVersion = ref('coach-v2');
 const currentStage = ref<EventAssistantStage>('coach');
 const pendingQuestion = ref<string | null>(null);
 const stageLabels: Record<EventAssistantStage, string> = {
-  coach: '探索对话',
-  editor: '补充细节',
-  writer: '生成草案',
+  coach: 'ディスカッション',
+  editor: '詳細調整',
+  writer: '下書き作成',
 };
 const lastTurnCount = ref(0);
 const lastLanguage = ref('ja');
+const activeLogId = ref<string | null>(null);
 const assistantStatusText = computed(() => {
   switch (lastAssistantStatus.value) {
+    case 'completed':
+      return '完了';
     case 'ready':
-      return '方案已生成';
+      return '提案ができました';
     case 'options':
-      return '候选提案';
+      return '候補提案';
     default:
-      return '信息收集中';
+      return '情報収集中';
   }
 });
 
@@ -363,16 +384,16 @@ const buildPlanLogistics = (plan?: (GeneratedEventContent & { summary?: string }
   if (!logistics) return [];
   const entries: Array<{ label: string; value: string }> = [];
   if (logistics.startTime) {
-    entries.push({ label: '开始时间', value: formatDateTime(logistics.startTime) });
+    entries.push({ label: '開始', value: formatDateTime(logistics.startTime) });
   }
   if (logistics.endTime) {
-    entries.push({ label: '结束时间', value: formatDateTime(logistics.endTime) });
+    entries.push({ label: '終了', value: formatDateTime(logistics.endTime) });
   }
   if (logistics.locationText) {
-    entries.push({ label: '地点', value: logistics.locationText });
+    entries.push({ label: '場所', value: logistics.locationText });
   }
   if (logistics.locationNote) {
-    entries.push({ label: '地点备注', value: logistics.locationNote });
+    entries.push({ label: '備考', value: logistics.locationNote });
   }
   return entries;
 };
@@ -398,7 +419,7 @@ const previewPlanTickets = computed(() => getPlanTickets(planPreview.value));
 const previewPlanRequirements = computed(() => getPlanRequirements(planPreview.value));
 const previewPlanFormFields = computed(() => getPlanFormFields(planPreview.value));
 const formatTicketPrice = (price?: number) => {
-  if (price == null) return '免费';
+  if (price == null) return '無料';
   return `¥${price.toLocaleString('ja-JP')}`;
 };
 const formatDateTime = (value: string) => {
@@ -438,9 +459,18 @@ const currentPrompt = computed(() => {
 
 watch(
   () => communityId.value,
-  () => {
+  async () => {
     introConversationStarted.value = false;
-    loadActiveCommunityDetail();
+    activeLogId.value = null;
+    chatMessages.value = [];
+    aiResult.value = null;
+    await loadActiveCommunityDetail();
+    const resumed = await tryResumeConversation();
+    if (!resumed) {
+      startNewConversation();
+    } else {
+      scrollChatToBottom(true);
+    }
   },
 );
 
@@ -505,9 +535,6 @@ const seedWelcomeMessages = () => {
 const loadActiveCommunityDetail = async () => {
   if (!communityId.value) {
     activeCommunityDetail.value = null;
-    introConversationStarted.value = false;
-    seedWelcomeMessages();
-    await startIntroConversation();
     return;
   }
   try {
@@ -515,10 +542,6 @@ const loadActiveCommunityDetail = async () => {
   } catch (error) {
     console.warn('Failed to load community detail', error);
     activeCommunityDetail.value = null;
-  } finally {
-    introConversationStarted.value = false;
-    seedWelcomeMessages();
-    await startIntroConversation();
   }
 };
 
@@ -716,7 +739,7 @@ const persistAssistantLog = async (
           }
         : null,
     }));
-    await saveEventAssistantLog(communityId.value, {
+    const saved = await saveEventAssistantLog(communityId.value, {
       stage,
       summary,
       qaState: JSON.parse(JSON.stringify(qaState)),
@@ -739,7 +762,9 @@ const persistAssistantLog = async (
         editorChecklist: meta?.editorChecklist ?? [],
         writerSummary: meta?.writerSummary ?? null,
       },
+      logId: activeLogId.value,
     });
+    activeLogId.value = saved.id;
   } catch (err) {
     console.warn('Failed to save assistant log', err);
   } finally {
@@ -871,6 +896,108 @@ const buildConversationMessages = () => {
     }));
 };
 
+const isInProgressStatus = (status?: string | null) => {
+  if (!status) return true;
+  return status !== 'completed' && status !== 'ready';
+};
+
+const computeQuestionIndexFromQaState = () => {
+  let filled = 0;
+  if (qaState.topic) filled += 1;
+  if (qaState.audience) filled += 1;
+  if (qaState.style) filled += 1;
+  if (qaState.details) filled += 1;
+  return Math.min(filled, questions.length);
+};
+
+const resetQaState = () => {
+  qaState.baseLanguage = profileDefaults.value.baseLanguage;
+  qaState.topic = '';
+  qaState.audience = '';
+  qaState.style = '';
+  qaState.details = '';
+};
+
+const restoreFromLog = (log: ConsoleEventAssistantLog) => {
+  const mappedMessages: ChatMessage[] = (log.messages || []).map((msg) => ({
+    id: msg.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    role: msg.role === 'assistant' ? 'assistant' : 'user',
+    type: msg.type === 'proposal' ? 'proposal' : 'text',
+    content: msg.content || '',
+    createdAt:
+      msg.createdAt ||
+      new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+    payload:
+      msg.type === 'proposal' && msg.payload
+        ? {
+            title: (msg.payload as any).title ?? '',
+            description: (msg.payload as any).description ?? '',
+          }
+        : undefined,
+    includeInContext: true,
+  }));
+  chatMessages.value = mappedMessages.slice(-200);
+  if (log.qaState) {
+    qaState.baseLanguage = (log.qaState as any).baseLanguage || qaState.baseLanguage;
+    qaState.topic = (log.qaState as any).topic || '';
+    qaState.audience = (log.qaState as any).audience || '';
+    qaState.style = (log.qaState as any).style || '';
+    qaState.details = (log.qaState as any).details || '';
+  }
+  currentQuestionIndex.value = computeQuestionIndexFromQaState();
+  lastAssistantStatus.value = (log.status as EventAssistantStatus) || 'collecting';
+  lastPromptVersion.value = log.promptVersion || lastPromptVersion.value;
+  lastTurnCount.value = log.turnCount || 0;
+  lastLanguage.value = (log.language as string) || lastLanguage.value;
+  activeLogId.value = log.id;
+  introConversationStarted.value = true;
+  pendingQuestion.value = null;
+  currentQuestionId.value = null;
+  scrollChatToBottom(true);
+};
+
+const tryResumeConversation = async () => {
+  if (!communityId.value || forceNewSession.value) return false;
+  try {
+    const existingLogs = await fetchEventAssistantLogs(communityId.value);
+    const now = Date.now();
+    const recentInProgress = existingLogs
+      .filter((log) => {
+        const createdAt = new Date((log as any).updatedAt || log.createdAt).getTime();
+        const withinWindow = now - createdAt <= RESUME_WINDOW_HOURS * 60 * 60 * 1000;
+        return isInProgressStatus(log.status) && withinWindow;
+      })
+      .sort(
+        (a, b) =>
+          new Date((b as any).updatedAt || b.createdAt).getTime() -
+          new Date((a as any).updatedAt || a.createdAt).getTime(),
+      );
+    if (recentInProgress.length) {
+      restoreFromLog(recentInProgress[0]);
+      return true;
+    }
+  } catch (err) {
+    console.warn('Failed to resume assistant log', err);
+  }
+  return false;
+};
+
+const startNewConversation = () => {
+  activeLogId.value = null;
+  chatMessages.value = [];
+  aiResult.value = null;
+  pendingQuestion.value = null;
+  currentQuestionId.value = null;
+  currentQuestionIndex.value = 0;
+  aiError.value = null;
+  latestChecklist.value = [];
+  latestConfirmQuestions.value = [];
+  resetQaState();
+  introConversationStarted.value = false;
+  seedWelcomeMessages();
+  startIntroConversation();
+};
+
 const getProfileValue = (value: string | undefined | null, key: keyof typeof profileDefaults.value) => {
   if (value && value.trim()) {
     return value;
@@ -891,7 +1018,23 @@ const goBack = () => {
   router.back();
 };
 
-const goToForm = (useAi: boolean) => {
+const goHistory = () => {
+  if (!communityId.value) return;
+  router.push({ name: 'ConsoleMobileAssistantLogs', params: { communityId: communityId.value } });
+};
+
+const markSessionCompleted = async () => {
+  if (!communityId.value) return;
+  await persistAssistantLog(currentStage.value, buildQaSummary(), {
+    status: 'completed',
+    promptVersion: lastPromptVersion.value,
+    turnCount: lastTurnCount.value,
+    language: lastLanguage.value,
+  });
+  lastAssistantStatus.value = 'completed';
+};
+
+const goToForm = async (useAi: boolean) => {
   if (!communityId.value) return;
   if (useAi && aiResult.value) {
     sessionStorage.setItem(
@@ -916,12 +1059,15 @@ const goToForm = (useAi: boolean) => {
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   }
   toast.show('AI案をフォームに送信しました。次の画面で項目を確認してください。', 'info');
+  await markSessionCompleted();
   router.push({
     name: 'ConsoleMobileEventForm',
     params: { communityId: communityId.value },
     query: { source: 'ai-assistant' },
   });
 };
+
+const removeScrollListener = ref<(() => void) | null>(null);
 
 onMounted(async () => {
   await loadProfileDefaults();
@@ -931,6 +1077,11 @@ onMounted(async () => {
   }
   loadHistoryEntries();
   await loadActiveCommunityDetail();
+  const resumed = await tryResumeConversation();
+  if (!resumed) {
+    seedWelcomeMessages();
+    await startIntroConversation();
+  }
   nextTick(() => {
     const container = chatLogRef.value;
     if (!container) return;
@@ -941,9 +1092,7 @@ onMounted(async () => {
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
-    onUnmounted(() => {
-      container?.removeEventListener('scroll', handleScroll);
-    });
+    removeScrollListener.value = () => container.removeEventListener('scroll', handleScroll);
   });
 });
 
@@ -962,6 +1111,13 @@ if (typeof window !== 'undefined' && window.visualViewport) {
     window.visualViewport?.removeEventListener('scroll', handleViewport);
   });
 }
+
+onUnmounted(() => {
+  if (removeScrollListener.value) {
+    removeScrollListener.value();
+    removeScrollListener.value = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -983,9 +1139,46 @@ if (typeof window !== 'undefined' && window.visualViewport) {
 }
 
 .assistant-topbar {
+  position: relative;
+  z-index: 30;
+}
+
+.assistant-topbar-wrap {
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: 35;
+  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
+}
+
+.top-actions {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 36;
+}
+
+.new-session-btn {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  font-weight: 700;
+}
+
+.history-btn {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-surface {

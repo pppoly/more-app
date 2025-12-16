@@ -1228,6 +1228,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   padding: 16px;
   box-shadow: 0 -18px 30px rgba(15, 23, 42, 0.2);
 }
+
 .picker-head {
   display: flex;
   justify-content: space-between;

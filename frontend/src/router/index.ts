@@ -301,6 +301,13 @@ const routes: RouteRecordRaw[] = [
         meta: { hideTabbar: true, hideShellHeader: true, flushContent: true, devPageName: 'Console-助手面板' },
       },
       {
+        path: 'communities/:communityId/event-assistant/logs',
+        name: 'ConsoleMobileAssistantLogs',
+        component: () => import('../views/console/mobile/ConsoleEventAssistantLogsMobile.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: { hideTabbar: true, hideShellHeader: true, flushContent: true, devPageName: 'Console-助手履歴' },
+      },
+      {
         path: 'communities/:communityId/events/form',
         name: 'ConsoleMobileEventForm',
         component: () => import('../views/console/EventForm.vue'),

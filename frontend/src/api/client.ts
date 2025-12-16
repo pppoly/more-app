@@ -441,6 +441,12 @@ export async function saveEventAssistantLog(
     qaState?: Record<string, unknown>;
     messages: unknown;
     aiResult?: unknown;
+    status?: string;
+    promptVersion?: string | null;
+    turnCount?: number | null;
+    language?: string | null;
+    meta?: Record<string, unknown> | null;
+    logId?: string | null;
   },
 ): Promise<ConsoleEventAssistantLog> {
   const { data } = await apiClient.post<ConsoleEventAssistantLog>(
