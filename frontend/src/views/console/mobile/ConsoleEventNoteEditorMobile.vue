@@ -1,65 +1,42 @@
 <template>
   <section class="note-editor">
     <header class="note-editor__nav">
-      <button type="button" class="nav-btn ghost" @click="handleCancel">取消</button>
-      <p>活动详情</p>
+      <button type="button" class="nav-btn ghost" @click="handleCancel">キャンセル</button>
+      <p>イベント詳細</p>
       <button type="button" class="nav-btn primary" @click="handleSave">
-        {{ saving ? '保存中…' : '完成' }}
+        {{ saving ? '保存中…' : '完了' }}
       </button>
     </header>
 
     <div class="note-editor__meta">
-      <span>{{ todayLabel }}</span>
-      <span>{{ charCount }} 字</span>
+      <div class="note-meta-stats">
+        <span>{{ saveStatus || todayLabel }}</span>
+        <span class="note-meta-muted">{{ charCount }} 文字</span>
+      </div>
     </div>
 
-    <section class="note-editor__blocks">
+    <section class="note-editor__blocks" @click="focusBody">
       <div v-for="(block, index) in blocks" :key="block.id" class="note-block">
-        <div
-          class="note-block__actions"
-          v-if="block.type === 'text' && shouldShowAction(block, 'before', index)"
-        >
-          <button type="button" class="insert-btn ghost" @click="triggerImagePicker(block.id, 'before')">
-            ＋ 在这里插入图片
-          </button>
-        </div>
-        <div
-          class="note-block__actions"
-          v-if="block.type === 'image'"
-        >
-          <button type="button" class="insert-btn ghost" @click="insertTextBlock(block.id, 'before')">
-            ＋ 在这里添加文字
-          </button>
-        </div>
         <textarea
           v-if="block.type === 'text'"
           v-model="block.value"
           class="note-textarea"
-          :placeholder="index === 0 ? '像 iOS 备忘录一样，讲述你的活动故事…' : '继续输入...'"
+          :placeholder="index === 0 ? 'ここにイベントの詳細・流れ・注意事項を書いてください（箇条書きでもOK）' : '続けて入力...'"
           :data-block-id="block.id"
           @focus="captureCaret(block.id, $event)"
           @click="captureCaret(block.id, $event)"
           @keyup="captureCaret(block.id, $event)"
           @input="captureCaret(block.id, $event)"
         ></textarea>
-        <div v-else class="note-image">
+        <div v-else class="note-image" :data-block-id="block.id" @click="selectImage(block.id)">
           <img :src="block.src" alt="note image" />
-          <button type="button" class="note-photo__delete" @click="removeBlock(block.id)">×</button>
-        </div>
-        <div
-          class="note-block__actions"
-          v-if="block.type === 'text' && shouldShowAction(block, 'after', index)"
-        >
-          <button type="button" class="insert-btn ghost" @click="triggerImagePicker(block.id, 'after')">
-            ＋ 在这里插入图片
-          </button>
-        </div>
-        <div
-          class="note-block__actions"
-          v-if="block.type === 'image'"
-        >
-          <button type="button" class="insert-btn ghost" @click="insertTextBlock(block.id, 'after')">
-            ＋ 在这里添加文字
+          <button
+            v-if="selectedImageId === block.id"
+            type="button"
+            class="note-photo__delete"
+            @click.stop="removeBlock(block.id)"
+          >
+            ×
           </button>
         </div>
       </div>
@@ -75,11 +52,17 @@
       class="hidden-input"
       @change="handleImagePick"
     />
+
+    <div class="note-floating-actions">
+      <button type="button" class="floating-add" @click="triggerImagePicker(lastFocusedTextId, 'after')">
+        ＋
+      </button>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   CONSOLE_EVENT_NOTE_CONTEXT_KEY,
@@ -132,6 +115,11 @@ const pendingInsertTarget = ref<{ blockId: string | null; position: 'before' | '
   blockId: null,
   position: 'after',
 });
+const lastFocusedTextId = ref<string | null>(null);
+const selectedImageId = ref<string | null>(null);
+const saveStatus = ref('');
+const saveTimer = ref<number | null>(null);
+const debounceTimer = ref<number | null>(null);
 
 const todayLabel = new Intl.DateTimeFormat('ja-JP', {
   month: 'long',
@@ -145,16 +133,12 @@ const charCount = computed(() =>
     .reduce((sum, block) => sum + block.value.trim().length, 0),
 );
 
+const createId = () => Math.random().toString(36).slice(2, 9);
+
 const createTextBlock = (value = ''): NoteBlock => ({
   id: `text-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   type: 'text',
   value,
-});
-
-const createImageBlock = (src: string): NoteBlock => ({
-  id: `image-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  type: 'image',
-  src,
 });
 
 const ensureTextBlockExists = () => {
@@ -182,7 +166,7 @@ const parseHtmlToBlocks = (html: string): NoteBlock[] => {
       } else if (node.nodeName === 'FIGURE') {
         const img = (node as HTMLElement).querySelector('img');
         if (img?.getAttribute('src')) {
-          list.push(createImageBlock(img.getAttribute('src')!));
+          list.push({ id: `image-${createId()}`, type: 'image', src: img.getAttribute('src')! });
         }
       } else if (node.nodeName === '#text') {
         const textContent = node.textContent?.trim();
@@ -218,7 +202,7 @@ const initBlocks = () => {
     !initial.some((block) => block.type === 'image')
   ) {
     context.images.forEach((img) => {
-      initial.push(createImageBlock(img.src));
+      initial.push({ id: `image-${createId()}`, type: 'image', src: img.src });
     });
   }
   blocks.value = initial;
@@ -226,6 +210,9 @@ const initBlocks = () => {
 };
 
 initBlocks();
+nextTick(() => {
+  focusBody();
+});
 
 const captureCaret = (blockId: string, event: Event) => {
   const target = event.target as HTMLTextAreaElement;
@@ -233,12 +220,16 @@ const captureCaret = (blockId: string, event: Event) => {
     ...textSelections.value,
     [blockId]: target.selectionStart ?? (target.value?.length ?? 0),
   };
+  lastFocusedTextId.value = blockId;
+  selectedImageId.value = null;
 };
 
 const triggerImagePicker = (blockId: string | null, position: 'before' | 'after' = 'after') => {
-  pendingInsertTarget.value = { blockId, position };
+  const firstText = blocks.value.find((b) => b.type === 'text');
+  const targetId = blockId || lastFocusedTextId.value || firstText?.id || null;
+  pendingInsertTarget.value = { blockId: targetId, position };
   if (blocks.value.filter((block) => block.type === 'image').length >= MAX_NOTE_IMAGES) {
-    statusMessage.value = '最多上传 9 张图片';
+    statusMessage.value = '画像は最大9枚まで追加できます';
     return;
   }
   fileInputRef.value?.click();
@@ -252,125 +243,117 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const compressDataUrl = (dataUrl: string, maxSide = 1280, quality = 0.82) =>
+  new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const { width, height } = img;
+      const longest = Math.max(width, height);
+      const scale = longest > maxSide ? maxSide / longest : 1;
+      const targetW = Math.max(1, Math.round(width * scale));
+      const targetH = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const output = canvas.toDataURL('image/jpeg', quality);
+      resolve(output.length < dataUrl.length ? output : dataUrl);
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
 const handleImagePick = async (event: Event) => {
   const input = event.target as HTMLInputElement;
   if (!input.files) return;
   const imageCount = blocks.value.filter((block) => block.type === 'image').length;
   const available = MAX_NOTE_IMAGES - imageCount;
   if (available <= 0) {
-    statusMessage.value = '最多上传 9 张图片';
+    statusMessage.value = '画像は最大9枚まで追加できます';
     input.value = '';
     return;
   }
   const files = Array.from(input.files).slice(0, available);
   for (const file of files) {
     if (!file.type?.startsWith('image/')) {
-      statusMessage.value = '仅支持上传图片文件';
+      statusMessage.value = '画像ファイルのみ対応しています';
       continue;
     }
     if (file.size > MAX_NOTE_IMAGE_SIZE) {
-      statusMessage.value = '图片太大，换一张小一点的试试';
+      statusMessage.value = '画像サイズが大きすぎます。小さめの画像をお試しください';
       continue;
     }
     try {
-      const src = await readFileAsDataUrl(file);
-      insertImageBlock(src);
+      let src = await readFileAsDataUrl(file);
+      src = await compressDataUrl(src, 1400, 0.8);
+      if (src.length > 1.2 * 1024 * 1024) {
+        statusMessage.value = '画像サイズが大きすぎます。もう少し小さい画像をお試しください';
+        continue;
+      }
+      insertImageAtCursor(src, pendingInsertTarget.value.blockId, pendingInsertTarget.value.position);
       statusMessage.value = '';
     } catch {
-      statusMessage.value = '图片读取失败，换一张再试试';
+      statusMessage.value = '画像の読み込みに失敗しました。別の画像をお試しください';
     }
   }
   input.value = '';
-};
-
-const findInsertIndex = () => {
-  const target = pendingInsertTarget.value;
-  if (!target.blockId) {
-    return target.position === 'before' ? 0 : blocks.value.length;
-  }
-  const index = blocks.value.findIndex((block) => block.id === target.blockId);
-  if (index === -1) {
-    return target.position === 'before' ? 0 : blocks.value.length;
-  }
-  return target.position === 'before' ? index : index + 1;
-};
-
-const splitTextBlockAtSelection = (blockIndex: number) => {
-  const block = blocks.value[blockIndex];
-  if (!block || block.type !== 'text') return { insertIndex: blockIndex, trailingBlock: null };
-  const caret = textSelections.value[block.id] ?? block.value.length;
-  if (caret <= 0 || caret >= block.value.length) {
-    return { insertIndex: blockIndex, trailingBlock: null };
-  }
-  const before = block.value.slice(0, caret);
-  const after = block.value.slice(caret);
-  block.value = before;
-  const trailingBlock = createTextBlock(after);
-  blocks.value.splice(blockIndex + 1, 0, trailingBlock);
-  return { insertIndex: blockIndex, trailingBlock };
-};
-
-const insertImageBlock = (src: string) => {
-  const target = pendingInsertTarget.value;
-  if (!target.blockId) {
-    const insertIndex = target.position === 'before' ? 0 : blocks.value.length;
-    blocks.value.splice(insertIndex, 0, createImageBlock(src));
-    ensureTextBlockExists();
-    pendingInsertTarget.value = { blockId: null, position: 'after' };
-    return;
-  }
-  const index = blocks.value.findIndex((block) => block.id === target.blockId);
-  if (index === -1) {
-    blocks.value.push(createImageBlock(src));
-    ensureTextBlockExists();
-    pendingInsertTarget.value = { blockId: null, position: 'after' };
-    return;
-  }
-  if (blocks.value[index].type === 'text') {
-    const { insertIndex, trailingBlock } = splitTextBlockAtSelection(index);
-    let insertPosition = insertIndex + (target.position === 'before' ? 0 : 1);
-    if (trailingBlock && target.position === 'after') {
-      insertPosition += 1;
-    }
-    blocks.value.splice(insertPosition, 0, createImageBlock(src));
-  } else {
-    const insertPosition = target.position === 'before' ? index : index + 1;
-    blocks.value.splice(insertPosition, 0, createImageBlock(src));
-  }
-  ensureTextBlockExists();
   pendingInsertTarget.value = { blockId: null, position: 'after' };
 };
 
-const insertTextBlock = (blockId: string | null, position: 'before' | 'after') => {
-  const newBlock = createTextBlock();
+const insertImageAtCursor = (src: string, blockId: string | null, position: 'before' | 'after') => {
   if (!blockId) {
     const insertIndex = position === 'before' ? 0 : blocks.value.length;
-    blocks.value.splice(insertIndex, 0, newBlock);
+    const newId = createId();
+    blocks.value.splice(insertIndex, 0, { id: `image-${newId}`, type: 'image', src });
+    ensureTextBlockExists();
+    nextTick(() => scrollToBlock(`image-${newId}`));
     return;
   }
   const index = blocks.value.findIndex((block) => block.id === blockId);
-  if (index === -1) {
-    blocks.value.splice(position === 'before' ? 0 : blocks.value.length, 0, newBlock);
+  if (index === -1 || blocks.value[index].type !== 'text') {
+    const newId = createId();
+    blocks.value.push({ id: `image-${newId}`, type: 'image', src });
+    ensureTextBlockExists();
+    nextTick(() => scrollToBlock(`image-${newId}`));
     return;
   }
-  const insertIndex = position === 'before' ? index : index + 1;
-  blocks.value.splice(insertIndex, 0, newBlock);
+  const target = blocks.value[index] as Extract<NoteBlock, { type: 'text' }>;
+  const caret = textSelections.value[target.id] ?? target.value.length;
+  let before = target.value.slice(0, caret);
+  let after = target.value.slice(caret);
+  if (before && !before.endsWith('\n')) {
+    before = `${before}\n`;
+  }
+  if (after && !after.startsWith('\n')) {
+    after = `\n${after}`;
+  }
+  // 先更新当前块为前半段（可为空）
+  blocks.value[index] = { ...target, value: before };
+  const newId = createId();
+  // 画像ブロックをその直後に入れる
+  blocks.value.splice(index + 1, 0, { id: `image-${newId}`, type: 'image', src });
+  // 後半があれば新しいテキストブロックとして続ける
+  if (after) {
+    blocks.value.splice(index + 2, 0, createTextBlock(after));
+  }
+  nextTick(() => scrollToBlock(`image-${newId}`));
+};
+
+const scrollToBlock = (id: string) => {
+  const el = document.querySelector<HTMLElement>(`[data-block-id="${id}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 };
 
 const removeBlock = (blockId: string) => {
   blocks.value = blocks.value.filter((block) => block.id !== blockId);
   ensureTextBlockExists();
-};
-
-const shouldShowAction = (block: NoteBlock, position: 'before' | 'after', index: number) => {
-  if (block.type === 'text') {
-    const neighbor =
-      position === 'before' ? blocks.value[index - 1] : blocks.value[index + 1];
-    if (neighbor?.type === 'image') {
-      return false;
-    }
-  }
-  return true;
 };
 
 const escapeHtml = (value: string) =>
@@ -393,7 +376,7 @@ const buildHtmlFromBlocks = () => {
           .join('');
       }
       if (block.src) {
-        return `<figure class="note-image"><img src="${block.src}" alt="活动详情图片" /></figure>`;
+        return `<figure class="note-image"><img src="${block.src}" alt="イベント詳細画像" /></figure>`;
       }
       return '';
     })
@@ -428,21 +411,97 @@ const navigateBackToForm = () => {
   });
 };
 
-const handleCancel = () => {
-  navigateBackToForm();
+const buildPayload = () => ({
+  text: buildPlainText(),
+  html: buildHtmlFromBlocks(),
+  images: collectImages(),
+});
+
+let lastSaved = '';
+const saveDraft = (silent = false) => {
+  try {
+    const payload = buildPayload();
+    const serialized = JSON.stringify(payload);
+    // 4MB 目安で保存をスキップし、クラッシュを防ぐ
+    if (serialized.length > 4 * 1024 * 1024) {
+      statusMessage.value = '保存できません（容量が大きすぎます）。画像を減らしてください。';
+      saveStatus.value = '';
+      return;
+    }
+    sessionStorage.setItem(CONSOLE_EVENT_NOTE_RESULT_KEY, serialized);
+    lastSaved = serialized;
+    const time = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' }).format(new Date());
+    saveStatus.value = `保存済み ${time}`;
+  } catch (err) {
+    statusMessage.value = '保存できません（容量制限）。画像を減らしてください。';
+    return;
+  }
+  if (saveTimer.value) window.clearTimeout(saveTimer.value);
+  if (!silent) {
+    saveTimer.value = window.setTimeout(() => {
+      saveStatus.value = '';
+    }, 1800);
+  }
 };
+
+watch(
+  () => [blocks.value],
+  () => {
+    if (debounceTimer.value) window.clearTimeout(debounceTimer.value);
+    saveStatus.value = '保存中…';
+    debounceTimer.value = window.setTimeout(() => saveDraft(true), 800);
+  },
+  { deep: true },
+);
 
 const handleSave = () => {
   if (saving.value) return;
-  saving.value = true;
-  const payload = {
-    text: buildPlainText(),
-    html: buildHtmlFromBlocks(),
-    images: collectImages(),
-  };
-  sessionStorage.setItem(CONSOLE_EVENT_NOTE_RESULT_KEY, JSON.stringify(payload));
+  try {
+    const payload = buildPayload();
+    const serialized = JSON.stringify(payload);
+    if (!lastSaved || serialized !== lastSaved) {
+      if (serialized.length > 4 * 1024 * 1024) {
+        statusMessage.value = '保存できません（容量が大きすぎます）。画像を減らしてください。';
+        return;
+      }
+      sessionStorage.setItem(CONSOLE_EVENT_NOTE_RESULT_KEY, serialized);
+      const time = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit' }).format(new Date());
+      saveStatus.value = `保存済み ${time}`;
+      lastSaved = serialized;
+    }
+  } catch (err) {
+    statusMessage.value = '保存できません（容量制限）。画像を減らしてください。';
+    return;
+  }
   saving.value = false;
   navigateBackToForm();
+};
+
+const handleCancel = () => {
+  const currentSerialized = JSON.stringify(buildPayload());
+  if (lastSaved && currentSerialized !== lastSaved) {
+    const confirmLeave = window.confirm('変更を破棄しますか？');
+    if (!confirmLeave) return;
+  }
+  navigateBackToForm();
+};
+
+const selectImage = (id: string) => {
+  selectedImageId.value = id;
+};
+
+const focusBody = () => {
+  const firstTextArea = document.querySelector<HTMLTextAreaElement>('.note-textarea');
+  if (firstTextArea) {
+    firstTextArea.focus();
+    const len = firstTextArea.value.length;
+    firstTextArea.setSelectionRange(len, len);
+    const id = firstTextArea.dataset.blockId;
+    if (id) {
+      lastFocusedTextId.value = id;
+      textSelections.value = { ...textSelections.value, [id]: len };
+    }
+  }
 };
 
 </script>
@@ -489,11 +548,21 @@ const handleSave = () => {
 
 .note-editor__meta {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-meta-stats {
+  display: flex;
   justify-content: space-between;
+  align-items: center;
   color: rgba(15, 23, 42, 0.5);
   font-size: 13px;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.note-meta-muted {
+  color: rgba(15, 23, 42, 0.5);
 }
 
 .note-editor__blocks {
@@ -553,11 +622,6 @@ const handleSave = () => {
   line-height: 1;
 }
 
-.note-block__actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
 .note-editor__hint {
   font-size: 13px;
   color: rgba(15, 23, 42, 0.5);
@@ -566,33 +630,29 @@ const handleSave = () => {
 .note-editor__status {
   font-size: 13px;
   color: #d93838;
-}
-
-.insert-btn {
-  border-radius: 16px;
-  border: none;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
-  width: 100%;
-}
-
-.insert-btn.primary {
-  background: rgba(15, 23, 42, 0.85);
-  color: #fff;
-}
-
-.insert-btn.ghost {
-  background: rgba(255, 255, 255, 0.85);
-  color: rgba(15, 23, 42, 0.8);
-  border: 1px dashed rgba(15, 23, 42, 0.2);
-  width: auto;
-  padding: 8px 14px;
-  box-shadow: none;
+  background: #fff5f5;
+  padding: 8px 10px;
+  border-radius: 10px;
 }
 
 .hidden-input {
   display: none;
+}
+
+.note-floating-actions {
+  position: fixed;
+  right: 18px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+.floating-add {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #4f8ef8, #6e66ff);
+  color: #fff;
+  font-size: 26px;
+  box-shadow: 0 10px 30px rgba(26, 40, 77, 0.25);
 }
 </style>

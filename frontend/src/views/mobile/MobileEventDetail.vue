@@ -124,10 +124,16 @@
               </div>
               <span v-if="isMultiDay" class="event-schedule__badge">複数日程</span>
             </div>
-            <button v-if="calendarLink" class="event-schedule__cta" type="button" @click="openCalendar">
-              <span class="i-lucide-calendar-plus"></span>
-              カレンダーに追加
-            </button>
+            <div class="event-secondary-actions">
+              <button v-if="calendarLink" class="event-schedule__cta subtle" type="button" @click="openCalendar">
+                <span class="i-lucide-calendar-plus"></span>
+                カレンダーに追加
+              </button>
+              <button class="event-schedule__cta subtle" type="button" @click="openMap">
+                <span class="i-lucide-map-pin"></span>
+                ルートを見る
+              </button>
+            </div>
           </div>
           <div class="m-divider"></div>
           <div class="event-meta-row event-meta-row--location">
@@ -145,18 +151,6 @@
             <div class="event-meta-text">
               <div class="event-location-title">{{ detail.locationText }}</div>
             </div>
-            <button class="event-map-button" type="button" @click="openMap">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                />
-                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-              ルートを見る
-            </button>
           </div>
         </section>
 
@@ -194,7 +188,7 @@
               </div>
               <p class="participants-hint">最近の参加者（{{ participantsTotalLabel }}）</p>
             </div>
-            <p v-else class="participants-empty">表示できる参加者がまだいません。</p>
+            <p v-else class="participants-empty">まだ参加者はいません。最初の参加者になりませんか？</p>
           </div>
         </section>
 
@@ -223,19 +217,6 @@
           <h2 class="m-section-title">About</h2>
           <div class="m-event-card">
             <div class="m-text-body prose prose-sm max-w-none" v-html="detail.descriptionHtml"></div>
-          </div>
-        </section>
-
-        <section class="event-section" v-if="detail.mapUrl || detail.locationText">
-          <h2 class="m-section-title">場所</h2>
-          <div class="m-event-card location-card">
-            <div class="location-text">
-              <span class="i-lucide-map-pin"></span>
-              <p class="location-copy">{{ detail.locationText || '場所未定' }}</p>
-            </div>
-            <div class="location-actions" v-if="detail.mapUrl">
-              <a class="location-btn" :href="detail.mapUrl" target="_blank" rel="noopener">地図で開く</a>
-            </div>
           </div>
         </section>
 
@@ -1330,6 +1311,21 @@ watch(
   color: #fff;
   background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
   box-shadow: 0 8px 20px rgba(0, 144, 217, 0.25);
+}
+.event-schedule__cta.subtle {
+  width: auto;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  box-shadow: none;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+.event-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .event-hero__overlay {

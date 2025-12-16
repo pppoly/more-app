@@ -325,22 +325,31 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .service-row {
   width: 100%;
+  margin: 0;
   border: none;
   background: transparent;
   padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 14px;
+  box-sizing: border-box;
+  position: relative;
 }
 
-.service-row + .service-row {
-  border-top: 1px solid rgba(230, 234, 239, 0.9);
+.service-row + .service-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #e6eaef;
 }
 
 .service-row__icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   background: #e9f5ff;
   color: #0f172a;
   display: inline-flex;
@@ -351,8 +360,8 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon img {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
 }
 

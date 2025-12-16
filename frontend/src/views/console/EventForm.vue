@@ -1,5 +1,8 @@
 <template>
-  <section class="console-section" :class="{ 'console-section--mobile': isMobileLayout }">
+    <section
+      class="console-section"
+      :class="{ 'console-section--mobile': isMobileLayout, 'sheet-open': sheetOpen }"
+    >
     <ConsoleTopBar v-if="isMobileLayout" title="イベント作成" @back="goBack" />
     <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
@@ -208,26 +211,26 @@
         <button class="info-row info-row--primary" type="button" @click="openFieldEditor('title')">
           <span class="info-label">タイトル</span>
           <span class="info-value" :class="{ 'is-placeholder': !form.title }">
-            {{ form.title || '未設定' }}
+            {{ form.title || 'あとで設定できます' }}
           </span>
         </button>
         <button class="info-row info-row--primary" type="button" @click="openTimeRange">
           <span class="info-label">日程</span>
           <span class="info-value" :class="{ 'is-placeholder': !timeRangeDisplay }">
-            {{ timeRangeDisplay || '未設定' }}
+            {{ timeRangeDisplay || 'あとで設定できます' }}
           </span>
         </button>
         <button class="info-row info-row--primary" type="button" @click="openLocationPickerMain">
           <span class="info-label">場所</span>
           <span class="info-value" :class="{ 'is-placeholder': !form.locationText }">
-            {{ form.locationText || '地図で選択' }}
+            {{ form.locationText || 'あとで設定できます' }}
           </span>
         </button>
         <p class="info-subhint">
           <button
             type="button"
             class="info-link"
-            @click.prevent="manualLocationMode = false; openLocationPicker()"
+            @click.prevent="openLocationPickerMain"
           >
             地図で選択
           </button>
@@ -235,7 +238,7 @@
           <button
             type="button"
             class="info-link"
-            @click.prevent="manualLocationMode = true; focusMainInline('locationText')"
+            @click.prevent="openLocationTextEditor"
           >
             見つからない場合は手入力
           </button>
@@ -246,14 +249,14 @@
         <button class="info-row info-row--secondary" type="button" @click="openRegRange">
           <span class="info-label">受付期間</span>
           <span class="info-value" :class="{ 'is-placeholder': !regRangeDisplay }">
-            {{ regRangeDisplay || '未設定（イベントと同じ）' }}
+            {{ regRangeDisplay || 'あとで設定できます（未設定ならイベント時間と同じ）' }}
           </span>
         </button>
         <p class="info-subhint muted">未設定の場合、受付時間はイベント時間と同じです。</p>
         <button class="info-row info-row--secondary" type="button" @click="openParticipants">
           <span class="info-label">参加人数</span>
           <span class="info-value" :class="{ 'is-placeholder': !participantsDisplay }">
-            {{ participantsDisplay || '未設定' }}
+            {{ participantsDisplay || 'あとで設定できます' }}
           </span>
         </button>
       </div>
@@ -282,87 +285,6 @@
     </section>
 
     <form class="form" @submit.prevent="handleSubmit">
-
-      <!-- Basic info -->
-      <section class="ios-panel" ref="sectionBasic">
-        <div class="ios-form">
-          <div class="ios-row ios-row--builder-line" @click="focusMainInline('title')">
-            <span class="ios-label">タイトル</span>
-            <input
-              type="text"
-              class="ios-inline-input ios-inline-input--text"
-              placeholder="入力してください"
-              ref="titleInputRef"
-              v-model="form.title"
-            />
-          </div>
-          <div
-            class="ios-row ios-row--builder-line"
-            @click="manualLocationMode ? focusMainInline('locationText') : openLocationPicker()"
-          >
-            <span class="ios-label">場所</span>
-            <template v-if="manualLocationMode">
-              <input
-                type="text"
-                class="ios-inline-input"
-                placeholder="場所を入力"
-                ref="locationInputRef"
-                :value="form.locationText"
-                @input="handleLocationInput"
-              />
-            </template>
-            <template v-else>
-              <span
-                class="ios-value"
-                :class="{ 'ios-value--placeholder': !form.locationText }"
-              >
-                {{ form.locationText || '地図で選択' }}
-              </span>
-            </template>
-          </div>
-          <p class="location-inline-hint">
-            <button
-              type="button"
-              class="link-btn"
-              @click.prevent="manualLocationMode = false; openLocationPicker()"
-            >
-              地図で選択
-            </button>
-            <span class="divider">｜</span>
-            <button
-              type="button"
-              class="link-btn"
-              @click.prevent="manualLocationMode = true; focusMainInline('locationText')"
-            >
-              見つからない場合は手入力
-            </button>
-          </p>
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('startTime')">
-            <span class="ios-label">開始日時</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.startTime }">
-              {{ form.startTime ? formatDisplayDate(form.startTime) : '設定してください' }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('endTime')">
-            <span class="ios-label">終了日時</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.endTime }">
-              {{ form.endTime ? formatDisplayDate(form.endTime) : '設定してください' }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regStartTime')">
-            <span class="ios-label">受付開始</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regStartTime }">
-              {{ form.regStartTime ? formatDisplayDate(form.regStartTime) : '設定してください' }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openFieldEditor('regEndTime')">
-            <span class="ios-label">受付締切</span>
-            <span class="ios-value" :class="{ 'ios-value--placeholder': !form.regEndTime }">
-              {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '設定してください' }}
-            </span>
-          </button>
-        </div>
-      </section>
 
       <!-- Rich text -->
       <section class="ios-panel" ref="sectionRichText">
@@ -589,18 +511,17 @@
       </section>
 
       <div class="actions" v-if="!isMobileLayout">
-        <button type="button" class="ghost" :disabled="submitting" @click="handleSaveDraft">
+        <button type="button" class="ghost" :disabled="submitting || sheetOpen" @click="handleSaveDraft">
           {{ actionLoading === 'draft' ? '保存中…' : '下書きを保存' }}
         </button>
-        <button type="submit" class="primary" :disabled="submitting">
+        <button type="submit" class="primary" :disabled="submitting || sheetOpen">
           {{ actionLoading === 'open' ? '公開中…' : 'イベントを公開' }}
         </button>
       </div>
       <p v-if="saveStatus" class="status success">{{ saveStatus }}</p>
-      <p v-if="error" class="status error">{{ error }}</p>
     </form>
 
-    <div v-if="isMobileLayout" class="bottom-nav">
+    <div v-if="isMobileLayout && !sheetOpen" class="bottom-nav">
       <button type="button" class="nav-btn text" :disabled="submitting" @click="handleSaveDraft">
         {{ actionLoading === 'draft' ? '保存中…' : '下書きを保存' }}
       </button>
@@ -624,24 +545,31 @@
       >
         <header class="field-sheet-head">
           <button type="button" @click="closeFieldEditor">キャンセル</button>
-          <p>{{ fieldMeta[editingField].label }}</p>
-          <button type="button" class="highlight" @click="confirmFieldEditor">完了</button>
+          <p>{{ currentFieldLabel }}</p>
+          <button type="button" class="highlight" @click="confirmFieldEditor">設定する</button>
         </header>
         <div class="field-sheet-body">
-          <input
-            v-if="['text', 'number'].includes(fieldMeta[editingField].type)"
-            v-model="fieldDraft"
-            :type="fieldMeta[editingField].type === 'number' ? 'number' : 'text'"
-            :placeholder="fieldMeta[editingField].placeholder"
-          />
+          <template v-if="currentFieldType === 'text' || currentFieldType === 'number'">
+            <input
+              v-model="fieldDraft"
+              :type="currentFieldType === 'number' ? 'number' : 'text'"
+              :placeholder="currentFieldPlaceholder"
+            />
+            <p
+              v-if="['minParticipants', 'maxParticipants'].includes(editingField as string)"
+              class="field-hint"
+            >
+              1〜100 人まで設定できます
+            </p>
+          </template>
           <textarea
-            v-else-if="fieldMeta[editingField].type === 'textarea'"
+            v-else-if="currentFieldType === 'textarea'"
             v-model="fieldDraft"
             rows="5"
-            :placeholder="fieldMeta[editingField].placeholder"
+            :placeholder="currentFieldPlaceholder"
           ></textarea>
           <div
-            v-else-if="fieldMeta[editingField].type === 'select'"
+            v-else-if="currentFieldType === 'select'"
             class="select-option-list"
           >
             <button
@@ -657,8 +585,14 @@
             </button>
           </div>
           <IosDateTimePicker
+            v-else-if="currentFieldType === 'datetime'"
+            v-model="fieldDraft"
+          />
+          <input
             v-else
             v-model="fieldDraft"
+            type="text"
+            :placeholder="currentFieldPlaceholder"
           />
         </div>
       </div>
@@ -669,7 +603,7 @@
         <header class="field-sheet-head">
           <button type="button" @click="closeCategorySheet">キャンセル</button>
           <p>カテゴリを選択</p>
-          <button type="button" class="highlight" @click="confirmCategorySheet">完了</button>
+          <button type="button" class="highlight" @click="confirmCategorySheet">設定する</button>
         </header>
         <div class="field-sheet-body">
           <div class="select-option-list">
@@ -752,6 +686,7 @@ import {
   requestEventAssistantReply,
   extractEventDraft,
 } from '../../api/client';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
@@ -776,6 +711,7 @@ import {
 
 type FieldKey =
   | 'title'
+  | 'locationText'
   | 'description'
   | 'startTime'
   | 'endTime'
@@ -951,8 +887,6 @@ const actionLoading = ref<'draft' | 'open' | null>(null);
 const saveStatus = ref<string | null>(null);
 let saveStatusTimer: number | null = null;
 const uploadingCover = ref(false);
-const titleInputRef = ref<HTMLInputElement | null>(null);
-const locationInputRef = ref<HTMLInputElement | null>(null);
 const refundPolicyInputRef = ref<HTMLTextAreaElement | null>(null);
 const ticketPriceInputRef = ref<HTMLInputElement | null>(null);
 const ticketPriceDisplay = computed(() =>
@@ -984,7 +918,6 @@ const pasteAdvice = ref<string[]>([]);
 const pasteCompliance = ref<string[]>([]);
 const pasteResultLoading = ref(false);
 const storedParsedResult = ref<{ title?: string; description?: string; rules?: string; advice?: string[]; compliance?: string[] } | null>(null);
-const manualLocationMode = ref(false);
 const checklistItems = computed(() => [
   { id: 'title', label: 'イベントタイトル', note: null, done: true },
   { id: 'desc', label: 'イベント説明', note: null, done: true },
@@ -1088,19 +1021,25 @@ const fetchPasteInsights = async (draft: string) => {
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
-  title: { label: 'タイトル', type: 'text', placeholder: '入力してください' },
-  description: { label: 'ショート説明', type: 'textarea', placeholder: '入力してください' },
+  title: { label: 'タイトル', type: 'text', placeholder: 'あとで設定できます' },
+  description: { label: 'ショート説明', type: 'textarea', placeholder: 'あとで設定できます' },
   startTime: { label: '開始日時', type: 'datetime' },
   endTime: { label: '終了日時', type: 'datetime' },
   regStartTime: { label: '受付開始', type: 'datetime' },
   regEndTime: { label: '受付締切', type: 'datetime' },
-  minParticipants: { label: '最低参加人数', type: 'number', placeholder: '入力してください' },
-  maxParticipants: { label: '最大参加人数', type: 'number', placeholder: '入力してください' },
-  ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: '入力してください' },
+  minParticipants: { label: '最低参加人数', type: 'number', placeholder: 'あとで設定できます' },
+  maxParticipants: { label: '最大参加人数', type: 'number', placeholder: 'あとで設定できます' },
+  ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: 'あとで設定できます' },
   visibility: { label: '公開範囲', type: 'select' },
   visibleRange: { label: 'Console 可視範囲', type: 'select' },
   refundPolicy: { label: '返金ポリシー', type: 'textarea', placeholder: '例：イベント3日前まで全額返金' },
+  locationText: { label: '場所', type: 'text', placeholder: 'あとで設定できます' },
 };
+
+const currentFieldMeta = computed(() => (editingField.value ? fieldMeta[editingField.value] : null));
+const currentFieldLabel = computed(() => currentFieldMeta.value?.label || '');
+const currentFieldType = computed<FieldMetaType>(() => currentFieldMeta.value?.type || 'text');
+const currentFieldPlaceholder = computed(() => currentFieldMeta.value?.placeholder || 'あとで設定できます');
 
 const categoryOptions = [
   { label: 'アウトドア', value: 'hiking' },
@@ -1131,6 +1070,30 @@ const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: stri
     { label: '非公開', value: 'private' },
   ],
 };
+
+const sheetOpen = computed(
+  () =>
+    Boolean(
+      editingField.value ||
+        showCategorySheet.value ||
+        showPastePanel.value ||
+        showPasteResult.value ||
+        showLocationPicker.value,
+    ),
+);
+
+watch(
+  () => sheetOpen.value,
+  (open) => {
+    if (typeof document === 'undefined') return;
+    const body = document.body;
+    if (open) {
+      body.style.overflow = 'hidden';
+    } else {
+      body.style.overflow = '';
+    }
+  },
+);
 
 const getSelectLabel = (key: 'visibility' | 'visibleRange', value?: string | null) => {
   const list = selectOptions[key] || [];
@@ -1350,7 +1313,7 @@ const applyAiSuggestion = (target: AiTargetKey) => {
 };
 
 const formatDisplayDate = (value: string) => {
-  if (!value) return '設定してください';
+  if (!value) return 'あとで設定できます';
   try {
     return new Date(value).toLocaleString('ja-JP', {
       month: 'short',
@@ -1378,6 +1341,9 @@ const openFieldEditor = (key: FieldKey) => {
 const closeFieldEditor = () => {
   editingField.value = null;
   fieldDraft.value = '';
+  pendingEndRange.value = false;
+  pendingRegRange.value = false;
+  pendingMaxParticipants.value = false;
 };
 
 const confirmFieldEditor = () => {
@@ -1587,7 +1553,14 @@ const applyEventDetailToForm = (
     subtitle.value = titleText;
   }
   if (options.includeGalleries) {
-    galleries.value = event.galleries ?? [];
+    const normalizedFromGallery = normalizeGalleryItems(event.galleries);
+    if (normalizedFromGallery.length) {
+      galleries.value = normalizedFromGallery;
+    } else if (event.coverImageUrl) {
+      galleries.value = [{ id: 'cover', imageUrl: resolveAssetUrl(event.coverImageUrl), order: 0 }];
+    } else {
+      galleries.value = [];
+    }
   }
 };
 
@@ -1610,14 +1583,17 @@ const load = async () => {
       await reloadGallery();
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'イベント読み込みに失敗しました';
+    const message = err instanceof Error ? err.message : 'イベント読み込みに失敗しました';
+    error.value = message;
+    toast.show(message, 'error');
   }
 };
 
 const reloadGallery = async () => {
   if (!eventId.value) return;
   try {
-    galleries.value = await fetchEventGallery(eventId.value);
+    const list = await fetchEventGallery(eventId.value);
+    galleries.value = normalizeGalleryItems(list);
   } catch (err) {
     console.error(err);
   }
@@ -1677,7 +1653,9 @@ watch(
 
 const setEndShortcut = (hours: number) => {
   if (!form.startTime) {
-    error.value = '開始日時を先に設定してください';
+    const message = '開始日時を先に設定してください';
+    error.value = message;
+    toast.show(message, 'error');
     return;
   }
   const start = new Date(form.startTime);
@@ -1687,7 +1665,9 @@ const setEndShortcut = (hours: number) => {
 
 const setRegDeadlineShortcut = (minutesBeforeStart: number) => {
   if (!form.startTime) {
-    error.value = '開始日時を先に設定してください';
+    const message = '開始日時を先に設定してください';
+    error.value = message;
+    toast.show(message, 'error');
     return;
   }
   const start = new Date(form.startTime);
@@ -2135,6 +2115,15 @@ const downscaleImageFile = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const normalizeGalleryItems = (items?: EventGalleryItem[] | null) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => ({
+    ...item,
+    id: item.id || `gallery-${index}`,
+    imageUrl: resolveAssetUrl(item.imageUrl),
+  }));
+};
+
 const loadCopyEvents = async () => {
   if (!eventCommunityId.value) return;
   copyLoading.value = true;
@@ -2335,15 +2324,6 @@ const focusFieldInput = (fieldId: string, key: string) => {
   });
 };
 
-const focusMainInline = (key: 'title' | 'locationText') => {
-  nextTick(() => {
-    const target = key === 'title' ? titleInputRef.value : locationInputRef.value;
-    if (!target) return;
-    target.focus();
-    target.setSelectionRange(target.value.length, target.value.length);
-  });
-};
-
 const goToEventAssistant = () => {
   if (!communityId) return;
   persistLang();
@@ -2352,13 +2332,6 @@ const goToEventAssistant = () => {
     params: { communityId },
     query: { lang: activeContentLang.value },
   });
-};
-
-const handleLocationInput = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  form.locationText = input.value;
-  form.locationLat = null;
-  form.locationLng = null;
 };
 
 const loadGoogleMaps = async () => {
@@ -2589,10 +2562,10 @@ const confirmCategorySheet = () => {
 
 const flashSaveStatus = (text: string) => {
   saveStatus.value = text;
+  toast.show(text, 'success');
   if (saveStatusTimer) {
     window.clearTimeout(saveStatusTimer);
   }
-  // Keep UX but avoid auto scroll/visual jank on mount
   saveStatusTimer = window.setTimeout(() => {
     saveStatus.value = null;
     saveStatusTimer = null;
@@ -2832,7 +2805,9 @@ const persistEvent = async (status: 'draft' | 'open') => {
     }
 
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '保存に失敗しました';
+    const message = err instanceof Error ? err.message : '保存に失敗しました';
+    error.value = message;
+    toast.show(message, 'error');
   } finally {
     submitting.value = false;
     actionLoading.value = null;
@@ -2845,7 +2820,9 @@ const handleSubmit = () => handlePublish();
 
 const handlePreview = () => {
   if (!eventId.value) {
-    error.value = '先に下書きを保存してからプレビューしてください';
+    const message = '先に下書きを保存してからプレビューしてください';
+    error.value = message;
+    toast.show(message, 'error');
     return;
   }
   router.push({ name: 'event-detail', params: { eventId: eventId.value } });
@@ -2972,8 +2949,11 @@ const openParticipants = () => {
 };
 
 const openLocationPickerMain = () => {
-  manualLocationMode.value = false;
   openLocationPicker();
+};
+
+const openLocationTextEditor = () => {
+  openFieldEditor('locationText');
 };
 
 const uploadPendingCovers = async (targetEventId: string) => {
@@ -3076,6 +3056,15 @@ watch(
   },
 );
 
+watch(
+  () => error.value,
+  (val) => {
+    if (val) {
+      toast.show(val, 'error');
+    }
+  },
+);
+
 onUnmounted(() => {
   revokeLocalCoverPreviews();
   teardownMobileMediaQuery();
@@ -3175,6 +3164,11 @@ onActivated(() => {
   gap: 1rem;
   padding: 0 0.75rem;
 }
+.console-section.sheet-open {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
 .console-section--mobile {
   padding: 0 0 90px;
 }
@@ -3227,17 +3221,6 @@ select {
   padding: 0.85rem;
   font-size: 0.9rem;
   color: #0f172a;
-}
-.location-inline-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #475569;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.location-inline-hint .divider {
-  color: #94a3b8;
 }
 .link-btn {
   border: none;
@@ -4191,18 +4174,18 @@ select {
 .field-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(5px);
+  background: rgba(15, 23, 42, 0.5);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 20px;
-  z-index: 60;
+  z-index: 80;
 }
 
 .field-sheet {
   width: 100%;
   max-width: 540px;
+  max-height: 90vh;
   background: #fff;
   border-radius: 28px;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
@@ -4210,14 +4193,15 @@ select {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-sizing: border-box;
+}
+
+.field-sheet * {
+  box-sizing: border-box;
 }
 
 .field-sheet--wide .field-sheet-body input {
   font-size: 18px;
-}
-
-.field-sheet--large {
-  max-height: 90vh;
 }
 
 .field-sheet-head {
@@ -4246,6 +4230,9 @@ select {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .field-sheet-body input,
@@ -4260,6 +4247,12 @@ select {
 
 .field-sheet-body textarea {
   min-height: 140px;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: -4px 2px 4px;
 }
 
 .field-sheet--large .field-sheet-body {
