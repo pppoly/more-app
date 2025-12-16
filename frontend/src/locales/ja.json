@@ -31,6 +31,9 @@
       "noManagedTitle": "管理対象のコミュニティがありません",
       "noManagedHint": "まずはコミュニティを作成してみましょう。",
       "createNew": "新しいコミュニティを作成"
+    },
+    "eventManage": {
+      "title": "イベント管理"
     }
   },
   "subscription": {

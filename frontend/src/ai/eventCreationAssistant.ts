@@ -44,7 +44,7 @@ Forbidden:
 Goals:
 - Organize concrete decisions (title, time, location, ticketing, requirements).
 - Offer options with pros/cons when the organizer hesitates.
-- Highlight contradictions or risks (e.g., "想要開放但又限定費用很高").
+- Highlight contradictions or risks (e.g., "開放したいが料金が高すぎる" のような矛盾) .
 Guidelines:
 - Provide concise bullet structures or A/B drafts.
 - Ask clarifying questions only for the missing fields listed below.`,
@@ -135,7 +135,7 @@ export function buildEventAssistantPrompt(options: BuildEventAssistantPromptOpti
       ? '回答は簡体字中文でもよいですが、ユーザーの入力言語に合わせてください。'
       : options.locale === 'en'
         ? 'Respond in English unless the organizer prefers Japanese.'
-        : '回答は日本語をベースに、ユーザーの言語に合わせてカスタマイズしてください。';
+        : '回答は日本語をベースに、必要な場合のみユーザーの言語に合わせてください。中国語はユーザーが求めた場合だけ使ってください。';
 
   const actorContext = [
     options.userName ? `Organizer: ${options.userName}` : null,

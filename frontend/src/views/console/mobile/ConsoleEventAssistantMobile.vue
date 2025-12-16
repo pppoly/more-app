@@ -223,6 +223,7 @@ import type {
   EventDraft,
   GeneratedEventContent,
   ConsoleCommunityDetail,
+  ConsoleEventAssistantLog,
 } from '../../../types/api';
 import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
@@ -272,6 +273,7 @@ const communityStore = useConsoleCommunityStore();
 const toast = useToast();
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
+const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
 const activeCommunityDetail = ref<ConsoleCommunityDetail | null>(null);
 const introConversationStarted = ref(false);
 const welcomeText = 'おかえりなさい。どんなイベントを作りたいか教えてください。';
@@ -819,7 +821,7 @@ const saveProposalDraft = (raw?: GeneratedEventContent & { summary?: string }) =
     ...drafts,
   ].slice(0, 10);
   localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
-  pushMessage('assistant', 'text', 'この案を草稿として保存しました。履歴からいつでも復元できます。');
+  pushMessage('assistant', 'text', 'この案を下書きとして保存しました。履歴からいつでも復元できます。');
 };
 
 const applyProposalToForm = (raw?: GeneratedEventContent & { summary?: string }) => {
@@ -956,12 +958,12 @@ const restoreFromLog = (log: ConsoleEventAssistantLog) => {
   scrollChatToBottom(true);
 };
 
-const tryResumeConversation = async () => {
+const tryResumeConversation = async (existingLogs?: ConsoleEventAssistantLog[]) => {
   if (!communityId.value || forceNewSession.value) return false;
   try {
-    const existingLogs = await fetchEventAssistantLogs(communityId.value);
+    const logs = existingLogs ?? (await fetchEventAssistantLogs(communityId.value));
     const now = Date.now();
-    const recentInProgress = existingLogs
+    const recentInProgress = logs
       .filter((log) => {
         const createdAt = new Date((log as any).updatedAt || log.createdAt).getTime();
         const withinWindow = now - createdAt <= RESUME_WINDOW_HOURS * 60 * 60 * 1000;
@@ -996,6 +998,13 @@ const startNewConversation = () => {
   introConversationStarted.value = false;
   seedWelcomeMessages();
   startIntroConversation();
+  // clear any sticky logId/newSession query to avoid unintended resume on refresh
+  if (route.query.logId || route.query.newSession) {
+    const nextQuery = { ...route.query };
+    delete (nextQuery as any).logId;
+    delete (nextQuery as any).newSession;
+    router.replace({ query: nextQuery });
+  }
 };
 
 const getProfileValue = (value: string | undefined | null, key: keyof typeof profileDefaults.value) => {
@@ -1077,10 +1086,40 @@ onMounted(async () => {
   }
   loadHistoryEntries();
   await loadActiveCommunityDetail();
-  const resumed = await tryResumeConversation();
-  if (!resumed) {
-    seedWelcomeMessages();
-    await startIntroConversation();
+  let restored = false;
+  let cachedLogs: ConsoleEventAssistantLog[] | null = null;
+  if (!forceNewSession.value && communityId.value) {
+    try {
+      cachedLogs = await fetchEventAssistantLogs(communityId.value);
+    } catch (err) {
+      console.warn('Failed to fetch assistant logs for restore', err);
+      cachedLogs = null;
+    }
+  }
+  if (!forceNewSession.value && requestedLogId.value) {
+    const target =
+      cachedLogs?.find((log) => log.id === requestedLogId.value) ??
+      (await (async () => {
+        if (!communityId.value) return null;
+        try {
+          const logs = cachedLogs ?? (await fetchEventAssistantLogs(communityId.value));
+          return logs.find((log) => log.id === requestedLogId.value) ?? null;
+        } catch (err) {
+          console.warn('Failed to restore assistant log by id', err);
+          return null;
+        }
+      })());
+    if (target) {
+      restoreFromLog(target);
+      restored = true;
+    }
+  }
+  if (!restored) {
+    const resumed = await tryResumeConversation(cachedLogs ?? undefined);
+    if (!resumed) {
+      seedWelcomeMessages();
+      await startIntroConversation();
+    }
   }
   nextTick(() => {
     const container = chatLogRef.value;

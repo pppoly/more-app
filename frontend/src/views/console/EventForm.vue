@@ -128,11 +128,16 @@
 
     <section class="hero-cover-panel cover-below" ref="sectionCover">
       <div v-if="coverDisplayItems.length" class="hero-cover-strip">
-        <figure v-for="(item, index) in coverDisplayItems" :key="item.id" class="hero-cover-thumb">
+        <button
+          v-for="(item, index) in coverDisplayItems"
+          :key="item.id"
+          type="button"
+          class="hero-cover-thumb"
+          @click="openCoverActions(item, index)"
+        >
           <img :src="item.imageUrl" alt="cover" />
           <span v-if="index === 0" class="hero-cover-main">カバー</span>
-          <button type="button" class="hero-cover-delete" @click.stop="handleDeleteCover(item.id)">×</button>
-        </figure>
+        </button>
         <button
           v-if="canAddMoreCovers"
           type="button"
@@ -140,17 +145,16 @@
           @click.stop="triggerCoverPicker"
         >
           <span>+</span>
-          <p>さらに追加</p>
         </button>
       </div>
       <button
         v-else
         type="button"
-        class="hero-cover-add hero-cover-add--solo"
+        class="hero-cover-placeholder"
         @click.stop="triggerCoverPicker"
       >
-        <span>+</span>
-        <p>写真を追加</p>
+        <span class="hero-cover-plus">+</span>
+        <p class="hero-cover-placeholder-text">写真を追加</p>
       </button>
       <p class="hero-cover-rules">{{ COVER_RULES_TEXT }}</p>
       <p v-if="coverError" class="status error">{{ coverError }}</p>
@@ -164,6 +168,30 @@
       />
     </section>
 
+    <Teleport to="body">
+      <div v-if="showCoverActionSheet" class="cover-action-mask" @click.self="closeCoverActions">
+        <div class="cover-action-sheet">
+          <p class="cover-action-title">画像を編集</p>
+          <button
+            v-if="activeCoverIndex !== null && activeCoverIndex > 0"
+            type="button"
+            class="sheet-btn"
+            @click="setAsCover"
+          >
+            カバーにする
+          </button>
+          <button
+            type="button"
+            class="sheet-btn danger"
+            @click="deleteActiveCover"
+          >
+            この画像を削除
+          </button>
+          <button type="button" class="sheet-btn" @click="closeCoverActions">キャンセル</button>
+        </div>
+      </div>
+    </Teleport>
+
     <div v-if="uploadingCover" class="cover-upload-overlay">
       <div class="cover-upload-box">
         <span class="cover-upload-spinner"></span>
@@ -173,6 +201,62 @@
 
     <section v-else-if="aiPrefillNotice && !isMobileLayout" class="ai-prefill">
       <p>{{ aiPrefillNotice }}</p>
+    </section>
+
+    <section class="info-block ios-panel" ref="sectionBasic">
+      <div class="info-group">
+        <button class="info-row info-row--primary" type="button" @click="openFieldEditor('title')">
+          <span class="info-label">タイトル</span>
+          <span class="info-value" :class="{ 'is-placeholder': !form.title }">
+            {{ form.title || '未設定' }}
+          </span>
+        </button>
+        <button class="info-row info-row--primary" type="button" @click="openTimeRange">
+          <span class="info-label">日程</span>
+          <span class="info-value" :class="{ 'is-placeholder': !timeRangeDisplay }">
+            {{ timeRangeDisplay || '未設定' }}
+          </span>
+        </button>
+        <button class="info-row info-row--primary" type="button" @click="openLocationPickerMain">
+          <span class="info-label">場所</span>
+          <span class="info-value" :class="{ 'is-placeholder': !form.locationText }">
+            {{ form.locationText || '地図で選択' }}
+          </span>
+        </button>
+        <p class="info-subhint">
+          <button
+            type="button"
+            class="info-link"
+            @click.prevent="manualLocationMode = false; openLocationPicker()"
+          >
+            地図で選択
+          </button>
+          <span class="info-divider">｜</span>
+          <button
+            type="button"
+            class="info-link"
+            @click.prevent="manualLocationMode = true; focusMainInline('locationText')"
+          >
+            見つからない場合は手入力
+          </button>
+        </p>
+      </div>
+
+      <div class="info-group info-group--secondary" ref="sectionSchedule">
+        <button class="info-row info-row--secondary" type="button" @click="openRegRange">
+          <span class="info-label">受付期間</span>
+          <span class="info-value" :class="{ 'is-placeholder': !regRangeDisplay }">
+            {{ regRangeDisplay || '未設定（イベントと同じ）' }}
+          </span>
+        </button>
+        <p class="info-subhint muted">未設定の場合、受付時間はイベント時間と同じです。</p>
+        <button class="info-row info-row--secondary" type="button" @click="openParticipants">
+          <span class="info-label">参加人数</span>
+          <span class="info-value" :class="{ 'is-placeholder': !participantsDisplay }">
+            {{ participantsDisplay || '未設定' }}
+          </span>
+        </button>
+      </div>
     </section>
 
     <section
@@ -277,38 +361,6 @@
               {{ form.regEndTime ? formatDisplayDate(form.regEndTime) : '設定してください' }}
             </span>
           </button>
-        </div>
-      </section>
-
-      <!-- Participants -->
-      <section class="ios-panel" ref="sectionSchedule">
-        <div class="ios-form">
-          <div class="ios-row ios-row--builder-line">
-            <span class="ios-label">最低参加人数</span>
-            <input
-              type="tel"
-              class="ios-inline-input"
-              placeholder="設定してください"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              ref="minParticipantsInputRef"
-              :value="minParticipantsDisplay"
-              @input="handleParticipantsInput('min', $event)"
-            />
-          </div>
-          <div class="ios-row ios-row--builder-line">
-            <span class="ios-label">最大参加人数</span>
-            <input
-              type="tel"
-              class="ios-inline-input"
-              placeholder="設定してください"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              ref="maxParticipantsInputRef"
-              :value="maxParticipantsDisplay"
-              @input="handleParticipantsInput('max', $event)"
-            />
-          </div>
         </div>
       </section>
 
@@ -537,8 +589,11 @@
       </section>
 
       <div class="actions" v-if="!isMobileLayout">
+        <button type="button" class="ghost" :disabled="submitting" @click="handleSaveDraft">
+          {{ actionLoading === 'draft' ? '保存中…' : '下書きを保存' }}
+        </button>
         <button type="submit" class="primary" :disabled="submitting">
-          {{ submitting ? '保存中…' : '保存' }}
+          {{ actionLoading === 'open' ? '公開中…' : 'イベントを公開' }}
         </button>
       </div>
       <p v-if="saveStatus" class="status success">{{ saveStatus }}</p>
@@ -555,7 +610,7 @@
         :disabled="submitting"
         @click="handlePublish"
       >
-        {{ actionLoading === 'publish' ? '公開中…' : 'イベントを公開' }}
+        {{ actionLoading === 'open' ? '公開中…' : 'イベントを公開' }}
       </button>
     </div>
 
@@ -862,10 +917,37 @@ const coverDisplayItems = computed(() =>
 );
 const currentCoverCount = computed(() => coverDisplayItems.value.length);
 const canAddMoreCovers = computed(() => currentCoverCount.value < MAX_COVERS);
+const showCoverActionSheet = ref(false);
+const activeCoverAction = ref<EventGalleryItem | null>(null);
+const activeCoverIndex = ref<number | null>(null);
+const pendingEndRange = ref(false);
+const pendingRegRange = ref(false);
+const pendingMaxParticipants = ref(false);
+const timeRangeDisplay = computed(() => {
+  if (form.startTime && form.endTime) {
+    return `${formatDisplayDate(form.startTime)} 〜 ${formatDisplayDate(form.endTime)}`;
+  }
+  return '';
+});
+const regRangeDisplay = computed(() => {
+  if (form.regStartTime && form.regEndTime) {
+    return `${formatDisplayDate(form.regStartTime)} 〜 ${formatDisplayDate(form.regEndTime)}`;
+  }
+  return '';
+});
+const participantsDisplay = computed(() => {
+  const min = minParticipantsDisplay.value;
+  const max = maxParticipantsDisplay.value;
+  if (!min && !max) return '';
+  if (min && max) return `${min}〜${max}人`;
+  if (min && !max) return `${min}人〜`;
+  if (!min && max) return `〜${max}人`;
+  return '';
+});
 const editingField = ref<FieldKey | null>(null);
 const fieldDraft = ref('');
 const richNoteImages = ref<Array<{ id: string; src: string }>>([]);
-const actionLoading = ref<'draft' | 'publish' | null>(null);
+const actionLoading = ref<'draft' | 'open' | null>(null);
 const saveStatus = ref<string | null>(null);
 let saveStatusTimer: number | null = null;
 const uploadingCover = ref(false);
@@ -873,8 +955,6 @@ const titleInputRef = ref<HTMLInputElement | null>(null);
 const locationInputRef = ref<HTMLInputElement | null>(null);
 const refundPolicyInputRef = ref<HTMLTextAreaElement | null>(null);
 const ticketPriceInputRef = ref<HTMLInputElement | null>(null);
-const minParticipantsInputRef = ref<HTMLInputElement | null>(null);
-const maxParticipantsInputRef = ref<HTMLInputElement | null>(null);
 const ticketPriceDisplay = computed(() =>
   form.ticketPrice != null ? String(form.ticketPrice) : '',
 );
@@ -1321,6 +1401,24 @@ const confirmFieldEditor = () => {
   }
   if (editingField.value === 'regStartTime') {
     autoFillRegEnd();
+  }
+  if (pendingEndRange.value && editingField.value === 'startTime') {
+    editingField.value = 'endTime';
+    fieldDraft.value = form.endTime || '';
+    pendingEndRange.value = false;
+    return;
+  }
+  if (pendingRegRange.value && editingField.value === 'regStartTime') {
+    editingField.value = 'regEndTime';
+    fieldDraft.value = form.regEndTime || '';
+    pendingRegRange.value = false;
+    return;
+  }
+  if (pendingMaxParticipants.value && editingField.value === 'minParticipants') {
+    editingField.value = 'maxParticipants';
+    fieldDraft.value = form.maxParticipants != null ? String(form.maxParticipants) : '';
+    pendingMaxParticipants.value = false;
+    return;
   }
   closeFieldEditor();
 };
@@ -2387,21 +2485,6 @@ const maxParticipantsDisplay = computed(() =>
   form.maxParticipants != null ? String(form.maxParticipants) : '',
 );
 
-const handleParticipantsInput = (
-  type: 'min' | 'max',
-  event: Event,
-) => {
-  const input = event.target as HTMLInputElement;
-  const raw = input.value.replace(/[^0-9]/g, '').trim();
-  const value = raw ? Number(raw) : null;
-  if (type === 'min') {
-    form.minParticipants = value;
-  } else {
-    form.maxParticipants = value;
-  }
-  input.value = raw;
-};
-
 const handleTicketInput = (event: Event) => {
   const input = event.target as HTMLInputElement;
   const raw = input.value.replace(/[^0-9]/g, '').trim();
@@ -2836,6 +2919,61 @@ const handleDeleteCover = async (coverId: string) => {
   } finally {
     uploadingCover.value = false;
   }
+};
+
+const setCoverList = (items: EventGalleryItem[]) => {
+  if (eventId.value) {
+    galleries.value = items;
+  } else {
+    localCoverPreviews.value = items;
+  }
+};
+
+const openCoverActions = (item: EventGalleryItem, index: number) => {
+  activeCoverAction.value = item;
+  activeCoverIndex.value = index;
+  showCoverActionSheet.value = true;
+};
+
+const closeCoverActions = () => {
+  showCoverActionSheet.value = false;
+  activeCoverAction.value = null;
+  activeCoverIndex.value = null;
+};
+
+const setAsCover = () => {
+  if (!activeCoverAction.value || activeCoverIndex.value === null || activeCoverIndex.value <= 0) return;
+  const items = [...coverDisplayItems.value];
+  items.splice(activeCoverIndex.value, 1);
+  items.unshift(activeCoverAction.value);
+  setCoverList(items);
+  closeCoverActions();
+};
+
+const deleteActiveCover = async () => {
+  if (!activeCoverAction.value) return;
+  await handleDeleteCover(activeCoverAction.value.id);
+  closeCoverActions();
+};
+
+const openTimeRange = () => {
+  pendingEndRange.value = true;
+  openFieldEditor('startTime');
+};
+
+const openRegRange = () => {
+  pendingRegRange.value = true;
+  openFieldEditor('regStartTime');
+};
+
+const openParticipants = () => {
+  pendingMaxParticipants.value = true;
+  openFieldEditor('minParticipants');
+};
+
+const openLocationPickerMain = () => {
+  manualLocationMode.value = false;
+  openLocationPicker();
 };
 
 const uploadPendingCovers = async (targetEventId: string) => {
@@ -4403,76 +4541,17 @@ select {
 
 .cover-card-uploader,
 .hero-cover-uploader {
-  border: 1px dashed rgba(8, 26, 50, 0.25);
-  border-radius: 28px;
-  background: rgba(8, 26, 50, 0.02);
-  padding: 12px;
-  min-height: 100px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease;
-}
-
-.cover-card-uploader--filled,
-.hero-cover-uploader--filled {
-  border-style: solid;
-  background: rgba(8, 26, 50, 0.04);
-}
-
-.cover-card-avatar,
-.hero-cover-avatar {
-  width: 96px;
-  height: 96px;
-  border-radius: 999px;
-  border: 2px dashed rgba(8, 26, 50, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40px;
-  color: rgba(8, 26, 50, 0.45);
-  background: #fff;
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
-}
-
-.cover-card-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.cover-card-gallery,
-.hero-cover-gallery {
-  width: 100%;
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-}
-
-.cover-card-thumb,
-.hero-cover-thumb {
-  width: 84px;
-  height: 84px;
-  border-radius: 22px;
-  overflow: hidden;
-  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.15);
-  flex-shrink: 0;
-}
-
-.cover-card-thumb img,
-.hero-cover-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
 
 .hero-cover-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding: 4px 2px 8px;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -4480,77 +4559,193 @@ select {
   display: none;
 }
 
-.hero-cover-hint {
-  margin: 0;
-  font-size: 12px;
-  color: rgba(236, 245, 255, 0.85);
-}
-
 .hero-cover-rules {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   line-height: 1.35;
-  color: rgba(236, 245, 255, 0.7);
-}
-
-.hero-cover-add--solo {
-  width: 100%;
-  min-height: 96px;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .hero-cover-thumb {
   position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
-
+.hero-cover-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 14px;
+}
 .hero-cover-main {
   position: absolute;
   top: 6px;
   left: 6px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.88);
   color: #fff;
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 999px;
-}
-
-.hero-cover-delete {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
+  padding: 4px 8px;
   border-radius: 10px;
-  border: none;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 14px;
-  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .hero-cover-add {
-  width: 84px;
-  height: 84px;
-  border-radius: 22px;
-  border: 1px dashed rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.12);
-  color: #ecf5ff;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: 13px;
+  width: 92px;
+  height: 92px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+  padding: 8px;
+  flex-shrink: 0;
+}
+.hero-cover-add span {
+  font-size: 26px;
+  line-height: 1;
 }
 
-.hero-cover-add span {
-  font-size: 24px;
+.hero-cover-placeholder {
+  width: 100%;
+  height: 150px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(145deg, #f8fafc, #eef2ff);
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+}
+.hero-cover-plus {
+  font-size: 32px;
   line-height: 1;
+}
+.hero-cover-placeholder-text {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.cover-action-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 70;
+}
+.cover-action-sheet {
+  background: #fff;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  padding: 12px 16px 18px;
+  box-shadow: 0 -16px 30px rgba(15, 23, 42, 0.16);
+}
+.cover-action-title {
+  text-align: center;
+  font-weight: 700;
+  margin: 4px 0 12px;
+  color: #0f172a;
+}
+.sheet-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  margin-top: 8px;
+}
+.sheet-btn.danger {
+  color: #b91c1c;
+  background: #fff1f2;
+  border-color: #fecdd3;
 }
 
 .hero-top {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.info-block {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-top: 12px;
+}
+.info-group {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  margin-bottom: 10px;
+}
+.info-group--secondary {
+  border-color: #eef2f7;
+  box-shadow: none;
+}
+.info-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px;
+  border-bottom: 1px solid #edf2f7;
+}
+.info-row:last-child {
+  border-bottom: none;
+}
+.info-row--primary {
+  background: #f8fafc;
+}
+.info-label {
+  font-size: 14px;
+  color: #475569;
+}
+.info-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.info-value.is-placeholder {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+.info-subhint {
+  margin: 6px 14px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.info-link {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-weight: 600;
+  padding: 0;
+}
+.info-divider {
+  margin: 0 6px;
+  color: #cbd5e1;
 }
 
 .hero-cover-panel {

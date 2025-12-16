@@ -208,14 +208,14 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .me-hero__avatar {
   border: none;
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.5);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 20px;
   font-weight: 600;
   padding: 0;
   line-height: 0;
@@ -338,9 +338,9 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon {
-  width: 37px;
-  height: 37px;
-  border-radius: 12px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   background: #e9f5ff;
   color: #0f172a;
   display: inline-flex;
@@ -351,8 +351,8 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon img {
-  width: 30px;
-  height: 30px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
 }
 

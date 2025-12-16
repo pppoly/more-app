@@ -132,6 +132,9 @@
         <button class="action-primary" type="button" @click="editEvent">
           内容を編集
         </button>
+        <button class="action-secondary" type="button" @click="openShareSheet">
+          共有
+        </button>
         <button class="action-more" type="button" aria-label="その他操作" @click="openMoreActions">
           <img :src="moreIcon" alt="" aria-hidden="true" />
         </button>
@@ -184,6 +187,46 @@
           <button class="sheet-close" @click="closeEntryAction">閉じる</button>
         </div>
       </div>
+
+      <div v-if="showShareSheet" class="sheet-mask" @click.self="closeShareSheet">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <p class="sheet-title">イベントを共有</p>
+          <p v-if="shareError" class="sheet-error">{{ shareError }}</p>
+          <button class="sheet-action" type="button" @click="shareViaSystem">
+            スマホの共有メニューを開く
+          </button>
+          <button class="sheet-action" type="button" @click="generateQrCode" :disabled="qrGenerating">
+            {{ qrGenerating ? 'QR生成中…' : 'QRコードを表示' }}
+          </button>
+          <button class="sheet-action" type="button" @click="generatePoster" :disabled="posterGenerating">
+            {{ posterGenerating ? 'ポスター生成中…' : 'ポスターを作る' }}
+          </button>
+          <button class="sheet-close" type="button" @click="closeShareSheet">閉じる</button>
+        </div>
+      </div>
+
+      <Transition name="qr-fade">
+        <div v-if="qrImageData" class="qr-preview-overlay" @click.self="qrImageData = null">
+          <div class="qr-preview-card">
+            <button class="qr-close" type="button" @click="qrImageData = null"><span class="i-lucide-x"></span></button>
+            <p class="qr-title">イベント QR</p>
+            <img :src="qrImageData" alt="イベント QR" class="qr-img" />
+            <p class="qr-url">{{ publicEventUrl }}</p>
+          </div>
+        </div>
+      </Transition>
+
+      <Transition name="qr-fade">
+        <div v-if="posterDataUrl" class="qr-preview-overlay" @click.self="posterDataUrl = null">
+          <div class="qr-preview-card">
+            <button class="qr-close" type="button" @click="posterDataUrl = null"><span class="i-lucide-x"></span></button>
+            <p class="qr-title">共有ポスター</p>
+            <img :src="posterDataUrl" alt="イベントポスター" class="poster-img" />
+            <a class="poster-save" :href="posterDataUrl" download="event-poster.png">端末に保存</a>
+          </div>
+        </div>
+      </Transition>
     </template>
   </div>
 </template>
@@ -208,6 +251,7 @@ import { getLocalizedText } from '../../../utils/i18nContent';
 import { useResourceConfig } from '../../../composables/useResourceConfig';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import moreIcon from '../../../assets/icons/more-horizontal.svg';
+import QRCode from 'qrcode';
 
 const route = useRoute();
 const router = useRouter();
@@ -218,6 +262,12 @@ const loading = ref(true);
 const error = ref('');
 const cancelling = ref(false);
 const showSkeleton = computed(() => loading.value || (!eventCard.value && !error.value));
+const showShareSheet = ref(false);
+const shareError = ref('');
+const qrImageData = ref<string | null>(null);
+const posterDataUrl = ref<string | null>(null);
+const qrGenerating = ref(false);
+const posterGenerating = ref(false);
 const eventDetail = ref<ConsoleEventDetail | null>(null);
 const summary = ref<EventRegistrationsSummary | null>(null);
 const registrations = ref<ConsoleEventRegistrationItem[]>([]);
@@ -458,6 +508,145 @@ const closeEntryAction = () => {
   activeEntry.value = null;
 };
 
+const publicEventUrl = computed(() => {
+  if (typeof window === 'undefined') return '';
+  const base = window.location.origin;
+  return `${base}/events/${eventId.value}`;
+});
+
+const openShareSheet = () => {
+  shareError.value = '';
+  showShareSheet.value = true;
+};
+
+const closeShareSheet = () => {
+  showShareSheet.value = false;
+};
+
+const shareViaSystem = async () => {
+  if (!eventCard.value || typeof window === 'undefined') return;
+  const payload = {
+    title: eventCard.value.title,
+    url: publicEventUrl.value,
+  };
+  shareError.value = '';
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      showShareSheet.value = false;
+      return;
+    } catch (err) {
+      shareError.value = '共有に失敗しました。別の方法をお試しください。';
+    }
+  }
+  try {
+    await navigator.clipboard?.writeText?.(publicEventUrl.value);
+    shareError.value = 'URL をコピーしました。';
+  } catch {
+    shareError.value = '共有に対応していません。URL を手動でコピーしてください。';
+  }
+};
+
+const generateQrCode = async () => {
+  if (!publicEventUrl.value) return;
+  qrGenerating.value = true;
+  shareError.value = '';
+  try {
+    qrImageData.value = await QRCode.toDataURL(publicEventUrl.value, {
+      margin: 1,
+      width: 680,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    });
+    showShareSheet.value = false;
+  } catch (err) {
+    shareError.value = 'QR コードの生成に失敗しました。';
+  } finally {
+    qrGenerating.value = false;
+  }
+};
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
+  const chars = text.split('');
+  let line = '';
+  for (let i = 0; i < chars.length; i += 1) {
+    const test = line + chars[i];
+    const width = ctx.measureText(test).width;
+    if (width > maxWidth && i > 0) {
+      ctx.fillText(line, x, y);
+      line = chars[i];
+      y += lineHeight;
+    } else {
+      line = test;
+    }
+  }
+  ctx.fillText(line, x, y);
+}
+
+const drawPoster = async (qrUrl: string) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 800;
+  canvas.height = 1200;
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !eventCard.value) return null;
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = 'bold 36px "Helvetica Neue", "Inter", system-ui';
+  const title = eventCard.value.title || 'イベント';
+  wrapText(ctx, title, 60, 140, 680, 44);
+
+  ctx.font = '24px "Helvetica Neue", "Inter", system-ui';
+  ctx.fillStyle = '#475569';
+  ctx.fillText(eventCard.value.dateTimeText ?? '', 60, 260);
+  if (eventCard.value.locationText) {
+    wrapText(ctx, eventCard.value.locationText, 60, 310, 680, 30);
+  }
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '20px "Helvetica Neue", "Inter", system-ui';
+  ctx.fillText('参加用リンク', 60, 380);
+  ctx.fillStyle = '#2563eb';
+  wrapText(ctx, publicEventUrl.value, 60, 420, 680, 28);
+
+  const qrImg = new Image();
+  const qrLoaded = new Promise<void>((resolve, reject) => {
+    qrImg.onload = () => resolve();
+    qrImg.onerror = () => reject();
+  });
+  qrImg.src = qrUrl;
+  await qrLoaded.catch(() => {});
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(220, 520, 360, 360);
+  ctx.drawImage(qrImg, 230, 530, 340, 340);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '18px "Helvetica Neue", "Inter", system-ui';
+  ctx.fillText('QR をスキャンして申込ページへ', 210, 900);
+
+  return canvas.toDataURL('image/png');
+};
+
+const generatePoster = async () => {
+  if (!publicEventUrl.value) return;
+  posterGenerating.value = true;
+  shareError.value = '';
+  try {
+    const qr = await QRCode.toDataURL(publicEventUrl.value, { margin: 1, width: 480 });
+    const poster = await drawPoster(qr);
+    if (poster) {
+      posterDataUrl.value = poster;
+      showShareSheet.value = false;
+    } else {
+      shareError.value = 'ポスター生成に失敗しました。';
+    }
+  } catch (err) {
+    shareError.value = 'ポスター生成に失敗しました。';
+  } finally {
+    posterGenerating.value = false;
+  }
+};
+
 const approveEntry = async () => {
   if (!activeEntry.value) return;
   entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
@@ -627,7 +816,7 @@ const reload = () => loadData();
   bottom: 0;
   padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr auto;
   gap: 8px;
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid #e2e8f0;
@@ -671,7 +860,18 @@ const reload = () => loadData();
 .sheet-sub { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
 .sheet-action { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: #f8fafc; color: #0f172a; font-weight: 700; margin-top: 8px; }
 .sheet-action.danger { color: #b91c1c; background: #fff1f2; border-color: #fecdd3; }
+.sheet-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px; text-align: center; }
+.sheet-error { font-size: 12px; color: #b91c1c; margin: 4px 0 8px; text-align: center; }
 .sheet-close { width: 100%; padding: 12px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; margin-top: 10px; }
+
+.qr-preview-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.32); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.qr-preview-card { background: #fff; padding: 16px; border-radius: 16px; width: min(420px, 100%); position: relative; box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18); text-align: center; }
+.qr-close { position: absolute; top: 8px; right: 8px; border: none; background: transparent; font-size: 20px; }
+.qr-title { font-weight: 700; margin: 8px 0 4px; }
+.qr-img { width: 240px; height: 240px; object-fit: contain; margin: 12px auto; display: block; }
+.qr-url { font-size: 12px; color: #475569; word-break: break-all; }
+.poster-img { width: 100%; border-radius: 12px; margin: 12px 0; }
+.poster-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border-radius: 12px; background: #0f172a; color: #fff; font-weight: 700; }
 
 .error-panel { text-align: center; gap: 6px; }
 .w-full { width: 100%; }
