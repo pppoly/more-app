@@ -300,6 +300,7 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
 import { loadLiff } from '../../utils/liff';
+import { trackEvent } from '../../utils/analytics';
 import backIcon from '../../assets/icons/arrow-back.svg';
 
 const route = useRoute();
@@ -638,6 +639,7 @@ const loadEvent = async () => {
     event.value = detailData;
     gallery.value = galleryData;
     await loadFollowState();
+    trackEvent('view_event_detail', { eventId: detailData.id });
   } catch (err) {
     error.value = '活动加载失败，请稍后再试';
   } finally {
@@ -925,6 +927,7 @@ const handleCtaClick = () => {
 
 const submitBooking = async () => {
   if (!eventId.value) return;
+  trackEvent('registration_start', { eventId: eventId.value });
   submitting.value = true;
   registrationError.value = null;
   try {

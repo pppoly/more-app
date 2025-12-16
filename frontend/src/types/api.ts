@@ -14,6 +14,11 @@ export interface UserProfile {
   isAdmin?: boolean;
 }
 
+export interface AnalyticsEventResponse {
+  success: boolean;
+  stored: number;
+}
+
 export interface CommunitySummary {
   id: string;
   name: string;

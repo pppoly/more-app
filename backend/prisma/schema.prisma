@@ -34,6 +34,7 @@ model User {
   promptDefinitionsUpdated PromptDefinition[] @relation("PromptUpdatedBy")
   promptDefinitionsApproved PromptDefinition[] @relation("PromptApprovedBy")
   updatedI18nMessages I18nMessage[] @relation("I18nMessageUpdatedBy")
+  analyticsEvents AnalyticsEvent[]
 }
 
 model Community {
@@ -186,6 +187,24 @@ model EventCheckin {
   checkinType    String
   event          Event            @relation(fields: [eventId], references: [id])
   registration   EventRegistration @relation(fields: [registrationId], references: [id])
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  eventName  String
+  timestamp  DateTime @default(now())
+  sessionId  String
+  userId     String?
+  path       String?
+  isLiff     Boolean  @default(false)
+  userAgent  String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([eventName, timestamp])
+  @@index([sessionId])
 }
 
 model EventGallery {

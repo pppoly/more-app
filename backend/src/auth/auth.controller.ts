@@ -92,4 +92,23 @@ export class AuthController {
       pictureUrl: body.pictureUrl,
     });
   }
+
+  @Post('line/liff')
+  async lineLiffTokenLogin(
+    @Body()
+    body: {
+      idToken?: string;
+      accessToken?: string;
+      displayName?: string;
+      pictureUrl?: string;
+    },
+  ) {
+    if (!body?.idToken && !body?.accessToken) {
+      throw new BadRequestException('idToken or accessToken is required');
+    }
+    return this.authService.lineLiffTokenLogin(body.idToken, body.accessToken, {
+      displayName: body.displayName,
+      pictureUrl: body.pictureUrl,
+    });
+  }
 }

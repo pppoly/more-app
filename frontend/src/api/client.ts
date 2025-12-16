@@ -44,8 +44,19 @@ import type {
   UserProfile,
   ResourceGroup,
   CommunityTagCategory,
+  AnalyticsEventResponse,
 } from '../types/api';
 import type { StripeOnboardResponse } from '../types/console';
+export interface AnalyticsEventInput {
+  eventName: string;
+  timestamp?: string | Date;
+  sessionId: string;
+  userId?: string | null;
+  path?: string | null;
+  isLiff?: boolean;
+  userAgent?: string | null;
+  payload?: Record<string, any> | null;
+}
 
 export interface CommunityPortalConfig {
   theme?: string;
@@ -252,6 +263,22 @@ export async function lineLiffLogin(payload: {
   pictureUrl?: string | null;
 }): Promise<DevLoginResponse> {
   const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff-login', payload);
+  return data;
+}
+
+export async function lineLiffTokenLogin(payload: {
+  idToken?: string;
+  accessToken?: string;
+  displayName?: string | null;
+  pictureUrl?: string | null;
+}): Promise<DevLoginResponse> {
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff', payload);
+  return data;
+}
+
+export async function sendAnalyticsEvents(events: AnalyticsEventInput[]) {
+  if (!events.length) return { success: true, stored: 0 };
+  const { data } = await apiClient.post<AnalyticsEventResponse>('/analytics/events', { events });
   return data;
 }
 

@@ -1,7 +1,7 @@
 <template>
   <div class="events-page">
     <!-- App Bar -->
-    <header class="app-bar">
+    <header v-if="!showBrandBar" class="app-bar">
       <div class="app-bar__left">
         <img :src="logoImage" alt="MORE logo" class="logo-img" />
       </div>
@@ -105,9 +105,12 @@ import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
+import { trackEvent } from '../../utils/analytics';
+import { useAppShellMode } from '../../composables/useAppShellMode';
 import logo1 from '../../assets/images/logo1.svg';
 
 const router = useRouter();
+const { showBrandBar } = useAppShellMode();
 const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -155,6 +158,7 @@ const loadEvents = async () => {
   error.value = null;
   try {
     events.value = await fetchEvents();
+    trackEvent('view_events_list', { count: events.value.length });
   } catch (err) {
     console.warn('fetchEvents failed', err);
     events.value = [];

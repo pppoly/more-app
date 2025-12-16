@@ -1,5 +1,11 @@
 <template>
-<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
+<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': forceHideHeader }">
+  <BrandTopBar
+    v-if="forceHideHeader && showBrandTopBar"
+    :logo-src="brandLogo || defaultLogo"
+    :show-debug="showBrandDebug"
+    :debug-text="brandDebugText"
+  />
   <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
@@ -25,6 +31,7 @@
         isFixedPage ? 'mobile-shell__content--fixed' : '',
         isFlush ? 'mobile-shell__content--flush' : '',
       ]"
+      :style="contentTopPaddingStyle"
     >
       <div :class="['mobile-shell__view', isFixedPage ? 'mobile-shell__view--fixed' : '']">
         <Transition name="tab-slide" mode="out-in">
@@ -98,7 +105,9 @@ import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
+import BrandTopBar from '../components/common/BrandTopBar.vue';
 
+const props = defineProps<{ forceHideHeader?: boolean; showBrandTopBar?: boolean; showBrandDebug?: boolean; brandDebugText?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user, setUserProfile } = useAuth();
@@ -110,6 +119,13 @@ const scrollPositions = new Map<string, number>();
 const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
+const defaultLogo = new URL('../assets/images/logo1.svg', import.meta.url).href;
+const contentTopPaddingStyle = computed(() => {
+  if (props.forceHideHeader && props.showBrandTopBar) {
+    return { paddingTop: 'calc(52px + env(safe-area-inset-top, 0px))' };
+  }
+  return {};
+});
 
 const tabIcons = {
   events: {
@@ -175,7 +191,7 @@ const showTabbar = computed(() => {
 });
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
-const showHeader = computed(() => !route.meta?.hideShellHeader);
+const showHeader = computed(() => !route.meta?.hideShellHeader && !props.forceHideHeader);
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 const routeReady = ref(false);

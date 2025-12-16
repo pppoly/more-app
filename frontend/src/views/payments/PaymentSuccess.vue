@@ -15,11 +15,13 @@
 import { onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
+import { trackEvent } from '../../utils/analytics';
 
 const router = useRouter();
 const route = useRoute();
 
 onMounted(() => {
+  trackEvent('payment_success');
   try {
     const raw = sessionStorage.getItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
     if (raw) {

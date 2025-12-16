@@ -277,6 +277,51 @@ export class AuthService {
       verified?.name?.trim() || profileHint?.displayName?.trim() || 'LINEユーザー';
     const pictureUrl = verified?.picture || profileHint?.pictureUrl || null;
 
+    const user = await this.upsertLineUser(lineUserId, displayName, pictureUrl);
+
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken, user };
+  }
+
+  async lineLiffTokenLogin(
+    idToken?: string,
+    accessToken?: string,
+    profileHint?: { displayName?: string | null; pictureUrl?: string | null },
+  ) {
+    let lineUserId: string | null | undefined;
+    let displayName = profileHint?.displayName?.trim();
+    let pictureUrl = profileHint?.pictureUrl || null;
+
+    if (idToken) {
+      const verified = await this.verifyLineIdToken(idToken).catch(() => null);
+      if (verified?.sub) {
+        lineUserId = verified.sub;
+        displayName = verified.name?.trim() || displayName;
+        pictureUrl = verified.picture || pictureUrl;
+      }
+    }
+
+    if (!lineUserId && accessToken) {
+      const profile = await this.fetchLineProfile(accessToken).catch(() => null);
+      if (profile?.userId) {
+        lineUserId = profile.userId;
+        displayName = profile.displayName?.trim() || displayName;
+        pictureUrl = profile.pictureUrl || pictureUrl;
+      }
+    }
+
+    if (!lineUserId) {
+      throw new BadRequestException('LINE認証に失敗しました');
+    }
+
+    const name = displayName || 'LINEユーザー';
+    const user = await this.upsertLineUser(lineUserId, name, pictureUrl);
+
+    const signed = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken: signed, user };
+  }
+
+  private async upsertLineUser(lineUserId: string, displayName: string, pictureUrl?: string | null) {
     let user = await this.prisma.user.findFirst({
       where: { lineUserId },
     });
@@ -306,8 +351,7 @@ export class AuthService {
       data: updateData,
     });
 
-    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
-    return { accessToken, user };
+    return user;
   }
 
   private normalizeEmail(email: string | undefined | null) {

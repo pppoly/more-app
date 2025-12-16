@@ -1,34 +1,51 @@
 <template>
-  <div class="app-shell" :class="{ 'app-shell--mobile': isMobile }">
+  <div
+    class="app-shell"
+    :class="{ 'app-shell--mobile': isMobile }"
+    :data-liff-ready="liffReady"
+  >
     <div v-if="showDevPageName" class="dev-page-overlay">
       {{ currentPageName }}
     </div>
     <AppToast />
     <AppConfirm />
+    <LiffOpenPrompt />
+    <LiffStatusBadge />
     <template v-if="isMobile">
-      <RouterView v-slot="{ Component, route }">
-        <MobileShell>
-          <template v-if="route.meta?.keepAlive">
-            <KeepAlive :include="keepAliveRoutes">
+      <AppShell
+        :show-brand-top-bar="showBrandBar"
+        :logo-src="brandLogo"
+        :debug-text="showBrandDebug ? brandDebugText : undefined"
+      >
+        <RouterView v-slot="{ Component, route }">
+          <MobileShell
+            :force-hide-header="showBrandBar"
+            :show-brand-top-bar="showBrandBar"
+            :show-brand-debug="showBrandDebug"
+            :brand-debug-text="brandDebugText"
+          >
+            <template v-if="route.meta?.keepAlive">
+              <KeepAlive :include="keepAliveRoutes">
+                <component
+                  :is="Component"
+                  v-bind="resolveRouteProps(route)"
+                  :key="(route.name as string) || 'keepalive'"
+                />
+              </KeepAlive>
+            </template>
+            <template v-else>
               <component
                 :is="Component"
                 v-bind="resolveRouteProps(route)"
-                :key="(route.name as string) || 'keepalive'"
+                :key="route.fullPath"
               />
-            </KeepAlive>
-          </template>
-          <template v-else>
-            <component
-              :is="Component"
-              v-bind="resolveRouteProps(route)"
-              :key="route.fullPath"
-            />
-          </template>
-        </MobileShell>
-      </RouterView>
+            </template>
+          </MobileShell>
+        </RouterView>
+      </AppShell>
     </template>
     <template v-else>
-      <header class="app-header">
+      <header v-if="!showBrandBar" class="app-header">
         <div class="brand">
           <h1>MORE App (モア アプリ)</h1>
           <nav>
@@ -82,10 +99,11 @@
       </main>
     </template>
   </div>
+  <div v-if="debugParam" class="build-version" aria-hidden="true">build: {{ BUILD_VERSION }}</div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
@@ -93,9 +111,18 @@ import { useAuth } from './composables/useAuth';
 import AppToast from './components/common/AppToast.vue';
 import AppConfirm from './components/common/AppConfirm.vue';
 import { useLocale } from './composables/useLocale';
+import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
+import LiffStatusBadge from './components/common/LiffStatusBadge.vue';
+import { useAppShellMode } from './composables/useAppShellMode';
+import { BUILD_VERSION } from './version';
+import AppShell from './layouts/AppShell.vue';
+import logo1 from './assets/images/logo1.svg';
 
 const { user, initializing, logout } = useAuth();
 const isMobile = ref(false);
+const liffReady = inject('isLiffReady', ref(false));
+const { isLiffClientMode, showBrandBar, showBrandDebug, brandDebugText, debugParam } = useAppShellMode();
+const brandLogo = logo1;
 const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
 const router = useRouter();
@@ -124,6 +151,9 @@ const handleViewportChange = () => {
 onMounted(() => {
   handleViewportChange();
   mediaQuery?.addEventListener('change', handleViewportChange);
+  if (debugParam.value) {
+    console.info('[build]', BUILD_VERSION);
+  }
 });
 
 onUnmounted(() => {
@@ -175,6 +205,16 @@ const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
   letter-spacing: 0.05em;
   z-index: 9999;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+
+.build-version {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  z-index: 900;
   pointer-events: none;
 }
 
