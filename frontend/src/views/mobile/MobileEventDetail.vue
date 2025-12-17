@@ -770,6 +770,14 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  const shareUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/events/${detail.value.id}?from=line_share`
+      : '';
+  const shareTitle =
+    getLocalizedText(detail.value.title, preferredLangs.value) ||
+    (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
+
   if (APP_TARGET === 'liff') {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
@@ -777,29 +785,32 @@ const shareEvent = async () => {
     }
     try {
       const liff = await loadLiff(LIFF_ID);
-      const url = typeof window !== 'undefined' ? window.location.href : '';
-      const title =
-        getLocalizedText(detail.value.title, preferredLangs.value) ||
-        (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
       if (liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${title}\n${url}` }]);
-      } else if (liff.sendMessages) {
-        await liff.sendMessages([{ type: 'text', text: `${title}\n${url}` }]);
+        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrl}` }]);
+        showUiMessage('LINE で共有しました');
+        return;
       }
-      showUiMessage('LINE で共有しました');
+      // fallback: copy link
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        showUiMessage('リンクをコピーしました');
+        return;
+      }
     } catch (err) {
       console.error('Failed to share via LIFF', err);
       showUiMessage('LINE 共有に失敗しました');
+      return;
     }
     return;
   }
-  const payload = { title: detail.value.title, url: window.location.href };
+
+  const payload = { title: shareTitle, url: shareUrl };
 
   // 1) 原生分享（优先）
   if (navigator.share) {
     try {
       await navigator.share(payload);
-      showUiMessage('已分享');
+      showUiMessage('共有しました');
       return;
     } catch {
       // ignore and fallback to LINE
@@ -809,7 +820,7 @@ const shareEvent = async () => {
   // 2) LINE 分享页面（Web）
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   window.open(lineShareUrl, '_blank');
-  showUiMessage('已打开 LINE 分享');
+  showUiMessage('LINE で開きました');
 
   // 3) 额外兜底复制
   try {
@@ -875,11 +886,12 @@ const openCalendar = () => {
   window.open(calendarLink.value, '_blank');
 };
 
+const communityIdForFollow = computed(() => detail.value?.community?.id || (detail.value as any)?.communityId || null);
 const isFollowingCommunity = ref(false);
 const loadFollowState = async () => {
-  if (!detail.value?.community?.id) return;
+  if (!communityIdForFollow.value) return;
   try {
-    const status = await fetchCommunityFollowStatus(detail.value.community.id);
+    const status = await fetchCommunityFollowStatus(communityIdForFollow.value);
     isFollowingCommunity.value = !!status.following;
   } catch {
     isFollowingCommunity.value = false;
@@ -887,23 +899,34 @@ const loadFollowState = async () => {
 };
 
 const toggleFollow = async () => {
-  if (!detail.value?.community?.id) return;
+  if (!communityIdForFollow.value) return;
   if (!user.value) {
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
     return;
   }
   try {
     if (isFollowingCommunity.value) {
-      await unfollowCommunity(detail.value.community.id);
+      await unfollowCommunity(communityIdForFollow.value);
       isFollowingCommunity.value = false;
       showUiMessage('已取消关注');
     } else {
-      await followCommunity(detail.value.community.id);
+      await followCommunity(communityIdForFollow.value);
       isFollowingCommunity.value = true;
       showUiMessage('已关注');
     }
   } catch (err) {
     showUiMessage(err instanceof Error ? err.message : '操作失败');
+  }
+};
+
+const followIfNeeded = async () => {
+  if (!communityIdForFollow.value || isFollowingCommunity.value) return;
+  if (!user.value) return;
+  try {
+    await followCommunity(communityIdForFollow.value);
+    isFollowingCommunity.value = true;
+  } catch (err) {
+    console.warn('auto-follow failed', err);
   }
 };
 
@@ -1015,6 +1038,7 @@ const submitBooking = async () => {
     const registration = await createRegistration(eventId.value, { formAnswers: { ...formValues } });
     handleRegistrationResult(registration);
     showBooking.value = false;
+    await followIfNeeded();
   } catch (err) {
     registrationError.value = '报名失败，请稍后再试';
   } finally {
@@ -1043,6 +1067,7 @@ const handleMockPayment = async () => {
     await createMockPayment(pendingPayment.value.registrationId);
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
+    await followIfNeeded();
   } catch (err) {
     registrationError.value = '支付失败，请稍后再试';
   } finally {

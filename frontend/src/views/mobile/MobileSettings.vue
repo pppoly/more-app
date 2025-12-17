@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-settings m-page">
-    <ConsoleTopBar :title="t('mobile.settings.title')" @back="goBack" />
+    <ConsoleTopBar class="topbar" :title="t('mobile.settings.title')" @back="goBack" />
     <section class="settings-section">
       <h2 class="m-section-title">{{ t('mobile.settings.title') }}</h2>
       <div class="settings-list">
@@ -151,9 +151,14 @@ const selectLocale = async (locale: string) => {
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
   box-sizing: border-box;
-  width: min(100%, 480px);
+  width: 100%;
   margin: 0 auto;
   overflow-x: hidden;
+}
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
 }
 
 .settings-section + .settings-section {

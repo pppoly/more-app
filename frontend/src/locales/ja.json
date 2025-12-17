@@ -138,6 +138,12 @@
       "noManagedHint": "まずはコミュニティを作成してみましょう。",
       "createNew": "新しいコミュニティを作成"
     },
+    "communityEvents": {
+      "title": "コミュニティのイベント"
+    },
+    "eventManage": {
+      "title": "イベント管理"
+    },
     "portal": {
       "title": "コミュニティポータル",
       "subtitle": "テンプレートと表示ブロックを選択してください",

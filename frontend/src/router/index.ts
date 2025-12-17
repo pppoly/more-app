@@ -657,12 +657,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/favorites',
     name: 'favorites',
-    component: () => import('../views/favorites/FavoritesList.vue'),
-    meta: {
-      devPageName: 'お気に入り',
-      hideTabbar: true,
-      hideShellHeader: true,
-    },
+    redirect: '/me',
   },
   {
     path: '/auth/callback',

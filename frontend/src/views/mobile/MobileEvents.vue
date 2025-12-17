@@ -49,47 +49,62 @@
       </section>
 
       <!-- Cards -->
-      <section v-else class="card-list">
-        <article v-for="event in formattedEvents" :key="event.id" class="card" @click="goDetail(event.id)">
-          <div class="cover-wrapper">
-            <img
-              v-if="event.coverUrl"
-              :src="event.coverUrl"
-              alt="event cover"
-              class="cover"
-              loading="lazy"
-            />
-            <div v-else class="cover cover-fallback">MORE</div>
-            <div class="overlay-tags">
-              <div v-if="event.attendees.length" class="avatar-row">
+      <section v-else class="section-list">
+        <div v-for="section in groupedEvents" :key="section.id" class="group">
+          <p class="group-title">{{ section.title }}</p>
+          <div class="card-list">
+            <article v-for="event in section.items" :key="event.id" class="card" @click="goDetail(event.id)">
+              <div class="cover-wrapper">
                 <img
-                  v-for="(avatar, idx) in event.attendees"
-                  :key="`${event.id}-att-${idx}`"
-                  :src="avatar"
-                  alt="attendee"
+                  v-if="event.coverUrl"
+                  :src="event.coverUrl"
+                  alt="event cover"
+                  class="cover"
+                  loading="lazy"
                 />
-                <span v-if="event.attendeesMore > 0" class="avatar-more">+{{ event.attendeesMore }}</span>
+                <div v-else class="cover cover-fallback">MORE</div>
+                <div class="cover-gradient"></div>
+                <div v-if="event.showAvatars && event.attendees.length" class="overlay-avatars">
+                  <div class="avatar-row">
+                    <img
+                      v-for="(avatar, idx) in event.attendees"
+                      :key="`${event.id}-att-${idx}`"
+                      :src="avatar"
+                      alt="attendee"
+                    />
+                    <span v-if="event.attendeesMore > 0" class="avatar-more">+{{ event.attendeesMore }}</span>
+                  </div>
+                </div>
               </div>
-              <span class="chip-dark">{{ event.capacityText }}</span>
-            </div>
-          </div>
-          <div class="card-body">
-            <h2 class="title">{{ event.title }}</h2>
-            <p class="time">
-              <span class="i-lucide-clock-8 text-xs"></span>
-              {{ event.timeText }}
-            </p>
-            <div class="community">
-              <button type="button" class="community-avatar" @click.stop="goCommunity(event.communitySlug)">
-                <img v-if="event.communityLogo" :src="event.communityLogo" :alt="`${event.communityName} logo`" />
-              </button>
-              <div class="community-text">
-                <p class="community-name">{{ event.communityName }}</p>
-                <p class="community-status">参加募集中</p>
+              <div class="card-body">
+                <h2 class="title">{{ event.title }}</h2>
+                <div class="meta-row">
+                  <p class="time">
+                    <span class="i-lucide-clock-8 text-xs"></span>
+                    {{ event.timeText }}
+                  </p>
+                  <span class="status-chip">{{ event.statusText }}</span>
+                </div>
+                <div class="attendees" v-if="event.showAvatars && event.attendees.length">
+                  <div class="avatar-row">
+                    <img
+                      v-for="(avatar, idx) in event.attendees"
+                      :key="`${event.id}-att-${idx}`"
+                      :src="avatar"
+                      alt="attendee"
+                    />
+                    <span v-if="event.attendeesMore > 0" class="avatar-more">+{{ event.attendeesMore }}</span>
+                  </div>
+                </div>
+                <p v-if="event.areaText" class="location">
+                  <span class="i-lucide-map-pin text-xs"></span>
+                  {{ event.areaText }}
+                </p>
+                <p class="byline">by {{ event.communityName }}</p>
               </div>
-            </div>
+            </article>
           </div>
-        </article>
+        </div>
       </section>
     </main>
   </div>
@@ -225,30 +240,51 @@ const filteredEvents = computed(() => {
 
 const formattedEvents = computed(() =>
   filteredEvents.value.map((event) => {
-    const capacityText = formatCapacity(event);
+    const participantsCount = getCurrentParticipants(event);
+    const capacity = getCapacity(event);
+    const capacityText =
+      participantsCount > 0
+        ? capacity && capacity > 0
+          ? `${participantsCount} / ${capacity}`
+          : `${participantsCount}人`
+        : '';
     const { attendees, attendeesMore } = attendeeAvatars(event);
+    const startAt = new Date(event.startTime).getTime();
+    const statusText = statusLabel(event.status, capacityText, participantsCount);
+    const category = (event.category ?? '').toLowerCase();
+    const isSocial = isSocialCategory(category);
     return {
       id: event.id,
       title: getLocalizedText(event.title, preferredLangs.value),
       timeText: formatDateTime(event.startTime, event.endTime),
       communityName: event.community?.name ?? 'SOCIALMORE',
-      communitySlug: (event.community as any)?.slug ?? event.community?.id ?? 'club',
-      communityLogo: event.communityLogoUrl ? resolveAssetUrl(event.communityLogoUrl) : null,
       capacityText,
       coverUrl: coverUrlForEvent(event),
       attendees,
       attendeesMore,
+      startAt,
+      statusText,
+      areaText: summarizeLocation(event.locationText as string | undefined),
+      showAvatars: participantsCount > 0 && (isSocial || !category),
     };
   }),
 );
 
+const groupedEvents = computed(() => {
+  const now = Date.now();
+  const soonThreshold = now + 7 * 24 * 60 * 60 * 1000; // 7 days
+  const upcoming = formattedEvents.value.filter((ev) => ev.startAt >= now && ev.startAt <= soonThreshold);
+  const future = formattedEvents.value.filter((ev) => ev.startAt > soonThreshold);
+  const past = formattedEvents.value.filter((ev) => ev.startAt < now);
+  const sections = [];
+  if (upcoming.length) sections.push({ id: 'upcoming', title: '直近のイベント', items: upcoming });
+  if (future.length) sections.push({ id: 'future', title: '今後のイベント', items: future });
+  if (past.length) sections.push({ id: 'past', title: '終了したイベント', items: past });
+  return sections;
+});
+
 const goDetail = (eventId: string) => {
   router.push({ name: 'event-detail', params: { eventId } });
-};
-
-const goCommunity = (slugOrId: string) => {
-  if (!slugOrId) return;
-  router.push({ name: 'community-portal', params: { slug: slugOrId } });
 };
 
 const selectCategory = (id: string) => {
@@ -272,6 +308,27 @@ const formatDateTime = (start: string, end?: string | null) => {
     minute: '2-digit',
   });
   return `${startText} – ${endText}`;
+};
+
+const statusLabel = (status: string, capacityText: string, participantsCount: number) => {
+  if (status === 'closed') return '受付終了';
+  if (status === 'draft') return '準備中';
+  if (participantsCount <= 0) return '募集中';
+  return `募集中（${capacityText}）`;
+};
+
+const isSocialCategory = (category: string) => {
+  const social = ['social', 'music', 'art', 'food', 'family', 'language', 'mind', 'public', 'campus', 'online'];
+  return social.includes(category);
+};
+
+const summarizeLocation = (text?: string | null) => {
+  if (!text) return '';
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  const parts = cleaned.split(/、|,|・|\/|\|/).map((p) => p.trim()).filter(Boolean);
+  const first = parts[0] || cleaned;
+  return first.length > 18 ? `${first.slice(0, 18)}…` : first;
 };
 
 const getEventConfig = (event: EventSummary) => ((event as any).config ?? {}) as Record<string, any>;
@@ -324,9 +381,9 @@ onMounted(loadEvents);
 
 <style scoped>
 .events-page {
-  min-height: auto;
+  min-height: 100vh;
   background: #f3f4f6;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   width: 100%;
   max-width: 100vw;
   box-sizing: border-box;
@@ -411,6 +468,23 @@ onMounted(loadEvents);
   gap: 12px;
   padding: 0 16px;
 }
+.section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 0 8px;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.group-title {
+  margin: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+}
 .card {
   background: #ffffff;
   border-radius: 16px;
@@ -422,7 +496,7 @@ onMounted(loadEvents);
 }
 .cover {
   width: 100%;
-  height: 170px;
+  height: 135px;
   object-fit: cover;
   display: block;
 }
@@ -434,22 +508,15 @@ onMounted(loadEvents);
   font-weight: 800;
   letter-spacing: 1px;
 }
-.overlay-tags {
+.cover-gradient {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.35) 100%);
 }
-.chip-dark {
-  padding: 6px 12px;
-  background: rgba(17, 24, 39, 0.92);
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #ffffff;
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.18);
+.overlay-avatars {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
 }
 .avatar-row {
   display: flex;
@@ -458,29 +525,31 @@ onMounted(loadEvents);
   padding: 0;
 }
 .avatar-row img {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.7);
 }
 .avatar-more {
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.65);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 .card-body {
-  padding: 12px 14px 14px;
+  padding: 8px 12px 10px;
+  display: grid;
+  gap: 4px;
 }
 .title {
-  margin: 0 0 6px;
+  margin: 0 0 2px;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 720;
   color: #0f172a;
-  line-height: 1.4;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -491,49 +560,39 @@ onMounted(loadEvents);
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  color: #6b7280;
+  font-size: 12px;
+  color: #374151;
 }
-.community {
-  margin-top: 10px;
+.meta-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 6px;
 }
-.community-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-  overflow: hidden;
-  padding: 0;
-}
-.community-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.community-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.community-name {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+.status-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
   color: #0f172a;
-  line-height: 1.3;
-  max-width: 220px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 700;
 }
-.community-status {
-  margin: 0;
+.attendees {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.location {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+  color: #4b5563;
+}
+.byline {
+  margin: 0 0 2px;
+  font-size: 11px;
   color: #6b7280;
 }
 .skeleton {

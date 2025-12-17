@@ -275,10 +275,15 @@ const goBack = () => {
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px)) 16px;
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
-  width: min(100%, 480px);
+  width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
 }
 
 .page-head {

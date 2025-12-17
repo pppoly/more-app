@@ -44,12 +44,12 @@
           <article
             class="ticket-card ticket-card--with-cover"
             :class="{
-              'ticket-card--validated': isTicketValidated(item),
+              'ticket-card--validated': item.attended,
               'ticket-card--void': isVoidTicket(item),
             }"
             :style="ticketCoverStyle(item)"
           >
-            <div v-if="isTicketValidated(item) && !isVoidTicket(item)" class="ticket-card__tear">
+            <div v-if="item.attended && !isVoidTicket(item)" class="ticket-card__tear">
               <span>検証済み</span>
             </div>
             <div class="ticket-card__top">
@@ -111,7 +111,6 @@
           <p class="qr-code">#{{ qrTicket.registrationId.slice(0, 8).toUpperCase() }}</p>
           <p class="qr-hint">スタッフにスキャンしてもらってください</p>
           <p v-if="qrError" class="qr-error">{{ qrError }}</p>
-          <button type="button" class="qr-primary" @click="markTicketValidated">検証完了</button>
         </article>
       </section>
     </Transition>
@@ -143,7 +142,6 @@ const qrVisible = ref(false);
 const qrTicket = ref<MyEventItem | null>(null);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
-const validatedRegistrationIds = ref<string[]>([]);
 const resourceConfigStore = useResourceConfig();
 const { confirm: confirmDialog } = useConfirm();
 const { slotMap } = resourceConfigStore;
@@ -355,17 +353,6 @@ watch([qrVisible, qrTicket], async ([visible, ticket]) => {
   }
 });
 
-const markTicketValidated = () => {
-  if (!qrTicket.value) return;
-  if (!validatedRegistrationIds.value.includes(qrTicket.value.registrationId)) {
-    validatedRegistrationIds.value = [...validatedRegistrationIds.value, qrTicket.value.registrationId];
-  }
-  showBanner('success', '検証が完了しました');
-  closeTicketQr();
-};
-
-const isTicketValidated = (item: MyEventItem) => validatedRegistrationIds.value.includes(item.registrationId);
-
 const cancelRegistration = async (item: MyEventItem) => {
   if (cancelingId.value) return;
   const sure = await confirmDialog('この参加をキャンセルしてもよろしいですか？');
@@ -431,12 +418,17 @@ const ticketCoverStyle = (item: MyEventItem) => {
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px)) 16px;
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
-  width: min(100%, 480px);
+  width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
   overflow-x: hidden;
   touch-action: pan-y;
   overscroll-behavior-x: none;
+}
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
 }
 
 .page-header {

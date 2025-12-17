@@ -1,6 +1,6 @@
 <template>
   <div class="communities-page">
-    <ConsoleTopBar title="マイコミュニティ" @back="goBack" />
+    <ConsoleTopBar class="topbar" title="マイコミュニティ" @back="goBack" />
     <section class="page-head">
       <p class="page-eyebrow">私が所属するコミュニティ</p>
       <h1 class="page-title">あなたがつながっている場</h1>
@@ -121,9 +121,14 @@ const goToCommunity = (item: CommunityCardItem) => {
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
   box-sizing: border-box;
-  width: min(100%, 480px);
+  width: 100%;
   margin: 0 auto;
   overflow-x: hidden;
+}
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
 }
 
 .page-head {

@@ -1177,7 +1177,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.28);
+  box-shadow: none;
 }
 .fab--disabled {
   opacity: 0.6;

@@ -705,13 +705,13 @@ const reload = () => loadData();
 .page {
   min-height: 100vh;
   background: #f8fafc;
-  padding: calc(env(safe-area-inset-top, 0px) + 48px) 12px 80px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 80px;
 }
 .skeleton-overlay {
   position: fixed;
   inset: 0;
   background: #f8fafc;
-  padding: calc(env(safe-area-inset-top, 0px) + 52px) 12px 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px 16px;
   overflow-y: auto;
   z-index: 60;
 }

@@ -87,14 +87,12 @@ const userInitials = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?
 const goMyEvents = () => router.push({ name: 'my-events' });
 const goMyCommunities = () => router.push({ name: 'MobileCommunities' });
 const goMyPayments = () => router.push({ name: 'my-payments' });
-const goFavorites = () => router.push({ name: 'favorites' });
 const goSettings = () => router.push({ name: 'MobileSettings' });
 
 const serviceEntries = computed(() => [
   { title: '参加したイベント', description: '予約・チケット', cta: '見る', icon: new URL('../../assets/我的的活动.svg', import.meta.url).href, action: goMyEvents },
   { title: 'マイコミュニティ', description: 'フォロー中のコミュニティ一覧', cta: '入る', icon: new URL('../../assets/我的社群.svg', import.meta.url).href, action: goMyCommunities },
   { title: '支払い履歴', description: 'お支払い記録', cta: '見る', icon: new URL('../../assets/付款记录.svg', import.meta.url).href, action: goMyPayments },
-  { title: 'お気に入りイベント', description: 'お気に入り', cta: '見る', icon: new URL('../../assets/关注的活动.svg', import.meta.url).href, action: goFavorites },
   { title: '設定', description: 'アプリ環境', cta: '開く', icon: new URL('../../assets/设置.svg', import.meta.url).href, action: goSettings },
 ]);
 

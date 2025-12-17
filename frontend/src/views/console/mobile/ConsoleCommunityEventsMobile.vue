@@ -140,11 +140,7 @@ const openDashboard = () => {
 };
 
 const goBack = () => {
-  if (history.state && history.state.back) {
-    router.back();
-  } else {
-    router.replace({ name: 'ConsoleMobileHome' });
-  }
+  router.replace({ name: 'ConsoleMobileHome' });
 };
 
 const createNew = () => {

@@ -5,8 +5,8 @@
         <button type="button" class="link-btn" @click="goPortal">ポータル</button>
       </template>
     </ConsoleTopBar>
-
     <form class="form-sections" @submit.prevent="handleSave">
+      <p class="section-eyebrow">必須項目</p>
       <section class="form-card sheet">
         <p class="card-label">基本情報</p>
         <div class="list-row list-row--field">
@@ -15,49 +15,18 @@
             <p class="list-desc">タップして編集</p>
           </div>
           <input v-model="form.name" type="text" class="list-input" placeholder="Tokyo Community..." />
+          <span class="edit-hint"><span class="i-lucide-pencil"></span>編集</span>
         </div>
         <div class="list-row list-row--field is-disabled">
           <div class="list-meta">
             <p class="list-title">Slug</p>
-            <p class="list-desc">URL 識別子</p>
+            <p class="list-desc">URL 識別子（ポータルのアドレスに使用）</p>
           </div>
           <input v-model="form.slug" type="text" class="list-input" :disabled="!isCreateMode" />
+          <span class="edit-hint" :class="{ disabled: !isCreateMode }">
+            <span class="i-lucide-link"></span>{{ isCreateMode ? '設定' : '固定' }}
+          </span>
         </div>
-      </section>
-
-      <section class="form-card sheet">
-        <div class="card-head">
-          <p class="card-label">ラベル</p>
-          <p class="card-hint">最大 5 つまで選択</p>
-        </div>
-        <button type="button" class="list-row" @click="openTagSheet">
-          <div class="list-meta">
-            <p class="list-title">コミュニティのタグ</p>
-            <p class="list-desc">タップして選択</p>
-          </div>
-          <div class="tag-badge-group">
-            <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
-            <span v-if="!labelChips.length" class="tag-placeholder">未選択</span>
-          </div>
-          <span class="i-lucide-chevron-right list-chevron"></span>
-        </button>
-      </section>
-
-      <section class="form-card sheet">
-        <button type="button" class="list-row" @click="visibilitySheetOpen = true">
-          <div class="list-meta">
-            <p class="list-title">公開範囲</p>
-            <p class="list-desc">ユーザーにどこまで見せるか</p>
-          </div>
-          <div class="visible-pill">
-            <span class="visible-label">{{ currentVisibleOption.label }}</span>
-          </div>
-          <span class="i-lucide-chevron-right list-chevron"></span>
-        </button>
-      </section>
-
-      <section class="form-card sheet">
-        <p class="card-label">ビジュアル</p>
         <button type="button" class="list-row" @click="triggerLogoUpload()">
           <div class="list-meta">
             <p class="list-title">ロゴ</p>
@@ -82,6 +51,43 @@
         </button>
       </section>
 
+      <p class="section-eyebrow">表示・ブランディング</p>
+      <section class="form-card sheet">
+        <div class="card-head">
+          <p class="card-label">ラベル</p>
+          <p class="card-hint">最大 5 つまで選択</p>
+        </div>
+        <button type="button" class="list-row" @click="openTagSheet">
+          <div class="list-meta">
+            <p class="list-title">コミュニティのタグ</p>
+            <p class="list-desc">タップして選択</p>
+          </div>
+          <div class="tag-badge-group">
+            <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
+            <span v-if="!labelChips.length" class="tag-placeholder">未選択</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
+      </section>
+
+      <p class="section-eyebrow">公開 / リスク</p>
+      <section class="form-card sheet">
+        <button type="button" class="list-row" @click="visibilitySheetOpen = true">
+          <div class="list-meta">
+            <p class="list-title">公開範囲</p>
+            <p class="list-desc">ユーザーにどこまで見せるか</p>
+          </div>
+          <div class="visible-pill">
+            <span class="visible-label">{{ currentVisibleOption.label }}</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
+        <div class="risk-hint">
+          <span class="i-lucide-alert-triangle"></span>
+          公開設定はポータルや検索結果に影響します。機密情報は非公開にしてください。
+        </div>
+      </section>
+
       <section class="form-card sheet">
         <div class="card-head">
           <p class="card-label">コミュニティ紹介</p>
@@ -100,7 +106,6 @@
     </form>
 
     <footer class="form-footer">
-      <button type="button" class="ghost-btn" :disabled="saving" @click="router.back()">戻る</button>
       <button type="button" class="primary-btn" :disabled="saving" @click="handleSave">
         {{ saving ? '保存中…' : '保存する' }}
       </button>
@@ -255,7 +260,7 @@ const showCropper = ref(false);
 const cropSource = ref<string | null>(null);
 const cropTarget = ref<'cover' | 'logo' | null>(null);
 const selectedTags = ref<string[]>([]);
-const pageTitle = computed(() => form.name || 'コミュニティ設定');
+const pageTitle = computed(() => 'コミュニティ設定');
 const goBack = () => {
   router.back();
 };
@@ -600,6 +605,20 @@ watch(
   padding: 0 0 calc(90px + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
 }
+.hero-meta {
+  padding: 8px 16px 4px;
+}
+.hero-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.hero-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
 .link-btn {
   border: none;
   background: none;
@@ -698,6 +717,13 @@ watch(
   flex-direction: column;
   gap: 16px;
 }
+.section-eyebrow {
+  margin: 12px 16px 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
 .form-card {
   background: #fff;
   border-radius: 20px;
@@ -743,6 +769,16 @@ watch(
 .list-row--field {
   padding-left: 14px;
   padding-right: 14px;
+}
+.edit-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #475569;
+}
+.edit-hint.disabled {
+  color: #cbd5e1;
 }
 .list-row.is-disabled {
   opacity: 0.7;
@@ -851,6 +887,17 @@ watch(
 .tag-placeholder {
   font-size: 12px;
   color: #94a3b8;
+}
+.risk-hint {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .thumb-placeholder {
   font-size: 20px;
