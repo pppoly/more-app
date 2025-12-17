@@ -26,7 +26,7 @@
 
     <template v-if="isMobile && (showBrandBar || allowWebContinue || (!showLineModal && !uaLine))">
       <AppShell
-        :show-brand-top-bar="showBrandBar"
+        :show-brand-top-bar="brandBarForRoute"
         :logo-src="brandLogo"
         :debug-text="showBrandDebug ? brandDebugText : undefined"
         :debug-flag="debugParam"
@@ -37,9 +37,11 @@
         <RouterView v-slot="{ Component, route }">
           <MobileShell
             :force-hide-header="hideLegacyHeader"
-            :show-brand-top-bar="showBrandBar"
+            :show-brand-top-bar="brandBarForRoute"
             :show-brand-debug="showBrandDebug"
             :brand-debug-text="brandDebugText"
+            :root-nav-route="isRootNavRoute"
+            :is-liff="isLiffClientMode"
           >
             <template v-if="route.meta?.keepAlive">
               <KeepAlive :include="keepAliveRoutes">
@@ -152,6 +154,9 @@ const {
 const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
+const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
+const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
+const brandBarForRoute = computed(() => showBrandBar.value && isRootNavRoute.value);
 const hideLegacyHeader = computed(() => isLiffClientMode.value || showBrandBar.value);
 const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;

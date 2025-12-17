@@ -104,7 +104,14 @@ import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
 
-const props = defineProps<{ forceHideHeader?: boolean; showBrandTopBar?: boolean; showBrandDebug?: boolean; brandDebugText?: string }>();
+const props = defineProps<{
+  forceHideHeader?: boolean;
+  showBrandTopBar?: boolean;
+  showBrandDebug?: boolean;
+  brandDebugText?: string;
+  rootNavRoute?: boolean;
+  isLiff?: boolean;
+}>();
 const route = useRoute();
 const router = useRouter();
 const { user, setUserProfile } = useAuth();
@@ -178,7 +185,12 @@ const activeTab = computed(() => {
 const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ログイン'));
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
-  return tabs.value.some((tab) => route.path === tab.path || route.path.startsWith(`${tab.path}/`));
+  // LIFF 時はトップレベルのみタブ表示
+  if (props.isLiff && !props.rootNavRoute) return false;
+  const topLevelOnly = props.showBrandTopBar || props.isLiff;
+  const baseMatch = (path: string, tabPath: string) =>
+    topLevelOnly ? path === tabPath : path === tabPath || path.startsWith(`${tabPath}/`);
+  return tabs.value.some((tab) => baseMatch(route.path, tab.path));
 });
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
