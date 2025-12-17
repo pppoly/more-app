@@ -1,21 +1,17 @@
 <template>
   <div class="community-settings">
-    <header class="nav-bar">
-      <button class="nav-btn" type="button" @click="router.back()">
-        <span class="i-lucide-chevron-left"></span>
-      </button>
-      <div class="nav-title">{{ form.name || '社群設定' }}</div>
-      <button class="nav-btn nav-link" type="button" @click="goPortal">
-        ポータル
-      </button>
-    </header>
+    <ConsoleTopBar :title="pageTitle" @back="goBack">
+      <template #right>
+        <button type="button" class="link-btn" @click="goPortal">ポータル</button>
+      </template>
+    </ConsoleTopBar>
 
     <form class="form-sections" @submit.prevent="handleSave">
       <section class="form-card sheet">
         <p class="card-label">基本情報</p>
         <div class="list-row list-row--field">
           <div class="list-meta">
-            <p class="list-title">社群名称</p>
+            <p class="list-title">コミュニティ名</p>
             <p class="list-desc">タップして編集</p>
           </div>
           <input v-model="form.name" type="text" class="list-input" placeholder="Tokyo Community..." />
@@ -36,7 +32,7 @@
         </div>
         <button type="button" class="list-row" @click="openTagSheet">
           <div class="list-meta">
-            <p class="list-title">社群のタグ</p>
+            <p class="list-title">コミュニティのタグ</p>
             <p class="list-desc">タップして選択</p>
           </div>
           <div class="tag-badge-group">
@@ -88,7 +84,7 @@
 
       <section class="form-card sheet">
         <div class="card-head">
-          <p class="card-label">社群紹介</p>
+          <p class="card-label">コミュニティ紹介</p>
           <div class="card-head__right">
             <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
           </div>
@@ -96,7 +92,7 @@
         <textarea
           v-model="form.description"
           rows="6"
-          placeholder="社群のビジョン・活動内容・歓迎する人などを記載してください。"
+          placeholder="コミュニティのビジョン・活動内容・歓迎する人などを記載してください。"
         ></textarea>
       </section>
 
@@ -109,9 +105,6 @@
         {{ saving ? '保存中…' : '保存する' }}
       </button>
     </footer>
-      <button class="hero-back" type="button" @click="router.back()">
-        <span class="i-lucide-arrow-left"></span>
-      </button>
     <input ref="logoInput" type="file" class="hidden-input" accept="image/*" @change="handleLogoUpload" />
     <input ref="coverInput" type="file" class="hidden-input" accept="image/*" @change="handleCoverUpload" />
     <ImageCropperModal
@@ -222,6 +215,7 @@ import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useI18n } from 'vue-i18n';
 import { useToast } from '../../../composables/useToast';
 import ImageCropperModal from '../../../components/ImageCropperModal.vue';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -261,6 +255,10 @@ const showCropper = ref(false);
 const cropSource = ref<string | null>(null);
 const cropTarget = ref<'cover' | 'logo' | null>(null);
 const selectedTags = ref<string[]>([]);
+const pageTitle = computed(() => form.name || 'コミュニティ設定');
+const goBack = () => {
+  router.back();
+};
 
 const toggleTag = (tag: string) => {
   const value = tag.trim();
@@ -284,9 +282,9 @@ const visibleOptions = [
   },
   {
     value: 'semi-public',
-    label: '社群限定',
+    label: 'コミュニティ限定',
     desc: 'Console 内とフォロー/参加済みのユーザーだけが閲覧可能。',
-    note: 'メンバー = この社群をフォロー（参加）しているユーザー。',
+    note: 'メンバー = このコミュニティをフォロー（参加）しているユーザー。',
   },
   {
     value: 'private',
@@ -325,7 +323,7 @@ const loadCommunity = async () => {
       portalTheme.value = themeOptions.includes(theme) ? theme : 'immersive';
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '社群情報の取得に失敗しました';
+    error.value = err instanceof Error ? err.message : 'コミュニティ情報の取得に失敗しました';
   }
 };
 
@@ -389,7 +387,7 @@ const readFileAsDataUrl = (file: File) =>
 const ensureCommunityReady = async () => {
   if (communityId.value) return communityId.value;
   if (!form.name.trim()) {
-    form.name = '未命名社群';
+    form.name = '名称未設定';
   }
   if (!form.slug.trim()) {
     form.slug = `community-${Date.now().toString(36)}`;
@@ -407,10 +405,10 @@ const ensureCommunityReady = async () => {
     communityId.value = created.id;
     await communityStore.loadCommunities(true);
     communityStore.refreshActiveCommunity();
-    toast.show('社群已保存，可继续上传图片', 'success');
+    toast.show('保存しました。続けて画像をアップできます', 'success');
     return created.id;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '社群保存に失敗しました';
+    error.value = err instanceof Error ? err.message : 'コミュニティの保存に失敗しました';
     return null;
   } finally {
     creatingFromUpload.value = false;
@@ -512,7 +510,7 @@ const handleSave = async () => {
     return;
   }
   if (!form.name.trim() || !form.slug.trim()) {
-    error.value = '社群名称とSlugは必須です';
+    error.value = 'コミュニティ名とSlugは必須です';
     saving.value = false;
     return;
   }
@@ -597,46 +595,18 @@ watch(
 
 <style scoped>
 .community-settings {
-  min-height: auto;
-  background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 100%);
-  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  min-height: 100vh;
+  background: #f8fafc;
+  padding: 0 0 calc(90px + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
 }
-.nav-bar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-}
-.nav-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  display: grid;
-  place-items: center;
-  background: #fff;
-  color: #0f172a;
-}
-.nav-btn.nav-link {
-  padding: 0 10px;
-  width: auto;
-  height: 36px;
-  border-radius: 999px;
+.link-btn {
+  border: none;
+  background: none;
+  color: #2563eb;
   font-weight: 600;
-}
-.nav-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #0f172a;
-  flex: 1;
-  text-align: center;
+  font-size: 14px;
+  padding: 6px 8px;
 }
 .hero-card {
   margin: 16px 16px 0;

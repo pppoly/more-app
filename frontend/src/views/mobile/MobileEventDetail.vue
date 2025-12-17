@@ -238,6 +238,7 @@
           <span>{{ ctaLabel }}</span>
         </button>
         <p v-if="ctaHint" class="cta-hint">{{ ctaHint }}</p>
+        <pre v-if="showDebug" class="debug-state">{{ debugText }}</pre>
       </footer>
     </template>
 
@@ -301,6 +302,7 @@ import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
 import { loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
 
 const route = useRoute();
@@ -345,7 +347,8 @@ const selectedDateId = ref<string | null>(null);
 const activeSlide = ref(0);
 const registrationItem = ref<MyEventItem | null>(null);
 const checkingRegistration = ref(false);
-const registrationStatus = computed(() => registrationItem.value?.status ?? 'none');
+const registrationStatusRaw = computed(() => registrationItem.value?.status ?? 'none');
+const refundRequest = computed(() => registrationItem.value?.refundRequest ?? null);
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
@@ -357,27 +360,113 @@ const isFavoriteEvent = computed(() => {
   return favoritesStore.isFavorite(currentId);
 });
 const hasRegistration = computed(() => Boolean(registrationItem.value));
-const ctaLabel = computed(() => {
-  if (checkingRegistration.value && !hasRegistration.value) {
-    return '読み込み中…';
+const registrationStatus = computed(() => {
+  const raw = registrationStatusRaw.value;
+  switch (raw) {
+    case 'pending_payment':
+      return 'pending_payment';
+    case 'paid':
+    case 'approved':
+      return 'paid';
+    case 'pending_refund':
+      return 'cancel_requested';
+    case 'refunded':
+      return 'cancelled';
+    case 'cancel_requested':
+      return 'cancel_requested';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return raw || 'none';
   }
-  if (hasRegistration.value) {
-    return '申込済み・チケットを見る';
-  }
-  if (detail.value?.status === 'open') {
-    return 'イベントに申し込む';
-  }
-  return '受付終了';
 });
-const isCtaDisabled = computed(() => {
-  if (hasRegistration.value) {
-    return false;
+const legacyRefund = computed(() => !refundRequest.value && ['refunded', 'pending_refund'].includes(registrationStatusRaw.value));
+const refundState = computed(() => {
+  const req = refundRequest.value;
+  if (req?.status === 'requested') return 'requested';
+  if (req?.status === 'processing') return 'processing';
+  if (req?.status === 'completed') {
+    if (req.decision === 'approve_partial' || (req.approvedAmount ?? 0) > 0) return 'completed_partial';
+    return 'completed';
   }
+  if (req?.status === 'rejected') return 'rejected';
+  const raw = registrationStatusRaw.value;
+  if (raw === 'pending_refund') return 'processing';
+  if (raw === 'refunded') return 'completed';
+  return null;
+});
+const eventLifecycle = computed(() => {
+  const ev = event.value;
+  if (!ev) return 'scheduled';
+  if (ev.status === 'cancelled') return 'cancelled';
+  const now = new Date();
+  const start = new Date(ev.startTime);
+  const end = ev.endTime ? new Date(ev.endTime) : null;
+  if (now < start) return 'scheduled';
+  if (end && now > end) return 'ended';
+  return 'ongoing';
+});
+const registrationWindow = computed(() => (event.value?.status === 'open' ? 'open' : 'closed'));
+
+const refundHint = computed(() => {
+  if (eventLifecycle.value === 'cancelled') {
+    return 'イベントはキャンセルされました。必要に応じて返金が進行します。';
+  }
+  if (refundState.value === 'processing') return '返金処理中：完了までお待ちください。';
+  if (refundState.value === 'completed') return '返金済み：数日内に口座へ反映されます。';
+  if (refundState.value === 'completed_partial') return '部分返金が完了しました。';
+  if (refundState.value === 'rejected') return '返金は認められませんでした。';
+  if (legacyRefund.value) return '旧データによる返金状態です。';
+  return '';
+});
+
+const computeCtaState = () => {
   if (!detail.value) {
-    return true;
+    return { label: '読み込み中…', disabled: true, hint: '' };
   }
-  return detail.value.status !== 'open' || checkingRegistration.value;
-});
+  if (eventLifecycle.value === 'cancelled') {
+    return { label: '受付終了', disabled: true, hint: 'イベントはキャンセルされました。' };
+  }
+  if (registrationStatus.value === 'pending_payment') {
+    return { label: '支払いを完了して参加する', disabled: false, hint: 'お支払い待ちです。' };
+  }
+  if (registrationStatus.value === 'paid') {
+    return { label: '申込済み・チケットを見る', disabled: false, hint: refundHint.value };
+  }
+  if (registrationStatus.value === 'cancel_requested') {
+    const hint =
+      eventLifecycle.value === 'ongoing'
+        ? '開催中のため返金なしの場合があります。主催者の確認をお待ちください。'
+        : '主催者の確認をお待ちください。';
+    return { label: 'キャンセル申請中', disabled: true, hint };
+  }
+  if (registrationStatus.value === 'cancelled') {
+    const canReapply = registrationWindow.value === 'open';
+    return {
+      label: canReapply ? '再度申し込む' : 'キャンセル済み',
+      disabled: !canReapply,
+      hint: canReapply ? '再申込できます。' : '受付は終了しています。',
+    };
+  }
+  if (legacyRefund.value) {
+    return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
+  }
+  const canApply = registrationWindow.value === 'open';
+  return { label: canApply ? 'イベントに申し込む' : '受付終了', disabled: !canApply, hint: '' };
+};
+const ctaState = computed(computeCtaState);
+const ctaLabel = computed(() => ctaState.value.label);
+const isCtaDisabled = computed(() => ctaState.value.disabled || checkingRegistration.value);
+const debugState = computed(() => ({
+  eventLifecycle: eventLifecycle.value,
+  registrationWindow: registrationWindow.value,
+  regStatus: registrationStatus.value,
+  refundState: refundState.value ?? 'none',
+  refundRequestStatus: refundRequest.value?.status ?? 'none',
+  eligibleRefundAmount: refundRequest.value?.approvedAmount ?? refundRequest.value?.requestedAmount ?? registrationItem.value?.amount ?? null,
+}));
+const showDebug = computed(() => route.query.debug === '1');
+const debugText = computed(() => JSON.stringify(debugState.value, null, 2));
 
 const detail = computed(() => {
   if (!event.value) return null;
@@ -430,6 +519,8 @@ const detail = computed(() => {
     id: event.value.id,
     status: event.value.status,
     registrationStatus: registrationStatus.value,
+    startTime: event.value.startTime,
+    endTime: event.value.endTime,
     title: getLocalizedText(event.value.title, preferredLangs.value),
     categoryLabel: event.value.category ?? 'イベント',
     timeFullText: `${start} 〜 ${end}`,
@@ -586,43 +677,14 @@ const participantPreview = computed(() => participantsList.value.slice(0, 20));
 const hasMoreParticipants = computed(() => participantsList.value.length > participantPreview.value.length);
 const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
 
-const registrationStatusLabel = computed(() => {
-  const map: Record<string, string> = {
-    pending: '審査待ち',
-    approved: '承認済み',
-    rejected: '拒否',
-    paid: '支払済み',
-    refunded: '返金済み',
-    pending_refund: '返金待ち',
-    cancelled: 'キャンセル',
-  };
-  return map[detail.value?.registrationStatus ?? ''] ?? '';
-});
 const ctaHint = computed(() => {
   if (!detail.value) return '';
-  if (detail.value.status === 'cancelled') {
-    return 'イベントはキャンセルされました。必要に応じて返金が進行します。';
+  if (refundHint.value) return refundHint.value;
+  if (registrationStatus.value === 'cancel_requested') return 'キャンセル申請中です。';
+  if (registrationStatus.value === 'cancelled') {
+    return registrationWindow.value === 'open' ? '再申込できます。' : '申込はキャンセルされています。';
   }
-  if (registrationItem.value) {
-    switch (registrationItem.value.status) {
-    case 'pending':
-      return '申込済み：主催者の承認をお待ちください。';
-      case 'approved':
-        return '承認済み：参加が確定しました。';
-      case 'rejected':
-        return '申込が拒否されました。内容を確認のうえ再申込してください。';
-      case 'paid':
-        return '支払済み：チケットからQRを提示できます。';
-      case 'refunded':
-        return '返金済み：数日内に口座へ反映されます。';
-      case 'pending_refund':
-        return '返金処理中：完了までお待ちください。';
-      case 'cancelled':
-        return '申込はキャンセルされています。';
-      default:
-        return '';
-    }
-  }
+  if (legacyRefund.value) return '旧データによる返金状態です。';
   return '';
 });
 const participantsTotalLabel = computed(() =>
@@ -646,6 +708,15 @@ const loadEvent = async () => {
     loading.value = false;
   }
 };
+
+watch(
+  () => registrationStatus.value,
+  (val) => {
+    if (val !== 'pending_payment') {
+      sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+    }
+  },
+);
 
 const checkRegistrationStatus = async () => {
   if (!user.value || !eventId.value) {
@@ -917,11 +988,21 @@ const closeBookingSheet = () => {
 
 const handleCtaClick = () => {
   if (!detail.value) return;
+  if (legacyRefund.value || registrationStatus.value === 'cancel_requested') return;
+  if (registrationStatus.value === 'pending_payment') {
+    router.push({ name: 'MobileEventCheckout', params: { eventId: detail.value.id } });
+    return;
+  }
   if (hasRegistration.value) {
+    if (registrationStatus.value === 'cancelled') {
+      if (registrationWindow.value !== 'open') return;
+      router.push({ name: 'MobileEventRegister', params: { eventId: detail.value.id } });
+      return;
+    }
     router.push({ name: 'my-events' });
     return;
   }
-  if (detail.value.status !== 'open') return;
+  if (registrationWindow.value !== 'open') return;
   router.push({ name: 'MobileEventRegister', params: { eventId: detail.value.id } });
 };
 
@@ -1303,7 +1384,7 @@ watch(
 .event-schedule__cta {
   width: 100%;
   border: none;
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
@@ -1323,6 +1404,7 @@ watch(
   box-shadow: none;
   padding: 8px 10px;
   font-weight: 600;
+  border-radius: 8px;
 }
 .event-secondary-actions {
   display: flex;
@@ -1536,7 +1618,6 @@ watch(
   align-items: center;
   justify-content: center;
   color: var(--m-color-text-primary);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 
 .event-action-icon .i-lucide-share-2,
@@ -1548,7 +1629,6 @@ watch(
   background: linear-gradient(135deg, #2563eb, #60a5fa);
   color: #fff;
   border-color: #1d4ed8;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
 }
 
 .view-count {
@@ -1639,7 +1719,6 @@ watch(
   background-position: center;
   background-repeat: no-repeat;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
 }
 
 .group-name {
@@ -1979,6 +2058,15 @@ watch(
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(8px);
   z-index: 9;
+}
+
+.debug-state {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 8px;
+  padding: 8px;
 }
 
 </style>

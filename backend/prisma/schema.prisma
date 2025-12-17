@@ -7,6 +7,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model User {
@@ -177,6 +178,7 @@ model EventRegistration {
   ticketType    EventTicketType @relation(fields: [ticketTypeId], references: [id])
   checkins      EventCheckin[]
   payment       Payment?        @relation("RegistrationPayment")
+  refundRequest RefundRequest?
 }
 
 model EventCheckin {
@@ -239,6 +241,24 @@ model Payment {
   community               Community? @relation(fields: [communityId], references: [id])
   event                   Event?    @relation(fields: [eventId], references: [id])
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
+  refundRequests          RefundRequest[]
+}
+
+model RefundRequest {
+  id               String   @id @default(cuid())
+  registrationId   String   @unique
+  paymentId        String?
+  decision         String?
+  status           String   @default("requested")
+  requestedAmount  Int
+  approvedAmount   Int?
+  refundedAmount   Int?
+  reason           String?
+  gatewayRefundId  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  registration     EventRegistration @relation(fields: [registrationId], references: [id])
+  payment          Payment?          @relation(fields: [paymentId], references: [id])
 }
 
 model I18nMessage {

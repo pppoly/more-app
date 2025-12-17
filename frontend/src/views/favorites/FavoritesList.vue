@@ -1,8 +1,10 @@
 <template>
   <div class="favorites-page">
+    <ConsoleTopBar title="お気に入り" @back="goBack" />
+
     <header class="favorites-hero">
-      <h1>お気に入り</h1>
-      <p>フォローしたイベントをここで一覧できます。</p>
+      <h1>フォロー中のイベント</h1>
+      <p>気になったイベントをまとめて確認できます。</p>
     </header>
 
     <section class="favorites-list" v-if="favorites.length">
@@ -41,18 +43,31 @@
 
 <script setup lang="ts">
 import { useFavorites } from '../../composables/useFavorites';
+import { useRouter } from 'vue-router';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 const { favorites, removeFavorite } = useFavorites();
+const router = useRouter();
+
+const goBack = () => {
+  router.push({ name: 'MobileMe' });
+};
 </script>
 
 <style scoped>
 .favorites-page {
   min-height: 100vh;
-  padding: 20px 16px 60px;
-  background: #f6f8fb;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  background: #f5f7fb;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: min(100%, 480px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .favorites-hero {

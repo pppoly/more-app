@@ -29,9 +29,22 @@ export class MeService {
         amount: true,
         attended: true,
         noShow: true,
+        refundRequest: {
+          select: {
+            id: true,
+            status: true,
+            decision: true,
+            requestedAmount: true,
+            approvedAmount: true,
+            refundedAmount: true,
+            reason: true,
+          },
+        },
         payment: {
           select: {
             status: true,
+            id: true,
+            amount: true,
           },
         },
         event: {
@@ -87,6 +100,7 @@ export class MeService {
         amount: rest.amount,
         attended: rest.attended,
         noShow: rest.noShow,
+        refundRequest: (rest as any)?.refundRequest ?? null,
         event: {
           ...eventData,
           coverImageUrl,
@@ -181,6 +195,76 @@ export class MeService {
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
       throw new BadRequestException('有料イベントのキャンセルはサポートにお問い合わせください');
+    }
+
+    await this.prisma.eventRegistration.update({
+      where: { id: registrationId },
+      data: { status: 'cancelled' },
+    });
+
+    return { registrationId, status: 'cancelled' };
+  }
+
+  async requestCancelRegistration(userId: string, registrationId: string, reason?: string) {
+    const registration = await this.prisma.eventRegistration.findFirst({
+      where: {
+        id: registrationId,
+        userId,
+      },
+      include: {
+        event: {
+          select: { startTime: true },
+        },
+        payment: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('キャンセル可能な申込が見つかりません');
+    }
+
+    if (registration.status === 'cancel_requested') {
+      return { registrationId, status: 'cancel_requested' };
+    }
+
+    if (registration.status === 'pending_payment') {
+      const payment = registration.payment ?? (await this.prisma.payment.findFirst({ where: { registrationId } }));
+      if (payment) {
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: 'cancelled' },
+        });
+      }
+      await this.prisma.eventRegistration.update({
+        where: { id: registrationId },
+        data: { status: 'cancelled', paymentStatus: 'cancelled' },
+      });
+      return { registrationId, status: 'cancelled' };
+    }
+
+    if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
+      const refundRequest = await this.prisma.refundRequest.upsert({
+        where: { registrationId },
+        update: {
+          status: 'requested',
+          decision: null,
+          approvedAmount: null,
+          refundedAmount: null,
+          reason: reason ?? null,
+        },
+        create: {
+          registrationId,
+          paymentId: registration.payment?.id,
+          status: 'requested',
+          requestedAmount: registration.amount ?? 0,
+          reason: reason ?? null,
+        },
+      });
+      await this.prisma.eventRegistration.update({
+        where: { id: registrationId },
+        data: { status: 'cancel_requested' },
+      });
+      return { registrationId, status: 'cancel_requested', refundRequest };
     }
 
     await this.prisma.eventRegistration.update({

@@ -1,7 +1,7 @@
 <template>
   <div class="mobile-register">
-    <header class="register-header">
-      <button class="back-button" type="button" @click="router.back()">
+    <header class="register-header global-topbar">
+      <button class="back-button" type="button" aria-label="戻る" @click="router.back()">
         <span class="i-lucide-chevron-left text-lg"></span>
       </button>
       <div class="header-info">
@@ -129,7 +129,11 @@
             <p class="panel-hint">申し込み前に必ずお読みください。</p>
           </div>
         </header>
-        <ul class="ios-guideline">
+        <button type="button" class="guideline-toggle" @click="showGuideline = !showGuideline">
+          <span>{{ showGuideline ? '折りたたむ' : '表示する' }}</span>
+          <span :class="showGuideline ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"></span>
+        </button>
+        <ul v-if="showGuideline" class="ios-guideline">
           <li>キャンセルは開催前日までにご連絡ください。</li>
           <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
           <li>次の画面で内容を確認後、決済（必要な場合）へ進みます。</li>
@@ -183,6 +187,7 @@ const error = ref<string | null>(null);
 const registrationError = ref<string | null>(null);
 const hasAgreedTerms = ref(false);
 const submittingInline = ref(false);
+const showGuideline = ref(false);
 
 const formValues = reactive<Record<string, any>>({});
 const fieldErrors = reactive<Record<string, string | null>>({});
@@ -234,6 +239,15 @@ const defaultTicketId = computed(() => {
   const freeTicket = event.value.ticketTypes.find((ticket) => (ticket.price ?? 0) === 0);
   return freeTicket?.id ?? event.value.ticketTypes[0].id;
 });
+const selectedTicket = computed(() => {
+  if (!event.value?.ticketTypes?.length) return null;
+  const targetId = defaultTicketId.value;
+  const ticket = event.value.ticketTypes.find((entry) => entry.id === targetId) ?? event.value.ticketTypes[0];
+  return {
+    name: ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '参加チケット',
+    price: ticket.price ?? 0,
+  };
+});
 const requiresPayment = computed(() =>
   event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
 );
@@ -250,7 +264,7 @@ const registrationUnavailableReason = computed(() => {
 const ctaLabel = computed(() => {
   if (registrationUnavailableReason.value) return '受付終了';
   if (submittingInline.value) return '処理中…';
-  return requiresPayment.value ? '情報を確認' : '無料で申込む';
+  return requiresPayment.value ? '内容を確認して支払いへ' : '無料で申込む';
 });
 const isCtaDisabled = computed(
   () => Boolean(registrationUnavailableReason.value) || !hasAgreedTerms.value || submittingInline.value,
@@ -262,6 +276,8 @@ type SuccessPayload = {
   timeText: string;
   locationText: string;
   priceText?: string;
+  ticketName?: string;
+  amount?: number | null;
   paymentStatus: 'free' | 'paid';
   holdExpiresAt: string;
 };
@@ -276,6 +292,8 @@ const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => 
     timeText: detail.value.timeText,
     locationText: detail.value.locationText,
     priceText: detail.value.priceText,
+    ticketName: selectedTicket.value?.name,
+    amount: selectedTicket.value?.price ?? null,
     paymentStatus: status,
     holdExpiresAt: status === 'paid' ? new Date(Date.now() + HOLD_DURATION_MS).toISOString() : new Date().toISOString(),
   };
@@ -480,7 +498,15 @@ const formatDate = (value: string) =>
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 16px 6px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
+}
+
+.global-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f8fafc;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
 .back-button {
@@ -677,6 +703,19 @@ const formatDate = (value: string) =>
   font-size: 13px;
   color: rgba(15, 23, 42, 0.75);
   line-height: 1.5;
+}
+.guideline-toggle {
+  margin-top: 4px;
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.8);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.85);
 }
 
 .ios-consent {

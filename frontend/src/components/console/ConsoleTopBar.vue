@@ -4,7 +4,9 @@
       <img :src="backIcon" alt="" aria-hidden="true" />
     </button>
     <p class="topbar-title">{{ titleText }}</p>
-    <span class="topbar-placeholder" aria-hidden="true"></span>
+    <slot name="right">
+      <span class="topbar-placeholder" aria-hidden="true"></span>
+    </slot>
   </header>
 </template>
 
@@ -71,5 +73,11 @@ const titleText = computed(() => {
 .topbar-placeholder {
   width: 36px;
   height: 36px;
+}
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 36px;
 }
 </style>

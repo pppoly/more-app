@@ -184,6 +184,15 @@ export interface MyEventItem {
   amount?: number | null;
   attended?: boolean;
   noShow?: boolean;
+  refundRequest?: {
+    id: string;
+    status: string;
+    decision?: string | null;
+    requestedAmount?: number | null;
+    approvedAmount?: number | null;
+    refundedAmount?: number | null;
+    reason?: string | null;
+  } | null;
   event: EventWithCommunity;
 }
 

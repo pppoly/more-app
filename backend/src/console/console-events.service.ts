@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
@@ -250,6 +250,114 @@ export class ConsoleEventsService {
       data: { status: 'rejected', paymentStatus: registration.paymentStatus ?? 'unpaid' },
     });
     return { registrationId, status: 'rejected' };
+  }
+
+  async decideRefundRequest(
+    userId: string,
+    requestId: string,
+    payload: { decision: 'approve_full' | 'approve_partial' | 'reject'; amount?: number; reason?: string },
+  ) {
+    const request = await this.prisma.refundRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        registration: {
+          include: {
+            event: { select: { id: true } },
+            payment: true,
+          },
+        },
+        payment: true,
+      },
+    });
+    if (!request) {
+      throw new NotFoundException('Refund request not found');
+    }
+    const registration = request.registration;
+    await this.permissions.assertEventManager(userId, registration.eventId);
+
+    if (['processing', 'completed', 'rejected'].includes(request.status)) {
+      throw new ConflictException('Refund request already processed');
+    }
+
+    if (payload.decision === 'reject') {
+    await this.prisma.$transaction([
+      this.prisma.refundRequest.update({
+        where: { id: requestId },
+        data: {
+          decision: 'reject',
+          status: 'rejected',
+            approvedAmount: 0,
+            refundedAmount: 0,
+            reason: payload.reason ?? request.reason ?? null,
+          },
+        }),
+      this.prisma.eventRegistration.update({
+        where: { id: registration.id },
+        data: { status: 'cancelled' },
+      }),
+    ]);
+      return { requestId, status: 'rejected', decision: 'reject' };
+    }
+
+    const payment =
+      request.payment ??
+      registration.payment ??
+      (await this.prisma.payment.findFirst({ where: { registrationId: registration.id } }));
+
+    if (!payment) {
+      throw new BadRequestException('Refund対象の支払いが見つかりません');
+    }
+
+    const approvedAmount =
+      payload.decision === 'approve_partial'
+        ? payload.amount
+        : request.requestedAmount || registration.amount || payment.amount;
+
+    if (!approvedAmount || approvedAmount < 0) {
+      throw new BadRequestException('返金額が不正です');
+    }
+    if (approvedAmount > payment.amount) {
+      throw new BadRequestException('返金額が支払い額を超えています');
+    }
+
+    await this.prisma.refundRequest.update({
+      where: { id: requestId },
+      data: {
+        decision: payload.decision,
+        approvedAmount,
+        status: 'processing',
+        paymentId: payment.id,
+        reason: payload.reason ?? request.reason ?? null,
+      },
+    });
+
+    let refundId: string | null = null;
+    if (payment.method === 'stripe') {
+      const result = await this.paymentsService.refundStripePaymentInternal(userId, payment.id, approvedAmount, payload.reason);
+      refundId = (result as any)?.refundId ?? null;
+    } else {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'refunded' },
+      });
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.refundRequest.update({
+        where: { id: requestId },
+        data: { status: 'completed', refundedAmount: approvedAmount, gatewayRefundId: refundId ?? undefined },
+      }),
+      this.prisma.eventRegistration.update({
+        where: { id: registration.id },
+        data: {
+          status: 'cancelled',
+          paymentStatus: 'refunded',
+          paidAmount: Math.max((registration.paidAmount ?? 0) - approvedAmount, 0),
+        },
+      }),
+    ]);
+
+    return { requestId, status: 'completed', approvedAmount, refundId };
   }
 
   async getRegistrationsSummary(userId: string, eventId: string) {

@@ -1,10 +1,11 @@
 <template>
   <div class="my-events-page">
+    <ConsoleTopBar class="topbar" title="マイイベント" @back="goBack" />
     <header class="page-header">
       <div class="page-header__text">
-        <p class="page-eyebrow">我的活动</p>
-        <h1>轻松掌握报名行程</h1>
-        <p class="page-subtext">AI 已同步你的报名记录，用下方筛选快速切换状态。</p>
+        <p class="page-eyebrow">マイイベント</p>
+        <h1>参加・チケット・支払いの確認ページ</h1>
+        <p class="page-subtext">申込状況や支払い、QR をここでまとめて確認できます。下のフィルターで状態を切り替えられます。</p>
       </div>
       <div class="segmented-control" role="tablist">
         <button
@@ -27,16 +28,16 @@
       <article v-if="loading" class="ticket-card ticket-card--skeleton" v-for="n in 3" :key="`s-${n}`"></article>
 
       <article v-else-if="error" class="state-card">
-        <p class="state-card__title">无法加载活动</p>
+        <p class="state-card__title">イベントを読み込めませんでした</p>
         <p class="state-card__message">{{ error }}</p>
-        <button type="button" class="ghost-btn" @click="loadEvents">重新加载</button>
+        <button type="button" class="ghost-btn" @click="loadEvents">再読み込み</button>
       </article>
 
       <template v-else>
         <article v-if="!filteredEvents.length" class="state-card">
           <p class="state-card__title">{{ emptyStateTitle }}</p>
           <p class="state-card__message">{{ emptyStateMessage }}</p>
-          <RouterLink class="ghost-btn" to="/events">去看看活动</RouterLink>
+          <RouterLink class="ghost-btn" to="/events">イベントを探す</RouterLink>
         </article>
 
         <div v-for="item in filteredEvents" :key="item.registrationId" class="ticket-card-wrapper">
@@ -49,35 +50,38 @@
             :style="ticketCoverStyle(item)"
           >
             <div v-if="isTicketValidated(item) && !isVoidTicket(item)" class="ticket-card__tear">
-              <span>已验票</span>
+              <span>検証済み</span>
             </div>
             <div class="ticket-card__top">
               <div>
                 <p class="ticket-card__date">{{ formatDate(item.event.startTime) }}</p>
                 <p class="ticket-card__community">{{ item.event.community.name }}</p>
               </div>
-              <div class="ticket-card__qr">
-                <button
-                  v-if="isUpcoming(item) && canCancel(item)"
-                  type="button"
-                  class="ticket-card__cancel"
-                  @click="cancelRegistration(item)"
-                  :disabled="cancelingId === item.registrationId"
-                >
-                  {{ cancelingId === item.registrationId ? '处理中…' : '取消' }}
-                </button>
-                <span class="ticket-card__code">#{{ item.registrationId.slice(0, 8).toUpperCase() }}</span>
-              </div>
-            </div>
-            <div class="ticket-card__body">
-              <h2 class="ticket-card__title">{{ titleFor(item.event) }}</h2>
-              <p class="ticket-card__meta">{{ item.event.locationText }}</p>
-              <div class="ticket-card__badges">
-                <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
-                <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
-                <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
-              </div>
-            </div>
+          <div class="ticket-card__qr">
+            <button
+              v-if="isUpcoming(item) && canCancel(item)"
+              type="button"
+              class="ticket-card__cancel ticket-card__cancel--ghost"
+              @click="cancelRegistration(item)"
+              :disabled="cancelingId === item.registrationId"
+            >
+              {{ cancelingId === item.registrationId ? '処理中…' : '参加をキャンセルする' }}
+            </button>
+            <span class="ticket-card__code">#{{ item.registrationId.slice(0, 8).toUpperCase() }}</span>
+          </div>
+        </div>
+        <div class="ticket-card__body">
+          <h2 class="ticket-card__title">{{ titleFor(item.event) }}</h2>
+          <p class="ticket-card__meta">{{ item.event.locationText }}</p>
+          <p class="ticket-card__state-line">{{ stateSentence(item) }}</p>
+          <div class="ticket-card__badges">
+            <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item.event) }}</span>
+            <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
+            <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
+            <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
+          </div>
+          <p v-if="refundNotice(item)" class="ticket-card__notice">{{ refundNotice(item) }}</p>
+        </div>
             <footer class="ticket-card__footer">
               <button
                 v-if="!isVoidTicket(item)"
@@ -85,12 +89,12 @@
                 class="ticket-btn"
                 @click="openTicketQr(item)"
               >
-                出示二维码
+                QRコードを表示
               </button>
-              <div v-else class="ticket-card__void-footer">票券已作废</div>
+              <div v-else class="ticket-card__void-footer">無効なチケット</div>
             </footer>
           </article>
-          <div v-if="isVoidTicket(item)" class="ticket-card__void-stamp">已作废</div>
+          <div v-if="isVoidTicket(item)" class="ticket-card__void-stamp">無効</div>
         </div>
       </template>
     </section>
@@ -101,13 +105,13 @@
           <button type="button" class="qr-close" @click="closeTicketQr">
             <span class="i-lucide-x"></span>
           </button>
-          <p class="qr-title">出示二维码</p>
+          <p class="qr-title">QRコードを表示</p>
           <p class="qr-subtitle">{{ getLocalizedText(qrTicket.event.title) }}</p>
           <canvas ref="qrCanvas" class="qr-canvas"></canvas>
           <p class="qr-code">#{{ qrTicket.registrationId.slice(0, 8).toUpperCase() }}</p>
-          <p class="qr-hint">请让社群工作人员扫描此券以完成验票</p>
+          <p class="qr-hint">スタッフにスキャンしてもらってください</p>
           <p v-if="qrError" class="qr-error">{{ qrError }}</p>
-          <button type="button" class="qr-primary" @click="markTicketValidated">验票完成</button>
+          <button type="button" class="qr-primary" @click="markTicketValidated">検証完了</button>
         </article>
       </section>
     </Transition>
@@ -124,6 +128,7 @@ import { resolveAssetUrl } from '../../utils/assetUrl';
 import QRCode from 'qrcode';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useConfirm } from '../../composables/useConfirm';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 type FilterTabId = 'upcoming' | 'past' | 'all';
 
@@ -154,7 +159,7 @@ const loadEvents = async () => {
   try {
     events.value = await fetchMyEvents();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '网络异常，请稍后再试';
+    error.value = err instanceof Error ? err.message : 'ネットワークが不安定です。しばらくしてから再度お試しください。';
   } finally {
     loading.value = false;
   }
@@ -176,9 +181,9 @@ const sortedEvents = computed(() =>
 );
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
-  { id: 'upcoming', label: '即将开始', matcher: (item) => isUpcoming(item) },
-  { id: 'past', label: '历史记录', matcher: (item) => !isUpcoming(item) },
-  { id: 'all', label: '全部', matcher: () => true },
+  { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) },
+  { id: 'past', label: '過去', matcher: (item) => !isUpcoming(item) },
+  { id: 'all', label: 'すべて', matcher: () => true },
 ];
 
 const filterCounts = computed(() => ({
@@ -203,13 +208,13 @@ const filteredEvents = computed(() => {
 const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
 const statusLabel = (item: MyEventItem) => {
   const map: Record<string, string> = {
-    pending: '待审核',
-    approved: '已确认',
-    rejected: '已拒绝',
-    paid: '已付款',
-    refunded: '已退款',
-    pending_refund: '退款处理中',
-    cancelled: '已取消',
+    pending: '審査待ち',
+    approved: '確認済み',
+    rejected: '却下',
+    paid: '支払い完了',
+    refunded: '返金済み',
+    pending_refund: '返金処理中',
+    cancelled: 'キャンセル',
   };
   return map[item.status] ?? item.status;
 };
@@ -233,10 +238,10 @@ const formatDate = (value: string) =>
   });
 
 const paymentLabel = (item: MyEventItem) => {
-  if ((item.amount ?? 0) === 0) return '免费';
-  if (item.paymentStatus === 'refunded') return '已退款';
-  if (item.paymentStatus === 'paid') return '已付款';
-  return '待付款';
+  if ((item.amount ?? 0) === 0) return '無料';
+  if (item.paymentStatus === 'refunded') return '返金済み';
+  if (item.paymentStatus === 'paid') return '支払い完了';
+  return '支払い待ち';
 };
 
 const paymentClass = (item: MyEventItem) => {
@@ -245,13 +250,41 @@ const paymentClass = (item: MyEventItem) => {
   return item.paymentStatus === 'paid' ? 'badge--paid' : 'badge--pending';
 };
 
+const phaseLabel = (event: MyEventItem['event']) => {
+  const now = Date.now();
+  const start = new Date(event.startTime).getTime();
+  const end = event.endTime ? new Date(event.endTime).getTime() : start;
+  if (now < start) return '開催前';
+  if (now >= start && now <= end) return '開催中';
+  return '開催終了';
+};
+
+const stateSentence = (item: MyEventItem) => {
+  if (item.status === 'cancelled') return '参加はキャンセルされました';
+  if (item.status === 'rejected') return '申込が却下されました';
+  if (item.status === 'pending_refund' || item.status === 'refunded') return '返金処理中です';
+  if (item.paymentStatus === 'refunded') return '返金が完了しています';
+  if (item.paymentStatus === 'paid') return '参加が確定しています';
+  if (item.status === 'pending') return '申込を審査中です';
+  if (item.attended) return '参加済みです';
+  if (item.noShow) return '欠席として記録されています';
+  return '参加が進行中です';
+};
+
+const refundNotice = (item: MyEventItem) => {
+  if (item.status === 'pending_refund') return '返金リクエストを処理しています';
+  if (item.status === 'refunded') return '返金が完了しました';
+  if (item.status === 'cancelled' && item.paymentStatus !== 'refunded') return 'キャンセル済みです。返金が必要な場合はご確認ください。';
+  return '';
+};
+
 const attendanceLabel = (item: MyEventItem) => {
-  if (item.status === 'cancelled') return '已取消';
-  if (item.status === 'refunded' || item.status === 'pending_refund') return '退款处理中';
-  if (item.attended) return '已出席';
-  if (item.noShow) return '未到场';
-  if (isUpcoming(item)) return '待参加';
-  return '记录中';
+  if (item.status === 'cancelled') return 'キャンセル';
+  if (item.status === 'refunded' || item.status === 'pending_refund') return '返金処理中';
+  if (item.attended) return '出席済み';
+  if (item.noShow) return '欠席';
+  if (isUpcoming(item)) return '参加予定';
+  return '記録中';
 };
 
 const attendanceClass = (item: MyEventItem) => {
@@ -264,15 +297,15 @@ const attendanceClass = (item: MyEventItem) => {
 };
 
 const emptyStateTitle = computed(() => {
-  if (activeTab.value === 'upcoming') return '还没有报名计划';
-  if (activeTab.value === 'past') return '还没有历史记录';
-  return '暂无报名记录';
+  if (activeTab.value === 'upcoming') return '参加予定がまだありません';
+  if (activeTab.value === 'past') return 'まだ履歴がありません';
+  return '申込記録がありません';
 });
 
 const emptyStateMessage = computed(() => {
-  if (activeTab.value === 'upcoming') return '报名一个活动后，就能在这里追踪状态。';
-  if (activeTab.value === 'past') return '参加过的活动会自动出现在这里。';
-  return '去探索活动，挑一个喜欢的吧。';
+  if (activeTab.value === 'upcoming') return 'イベントに申し込むとここで状態を追跡できます。';
+  if (activeTab.value === 'past') return '参加済みのイベントがここに表示されます。';
+  return '気になるイベントを探してみましょう。';
 });
 
 const showBanner = (type: 'success' | 'error', message: string) => {
@@ -311,7 +344,7 @@ const generateQr = async () => {
       },
     });
   } catch (err) {
-    qrError.value = err instanceof Error ? err.message : '二维码生成失败';
+    qrError.value = err instanceof Error ? err.message : 'QRコードの生成に失敗しました';
   }
 };
 
@@ -327,7 +360,7 @@ const markTicketValidated = () => {
   if (!validatedRegistrationIds.value.includes(qrTicket.value.registrationId)) {
     validatedRegistrationIds.value = [...validatedRegistrationIds.value, qrTicket.value.registrationId];
   }
-  showBanner('success', '已完成验票');
+  showBanner('success', '検証が完了しました');
   closeTicketQr();
 };
 
@@ -335,7 +368,7 @@ const isTicketValidated = (item: MyEventItem) => validatedRegistrationIds.value.
 
 const cancelRegistration = async (item: MyEventItem) => {
   if (cancelingId.value) return;
-  const sure = await confirmDialog('確定要取消這個活動的报名吗？');
+  const sure = await confirmDialog('この参加をキャンセルしてもよろしいですか？');
   if (!sure) return;
   cancelingId.value = item.registrationId;
   try {
@@ -343,9 +376,9 @@ const cancelRegistration = async (item: MyEventItem) => {
     events.value = events.value.map((event) =>
       event.registrationId === item.registrationId ? { ...event, status: 'cancelled' } : event,
     );
-    showBanner('success', '已取消报名。');
+    showBanner('success', 'キャンセルしました。');
   } catch (err) {
-    const message = err instanceof Error ? err.message : '取消失败，请稍后重试。';
+    const message = err instanceof Error ? err.message : 'キャンセルに失敗しました。しばらくして再試行してください。';
     showBanner('error', message);
   } finally {
     cancelingId.value = null;
@@ -356,6 +389,10 @@ const canCancel = (item: MyEventItem) => {
   if (isVoidTicket(item)) return false;
   if (!isUpcoming(item)) return false;
   return !['refunded', 'pending_refund', 'cancelled', 'rejected'].includes(item.status);
+};
+
+const goBack = () => {
+  router.push({ name: 'MobileMe' });
 };
 
 const hashToIndex = (value: string, length: number) => {
@@ -391,7 +428,7 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .my-events-page {
   min-height: 100vh;
   background: #f5f7fb;
-  padding: 0 16px calc(48px + env(safe-area-inset-bottom, 0px)) 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px)) 16px;
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
   width: min(100%, 480px);
@@ -815,10 +852,22 @@ const ticketCoverStyle = (item: MyEventItem) => {
   color: rgba(248, 250, 252, 0.75);
 }
 
+.ticket-card__state-line {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ticket-card--with-cover .ticket-card__state-line {
+  color: rgba(248, 250, 252, 0.95);
+}
+
 .ticket-card__badges {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-top: 6px;
 }
 
 .ticket-card__badge {
@@ -826,6 +875,11 @@ const ticketCoverStyle = (item: MyEventItem) => {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.ticket-card__badge--phase {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 .ticket-card--with-cover .ticket-card__badge {

@@ -1,14 +1,20 @@
 <template>
   <div class="mobile-checkout">
-    <header class="checkout-header">
-      <button class="back-button" type="button" @click="goBackToForm">
+    <header class="checkout-header global-topbar">
+      <button class="back-button" type="button" aria-label="戻る" @click="goBackToForm">
         <span class="i-lucide-chevron-left text-lg"></span>
       </button>
       <div class="header-info">
-        <p class="header-label">確認と決済</p>
+        <p class="header-label">参加内容の確認（お支払い前）</p>
         <h1>{{ detail?.title ?? '読み込み中…' }}</h1>
       </div>
     </header>
+
+    <div class="step-chip">
+      <span class="chip-label">参加手続き</span>
+      <span class="chip-sep">｜</span>
+      <span class="chip-label">情報確認</span>
+    </div>
 
     <section v-if="loading" class="checkout-skeleton">
       <div class="skeleton-hero shimmer"></div>
@@ -30,11 +36,17 @@
         <p class="hero-price">{{ detail.priceText }}</p>
       </article>
 
+      <div class="status-banner">
+        <p class="banner-title">まだ申込は完了していません</p>
+        <p class="banner-desc">この内容を確認し、お支払いが完了すると参加が確定します。</p>
+      </div>
+
       <article class="ios-panel">
+        <p class="platform-note">SOCIALMORE公式イベント参加手続き</p>
         <header class="panel-head">
           <div>
             <p class="panel-label">入力内容の確認</p>
-            <p class="panel-hint">この内容で主催者に送信されます。</p>
+            <p class="panel-hint">SOCIALMORE公式イベント参加手続きの最終確認です。この内容で主催者に送信されます。</p>
           </div>
         </header>
         <ul class="confirm-list" v-if="formFields.length">
@@ -49,25 +61,33 @@
       <article class="ios-panel">
         <header class="panel-head">
           <div>
-            <p class="panel-label">決済・完了</p>
-            <p class="panel-hint">申込を確定後、必要に応じて決済へ進みます。</p>
+            <p class="panel-label">お支払いステップ</p>
+            <p class="panel-hint">申込はまだ未完了です。支払いが終わると参加が確定します。</p>
           </div>
         </header>
+        <div class="ticket-summary">
+          <div>
+            <p class="confirm-label">チケット</p>
+            <p class="confirm-value">{{ ticketLabel }}</p>
+          </div>
+          <div class="ticket-amount">
+            <p class="confirm-label">お支払い予定</p>
+            <p class="confirm-value strong">{{ paymentAmountText }}</p>
+          </div>
+        </div>
         <div class="checkout-actions">
           <button type="button" class="rails-cta" :class="{ 'is-disabled': submitting }" :disabled="submitting" @click="submitRegistration">
             <span class="i-lucide-check-circle"></span>
-            {{ submitting ? '処理中…' : '申込を確定する' }}
+            {{ submitting ? '処理中…' : 'この内容で参加を確定する' }}
           </button>
           <p v-if="paymentMessage" class="payment-hint">{{ paymentMessage }}</p>
-          <p v-if="holdExpireText" class="payment-hint subtle">
-            枠は {{ holdExpireText }} まで保持されます。
-          </p>
+          <p v-if="holdExpireText" class="payment-hint subtle">枠は {{ holdExpireText }} まで保持されます。</p>
           <div v-if="pendingPayment" class="payment-buttons">
             <Button variant="primary" size="md" class="flex-1 justify-center" :disabled="isRedirecting" @click="handleStripeCheckout">
-              {{ isRedirecting ? 'Stripeへ移動中…' : 'Stripeで支払う' }}
+              {{ isRedirecting ? 'Stripeへ移動中…' : 'Stripeで支払い、参加を確定する' }}
             </Button>
             <Button variant="outline" size="md" class="flex-1 justify-center" :disabled="isPaying" @click="handleMockPayment">
-              {{ isPaying ? 'Mock 決済中…' : 'Mock 支払い（デモ）' }}
+              {{ isPaying ? 'Mock 決済中…' : 'デモ決済で参加を確定する' }}
             </Button>
           </div>
         </div>
@@ -122,8 +142,11 @@ type SuccessPayload = {
   timeText: string;
   locationText: string;
   priceText?: string;
+  ticketName?: string;
+  amount?: number | null;
   paymentStatus: 'free' | 'paid';
   holdExpiresAt: string;
+  registrationId?: string;
 };
 const HOLD_DURATION_MS = 30 * 60 * 1000;
 
@@ -184,13 +207,28 @@ const defaultTicketId = computed(() => {
   const paidOrFirst = event.value.ticketTypes.find((ticket) => (ticket.price ?? 0) > 0) ?? event.value.ticketTypes[0];
   return paidOrFirst?.id ?? null;
 });
+const selectedTicket = computed(() => {
+  if (!event.value?.ticketTypes?.length) return null;
+  const targetId = defaultTicketId.value;
+  const ticket = event.value.ticketTypes.find((entry) => entry.id === targetId) ?? event.value.ticketTypes[0];
+  return {
+    name: ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '参加チケット',
+    price: ticket.price ?? null,
+  };
+});
+const ticketLabel = computed(() => selectedTicket.value?.name ?? detail.value?.priceText ?? '未定');
+const paymentAmountText = computed(() => {
+  const amount = pendingPayment.value?.amount ?? selectedTicket.value?.price;
+  if (typeof amount === 'number') return currencyFormatter.format(amount);
+  return detail.value?.priceText ?? '未定';
+});
 const holdExpireText = computed(() => {
   if (!holdExpiresAt.value) return null;
   const date = new Date(holdExpiresAt.value);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 });
 
-const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => {
+const buildSuccessPayload = (status: 'free' | 'paid', amountOverride?: number | null): SuccessPayload | null => {
   if (!detail.value) return null;
   return {
     eventId: detail.value.id,
@@ -198,6 +236,8 @@ const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => 
     timeText: detail.value.timeText,
     locationText: detail.value.locationText,
     priceText: detail.value.priceText,
+    ticketName: selectedTicket.value?.name,
+    amount: typeof amountOverride === 'number' ? amountOverride : selectedTicket.value?.price ?? null,
     paymentStatus: status,
     holdExpiresAt: new Date(Date.now() + HOLD_DURATION_MS).toISOString(),
   };
@@ -209,7 +249,7 @@ const goToSuccessPage = (payload: SuccessPayload) => {
 };
 
 const storePendingPayment = (registration: EventRegistrationSummary) => {
-  const payload = buildSuccessPayload('paid');
+  const payload = buildSuccessPayload('paid', registration.amount ?? null);
   if (!payload) return;
   holdExpiresAt.value = payload.holdExpiresAt;
   const pendingRecord = {
@@ -304,8 +344,8 @@ const handleRegistrationResult = (registration: EventRegistrationSummary) => {
     storePendingPayment(registration);
     const expiresAt = holdExpireText.value;
     paymentMessage.value = expiresAt
-      ? `お支払いを完了すると参加が確定します。枠は ${expiresAt} まで保持されます。`
-      : 'お支払いを完了すると参加が確定します。';
+      ? `まだ申込は完了していません。${paymentAmountText.value} のお支払い完了で参加が確定します（枠は ${expiresAt} まで保持）。`
+      : 'まだ申込は完了していません。お支払い完了で参加が確定します。';
     sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
   } else {
     pendingPayment.value = null;
@@ -322,11 +362,12 @@ const handleMockPayment = async () => {
   isPaying.value = true;
   registrationError.value = null;
   try {
+    const paidAmount = pendingPayment.value?.amount ?? null;
     await createMockPayment(pendingPayment.value.registrationId);
     pendingPayment.value = null;
-    paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
+    paymentMessage.value = 'お支払いが完了しました。参加が正式に確定しました。';
     clearPendingPayment();
-    const payload = buildSuccessPayload('paid');
+    const payload = buildSuccessPayload('paid', paidAmount);
     if (payload) {
       goToSuccessPage(payload);
       return;
@@ -388,7 +429,31 @@ const formatDate = (value: string) =>
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 16px 6px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
+}
+
+.global-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f8fafc;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.step-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 16px 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+.chip-sep {
+  opacity: 0.5;
 }
 
 .back-button {
@@ -448,6 +513,24 @@ const formatDate = (value: string) =>
   font-weight: 600;
 }
 
+.status-banner {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+.banner-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+.banner-desc {
+  margin: 4px 0 0;
+  color: #1f2937;
+  font-size: 13px;
+}
+
 .ios-panel {
   background: #fff;
   border-radius: 20px;
@@ -473,6 +556,27 @@ const formatDate = (value: string) =>
   color: rgba(15, 23, 42, 0.6);
 }
 
+.platform-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.platform-note::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  display: inline-block;
+}
+
 .confirm-list {
   list-style: none;
   padding: 0;
@@ -494,6 +598,21 @@ const formatDate = (value: string) =>
   font-weight: 600;
   color: rgba(15, 23, 42, 0.9);
   word-break: break-word;
+}
+.confirm-value.strong {
+  font-size: 16px;
+}
+
+.ticket-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0 4px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+}
+.ticket-amount {
+  text-align: right;
 }
 
 .checkout-actions {
@@ -525,9 +644,9 @@ const formatDate = (value: string) =>
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  background: #0090d9;
+  background: linear-gradient(135deg, #0090d9, #22bbaa);
   color: #fff;
-  box-shadow: none;
+  box-shadow: 0 12px 30px rgba(0, 144, 217, 0.28);
   display: inline-flex;
   align-items: center;
   justify-content: center;

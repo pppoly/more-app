@@ -1,5 +1,6 @@
 <template>
   <div class="mobile-settings m-page">
+    <ConsoleTopBar :title="t('mobile.settings.title')" @back="goBack" />
     <section class="settings-section">
       <h2 class="m-section-title">{{ t('mobile.settings.title') }}</h2>
       <div class="settings-list">
@@ -79,6 +80,7 @@ import { useLocale } from '../../composables/useLocale';
 import { updateProfile } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import { useI18n } from 'vue-i18n';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 const router = useRouter();
 const { logout, user, setUserProfile } = useAuth();
@@ -99,6 +101,10 @@ const openNotification = () => {
 const logoutUser = () => {
   logout();
   router.replace({ path: '/' });
+};
+
+const goBack = () => {
+  router.push({ name: 'MobileMe' });
 };
 
 const localeOptions = computed(() =>
@@ -140,8 +146,14 @@ const selectLocale = async (locale: string) => {
 <style scoped>
 .mobile-settings {
   min-height: 100vh;
-  padding: 1.25rem 1.25rem 5rem;
-  background: var(--m-color-bg, #f7f7fb);
+  background: #f5f7fb;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  width: min(100%, 480px);
+  margin: 0 auto;
+  overflow-x: hidden;
 }
 
 .settings-section + .settings-section {

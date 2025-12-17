@@ -121,6 +121,23 @@ export class ConsoleEventsController {
     return this.consoleEventsService.rejectRegistration(req.user.id, eventId, registrationId);
   }
 
+  @Post('refund-requests/:requestId/decision')
+  decideRefund(
+    @Param('requestId') requestId: string,
+    @Body('decision') decision: 'approve_full' | 'approve_partial' | 'reject',
+    @Body('amount') amount: number | undefined,
+    @Body('reason') reason: string | undefined,
+    @Req() req: any,
+  ) {
+    if (!requestId) {
+      throw new BadRequestException('requestId is required');
+    }
+    if (!decision) {
+      throw new BadRequestException('decision is required');
+    }
+    return this.consoleEventsService.decideRefundRequest(req.user.id, requestId, { decision, amount, reason });
+  }
+
   @Get(':eventId/registrations/export')
   async exportRegistrations(
     @Param('eventId') eventId: string,

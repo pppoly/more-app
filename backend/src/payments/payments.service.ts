@@ -492,16 +492,22 @@ export class PaymentsService {
     if (payment.status !== 'paid') {
       throw new BadRequestException('この支払いは返金できません');
     }
-    if (payment.method !== 'stripe') {
-      throw new BadRequestException('Stripe以外の支払いは返金できません');
+    if (amount !== undefined && amount > payment.amount) {
+      throw new BadRequestException('返金額が支払い額を超えています');
     }
-    if (amount !== undefined) {
-      if (amount > payment.amount) {
-        throw new BadRequestException('返金額が支払い額を超えています');
+
+    if (payment.method !== 'stripe') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'refunded' },
+      });
+      if (payment.registrationId) {
+        await this.prisma.eventRegistration.update({
+          where: { id: payment.registrationId },
+          data: { paymentStatus: 'refunded', status: 'cancelled' },
+        });
       }
-      if (amount < payment.amount) {
-        throw new BadRequestException('現在は全額返金のみ対応しています');
-      }
+      return { refundId: null, status: 'refunded' };
     }
 
     const paymentIntentId = await this.resolvePaymentIntentId(payment);

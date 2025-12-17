@@ -51,4 +51,12 @@ export class MeController {
     }
     return this.meService.cancelEventRegistration(req.user.id, registrationId);
   }
+
+  @Post('events/:registrationId/cancel-request')
+  requestCancel(@Param('registrationId') registrationId: string, @Body('reason') reason: string, @Req() req: any) {
+    if (!registrationId) {
+      throw new BadRequestException('registrationId is required');
+    }
+    return this.meService.requestCancelRegistration(req.user.id, registrationId, reason);
+  }
 }

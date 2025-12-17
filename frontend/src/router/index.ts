@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
 import Home from '../views/Home.vue';
 import CommunityPortal from '../views/community/CommunityPortal.vue';
 import MyEvents from '../views/me/MyEvents.vue';
+import MyPayments from '../views/me/MyPayments.vue';
 import AuthCallback from '../views/auth/AuthCallback.vue';
 import CommunityList from '../views/console/CommunityList.vue';
 import CommunityForm from '../views/console/CommunityForm.vue';
@@ -217,6 +218,9 @@ const routes: RouteRecordRaw[] = [
       title: '設定',
       layout: 'mobile-user',
       mobileOnly: true,
+      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
       devPageName: '设置',
     },
   },
@@ -228,6 +232,9 @@ const routes: RouteRecordRaw[] = [
       title: 'コミュニティ',
       layout: 'mobile-user',
       mobileOnly: true,
+      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
       devPageName: '社群广场',
     },
   },
@@ -631,6 +638,17 @@ const routes: RouteRecordRaw[] = [
     component: MyEvents,
     meta: {
       devPageName: '我的活动',
+      hideTabbar: true,
+      hideShellHeader: true,
+      flushContent: true,
+    },
+  },
+  {
+    path: '/me/payments',
+    name: 'my-payments',
+    component: MyPayments,
+    meta: {
+      devPageName: '支払い履歴',
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,

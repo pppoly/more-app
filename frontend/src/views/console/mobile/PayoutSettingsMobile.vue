@@ -1,35 +1,25 @@
 <template>
   <div class="payout">
-    <header class="app-bar">
-      <button class="text-back" type="button" @click="router.back()">
-        {{ $t('nav.back') }}
-      </button>
-      <div class="app-bar__title">
-        <h1>{{ pageTitle }}</h1>
-      </div>
-      <button class="text-back text-back--ghost" type="button" aria-hidden="true" tabindex="-1">
-        {{ $t('nav.back') }}
-      </button>
-    </header>
+    <ConsoleTopBar :title="pageTitle" @back="goBack" />
 
     <section class="card" v-if="community">
       <div class="row">
         <div>
-          <p class="label">账户状态</p>
-          <h3>{{ stripeReady ? '可以收钱啦' : '还没开通' }}</h3>
-          <p class="muted">先把收款开好，活动收入才能打进来。</p>
+          <p class="label">アカウント状態</p>
+          <h3>{{ stripeReady ? '受け取り可能です' : 'まだ開設されていません' }}</h3>
+          <p class="muted">決済受け取りを有効化すると、イベントの売上を入金できます。</p>
         </div>
         <div class="status-block">
-          <p class="small">账户 ID</p>
-          <strong>{{ community.stripeAccountId || '未创建' }}</strong>
+          <p class="small">アカウント ID</p>
+          <strong>{{ community.stripeAccountId || '未作成' }}</strong>
         </div>
       </div>
 
       <button class="primary" :disabled="onboarding" @click="handleOnboarding">
-        {{ onboarding ? '跳转中…' : stripeReady ? '更新收款信息' : '去开通收款' }}
+        {{ onboarding ? '移動中…' : stripeReady ? '受け取り情報を更新' : '受け取りを開始する' }}
       </button>
-      <p class="hint">会跳到 Stripe 填信息，回来后就能继续用了。</p>
-      <button class="ghost" type="button" @click="goPayments">查看交易流水</button>
+      <p class="hint">Stripe の画面で情報入力後に戻ってください。</p>
+      <button class="ghost" type="button" @click="goPayments">取引履歴を見る</button>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -42,6 +32,7 @@ import { useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { fetchConsoleCommunity, startCommunityStripeOnboarding } from '../../../api/client';
 import type { ConsoleCommunityDetail } from '../../../types/api';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -52,7 +43,7 @@ const error = ref<string | null>(null);
 const stripeReady = computed(
   () => !!(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded),
 );
-const pageTitle = computed(() => '收款设置');
+const pageTitle = computed(() => '受け取り設定');
 
 const loadCommunity = async () => {
   error.value = null;
@@ -62,13 +53,13 @@ const loadCommunity = async () => {
   }
   const id = store.activeCommunityId.value;
   if (!id) {
-    error.value = '未找到可管理的社群';
+    error.value = '管理対象のコミュニティが見つかりません';
     return;
   }
   try {
     community.value = await fetchConsoleCommunity(id);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '收款信息获取失败';
+    error.value = err instanceof Error ? err.message : '受け取り情報の取得に失敗しました';
   }
 };
 
@@ -81,7 +72,8 @@ const handleOnboarding = async () => {
     window.location.href = url;
   } catch (err: any) {
     error.value =
-      err?.response?.data?.message || (err instanceof Error ? err.message : '收款链接生成失败');
+      err?.response?.data?.message ||
+      (err instanceof Error ? err.message : '受け取りリンクの生成に失敗しました');
   } finally {
     onboarding.value = false;
   }
@@ -91,6 +83,10 @@ const goPayments = () => {
   const id = community.value?.id || store.activeCommunityId.value;
   if (!id) return;
   router.push({ name: 'ConsoleMobilePayments', params: { communityId: id } });
+};
+
+const goBack = () => {
+  router.back();
 };
 
 onMounted(loadCommunity);
@@ -104,37 +100,6 @@ onMounted(loadCommunity);
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-.app-bar {
-  display: grid;
-  grid-template-columns: 80px 1fr 80px;
-  align-items: center;
-  gap: 12px;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 0 12px;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
-  background: #fff;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-}
-.app-bar__title h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
-  text-align: center;
-}
-.text-back {
-  border: none;
-  background: transparent;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 15px;
-  padding: 0;
-  min-width: 72px;
-  text-align: left;
-}
-.text-back--ghost {
-  visibility: hidden;
 }
 .card {
   background: #fff;

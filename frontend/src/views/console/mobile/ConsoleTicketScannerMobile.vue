@@ -1,26 +1,28 @@
 <template>
   <div class="ticket-scanner-page">
+    <ConsoleTopBar title="チケットスキャン" @back="goBack" />
+
     <header class="scanner-hero">
-      <h1>验票扫码</h1>
-      <p>使用设备相机扫描票券二维码，实时完成验票。</p>
+      <h1>受付・チェックイン</h1>
+      <p>端末のカメラで QR を読み取り、リアルタイムで受付を完了できます。</p>
     </header>
 
     <section class="scanner-card">
       <div class="scanner-video" :class="{ 'scanner-video--inactive': !scanning }">
         <video ref="videoEl" playsinline muted />
         <div v-if="!scanning" class="scanner-overlay">
-          <p>点击下方按钮启动相机</p>
+          <p>下のボタンでカメラを起動してください</p>
         </div>
       </div>
       <div class="scanner-actions">
         <button type="button" class="primary-btn" :disabled="scanning" @click="startScan">
-          {{ scanning ? '扫描中…' : '启动相机扫码' }}
+          {{ scanning ? 'スキャン中…' : 'カメラを起動してスキャン' }}
         </button>
         <button v-if="scanning" type="button" class="ghost-btn" @click="stopScan">停止</button>
       </div>
       <div class="scanner-actions">
         <button type="button" class="ghost-btn" @click="openCapture">
-          拍照扫码
+          写真からスキャン
         </button>
       </div>
       <input
@@ -35,7 +37,7 @@
     </section>
 
     <section v-if="resultMessage" class="result-card" :class="{ 'result-card--success': resultSuccess }">
-      <p class="result-title">{{ resultSuccess ? '验票成功' : '验票失败' }}</p>
+      <p class="result-title">{{ resultSuccess ? '検証成功' : '検証失敗' }}</p>
       <p class="result-message">{{ resultMessage }}</p>
     </section>
   </div>
@@ -45,6 +47,8 @@
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
 import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { checkinRegistration } from '../../../api/client';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { useRouter } from 'vue-router';
 
 const videoEl = ref<HTMLVideoElement | null>(null);
 const captureInput = ref<HTMLInputElement | null>(null);
@@ -52,6 +56,10 @@ const scanning = ref(false);
 const scanError = ref<string | null>(null);
 const resultMessage = ref<string | null>(null);
 const resultSuccess = ref(false);
+const router = useRouter();
+const goBack = () => {
+  router.back();
+};
 
 let readerInstance: BrowserMultiFormatReader | null = null;
 let controls: IScannerControls | null = null;
@@ -74,12 +82,12 @@ const startScan = async () => {
         if (result) {
           handlePayload(result.getText());
         } else if (err && !(err as any).message?.includes('No MultiFormat Readers')) {
-          scanError.value = err instanceof Error ? err.message : '识别失败';
+          scanError.value = err instanceof Error ? err.message : '読み取りに失敗しました';
         }
       },
     );
   } catch (err) {
-    scanError.value = '无法直接打开相机，请拍照后上传二维码扫描（建议使用 HTTPS 网络）';
+    scanError.value = 'カメラを開けません。写真を撮影してアップロードしてください（HTTPS推奨）';
     stopScan();
   }
 };
@@ -102,12 +110,12 @@ const handlePayload = async (raw: string) => {
   try {
     const payload = JSON.parse(raw);
     if (!payload.eventId || !payload.registrationId) {
-      throw new Error('二维码内容不完整');
+      throw new Error('QRコードの内容が不足しています');
     }
     await submitCheckin(payload.eventId, payload.registrationId);
   } catch (err) {
     resultSuccess.value = false;
-    resultMessage.value = err instanceof Error ? err.message : '无法解析二维码';
+    resultMessage.value = err instanceof Error ? err.message : 'QRコードを解析できませんでした';
   } finally {
     await stopScan();
   }
@@ -117,10 +125,10 @@ const submitCheckin = async (eventId: string, registrationId: string) => {
   try {
     await checkinRegistration(eventId, registrationId);
     resultSuccess.value = true;
-    resultMessage.value = `已登记：${registrationId.slice(0, 8).toUpperCase()}`;
+    resultMessage.value = `チェックイン完了：${registrationId.slice(0, 8).toUpperCase()}`;
   } catch (err) {
     resultSuccess.value = false;
-    resultMessage.value = err instanceof Error ? err.message : '验票失败，请稍后再试';
+    resultMessage.value = err instanceof Error ? err.message : '検証に失敗しました。しばらくしてから再試行してください';
   }
 };
 
@@ -145,7 +153,7 @@ const handleCapture = async (event: Event) => {
         const result = await readerInstance.decodeFromImageElement(img);
         await handlePayload(result.getText());
       } catch (err) {
-        scanError.value = err instanceof Error ? err.message : '无法解析照片中的二维码';
+        scanError.value = err instanceof Error ? err.message : '写真のQRを解析できませんでした';
       } finally {
         input.value = '';
       }
@@ -153,7 +161,7 @@ const handleCapture = async (event: Event) => {
     img.src = readerFile.result as string;
   };
   readerFile.onerror = () => {
-    scanError.value = '读取照片失败';
+    scanError.value = '写真の読み込みに失敗しました';
     input.value = '';
   };
   readerFile.readAsDataURL(file);
