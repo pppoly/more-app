@@ -55,7 +55,7 @@ export function useAppShellMode() {
   );
 
   const showBrandBar = computed(() => isLiffEntry.value || uaLine.value || forceBrandBar.value);
-  const showBrandDebug = computed(() => debugParam.value || import.meta.env.DEV);
+  const showBrandDebug = computed(() => debugParam.value && !isLiffClientMode.value);
   const brandDebugText = computed(
     () => `liffEntry=${isLiffEntry.value} uaLine=${uaLine.value} inClient=${isLiffClientMode.value}`,
   );

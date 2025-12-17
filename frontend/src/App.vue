@@ -66,7 +66,7 @@
     <template v-else>
       <header v-if="!showBrandBar" class="app-header">
         <div class="brand">
-          <h1>MORE App (モア アプリ)</h1>
+          <h1>SOCIALMORE</h1>
           <nav>
             <RouterLink to="/">Home</RouterLink>
             <RouterLink to="/events">Events</RouterLink>
@@ -162,7 +162,7 @@ const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
 const router = useRouter();
 const currentRoute = useRoute();
-const showDevPageName = computed(() => import.meta.env.DEV);
+const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const keepAliveRoutes = ['MobileEvents'];
 const currentPageName = computed(() => {
