@@ -1781,14 +1781,14 @@ watch(
 .event-about__content {
   width: 100%;
 }
-.event-about__content figure {
+:deep(.event-about__content figure) {
   margin: 12px 0;
   padding: 8px;
   background: #f4f5f7;
   border-radius: 12px;
   overflow: visible;
 }
-.event-about__content figure img {
+:deep(.event-about__content figure img) {
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -1800,7 +1800,7 @@ watch(
   background: transparent !important;
   box-sizing: border-box !important;
 }
-.event-about__content img {
+:deep(.event-about__content img) {
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -1813,9 +1813,10 @@ watch(
   padding: 0 !important;
   margin: 12px 0 !important;
 }
-.event-about__content a img {
+:deep(.event-about__content a img) {
   border: none !important;
   background: transparent !important;
+  object-fit: contain !important;
 }
 .m-text-body a img {
   border: none;
