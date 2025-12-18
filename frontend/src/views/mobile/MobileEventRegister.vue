@@ -1,14 +1,6 @@
 <template>
   <div class="mobile-register">
-    <header class="register-header global-topbar">
-      <button class="back-button" type="button" aria-label="戻る" @click="router.back()">
-        <span class="i-lucide-chevron-left text-lg"></span>
-      </button>
-      <div class="header-info">
-        <p class="header-label">イベント申込</p>
-        <h1>{{ detail?.title ?? '読み込み中…' }}</h1>
-      </div>
-    </header>
+    <ConsoleTopBar class="topbar" title="イベント申込" @back="router.back()" />
 
     <section v-if="loading" class="register-skeleton">
       <div class="skeleton-hero shimmer"></div>
@@ -22,26 +14,41 @@
     </section>
 
     <section v-else-if="detail" class="register-body">
-      <article class="hero-card">
-        <p class="hero-label">対象イベント</p>
-        <h2 class="hero-title">{{ detail.title }}</h2>
-        <p class="hero-meta">{{ detail.timeText }}</p>
-        <p class="hero-meta">{{ detail.locationText }}</p>
-        <p class="hero-price">{{ detail.priceText }}</p>
+      <article class="summary-card">
+        <div class="summary-meta">
+          <p class="summary-time">
+            <span class="i-lucide-calendar-days"></span>
+            {{ detail.timeText }}
+          </p>
+          <p class="summary-location">
+            <span class="i-lucide-map-pin"></span>
+            {{ detail.locationText }}
+          </p>
+        </div>
+        <div class="summary-title-row">
+          <h1 class="summary-title">{{ detail.title }}</h1>
+          <span class="price-chip">{{ detail.priceText }}</span>
+        </div>
+      </article>
+
+      <article class="ticket-line">
+        <div>
+          <p class="line-label">チケット</p>
+          <p class="line-value">{{ selectedTicket?.name || '参加チケット' }}</p>
+        </div>
+        <span class="price-chip price-chip--ghost">{{ detail.priceText }}</span>
       </article>
 
       <p v-if="registrationUnavailableReason" class="ios-notice">
         {{ registrationUnavailableReason }}
       </p>
 
-      <article class="ios-panel">
+      <article v-if="formFields.length" class="form-panel">
         <header class="panel-head">
-          <div>
-            <p class="panel-label">参加者情報</p>
-          </div>
-          <span class="badge">{{ formFields.length ? `${formFields.length}項目` : '入力不要' }}</span>
+          <p class="panel-label">参加者情報</p>
+          <span class="badge">{{ `${formFields.length}項目` }}</span>
         </header>
-        <div v-if="formFields.length" class="ios-section">
+        <div class="ios-section">
           <div v-for="(field, index) in formFields" :key="fieldKey(field, index)" class="ios-row">
             <div class="ios-label">
               {{ field.label }}
@@ -51,7 +58,7 @@
               <template v-if="['text', 'email', 'phone', 'number', 'date'].includes(field.type)">
                 <input
                   :type="inputType(field.type)"
-                  :placeholder="field.placeholder || '请输入...'"
+                  :placeholder="field.placeholder || '入力してください'"
                   v-model="formValues[fieldKey(field, index)]"
                   class="ios-input-control"
                 />
@@ -59,7 +66,7 @@
               <textarea
                 v-else-if="field.type === 'textarea'"
                 rows="3"
-                :placeholder="field.placeholder || '请输入...'"
+                :placeholder="field.placeholder || '入力してください'"
                 v-model="formValues[fieldKey(field, index)]"
                 class="ios-input-control"
               ></textarea>
@@ -109,37 +116,29 @@
             </div>
           </div>
         </div>
-        <div class="ios-consent">
-          <p v-if="formFields.length === 0">このイベントでは追加情報の入力は必要ありません。</p>
-          <p>
-            お客様の個人情報は、日本の個人情報保護法およびSOCIALMOREのプライバシーポリシーに基づき適切に管理します。
-            提供いただいた内容はイベント運営および緊急連絡の目的に限って利用されます。
-          </p>
-          <label class="ios-consent__row">
-            <input type="checkbox" v-model="hasAgreedTerms" />
-            <span>上記内容に同意し、個人情報の取扱いに同意します。</span>
-          </label>
+      </article>
+
+      <article class="accordion">
+        <button type="button" class="accordion-head" @click="showGuideline = !showGuideline">
+          <div>
+            <p class="accordion-title">注意事項</p>
+            <p class="accordion-summary">申し込み前に必ずご確認ください。</p>
+          </div>
+          <span :class="showGuideline ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"></span>
+        </button>
+        <div v-if="showGuideline" class="accordion-body">
+          <ul class="ios-guideline">
+            <li>キャンセルは開催前日までにご連絡ください。</li>
+            <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
+            <li>次の画面で内容を確認後、必要な場合は決済へ進みます。</li>
+          </ul>
         </div>
       </article>
 
-      <article class="ios-panel">
-        <header class="panel-head">
-          <div>
-            <p class="panel-label">注意事項</p>
-            <p class="panel-hint">申し込み前に必ずお読みください。</p>
-          </div>
-        </header>
-        <button type="button" class="guideline-toggle" @click="showGuideline = !showGuideline">
-          <span>{{ showGuideline ? '折りたたむ' : '表示する' }}</span>
-          <span :class="showGuideline ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"></span>
-        </button>
-        <ul v-if="showGuideline" class="ios-guideline">
-          <li>キャンセルは開催前日までにご連絡ください。</li>
-          <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
-          <li>次の画面で内容を確認後、決済（必要な場合）へ進みます。</li>
-          <li>お客様の個人情報は日本の個人情報保護法に基づき厳重に管理されます。</li>
-        </ul>
-      </article>
+      <section class="consent-line">
+        申し込みを確定すると、利用規約・プライバシーに同意したものとみなされます。
+        <button type="button" class="inline-link">プライバシー</button>
+      </section>
 
       <p v-if="registrationError" class="ios-error">{{ registrationError }}</p>
 
@@ -174,6 +173,7 @@ import {
   MOBILE_EVENT_SUCCESS_KEY,
 } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
@@ -185,7 +185,6 @@ const event = ref<EventDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const registrationError = ref<string | null>(null);
-const hasAgreedTerms = ref(false);
 const submittingInline = ref(false);
 const showGuideline = ref(false);
 
@@ -264,10 +263,10 @@ const registrationUnavailableReason = computed(() => {
 const ctaLabel = computed(() => {
   if (registrationUnavailableReason.value) return '受付終了';
   if (submittingInline.value) return '処理中…';
-  return requiresPayment.value ? '内容を確認して支払いへ' : '無料で申込む';
+  return requiresPayment.value ? '申し込みを確定する' : '無料で申し込む';
 });
 const isCtaDisabled = computed(
-  () => Boolean(registrationUnavailableReason.value) || !hasAgreedTerms.value || submittingInline.value,
+  () => Boolean(registrationUnavailableReason.value) || submittingInline.value,
 );
 
 type SuccessPayload = {
@@ -353,7 +352,6 @@ const initializeFormValues = () => {
     }
     fieldErrors[key] = null;
   });
-  hasAgreedTerms.value = false;
 };
 
 const applyDraftAnswers = () => {
@@ -379,10 +377,6 @@ const proceedToCheckout = () => {
     return;
   }
   if (!validateForm()) return;
-  if (!hasAgreedTerms.value) {
-    registrationError.value = '個人情報の取扱いに関する同意が必要です。';
-    return;
-  }
   if (!requiresPayment.value) {
     submitFreeRegistration();
     return;
@@ -494,141 +488,166 @@ const formatDate = (value: string) =>
   min-height: 100vh;
 }
 
+.mobile-register p,
+.mobile-register h1,
+.mobile-register h2,
+.mobile-register h3 {
+  text-align: left;
+}
+
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
+}
+
 .register-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 10px;
-}
-
-.global-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #f8fafc;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 8px;
 }
 
 .back-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   border: none;
   background: #fff;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
-.header-info h1 {
-  font-size: 18px;
-  margin: 2px 0 0;
-  font-weight: 600;
-}
-
 .header-label {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
   margin: 0;
-  letter-spacing: 0.1em;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .register-body {
-  padding: 0 16px 80px;
+  padding: 24px 16px 90px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
-.hero-card {
-  background: linear-gradient(135deg, #0f3057, #2ba7b4);
-  color: #f0faff;
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.28);
+.summary-card {
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(14, 165, 233, 0.08));
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transform: translateY(0);
-  animation: heroReveal 0.5s ease;
+  gap: 8px;
 }
 
-.hero-title {
-  font-size: 24px;
+.summary-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.summary-title {
   margin: 0;
+  font-size: 18px;
   font-weight: 700;
+  color: #0f172a;
   line-height: 1.3;
 }
 
-.hero-meta {
-  margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.01em;
-  opacity: 0.95;
-}
-
-.hero-price {
-  margin: 10px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-@keyframes heroReveal {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.ios-panel {
-  background: #fff;
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+.summary-meta {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.summary-time,
+.summary-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.price-chip {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.price-chip--ghost {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ticket-line {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.line-label {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.line-value {
+  margin: 2px 0 0;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.form-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
 }
 
 .panel-label {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.panel-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .badge {
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11px;
-  background: rgba(15, 23, 42, 0.05);
-  color: rgba(15, 23, 42, 0.7);
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 12px;
 }
 
 .ios-section {
-  border-top: 1px solid rgba(15, 23, 42, 0.05);
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .ios-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .ios-row:last-child {
@@ -636,10 +655,10 @@ const formatDate = (value: string) =>
 }
 
 .ios-label {
-  flex: 0 0 120px;
-  font-weight: 700;
-  font-size: 16px;
-  color: rgba(15, 23, 42, 0.95);
+  flex: 0 0 110px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
 }
 
 .ios-label .required {
@@ -649,46 +668,38 @@ const formatDate = (value: string) =>
 
 .ios-input {
   flex: 1;
-  font-size: 15px;
-  color: rgba(15, 23, 42, 0.9);
+  font-size: 14px;
+  color: #0f172a;
 }
 
 .ios-input-control {
   width: 100%;
   border: none;
   padding: 0;
-  font-size: 15px;
+  font-size: 14px;
   background: transparent;
-  color: rgba(15, 23, 42, 0.95);
+  color: #0f172a;
   font-family: inherit;
-  text-align: right;
 }
 
 .ios-input-control:focus {
   outline: none;
 }
 
-.ios-input select {
-  appearance: none;
-}
-
-.ios-choice {
+.ios-choice,
+.ios-checkbox {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.ios-choice label {
+.ios-choice label,
+.ios-checkbox label {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-}
-
-.ios-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  font-size: 13px;
+  color: #0f172a;
 }
 
 .ios-field-error {
@@ -697,45 +708,61 @@ const formatDate = (value: string) =>
   color: #dc2626;
 }
 
+.accordion {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.accordion-head {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accordion-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.accordion-summary {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.accordion-body {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 10px 12px 12px;
+}
+
 .ios-guideline {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
+  color: #475569;
   line-height: 1.5;
 }
-.guideline-toggle {
-  margin-top: 4px;
-  width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.8);
-  border-radius: 12px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+
+.consent-line {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.inline-link {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
   font-weight: 600;
-  color: rgba(15, 23, 42, 0.85);
-}
-
-.ios-consent {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.04);
-  font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
-}
-
-.ios-consent__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.ios-consent__row input {
-  width: 18px;
-  height: 18px;
+  padding: 0 4px;
 }
 
 .ios-error {
@@ -755,12 +782,8 @@ const formatDate = (value: string) =>
   border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
-.ios-actions {
-  margin-top: 8px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
-}
 .mobile-register__spacer {
-  height: 140px;
+  height: 80px;
 }
 
 .ios-tabbar {
@@ -768,62 +791,53 @@ const formatDate = (value: string) =>
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
-  gap: 12px;
-  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
-  background: rgba(248, 250, 252, 0.95);
-  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.15);
+  z-index: 20;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.1);
 }
 
 .rails-cta {
-  flex: 1;
+  width: 100%;
   border: none;
-  border-radius: 999px;
-  padding: 14px 18px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  background: #0090d9;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
   color: #fff;
-  box-shadow: none;
-  display: inline-flex;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.rails-cta:active:not(.is-disabled) {
-  transform: scale(0.98);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
 }
 
 .rails-cta.is-disabled {
-  background: #92d0f5;
-  color: rgba(255, 255, 255, 0.8);
-  box-shadow: none;
-  transform: none;
+  opacity: 0.6;
 }
+
 .state-card {
-  padding: 18px;
   margin: 24px 16px;
-  border-radius: 16px;
+  padding: 18px;
+  border-radius: 14px;
   background: #fff;
+  color: #0f172a;
   text-align: center;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
 .state-card--error {
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.25);
 }
 
 .retry-btn {
   margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
   border: none;
-  background: transparent;
-  color: var(--color-primary, #0ea5e9);
-  font-size: 14px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
 }
 
 .register-skeleton {
@@ -835,29 +849,32 @@ const formatDate = (value: string) =>
 
 .skeleton-hero,
 .skeleton-card {
-  width: 100%;
-  border-radius: 20px;
+  border-radius: 14px;
+  background: #e2e8f0;
   height: 120px;
 }
 
-.skeleton-hero {
-  height: 200px;
+.skeleton-card {
+  height: 80px;
 }
 
 .shimmer {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(90deg, #edf2ff 25%, #e2e8f8 37%, #edf2ff 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
 }
 
 @keyframes shimmer {
   0% {
-    background-position: 100% 0;
+    background-position: 200% 0;
   }
   100% {
-    background-position: -100% 0;
+    background-position: -200% 0;
   }
+}
+
+.ios-placeholder {
+  color: rgba(15, 23, 42, 0.5);
+  font-size: 13px;
 }
 </style>
