@@ -842,9 +842,10 @@ const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
 const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
 const MAX_COVER_DIMENSION = 1920; // 最大長辺
-const MIN_COVER_WIDTH = 800;
-const MIN_COVER_HEIGHT = 450;
-const MIN_COVER_TEXT = `画像が小さすぎます。最低でも ${MIN_COVER_WIDTH}×${MIN_COVER_HEIGHT} の画像を使用してください。`;
+// 最低サイズ制限を実質無効化（1px）
+const MIN_COVER_WIDTH = 1;
+const MIN_COVER_HEIGHT = 1;
+const MIN_COVER_TEXT = '';
 const TARGET_ASPECT = 16 / 9;
 const COVER_COMPRESS_QUALITY = 0.82;
 const COVER_FALLBACK_QUALITY = 0.7;
@@ -2044,11 +2045,6 @@ const downscaleImageFile = (file: File) =>
       const img = new Image();
       img.onload = async () => {
         try {
-          if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
-            reject(new Error(MIN_COVER_TEXT));
-            return;
-          }
-
           const sourceAspect = img.width / img.height;
           const crop: { sx: number; sy: number; sw: number; sh: number } = {
             sx: 0,
@@ -2084,14 +2080,14 @@ const downscaleImageFile = (file: File) =>
 
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
             const scale = Math.max(0.7, Math.sqrt(MAX_COVER_UPLOAD_SIZE / blob.size));
-            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * scale));
+            targetWidth = Math.max(1, Math.floor(targetWidth * scale));
             targetHeight = Math.round(targetWidth / TARGET_ASPECT);
             blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
           }
 
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
             // 最终のフォールバック：さらに解像度を下げる
-            targetWidth = Math.max(MIN_COVER_WIDTH, Math.floor(targetWidth * 0.75));
+            targetWidth = Math.max(1, Math.floor(targetWidth * 0.75));
             targetHeight = Math.round(targetWidth / TARGET_ASPECT);
             blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
           }

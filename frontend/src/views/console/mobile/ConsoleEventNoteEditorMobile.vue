@@ -489,6 +489,7 @@ const handleCancel = () => {
 
 const selectImage = (id: string) => {
   selectedImageId.value = id;
+  pendingInsertTarget.value = { blockId: id, position: 'after' };
 };
 
 const focusBody = () => {
