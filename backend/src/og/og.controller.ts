@@ -27,8 +27,10 @@ export class OgController {
     return `${base}/${url.replace(/^\/+/, '')}`;
   }
 
-  private esc(attr: string) {
-    return attr
+  private esc(attr?: unknown) {
+    // Ensure we always escape a string value to avoid calling replace on null/objects
+    const value = typeof attr === 'string' ? attr : String(attr ?? '');
+    return value
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
