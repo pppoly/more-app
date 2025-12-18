@@ -42,48 +42,32 @@ let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
 let liffProfilePromise: Promise<void> | null = null;
-const LIFF_LOGIN_COOLDOWN_MS = 30_000;
-const MAX_LIFF_LOGIN_ATTEMPTS = 3;
-const LIFF_LOGIN_TS_KEY = 'moreapp_liff_last_login_at';
-const LIFF_LOGIN_ATTEMPTS_KEY = 'moreapp_liff_login_attempts';
-const LIFF_LOGIN_INFLIGHT_KEY = 'liff_login_inflight';
-let lastLiffLoginAttempt = 0;
-let liffLoginAttempts = 0;
+let liffBootstrapPromise: Promise<void> | null = null;
+const LIFF_LOGIN_INFLIGHT_UNTIL_KEY = 'liff_login_inflight_until';
 const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
 const liffAuthHardStopped = ref(false);
 
-function loadLiffLoginState() {
-  if (!hasWindow()) return;
-  const ts = window.sessionStorage.getItem(LIFF_LOGIN_TS_KEY);
-  const attempts = window.sessionStorage.getItem(LIFF_LOGIN_ATTEMPTS_KEY);
-  lastLiffLoginAttempt = ts ? Number(ts) || 0 : 0;
-  liffLoginAttempts = attempts ? Number(attempts) || 0 : 0;
-}
-
 function isLiffLoginInflight() {
   if (!hasWindow()) return false;
-  return window.sessionStorage.getItem(LIFF_LOGIN_INFLIGHT_KEY) === '1';
+  const raw = window.localStorage.getItem(LIFF_LOGIN_INFLIGHT_UNTIL_KEY);
+  if (!raw) return false;
+  const until = Number(raw);
+  if (Number.isNaN(until)) return false;
+  return Date.now() < until;
 }
 
-function markLiffLoginInflight() {
+function markLiffLoginInflight(ttlMs = 60_000) {
   if (!hasWindow()) return;
-  window.sessionStorage.setItem(LIFF_LOGIN_INFLIGHT_KEY, '1');
+  const until = Date.now() + ttlMs;
+  window.localStorage.setItem(LIFF_LOGIN_INFLIGHT_UNTIL_KEY, String(until));
 }
 
 function clearLiffLoginInflight() {
   if (!hasWindow()) return;
-  window.sessionStorage.removeItem(LIFF_LOGIN_INFLIGHT_KEY);
-}
-
-function recordLiffLoginAttempt() {
-  if (!hasWindow()) return;
-  lastLiffLoginAttempt = Date.now();
-  liffLoginAttempts += 1;
-  window.sessionStorage.setItem(LIFF_LOGIN_TS_KEY, String(lastLiffLoginAttempt));
-  window.sessionStorage.setItem(LIFF_LOGIN_ATTEMPTS_KEY, String(liffLoginAttempts));
+  window.localStorage.removeItem(LIFF_LOGIN_INFLIGHT_UNTIL_KEY);
 }
 
 function applyUserLocale(profile: UserProfile | null) {
@@ -121,6 +105,96 @@ function redirectToLineOauth() {
   const redirectUri = window.location.href;
   const url = `${backendBase}/api/v1/auth/line/redirect?redirect=${encodeURIComponent(redirectUri)}`;
   window.location.href = url;
+}
+
+async function bootstrapLiffAuth(force = false) {
+  if (APP_TARGET !== 'liff' || !hasWindow()) return;
+  if (state.accessToken && !force) return;
+  if (!LIFF_ID) {
+    console.warn('LIFF_ID is not configured; skip LIFF login.');
+    liffAuthHardStopped.value = true;
+    needsLiffOpen.value = true;
+    return;
+  }
+  if (liffAuthHardStopped.value) {
+    logDevAuth('liff auth hard-stopped');
+    return;
+  }
+  if (liffBootstrapPromise) return liffBootstrapPromise;
+  liffBootstrapPromise = (async () => {
+    state.initializing = true;
+    try {
+      const liff = await loadLiff(LIFF_ID);
+      if (!isLiffReady.value) {
+        logDevAuth('liff not ready');
+        return;
+      }
+      const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+      const loggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : false;
+      logDevAuth('bootstrap', { inClient, loggedIn, apiBase: API_BASE_URL });
+      if (!inClient) {
+        logDevAuth('not in liff client; skip login');
+        return;
+      }
+      const hasCallbackParam =
+        typeof window !== 'undefined' &&
+        (window.location.search.includes('code=') ||
+          window.location.search.includes('state=') ||
+          window.location.search.includes('liff.state='));
+      if (!loggedIn) {
+        if (hasCallbackParam) {
+          logDevAuth('callback params present; waiting without re-login');
+          return;
+        }
+        if (isLiffLoginInflight()) {
+          logDevAuth('login inflight (localStorage TTL); skip new login');
+          return;
+        }
+        markLiffLoginInflight();
+        const cleanRedirect = `${window.location.origin}${window.location.pathname}`;
+        logDevAuth('calling liff.login', { reason: 'NOT_LOGGED_IN', redirect: cleanRedirect });
+        liff.login({ redirectUri: cleanRedirect });
+        return;
+      }
+      clearLiffLoginInflight();
+      const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
+      logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
+      if (!idToken) {
+        logDevAuth('no idToken after login; abort exchange');
+        return;
+      }
+      let profile: any = null;
+      try {
+        profile = await liff.getProfile();
+      } catch {
+        profile = null;
+      }
+      logDevAuth('exchanging token with backend /auth/line/liff-login');
+      const response = await lineLiffLogin({
+        idToken,
+        displayName: profile?.displayName,
+        pictureUrl: profile?.pictureUrl,
+      });
+      logDevAuth('token exchange ok', { userId: response?.user?.id, hasAccessToken: !!response?.accessToken });
+      setToken(response.accessToken);
+      state.user = normalizeUser(response.user);
+      applyUserLocale(state.user);
+      trackEvent('liff_login_success');
+      clearLiffLoginInflight();
+      // 清理 URL 上的 code/state（如果有），避免后续重复判断
+      if (typeof window !== 'undefined' && window.location.search) {
+        const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    } catch (error) {
+      logDevAuth('bootstrap error', error);
+      reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      state.initializing = false;
+      liffBootstrapPromise = null;
+    }
+  })();
+  return liffBootstrapPromise;
 }
 
 async function loginWithLiffProfile(isLiffEntry: boolean) {
@@ -163,156 +237,21 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
 }
 
 async function ensureLiffLogin() {
-  if (APP_TARGET !== 'liff' || !hasWindow()) return;
-  loadLiffLoginState();
-  if (!LIFF_ID) {
-    console.warn('LIFF_ID is not configured; skip LIFF login.');
-    liffAuthHardStopped.value = true;
-    needsLiffOpen.value = true;
-    return;
-  }
-  if (liffAuthHardStopped.value) {
-    console.warn('LIFF login hard-stopped due to previous failures.');
-    return;
-  }
-  if (liffLoginAttempts >= MAX_LIFF_LOGIN_ATTEMPTS) {
-    liffAuthHardStopped.value = true;
-    console.warn('Reached max LIFF login attempts; stop retrying to avoid loops.');
-    needsLiffOpen.value = true;
-    return;
-  }
-  const now = Date.now();
-  if (lastLiffLoginAttempt && now - lastLiffLoginAttempt < LIFF_LOGIN_COOLDOWN_MS) {
-    console.warn('Skipping LIFF login to avoid rapid retries.');
-    return;
-  }
-  recordLiffLoginAttempt();
-  if (liffLoginPromise) return liffLoginPromise;
-  liffLoginPromise = (async () => {
-    state.initializing = true;
-    try {
-      const liff = await loadLiff(LIFF_ID);
-      logDevAuth('apiBaseUrl', API_BASE_URL, 'backendBase', backendBase);
-      try {
-        logDevAuth(
-          'isInClient',
-          typeof liff.isInClient === 'function' ? liff.isInClient() : false,
-          'isLoggedIn',
-          typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : false,
-          'isLineBrowser',
-          isLineBrowser(),
-        );
-      } catch {
-        // ignore
-      }
-      if (!isLiffReady.value) {
-        console.warn('LIFF init not ready; skip LIFF one-tap login.');
-        return;
-      }
-      if (!liff.isInClient || !liff.isInClient()) {
-        console.warn('Not in LIFF client; skip LIFF one-tap login.');
-        return;
-      }
-      if (!liff.isLoggedIn()) {
-        if (isLiffLoginInflight()) {
-          logDevAuth('skip liff.login because inflight flag present');
-          return;
-        }
-        markLiffLoginInflight();
-        liff.login({ redirectUri: window.location.href });
-        return;
-      }
-      clearLiffLoginInflight();
-      const idToken = liff.getIDToken() || undefined;
-      const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
-      logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
-      logDevAuth('accessToken exists', !!accessToken);
-      if (!idToken && !accessToken) {
-        recordLiffLoginAttempt();
-        if (!isLiffLoginInflight()) {
-          markLiffLoginInflight();
-          liff.login({ redirectUri: window.location.href });
-        }
-        logDevAuth('missing id/access token, re-login inflight', { hasInflight: isLiffLoginInflight() });
-        liff.login({ redirectUri: window.location.href });
-        return;
-      }
-      const profile = await liff.getProfile().catch(() => null);
-      try {
-        logDevAuth('calling lineLiffTokenLogin', {
-          url: `${API_BASE_URL}/auth/line/liff`,
-          hasIdToken: !!idToken,
-          hasAccessToken: !!accessToken,
-          displayName: profile?.displayName,
-        });
-        const response = await lineLiffTokenLogin({
-          idToken,
-          accessToken,
-          displayName: profile?.displayName,
-          pictureUrl: profile?.pictureUrl,
-        });
-        logDevAuth('lineLiffTokenLogin response', {
-          status: 'ok',
-          userId: response?.user?.id,
-          hasAccessToken: !!response?.accessToken,
-        });
-        setToken(response.accessToken);
-        state.user = normalizeUser(response.user);
-        applyUserLocale(state.user);
-        trackEvent('liff_login_success');
-        clearLiffLoginInflight();
-      } catch (apiError: any) {
-        logDevAuth('lineLiffTokenLogin failed', {
-          url: `${API_BASE_URL}/auth/line/liff`,
-          status: apiError?.status || apiError?.response?.status,
-          data: apiError?.response?.data || null,
-          message: apiError?.message,
-        });
-        console.warn('LIFF token login failed, fallback to LINE OAuth.', apiError);
-        trackEvent('liff_login_fail');
-        redirectToLineOauth();
-      }
-    } catch (error) {
-      console.error('LIFF login failed', error);
-      if (liffLoginAttempts >= MAX_LIFF_LOGIN_ATTEMPTS) {
-        liffAuthHardStopped.value = true;
-        needsLiffOpen.value = true;
-      }
-      window.sessionStorage.setItem(LIFF_LOGIN_TS_KEY, String(Date.now()));
-      trackEvent('liff_login_fail');
-      reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      state.initializing = false;
-      liffLoginPromise = null;
-    }
-  })();
-  return liffLoginPromise;
+  await bootstrapLiffAuth();
 }
 
 function handleUnauthorized(context?: { status?: number; url?: string }) {
-  logDevAuth('handleUnauthorized', { status: context?.status, url: context?.url });
+  logDevAuth('handleUnauthorized', { status: context?.status, url: context?.url, inflight: isLiffLoginInflight() });
   if (handlingUnauthorized) return;
   handlingUnauthorized = true;
   setToken(null);
   state.user = null;
   if (APP_TARGET === 'liff') {
-    // 如果 LIFF 登录已在进行，避免再次触发登录循环
     if (isLiffLoginInflight()) {
       handlingUnauthorized = false;
       return;
     }
-    loadLiffLoginState();
-    const now = Date.now();
-    if (lastLiffLoginAttempt && now - lastLiffLoginAttempt < LIFF_LOGIN_COOLDOWN_MS) {
-      handlingUnauthorized = false;
-      return;
-    }
-    if (liffAuthHardStopped.value) {
-      handlingUnauthorized = false;
-      needsLiffOpen.value = true;
-      return;
-    }
-    ensureLiffLogin().finally(() => {
+    bootstrapLiffAuth(true).finally(() => {
       handlingUnauthorized = false;
     });
     return;
@@ -338,7 +277,7 @@ async function restoreSession() {
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
     if (APP_TARGET === 'liff') {
-      await ensureLiffLogin();
+      await bootstrapLiffAuth();
     }
     return;
   }
@@ -352,7 +291,7 @@ async function restoreSession() {
     setToken(null);
     state.user = null;
     if (APP_TARGET === 'liff') {
-      await ensureLiffLogin();
+      await bootstrapLiffAuth(true);
     }
   } finally {
     state.initializing = false;
@@ -393,7 +332,7 @@ export function useAuth() {
     consoleCommunityStore.resetCommunities();
   };
 
-  const loginWithLiff = async () => ensureLiffLogin();
+  const loginWithLiff = async () => bootstrapLiffAuth(true);
 
   return {
     user: computed(() => state.user),
