@@ -138,8 +138,14 @@ async function bootstrapLiffAuth(force = false) {
       if (isCallback) {
         markLiffLoginInflight();
         const liff = await loadLiff(LIFF_ID);
-        if (!isLiffReady.value) {
-          logDevAuth('callback: liff not ready');
+        // 等待 ready，最长 8 秒，超时视为失败但不再触发 login
+        try {
+          await Promise.race([
+            liff.ready?.(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 8000)),
+          ]);
+        } catch (err) {
+          logDevAuth('callback: liff ready timeout/fail', err);
           return;
         }
         const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
