@@ -35,10 +35,15 @@ let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
 let liffProfilePromise: Promise<void> | null = null;
+const LIFF_LOGIN_COOLDOWN_MS = 30_000;
+const MAX_LIFF_LOGIN_ATTEMPTS = 3;
+let lastLiffLoginAttempt = 0;
+let liffLoginAttempts = 0;
 const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
+const liffAuthHardStopped = ref(false);
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
@@ -120,8 +125,27 @@ async function ensureLiffLogin() {
   if (APP_TARGET !== 'liff' || !hasWindow()) return;
   if (!LIFF_ID) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
+    liffAuthHardStopped.value = true;
+    needsLiffOpen.value = true;
     return;
   }
+  if (liffAuthHardStopped.value) {
+    console.warn('LIFF login hard-stopped due to previous failures.');
+    return;
+  }
+  if (liffLoginAttempts >= MAX_LIFF_LOGIN_ATTEMPTS) {
+    liffAuthHardStopped.value = true;
+    console.warn('Reached max LIFF login attempts; stop retrying to avoid loops.');
+    needsLiffOpen.value = true;
+    return;
+  }
+  const now = Date.now();
+  if (lastLiffLoginAttempt && now - lastLiffLoginAttempt < LIFF_LOGIN_COOLDOWN_MS) {
+    console.warn('Skipping LIFF login to avoid rapid retries.');
+    return;
+  }
+  lastLiffLoginAttempt = now;
+  liffLoginAttempts += 1;
   if (liffLoginPromise) return liffLoginPromise;
   liffLoginPromise = (async () => {
     state.initializing = true;
@@ -164,6 +188,10 @@ async function ensureLiffLogin() {
       }
     } catch (error) {
       console.error('LIFF login failed', error);
+      if (liffLoginAttempts >= MAX_LIFF_LOGIN_ATTEMPTS) {
+        liffAuthHardStopped.value = true;
+        needsLiffOpen.value = true;
+      }
       trackEvent('liff_login_fail');
       reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -180,6 +208,16 @@ function handleUnauthorized() {
   setToken(null);
   state.user = null;
   if (APP_TARGET === 'liff') {
+    const now = Date.now();
+    if (lastLiffLoginAttempt && now - lastLiffLoginAttempt < LIFF_LOGIN_COOLDOWN_MS) {
+      handlingUnauthorized = false;
+      return;
+    }
+    if (liffAuthHardStopped.value) {
+      handlingUnauthorized = false;
+      needsLiffOpen.value = true;
+      return;
+    }
     ensureLiffLogin().finally(() => {
       handlingUnauthorized = false;
     });
