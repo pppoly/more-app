@@ -129,6 +129,55 @@ async function bootstrapLiffAuth(force = false) {
   liffBootstrapPromise = (async () => {
     state.initializing = true;
     try {
+      const search = window.location.search || '';
+      const isCallback =
+        /(?:^|[?&])(code|state|liff\.state)=/.test(search);
+      const liffStateParam = new URLSearchParams(search).get('liff.state');
+
+      // 回调阶段：禁止再次触发 login，直接做 token exchange
+      if (isCallback) {
+        markLiffLoginInflight();
+        const liff = await loadLiff(LIFF_ID);
+        if (!isLiffReady.value) {
+          logDevAuth('callback: liff not ready');
+          return;
+        }
+        const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
+        const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
+        logDevAuth('callback tokens', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
+        const profile = await liff.getProfile().catch(() => null);
+        if (idToken) {
+          logDevAuth('callback exchange with /auth/line/liff-login');
+          const response = await lineLiffLogin({
+            idToken,
+            displayName: profile?.displayName,
+            pictureUrl: profile?.pictureUrl,
+          });
+          setToken(response.accessToken);
+          state.user = normalizeUser(response.user);
+          applyUserLocale(state.user);
+          trackEvent('liff_login_success');
+        } else if (accessToken) {
+          logDevAuth('callback exchange with /auth/line/liff (access token)');
+          const response = await lineLiffTokenLogin({
+            accessToken,
+            displayName: profile?.displayName,
+            pictureUrl: profile?.pictureUrl,
+          });
+          setToken(response.accessToken);
+          state.user = normalizeUser(response.user);
+          applyUserLocale(state.user);
+          trackEvent('liff_login_success');
+        } else {
+          logDevAuth('callback fatal: no token available');
+          return;
+        }
+        clearLiffLoginInflight();
+        const cleanTarget = liffStateParam ? decodeURIComponent(liffStateParam) : '/events';
+        window.history.replaceState({}, document.title, cleanTarget);
+        return;
+      }
+
       const liff = await loadLiff(LIFF_ID);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
@@ -141,16 +190,7 @@ async function bootstrapLiffAuth(force = false) {
         logDevAuth('not in liff client; skip login');
         return;
       }
-      const hasCallbackParam =
-        typeof window !== 'undefined' &&
-        (window.location.search.includes('code=') ||
-          window.location.search.includes('state=') ||
-          window.location.search.includes('liff.state='));
       if (!loggedIn) {
-        if (hasCallbackParam) {
-          logDevAuth('callback params present; waiting without re-login');
-          return;
-        }
         if (isLiffLoginInflight()) {
           logDevAuth('login inflight (localStorage TTL); skip new login');
           return;

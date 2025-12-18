@@ -711,7 +711,7 @@ const resolvePageTitle = (to: any) => {
 const applyPageTitle = async (to: any) => {
   if (typeof document === 'undefined') return;
   const pageTitle = resolvePageTitle(to);
-  const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE === 'true';
+  const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE !== 'false'; // 默认禁用，显式设置 false 才启用
   document.title = isLineInAppBrowser() ? pageTitle : `${pageTitle} | ${APP_NAME}`;
   if (disableLiffTitle) return;
   if (isLineInAppBrowser()) {
