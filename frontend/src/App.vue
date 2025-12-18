@@ -133,6 +133,7 @@ import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
 import LiffStatusBadge from './components/common/LiffStatusBadge.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
+import { isLineBrowser } from './utils/device';
 import { BUILD_VERSION } from './version';
 import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
@@ -242,6 +243,11 @@ onMounted(() => {
     return;
   }
   if (isFromLiffEntry()) {
+    allowWebContinue.value = true;
+    return;
+  }
+  // 已经在 LINE 内置浏览器时，不再强制弹出“在 LINE 中打开”提示
+  if (uaLine.value && isLineBrowser()) {
     allowWebContinue.value = true;
     return;
   }
