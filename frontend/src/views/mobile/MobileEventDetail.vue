@@ -770,10 +770,12 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const shareUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/events/${detail.value.id}?from=line_share`
+  const liffDeepLink = LIFF_ID
+    ? `https://liff.line.me/${LIFF_ID}?to=/events/${detail.value.id}`
+    : typeof window !== 'undefined'
+      ? `${window.location.origin}/events/${detail.value.id}`
       : '';
+  const shareUrl = `${liffDeepLink}?from=line_share`;
   const shareTitle =
     getLocalizedText(detail.value.title, preferredLangs.value) ||
     (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
@@ -1744,6 +1746,14 @@ watch(
   background-position: center;
   background-repeat: no-repeat;
   border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.m-text-body img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 8px 0;
+  border-radius: 12px;
 }
 
 .group-name {

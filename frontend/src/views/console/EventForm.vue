@@ -842,8 +842,8 @@ const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
 const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
 const MAX_COVER_DIMENSION = 1920; // 最大長辺
-const MIN_COVER_WIDTH = 1200;
-const MIN_COVER_HEIGHT = 675;
+const MIN_COVER_WIDTH = 800;
+const MIN_COVER_HEIGHT = 450;
 const TARGET_ASPECT = 16 / 9;
 const COVER_COMPRESS_QUALITY = 0.82;
 const COVER_FALLBACK_QUALITY = 0.7;
@@ -2044,7 +2044,7 @@ const downscaleImageFile = (file: File) =>
       img.onload = async () => {
         try {
           if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
-            reject(new Error('画像が小さすぎます。最低でも 1200×675 の画像を使用してください。'));
+            reject(new Error('画像が小さすぎます。最低でも 800×450 の画像を使用してください。'));
             return;
           }
 

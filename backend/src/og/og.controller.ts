@@ -38,6 +38,22 @@ export class OgController {
       .replace(/'/g, '&#39;');
   }
 
+  private pickLocalized(value: any, fallback: string) {
+    if (!value) return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+      return value.ja || value.zh || value.en || value.original || fallback;
+    }
+    return fallback;
+  }
+
+  private normalizeDesc(raw: string, fallback: string) {
+    const text = raw || fallback;
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 120) return normalized;
+    return `${normalized.slice(0, 120).trim()}…`;
+  }
+
   @Get('events/:id')
   async renderEventOg(@Param('id') id: string, @Query() query: Record<string, string>, @Res() res: Response) {
     const base = this.frontendBaseUrl();
@@ -45,7 +61,7 @@ export class OgController {
     const shareUrl = `${base}/events/${id}${queryStr}`;
 
     const fallbackTitle = 'SOCIALMORE イベント';
-    const fallbackDesc = 'イベントの詳細をチェックして参加しよう。';
+    const fallbackDesc = 'SOCIALMOREで開催されるイベントです。詳細をチェックして参加しませんか？';
     const fallbackImage = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event-cover.png';
 
     let title = fallbackTitle;
@@ -54,18 +70,21 @@ export class OgController {
 
     try {
       const event = await this.eventsService.getEventById(id);
-      const t =
+      const rawTitle =
         typeof event.title === 'string'
           ? event.title
-          : (event.title as any)?.ja || (event.title as any)?.original || fallbackTitle;
-      title = t || fallbackTitle;
-      desc =
-        (event as any).description ||
-        (event as any).shortDescription ||
-        (event as any).summary ||
-        fallbackDesc;
+          : this.pickLocalized(event.title, this.pickLocalized((event as any).title, fallbackTitle));
+      const safeTitle = (rawTitle || '').trim();
+      title = safeTitle.toLowerCase() === 'test' || safeTitle === '' ? fallbackTitle : safeTitle;
+
+      const rawDesc = this.pickLocalized(
+        (event as any).shortDescription ?? (event as any).description ?? (event as any).summary,
+        fallbackDesc,
+      );
+      desc = this.normalizeDesc(rawDesc, fallbackDesc);
       image =
         this.toAbsolute((event as any).coverImageUrl) ||
+        this.toAbsolute((event as any).bannerUrl) ||
         this.toAbsolute((event as any).coverUrl) ||
         fallbackImage;
     } catch {
