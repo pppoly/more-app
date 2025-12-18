@@ -3,10 +3,10 @@ import {
   devLogin as apiDevLogin,
   fetchMe,
   lineLiffProfileLogin,
-  lineLiffTokenLogin,
   onUnauthorized,
   setAccessToken as applyClientToken,
   setRequestHeaderProvider,
+  sendAnalyticsEvents,
 } from '../api/client';
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
@@ -26,6 +26,7 @@ interface AuthState {
 
 const TOKEN_KEY = 'moreapp_access_token';
 const debugAuth = import.meta.env.DEV || import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'test';
+const isTestEnv = import.meta.env.MODE === 'test';
 const logDevAuth = (...args: any[]) => {
   if (!debugAuth) return;
   // eslint-disable-next-line no-console
@@ -49,6 +50,69 @@ const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
 const liffAuthHardStopped = ref(false);
+
+function sanitizeLiffState(raw: string | null): string {
+  if (!raw) return '/events';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return '/events';
+  }
+}
+
+async function emitLiffDebug(stage: string, payload: Record<string, any> = {}) {
+  // Always log to console for callback visibility; payload must be token-safe.
+  // eslint-disable-next-line no-console
+  console.info('[liff-callback]', stage, payload);
+  logDevAuth(`debug:${stage}`, payload);
+  if (!isTestEnv || typeof window === 'undefined') return;
+  const safePayload = {
+    ...payload,
+    stage,
+    path: window.location.pathname + window.location.search,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+  };
+  try {
+    await sendAnalyticsEvents([
+      {
+        eventName: 'liff_debug',
+        timestamp: new Date().toISOString(),
+        sessionId: 'liff-debug',
+        path: safePayload.path,
+        isLiff: true,
+        userAgent: safePayload.userAgent,
+        payload: safePayload,
+      },
+    ]);
+  } catch (err) {
+    logDevAuth('liff_debug send failed', err);
+  }
+}
+
+async function exchangeLiffToken(
+  endpoint: '/api/v1/auth/line/liff-login' | '/api/v1/auth/line/liff',
+  body: Record<string, any>,
+) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Target': APP_TARGET },
+    body: JSON.stringify(body),
+    credentials: 'include',
+  });
+  const status = response.status;
+  let data: any = null;
+  try {
+    data = await response.json();
+  } catch {
+    // ignore parse error; data stays null
+  }
+  if (!response.ok) {
+    const error = new Error(`exchange failed: ${status}`);
+    (error as any).status = status;
+    throw error;
+  }
+  return { data, status };
+}
 
 function isLiffLoginInflight() {
   if (!hasWindow()) return false;
@@ -136,11 +200,12 @@ async function bootstrapLiffAuth(force = false) {
 
       // 回调阶段：禁止再次触发 login，直接做 token exchange
       if (isCallback) {
-        logDevAuth('callback branch entered');
+        emitLiffDebug('callback_enter');
         markLiffLoginInflight();
         const liff = await loadLiff(LIFF_ID);
         // 等待 ready，最长 8 秒，超时视为失败但不再触发 login
         try {
+          emitLiffDebug('callback_wait_ready');
           const ready = (liff as any).ready;
           if (ready && typeof ready.then === 'function') {
             await Promise.race([
@@ -148,42 +213,56 @@ async function bootstrapLiffAuth(force = false) {
               new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 8000)),
             ]);
           }
+          emitLiffDebug('callback_ready_ok');
         } catch (err) {
-          logDevAuth('callback: liff ready timeout/fail', err);
+          await emitLiffDebug('callback_ready_timeout', { error: err instanceof Error ? err.message : String(err) });
+          reportError('liff:ready_timeout', { message: err instanceof Error ? err.message : String(err) });
           // 即便 ready 超时，继续尝试获取 token，禁止再 login
         }
         const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
         const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
-        logDevAuth('callback tokens', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
+        await emitLiffDebug('callback_tokens', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
         const profile = await liff.getProfile().catch(() => null);
+        let exchangeEndpoint: '/api/v1/auth/line/liff-login' | '/api/v1/auth/line/liff' | null = null;
+        let exchangeStatus: number | null = null;
         if (idToken) {
-          logDevAuth('callback exchange with /auth/line/liff-login');
-          const response = await lineLiffLogin({
+          exchangeEndpoint = '/api/v1/auth/line/liff-login';
+          await emitLiffDebug('callback_exchange_start', { endpoint: exchangeEndpoint });
+          const { data, status } = await exchangeLiffToken(exchangeEndpoint, {
             idToken,
             displayName: profile?.displayName,
             pictureUrl: profile?.pictureUrl,
           });
-          setToken(response.accessToken);
-          state.user = normalizeUser(response.user);
+          exchangeStatus = status;
+          setToken(data?.accessToken);
+          state.user = normalizeUser(data?.user);
           applyUserLocale(state.user);
           trackEvent('liff_login_success');
         } else if (accessToken) {
-          logDevAuth('callback exchange with /auth/line/liff (access token)');
-          const response = await lineLiffTokenLogin({
+          exchangeEndpoint = '/api/v1/auth/line/liff';
+          await emitLiffDebug('callback_exchange_start', { endpoint: exchangeEndpoint });
+          const { data, status } = await exchangeLiffToken(exchangeEndpoint, {
             accessToken,
             displayName: profile?.displayName,
             pictureUrl: profile?.pictureUrl,
           });
-          setToken(response.accessToken);
-          state.user = normalizeUser(response.user);
+          exchangeStatus = status;
+          setToken(data?.accessToken);
+          state.user = normalizeUser(data?.user);
           applyUserLocale(state.user);
           trackEvent('liff_login_success');
         } else {
-          logDevAuth('callback fatal: no token available');
+          await emitLiffDebug('callback_no_token');
           return;
         }
+        await emitLiffDebug('callback_exchange_done', {
+          endpoint: exchangeEndpoint,
+          status: exchangeStatus,
+          hasUser: !!state.user,
+          hasAccessToken: !!state.accessToken,
+        });
         clearLiffLoginInflight();
-        const cleanTarget = liffStateParam ? decodeURIComponent(liffStateParam) : '/events';
+        const cleanTarget = sanitizeLiffState(liffStateParam);
         window.history.replaceState({}, document.title, cleanTarget);
         return;
       }
