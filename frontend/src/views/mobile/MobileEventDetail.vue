@@ -215,8 +215,8 @@
 
         <section class="event-section">
           <h2 class="m-section-title">About</h2>
-          <div class="m-event-card">
-            <div class="m-text-body prose prose-sm max-w-none" v-html="detail.descriptionHtml"></div>
+          <div class="m-event-card event-about">
+            <div class="m-text-body prose prose-sm max-w-none event-about__content" v-html="detail.descriptionHtml"></div>
           </div>
         </section>
 
@@ -1770,6 +1770,31 @@ watch(
   padding: 0;
   background: transparent;
   object-fit: contain;
+}
+
+.event-about {
+  background: #f4f5f7;
+  border-radius: 12px;
+  padding: 12px;
+  overflow: visible;
+}
+.event-about__content img {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  object-fit: contain !important;
+  aspect-ratio: auto !important;
+  border-radius: 12px !important;
+  background: #f4f5f7;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.event-about__content a img {
+  border: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  object-fit: contain !important;
 }
 .m-text-body a img {
   border: none;
