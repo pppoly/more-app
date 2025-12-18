@@ -24,7 +24,7 @@
             </button>
             <div class="overlay-spacer"></div>
           </div>
-          <div class="event-cover-wrapper" :style="heroBackgroundStyle">
+          <div class="event-cover-wrapper" :style="heroBackgroundStyle" @click="openActiveImage">
             <div
               class="event-carousel"
               @touchstart.passive="handleTouchStart"
@@ -999,6 +999,12 @@ const openMap = () => {
   }
 };
 
+const openActiveImage = () => {
+  const url = activeSlideImage.value;
+  if (!url) return;
+  window.open(url, '_blank');
+};
+
 const openBookingSheet = () => {
   initializeFormValues();
   agree.value = false;
@@ -1749,11 +1755,26 @@ watch(
 }
 
 .m-text-body img {
+  display: block;
+  width: 100%;
   max-width: 100%;
   height: auto;
-  display: block;
-  margin: 8px 0;
+  object-fit: contain;
   border-radius: 12px;
+  background: #f4f5f7;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.m-text-body a img {
+  border: none;
+  padding: 0;
+  background: transparent;
+  object-fit: contain;
+}
+.m-text-body a img {
+  border: none;
+  padding: 0;
+  background: transparent;
 }
 
 .group-name {

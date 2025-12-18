@@ -2486,6 +2486,7 @@ const openRichTextEditor = () => {
     text: form.description,
     html: form.descriptionHtml,
     images: [...richNoteImages.value],
+    covers: localCoverPreviews.value.map((item) => ({ id: item.id, imageUrl: item.imageUrl, order: item.order })),
   };
   try {
     sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
@@ -2504,12 +2505,17 @@ const openRichTextEditor = () => {
   });
 };
 
-const applyNoteResultFromStorage = () => {
+const applyNoteResultFromStorage = async () => {
   try {
     const raw = sessionStorage.getItem(CONSOLE_EVENT_NOTE_RESULT_KEY);
     if (!raw) return;
     sessionStorage.removeItem(CONSOLE_EVENT_NOTE_RESULT_KEY);
-    const payload = JSON.parse(raw) as { text?: string; html?: string; images?: Array<{ id: string; src: string }> };
+    const payload = JSON.parse(raw) as {
+      text?: string;
+      html?: string;
+      images?: Array<{ id: string; src: string }>;
+      covers?: Array<{ id: string; imageUrl: string; order?: number }>;
+    };
     if (payload.text !== undefined) {
       form.description = payload.text;
     }
@@ -2518,6 +2524,37 @@ const applyNoteResultFromStorage = () => {
     }
     if (Array.isArray(payload.images)) {
       richNoteImages.value = payload.images;
+    }
+    if (Array.isArray(payload.covers) && payload.covers.length) {
+      // Restore local cover previews (cannot restore File blobs; previews remain for visibility)
+      revokeLocalCoverPreviews();
+      const restored: EventGalleryItem[] = [];
+      const restoredFiles: Array<{ id: string; file: File }> = [];
+      await Promise.all(
+        payload.covers.map(async (item, index) => {
+          try {
+            const response = await fetch(item.imageUrl);
+            if (!response.ok) return;
+            const blob = await response.blob();
+            const id = item.id || `cover-${index}-${Date.now()}`;
+            const fileName = `cover-${id}.jpg`;
+            const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+            restoredFiles.push({ id, file });
+            const objectUrl = URL.createObjectURL(file);
+            restored.push({
+              id,
+              imageUrl: objectUrl,
+              order: item.order ?? index,
+            });
+          } catch {
+            // skip restore on failure
+          }
+        }),
+      );
+      if (restored.length) {
+        localCoverPreviews.value = restored;
+        pendingCoverFiles.value.push(...restoredFiles);
+      }
     }
   } catch (err) {
     console.warn('Failed to apply note result', err);
@@ -3058,7 +3095,7 @@ onMounted(async () => {
   // prevent auto scroll/restore on mobile initial load
   window.scrollTo({ top: 0 });
   applyFormDraftFromStorage();
-  applyNoteResultFromStorage();
+  await applyNoteResultFromStorage();
 });
 
 watch(
@@ -3106,7 +3143,7 @@ onUnmounted(() => {
 
 onActivated(() => {
   applyFormDraftFromStorage();
-  applyNoteResultFromStorage();
+  void applyNoteResultFromStorage();
 });
 
 </script>
