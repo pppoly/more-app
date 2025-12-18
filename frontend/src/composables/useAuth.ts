@@ -37,6 +37,8 @@ let liffLoginPromise: Promise<void> | null = null;
 let liffProfilePromise: Promise<void> | null = null;
 const LIFF_LOGIN_COOLDOWN_MS = 30_000;
 const MAX_LIFF_LOGIN_ATTEMPTS = 3;
+const LIFF_LOGIN_TS_KEY = 'moreapp_liff_last_login_at';
+const LIFF_LOGIN_ATTEMPTS_KEY = 'moreapp_liff_login_attempts';
 let lastLiffLoginAttempt = 0;
 let liffLoginAttempts = 0;
 const { setLocale } = useLocale();
@@ -44,6 +46,22 @@ const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
 const liffAuthHardStopped = ref(false);
+
+function loadLiffLoginState() {
+  if (!hasWindow()) return;
+  const ts = window.sessionStorage.getItem(LIFF_LOGIN_TS_KEY);
+  const attempts = window.sessionStorage.getItem(LIFF_LOGIN_ATTEMPTS_KEY);
+  lastLiffLoginAttempt = ts ? Number(ts) || 0 : 0;
+  liffLoginAttempts = attempts ? Number(attempts) || 0 : 0;
+}
+
+function recordLiffLoginAttempt() {
+  if (!hasWindow()) return;
+  lastLiffLoginAttempt = Date.now();
+  liffLoginAttempts += 1;
+  window.sessionStorage.setItem(LIFF_LOGIN_TS_KEY, String(lastLiffLoginAttempt));
+  window.sessionStorage.setItem(LIFF_LOGIN_ATTEMPTS_KEY, String(liffLoginAttempts));
+}
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
@@ -123,6 +141,7 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
 
 async function ensureLiffLogin() {
   if (APP_TARGET !== 'liff' || !hasWindow()) return;
+  loadLiffLoginState();
   if (!LIFF_ID) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
     liffAuthHardStopped.value = true;
@@ -144,8 +163,7 @@ async function ensureLiffLogin() {
     console.warn('Skipping LIFF login to avoid rapid retries.');
     return;
   }
-  lastLiffLoginAttempt = now;
-  liffLoginAttempts += 1;
+  recordLiffLoginAttempt();
   if (liffLoginPromise) return liffLoginPromise;
   liffLoginPromise = (async () => {
     state.initializing = true;
@@ -166,6 +184,7 @@ async function ensureLiffLogin() {
       const idToken = liff.getIDToken() || undefined;
       const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
       if (!idToken && !accessToken) {
+        recordLiffLoginAttempt();
         liff.login({ redirectUri: window.location.href });
         return;
       }
@@ -192,6 +211,7 @@ async function ensureLiffLogin() {
         liffAuthHardStopped.value = true;
         needsLiffOpen.value = true;
       }
+      window.sessionStorage.setItem(LIFF_LOGIN_TS_KEY, String(Date.now()));
       trackEvent('liff_login_fail');
       reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -208,6 +228,7 @@ function handleUnauthorized() {
   setToken(null);
   state.user = null;
   if (APP_TARGET === 'liff') {
+    loadLiffLoginState();
     const now = Date.now();
     if (lastLiffLoginAttempt && now - lastLiffLoginAttempt < LIFF_LOGIN_COOLDOWN_MS) {
       handlingUnauthorized = false;
