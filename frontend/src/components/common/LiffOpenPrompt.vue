@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { isLiffClient } from '../../utils/device';
+import { isLiffClient, isLineBrowser } from '../../utils/device';
 
 const LIFF_LAUNCH_URL = 'https://liff.line.me/2008600730-qxlPrj5Q';
 const STORAGE_KEY = 'liff-open-prompt-dismissed';
@@ -27,7 +27,9 @@ const shouldShow = () => {
   if (!hasWindow()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
   const onTargetHost = window.location.hostname === 'test.socialmore.jp';
-  return onTargetHost && !dismissed && !isLiffClient();
+  // 在 LINE 内部（Line Browser/LIFF）时不再提示“在 LINE 里打开”
+  if (isLineBrowser() || isLiffClient()) return false;
+  return onTargetHost && !dismissed;
 };
 
 function openInLine() {
