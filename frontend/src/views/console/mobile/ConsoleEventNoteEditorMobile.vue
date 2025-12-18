@@ -87,7 +87,8 @@ interface LegacyNoteImage {
 }
 
 const MAX_NOTE_IMAGES = 9;
-const MAX_NOTE_IMAGE_SIZE = 5 * 1024 * 1024;
+// raw file size limit lowered to prevent payload blowup on event submit
+const MAX_NOTE_IMAGE_SIZE = 2 * 1024 * 1024;
 
 const router = useRouter();
 const route = useRoute();
@@ -243,7 +244,7 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-const compressDataUrl = (dataUrl: string, maxSide = 1280, quality = 0.82) =>
+const compressDataUrl = (dataUrl: string, maxSide = 1100, quality = 0.75) =>
   new Promise<string>((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -290,9 +291,9 @@ const handleImagePick = async (event: Event) => {
     }
     try {
       let src = await readFileAsDataUrl(file);
-      src = await compressDataUrl(src, 1400, 0.8);
-      if (src.length > 1.2 * 1024 * 1024) {
-        statusMessage.value = '画像サイズが大きすぎます。もう少し小さい画像をお試しください';
+      src = await compressDataUrl(src, 1000, 0.72);
+      if (src.length > 600 * 1024) {
+        statusMessage.value = '画像サイズが大きすぎます。1000px 以下・圧縮後600KB以下にしてください';
         continue;
       }
       insertImageAtCursor(src, pendingInsertTarget.value.blockId, pendingInsertTarget.value.position);

@@ -844,6 +844,7 @@ const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
 const MAX_COVER_DIMENSION = 1920; // 最大長辺
 const MIN_COVER_WIDTH = 800;
 const MIN_COVER_HEIGHT = 450;
+const MIN_COVER_TEXT = `画像が小さすぎます。最低でも ${MIN_COVER_WIDTH}×${MIN_COVER_HEIGHT} の画像を使用してください。`;
 const TARGET_ASPECT = 16 / 9;
 const COVER_COMPRESS_QUALITY = 0.82;
 const COVER_FALLBACK_QUALITY = 0.7;
@@ -2044,7 +2045,7 @@ const downscaleImageFile = (file: File) =>
       img.onload = async () => {
         try {
           if (img.width < MIN_COVER_WIDTH || img.height < MIN_COVER_HEIGHT) {
-            reject(new Error('画像が小さすぎます。最低でも 800×450 の画像を使用してください。'));
+            reject(new Error(MIN_COVER_TEXT));
             return;
           }
 
@@ -2729,6 +2730,35 @@ const persistEvent = async (status: 'draft' | 'open') => {
   const htmlSize = form.descriptionHtml?.length ?? 0;
   if (htmlSize > 400_000) {
     error.value = '本文内の画像が大きすぎます。画像を減らすか内容を短くしてください。';
+    submitting.value = false;
+    actionLoading.value = null;
+    return;
+  }
+  const dataUrlImages = extractNoteImagesFromHtml(form.descriptionHtml).filter((img) =>
+    img.src?.startsWith?.('data:image'),
+  );
+  if (dataUrlImages.length) {
+    const totalBytes = dataUrlImages.reduce((sum, img) => sum + Math.max(0, (img.src?.length || 0) * 0.75), 0);
+    if (totalBytes > 1.5 * 1024 * 1024) {
+      error.value = '本文内の画像が大きすぎます。1.5MB 以下になるよう、枚数を減らすか画像サイズを小さくしてください。';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+  }
+
+  const minPeople = form.minParticipants;
+  const maxPeople = form.maxParticipants;
+  if (maxPeople != null) {
+    if (maxPeople < 1 || maxPeople > 100) {
+      error.value = '最大参加人数は 1〜100 の間で入力してください。';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+  }
+  if (minPeople != null && maxPeople != null && maxPeople < minPeople) {
+    error.value = '最大参加人数は最低人数以上に設定してください。';
     submitting.value = false;
     actionLoading.value = null;
     return;
