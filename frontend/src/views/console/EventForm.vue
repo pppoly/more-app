@@ -2767,18 +2767,6 @@ const persistEvent = async (status: 'draft' | 'open') => {
     actionLoading.value = null;
     return;
   }
-  const dataUrlImages = extractNoteImagesFromHtml(form.descriptionHtml).filter((img) =>
-    img.src?.startsWith?.('data:image'),
-  );
-  if (dataUrlImages.length) {
-    const totalBytes = dataUrlImages.reduce((sum, img) => sum + Math.max(0, (img.src?.length || 0) * 0.75), 0);
-    if (totalBytes > 1.5 * 1024 * 1024) {
-      error.value = '本文内の画像が大きすぎます。1.5MB 以下になるよう、枚数を減らすか画像サイズを小さくしてください。';
-      submitting.value = false;
-      actionLoading.value = null;
-      return;
-    }
-  }
 
   const minPeople = form.minParticipants;
   const maxPeople = form.maxParticipants;
