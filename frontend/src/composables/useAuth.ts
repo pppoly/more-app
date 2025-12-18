@@ -101,6 +101,11 @@ setRequestHeaderProvider(() => ({
 }));
 
 function redirectToLineOauth() {
+  // 在 LIFF 模式下禁用 Web OAuth 跳转，避免循环
+  if (APP_TARGET === 'liff') {
+    logDevAuth('redirectToLineOauth skipped in LIFF mode');
+    return;
+  }
   if (typeof window === 'undefined') return;
   const redirectUri = window.location.href;
   const url = `${backendBase}/api/v1/auth/line/redirect?redirect=${encodeURIComponent(redirectUri)}`;
@@ -251,9 +256,11 @@ function handleUnauthorized(context?: { status?: number; url?: string }) {
       handlingUnauthorized = false;
       return;
     }
-    bootstrapLiffAuth(true).finally(() => {
-      handlingUnauthorized = false;
-    });
+    bootstrapLiffAuth(true)
+      .catch((error) => logDevAuth('bootstrapLiffAuth error after 401', error))
+      .finally(() => {
+        handlingUnauthorized = false;
+      });
     return;
   }
   if (typeof window !== 'undefined') {

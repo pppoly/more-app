@@ -711,8 +711,10 @@ const resolvePageTitle = (to: any) => {
 const applyPageTitle = async (to: any) => {
   if (typeof document === 'undefined') return;
   const pageTitle = resolvePageTitle(to);
+  const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE === 'true';
+  document.title = isLineInAppBrowser() ? pageTitle : `${pageTitle} | ${APP_NAME}`;
+  if (disableLiffTitle) return;
   if (isLineInAppBrowser()) {
-    document.title = pageTitle;
     try {
       const { loadLiff } = await import('../utils/liff');
       const liffInstance = await loadLiff();
@@ -720,9 +722,7 @@ const applyPageTitle = async (to: any) => {
     } catch (error) {
       console.warn('Failed to set LIFF title; continuing with document.title only.', error);
     }
-    return;
   }
-  document.title = `${pageTitle} | ${APP_NAME}`;
 };
 
 const router = createRouter({
@@ -768,6 +768,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   return next();
+});
+
+router.afterEach((to, from) => {
+  if (import.meta.env.DEV || import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'test') {
+    // eslint-disable-next-line no-console
+    console.log('[router] nav', { from: from.fullPath, to: to.fullPath, name: to.name });
+  }
 });
 
 router.afterEach((to) => {
