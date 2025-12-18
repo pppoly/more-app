@@ -256,21 +256,32 @@ export class AuthService {
   }
 
   async verifyLineIdToken(idToken: string) {
-    if (!this.lineConfig.channelId) {
+    if (!this.lineConfig.channelId || !this.lineConfig.channelSecret) {
       throw new BadRequestException('LINE channel is not configured');
     }
-    const { channelId } = this.lineConfig;
+    const { channelId, channelSecret } = this.lineConfig;
     const url = 'https://api.line.me/oauth2/v2.1/verify';
     const params = new URLSearchParams({
       id_token: idToken,
       client_id: channelId,
+      client_secret: channelSecret,
     });
-    const { data } = await firstValueFrom(
-      this.httpService.post(url, params.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }),
-    );
-    return data as { sub?: string; name?: string; picture?: string };
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(url, params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }),
+      );
+      return data as { sub?: string; name?: string; picture?: string };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const body = error?.response?.data;
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        // eslint-disable-next-line no-console
+        console.error('[LINE][verifyIdToken] failed', { status, body });
+      }
+      throw new BadRequestException('Failed to verify LIFF token');
+    }
   }
 
   async lineLiffLogin(
