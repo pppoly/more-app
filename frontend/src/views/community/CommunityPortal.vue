@@ -108,6 +108,7 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
 import backIcon from '../../assets/icons/arrow-back.svg';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -298,6 +299,7 @@ const eventCoverStyle = (event: any) => {
   };
 };
 const showConsoleBack = computed(() => {
+  if (isLineInAppBrowser()) return false;
   const q = route.query;
   if (
     q.from === 'console' ||

@@ -113,3 +113,9 @@ function logDevLiffState() {
 }
 
 logDevLiffState();
+
+export const isLineInAppBrowser = () => {
+  if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') return false;
+  const ua = navigator.userAgent.toLowerCase();
+  return ua.includes(' line/') || ua.includes('liff');
+};

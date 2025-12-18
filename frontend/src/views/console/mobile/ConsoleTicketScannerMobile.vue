@@ -100,6 +100,8 @@ let controls: IScannerControls | null = null;
 let lastPayload = '';
 let lastPayloadAt = 0;
 let stopping = false;
+let submitTimer: number | null = null;
+const SUBMIT_TIMEOUT_MS = 8000;
 
 const isScanning = computed(() => state.value === 'scanning');
 const primaryLabel = computed(() => {
@@ -180,6 +182,20 @@ const onPayload = async (raw: string) => {
     return;
   }
 
+  const clearSubmitTimer = () => {
+    if (submitTimer) {
+      window.clearTimeout(submitTimer);
+      submitTimer = null;
+    }
+  };
+
+  submitTimer = window.setTimeout(() => {
+    if (state.value === 'submitting') {
+      state.value = 'result';
+      result.value = { kind: 'error', message: '確認に時間がかかっています。再スキャンしてください。' };
+    }
+  }, SUBMIT_TIMEOUT_MS);
+
   try {
     await checkinRegistration(parsed.eventId, parsed.registrationId);
     state.value = 'result';
@@ -193,21 +209,40 @@ const onPayload = async (raw: string) => {
       kind: 'error',
       message: err instanceof Error ? err.message : '検証に失敗しました',
     };
+  } finally {
+    clearSubmitTimer();
   }
 };
 
 const parsePayload = (raw: string) => {
   try {
+    // Prefer JSON payload
     const payload = JSON.parse(raw);
-    if (!payload?.eventId || !payload?.registrationId) return null;
-    return {
-      eventId: String(payload.eventId),
-      registrationId: String(payload.registrationId),
-      displayId: String(payload.registrationId).slice(0, 8).toUpperCase(),
-    };
+    if (payload?.eventId && payload?.registrationId) {
+      return {
+        eventId: String(payload.eventId),
+        registrationId: String(payload.registrationId),
+        displayId: String(payload.registrationId).slice(0, 8).toUpperCase(),
+      };
+    }
   } catch {
-    return null;
+    // Not JSON, try URL with query params
+    try {
+      const url = new URL(raw);
+      const eventId = url.searchParams.get('eventId');
+      const registrationId = url.searchParams.get('registrationId');
+      if (eventId && registrationId) {
+        return {
+          eventId,
+          registrationId,
+          displayId: registrationId.slice(0, 8).toUpperCase(),
+        };
+      }
+    } catch {
+      /* ignore */
+    }
   }
+  return null;
 };
 
 const handlePrimary = async () => {

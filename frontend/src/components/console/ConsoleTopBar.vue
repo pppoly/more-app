@@ -1,6 +1,12 @@
 <template>
   <header class="console-topbar" :class="{ sticky }">
-    <button type="button" class="topbar-back" aria-label="戻る" @click="$emit('back')">
+    <button
+      v-if="showBackButton"
+      type="button"
+      class="topbar-back"
+      aria-label="戻る"
+      @click="$emit('back')"
+    >
       <img :src="backIcon" alt="" aria-hidden="true" />
     </button>
     <p class="topbar-title">{{ titleText }}</p>
@@ -14,6 +20,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import backIcon from '../../assets/icons/arrow-back.svg';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const props = defineProps<{
   titleKey?: string;
@@ -27,6 +34,8 @@ const titleText = computed(() => {
   if (props.titleKey) return t(props.titleKey);
   return '';
 });
+
+const showBackButton = computed(() => !isLineInAppBrowser());
 </script>
 
 <style scoped>

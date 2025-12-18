@@ -22,6 +22,7 @@ import DesktopLanding from '../views/desktop/DesktopLanding.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
+import { isLineInAppBrowser } from '../utils/liff';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -163,6 +164,7 @@ const routes: RouteRecordRaw[] = [
     name: 'auth-setup',
     component: () => import('../views/auth/SetupProfile.vue'),
     meta: {
+      title: '受け取り設定',
       layout: 'mobile-user',
       mobileOnly: true,
       hideShellHeader: true,
@@ -637,6 +639,7 @@ const routes: RouteRecordRaw[] = [
     name: 'my-events',
     component: MyEvents,
     meta: {
+      title: 'マイイベント',
       devPageName: '我的活动',
       hideTabbar: true,
       hideShellHeader: true,
@@ -673,6 +676,7 @@ const routes: RouteRecordRaw[] = [
     component: PaymentSuccess,
     meta: {
       devPageName: '支付成功',
+      title: '申込完了',
     },
   },
   {
@@ -681,6 +685,7 @@ const routes: RouteRecordRaw[] = [
     component: PaymentCancel,
     meta: {
       devPageName: '支付取消',
+      title: '申込未完了',
     },
   },
   {
@@ -695,6 +700,30 @@ const routes: RouteRecordRaw[] = [
     },
   },
 ];
+
+const APP_NAME = 'SOCIALMORE';
+
+const resolvePageTitle = (to: any) => {
+  const metaTitle = (to.meta?.title as string | undefined) || (to.meta?.devPageName as string | undefined);
+  return metaTitle?.trim() || APP_NAME;
+};
+
+const applyPageTitle = async (to: any) => {
+  if (typeof document === 'undefined') return;
+  const pageTitle = resolvePageTitle(to);
+  if (isLineInAppBrowser()) {
+    document.title = pageTitle;
+    try {
+      const { loadLiff } = await import('../utils/liff');
+      const liffInstance = await loadLiff();
+      liffInstance?.setTitle?.(pageTitle);
+    } catch (error) {
+      console.warn('Failed to set LIFF title; continuing with document.title only.', error);
+    }
+    return;
+  }
+  document.title = `${pageTitle} | ${APP_NAME}`;
+};
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -739,6 +768,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   return next();
+});
+
+router.afterEach((to) => {
+  void applyPageTitle(to);
 });
 
 export default router;

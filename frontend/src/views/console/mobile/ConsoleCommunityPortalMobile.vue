@@ -1,7 +1,13 @@
 <template>
   <div class="portal-config-page">
     <header class="portal-config__header">
-      <button class="ghost-icon-btn" type="button" aria-label="戻る" @click="goBack">
+      <button
+        v-if="showBackButton"
+        class="ghost-icon-btn"
+        type="button"
+        aria-label="戻る"
+        @click="goBack"
+      >
         <img :src="backIcon" class="back-icon" alt="" aria-hidden="true" />
       </button>
       <div class="header-center">
@@ -95,6 +101,7 @@ import { useI18n } from 'vue-i18n';
 import { fetchCommunityPortalConfig, updateCommunityPortalConfig, fetchConsoleCommunity } from '../../../api/client';
 import backIcon from '../../../assets/icons/arrow-back.svg';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
+import { isLineInAppBrowser } from '../../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -108,6 +115,7 @@ const error = ref<string | null>(null);
 const locked = ref(false);
 const selectedTheme = ref('immersive');
 const selectedLayout = ref<string[]>(['hero', 'about', 'upcoming', 'past', 'moments']);
+const showBackButton = computed(() => !isLineInAppBrowser());
 
 const themes = computed(() => [
   { id: 'clean', name: t('console.portal.themes.clean.name'), desc: t('console.portal.themes.clean.desc'), previewClass: 'preview-clean' },

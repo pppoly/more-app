@@ -19,7 +19,13 @@
       <main class="m-event-content event-content--with-footer">
         <section class="event-hero">
           <div class="event-hero__overlay">
-            <button class="event-back-btn" type="button" aria-label="戻る" @click="goBack">
+            <button
+              v-if="showBackButton"
+              class="event-back-btn"
+              type="button"
+              aria-label="戻る"
+              @click="goBack"
+            >
               <img :src="backIcon" class="event-back-icon" alt="" aria-hidden="true" />
             </button>
             <div class="overlay-spacer"></div>
@@ -300,7 +306,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
-import { loadLiff } from '../../utils/liff';
+import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
@@ -349,6 +355,7 @@ const registrationItem = ref<MyEventItem | null>(null);
 const checkingRegistration = ref(false);
 const registrationStatusRaw = computed(() => registrationItem.value?.status ?? 'none');
 const refundRequest = computed(() => registrationItem.value?.refundRequest ?? null);
+const showBackButton = computed(() => !isLineInAppBrowser());
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
@@ -667,7 +674,7 @@ const statusBadge = computed(() => {
 const viewCountLabel = computed(() => {
   const raw = detail.value?.config?.viewCount ?? detail.value?.config?.views ?? 0;
   const value = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
-  return `${value}人想去`;
+  return `${value}人が参加予定`;
 });
 
 const shouldShowParticipants = computed(() => Boolean(detail.value?.showParticipants));
@@ -703,7 +710,7 @@ const loadEvent = async () => {
     await loadFollowState();
     trackEvent('view_event_detail', { eventId: detailData.id });
   } catch (err) {
-    error.value = '活动加载失败，请稍后再试';
+    error.value = 'イベント情報の読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -858,7 +865,7 @@ const handleFavoriteToggle = () => {
     return;
   }
   favoritesStore.toggleFavorite(favoritePayload.value);
-  showUiMessage(isFavoriteEvent.value ? '已收藏' : '已取消收藏');
+  showUiMessage(isFavoriteEvent.value ? 'フォロー済みにしました' : 'フォローを解除しました');
 };
 
 const setSlide = (index: number) => {
@@ -910,11 +917,11 @@ const toggleFollow = async () => {
     if (isFollowingCommunity.value) {
       await unfollowCommunity(communityIdForFollow.value);
       isFollowingCommunity.value = false;
-      showUiMessage('已取消关注');
+      showUiMessage('フォローを解除しました');
     } else {
       await followCommunity(communityIdForFollow.value);
       isFollowingCommunity.value = true;
-      showUiMessage('已关注');
+      showUiMessage('フォローしました');
     }
   } catch (err) {
     showUiMessage(err instanceof Error ? err.message : '操作失败');
@@ -1048,7 +1055,7 @@ const submitBooking = async () => {
     showBooking.value = false;
     await followIfNeeded();
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = 'お申し込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     submitting.value = false;
   }
