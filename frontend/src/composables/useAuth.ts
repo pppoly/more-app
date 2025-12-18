@@ -136,17 +136,21 @@ async function bootstrapLiffAuth(force = false) {
 
       // 回调阶段：禁止再次触发 login，直接做 token exchange
       if (isCallback) {
+        logDevAuth('callback branch entered');
         markLiffLoginInflight();
         const liff = await loadLiff(LIFF_ID);
         // 等待 ready，最长 8 秒，超时视为失败但不再触发 login
         try {
-          await Promise.race([
-            liff.ready?.(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 8000)),
-          ]);
+          const ready = (liff as any).ready;
+          if (ready && typeof ready.then === 'function') {
+            await Promise.race([
+              ready,
+              new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 8000)),
+            ]);
+          }
         } catch (err) {
           logDevAuth('callback: liff ready timeout/fail', err);
-          return;
+          // 即便 ready 超时，继续尝试获取 token，禁止再 login
         }
         const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
         const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;

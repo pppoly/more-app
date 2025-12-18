@@ -1,6 +1,6 @@
 <template>
   <div class="my-payments-page">
-    <ConsoleTopBar class="topbar" title="支払い履歴" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="支払い履歴" @back="goBack" />
 
     <section class="page-head">
       <p class="page-eyebrow">マイページ</p>
@@ -112,6 +112,7 @@ import { fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../utils/device';
 
 type FilterId = 'all' | 'paid' | 'refunded';
 
@@ -132,6 +133,7 @@ interface PaymentRecord {
 
 const router = useRouter();
 const route = useRoute();
+const isLiffClientMode = computed(() => isLiffClient());
 const debugMode = computed(() => route.query.debug === '1');
 
 const loading = ref(true);

@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-settings m-page">
-    <ConsoleTopBar class="topbar" :title="t('mobile.settings.title')" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" :title="t('mobile.settings.title')" @back="goBack" />
     <section class="settings-section">
       <h2 class="m-section-title">{{ t('mobile.settings.title') }}</h2>
       <div class="settings-list">
@@ -81,12 +81,14 @@ import { updateProfile } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import { useI18n } from 'vue-i18n';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../utils/device';
 
 const router = useRouter();
 const { logout, user, setUserProfile } = useAuth();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
+const isLiffClientMode = computed(() => isLiffClient());
 
 const isLoggedIn = computed(() => Boolean(user.value));
 

@@ -1,6 +1,6 @@
 <template>
   <div class="communities-page">
-    <ConsoleTopBar class="topbar" title="マイコミュニティ" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイコミュニティ" @back="goBack" />
     <section class="page-head">
       <p class="page-eyebrow">私が所属するコミュニティ</p>
       <h1 class="page-title">あなたがつながっている場</h1>
@@ -81,9 +81,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../utils/device';
 
 type CommunityCardItem = {
   id: string;
@@ -101,6 +102,7 @@ const router = useRouter();
 const activeCommunities = ref<CommunityCardItem[]>([]);
 const quietCommunities = ref<CommunityCardItem[]>([]);
 const quietOpen = ref(false);
+const isLiffClientMode = computed(() => isLiffClient());
 
 const goBack = () => {
   router.push({ name: 'MobileMe' });

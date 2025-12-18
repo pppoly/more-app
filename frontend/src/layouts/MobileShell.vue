@@ -194,7 +194,11 @@ const showTabbar = computed(() => {
 });
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
-const showHeader = computed(() => !route.meta?.hideShellHeader && !props.forceHideHeader);
+const showHeader = computed(() => {
+  // LIFF 内の「マイページ」系は LINE の UI に委ね、アプリ内ヘッダーを非表示
+  if (props.isLiff && route.path.startsWith('/me')) return false;
+  return !route.meta?.hideShellHeader && !props.forceHideHeader;
+});
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 const routeReady = ref(false);
