@@ -1778,6 +1778,28 @@ watch(
   padding: 12px;
   overflow: visible;
 }
+.event-about__content {
+  width: 100%;
+}
+.event-about__content figure {
+  margin: 12px 0;
+  padding: 8px;
+  background: #f4f5f7;
+  border-radius: 12px;
+  overflow: visible;
+}
+.event-about__content figure img {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  object-fit: contain !important;
+  aspect-ratio: auto !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-sizing: border-box !important;
+}
 .event-about__content img {
   display: block !important;
   width: 100% !important;
@@ -1787,14 +1809,13 @@ watch(
   aspect-ratio: auto !important;
   border-radius: 12px !important;
   background: #f4f5f7;
-  padding: 8px;
-  box-sizing: border-box;
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  margin: 12px 0 !important;
 }
 .event-about__content a img {
   border: none !important;
-  padding: 0 !important;
   background: transparent !important;
-  object-fit: contain !important;
 }
 .m-text-body a img {
   border: none;
