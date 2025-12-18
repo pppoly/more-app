@@ -13,6 +13,9 @@ const buildPrefixedPath = (...segments: string[]) => {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const globalPrefix = 'api/v1';
+  // Raise body size limits to tolerate description HTML with inline images.
+  app.use(bodyParser.json({ limit: '15mb' }));
+  app.use(bodyParser.urlencoded({ limit: '15mb', extended: true }));
   app.setGlobalPrefix(globalPrefix);
   app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
   const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';

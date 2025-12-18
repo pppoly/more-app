@@ -839,8 +839,8 @@ const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const showMobileNotice = ref(false);
 const MAX_COVERS = 9;
-const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB（入口上限）
-const MAX_COVER_UPLOAD_SIZE = 9 * 1024 * 1024; // 圧縮後の目安
+const MAX_COVER_SIZE = 12 * 1024 * 1024; // 12MB（入口上限を緩和）
+const MAX_COVER_UPLOAD_SIZE = 10 * 1024 * 1024; // 圧縮後の目安を緩和
 const MAX_COVER_DIMENSION = 1920; // 最大長辺
 // 最低サイズ制限を実質無効化（1px）
 const MIN_COVER_WIDTH = 1;
