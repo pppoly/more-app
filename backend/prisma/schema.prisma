@@ -147,6 +147,39 @@ model Event {
   payments               Payment[]
 }
 
+model Class {
+  id                 String    @id @default(cuid())
+  communityId        String
+  title              Json
+  description        Json?
+  locationName       String?
+  priceYenPerLesson  Int
+  defaultCapacity    Int?
+  status             String    @default("active")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  community          Community @relation(fields: [communityId], references: [id])
+  lessons            Lesson[]
+}
+
+model Lesson {
+  id             String   @id @default(cuid())
+  classId        String
+  startAt        DateTime
+  endAt          DateTime?
+  capacity       Int?
+  status         String   @default("scheduled")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  class          Class    @relation(fields: [classId], references: [id])
+  registrations  EventRegistration[]
+  payments       Payment[]
+  refundRequests RefundRequest[]
+  checkins       EventCheckin[]
+
+  @@index([classId, startAt])
+}
+
 model EventTicketType {
   id         String   @id @default(cuid())
   eventId    String
@@ -161,9 +194,10 @@ model EventTicketType {
 
 model EventRegistration {
   id            String          @id @default(cuid())
-  eventId       String
+  eventId       String?
   userId        String
-  ticketTypeId  String
+  ticketTypeId  String?
+  lessonId      String?
   status        String
   formAnswers   Json?
   amount        Int             @default(0)
@@ -173,22 +207,27 @@ model EventRegistration {
   noShow        Boolean         @default(false)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  event         Event           @relation(fields: [eventId], references: [id])
+  event         Event?          @relation(fields: [eventId], references: [id])
   user          User            @relation(fields: [userId], references: [id])
-  ticketType    EventTicketType @relation(fields: [ticketTypeId], references: [id])
+  ticketType    EventTicketType? @relation(fields: [ticketTypeId], references: [id])
+  lesson        Lesson?         @relation(fields: [lessonId], references: [id])
   checkins      EventCheckin[]
   payment       Payment?        @relation("RegistrationPayment")
   refundRequest RefundRequest?
+
+  @@unique([userId, lessonId])
 }
 
 model EventCheckin {
   id             String           @id @default(cuid())
-  eventId        String
+  eventId        String?
   registrationId String
+  lessonId       String?
   checkinAt      DateTime         @default(now())
   checkinType    String
-  event          Event            @relation(fields: [eventId], references: [id])
+  event          Event?           @relation(fields: [eventId], references: [id])
   registration   EventRegistration @relation(fields: [registrationId], references: [id])
+  lesson         Lesson?          @relation(fields: [lessonId], references: [id])
 }
 
 model AnalyticsEvent {
@@ -225,6 +264,7 @@ model Payment {
   communityId             String?
   eventId                 String?
   registrationId          String?  @unique
+  lessonId                String?
   amount                  Int
   platformFee             Int      @default(0)
   feePercent              Float?
@@ -241,12 +281,14 @@ model Payment {
   community               Community? @relation(fields: [communityId], references: [id])
   event                   Event?    @relation(fields: [eventId], references: [id])
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
+  lesson                  Lesson?   @relation(fields: [lessonId], references: [id])
   refundRequests          RefundRequest[]
 }
 
 model RefundRequest {
   id               String   @id @default(cuid())
   registrationId   String   @unique
+  lessonId         String?
   paymentId        String?
   decision         String?
   status           String   @default("requested")
@@ -259,6 +301,7 @@ model RefundRequest {
   updatedAt        DateTime @updatedAt
   registration     EventRegistration @relation(fields: [registrationId], references: [id])
   payment          Payment?          @relation(fields: [paymentId], references: [id])
+  lesson           Lesson?           @relation(fields: [lessonId], references: [id])
 }
 
 model I18nMessage {

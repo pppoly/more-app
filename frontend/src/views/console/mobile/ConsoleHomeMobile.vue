@@ -339,7 +339,8 @@ const copyPageSize = 10;
 const pickerLoading = ref(false);
 const pricingPlanId = ref<string | null>(null);
 const monthRevenueText = ref<string>('¥0');
-const showTopBar = computed(() => !isLineInAppBrowser());
+// ヒーロー/統計カードは LIFF でも表示する。ナビゲーションは MobileShell 側で非表示にする。
+const showTopBar = computed(() => true);
 const heroLogoUrl = ref<string | null>(null);
 const heroLoading = ref(true);
 let logoRequestId = 0;
