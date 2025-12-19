@@ -1,6 +1,6 @@
 <template>
   <div class="ticket-scanner-page">
-    <ConsoleTopBar title="チケットスキャン" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" title="チケットスキャン" @back="goBack" />
 
     <header class="page-head">
       <div>
@@ -80,6 +80,7 @@ import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
 import { checkinRegistration } from '../../../api/client';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { useRouter, useRoute } from 'vue-router';
+import { isLiffClient } from '../../../utils/device';
 
 type ScanState = 'idle' | 'scanning' | 'submitting' | 'result';
 type Result =
@@ -88,6 +89,7 @@ type Result =
 
 const router = useRouter();
 const route = useRoute();
+const isLiffClientMode = computed(() => isLiffClient());
 const videoEl = ref<HTMLVideoElement | null>(null);
 const captureInput = ref<HTMLInputElement | null>(null);
 const state = ref<ScanState>('idle');

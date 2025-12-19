@@ -1,6 +1,6 @@
 <template>
   <div class="paste-page">
-    <ConsoleTopBar title="下書きを貼り付ける" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" title="下書きを貼り付ける" @back="goBack" />
 
     <section class="intro-card">
       <p class="intro-title">貼り付けるだけで OK</p>
@@ -29,14 +29,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
 import { extractEventDraft } from '../../../api/client';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
 
 const route = useRoute();
 const router = useRouter();
+const isLiffClientMode = computed(() => isLiffClient());
 const draft = ref('');
 const error = ref<string | null>(null);
 const toast = useToast();

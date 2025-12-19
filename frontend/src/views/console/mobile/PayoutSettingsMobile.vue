@@ -1,25 +1,55 @@
 <template>
   <div class="payout">
-    <ConsoleTopBar :title="pageTitle" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" :title="pageTitle" @back="goBack" />
 
-    <section class="card" v-if="community">
+    <section class="card" v-if="community && !stripeReady">
+      <p class="label">アカウント未開設</p>
+      <h3>決済受け取りをはじめましょう</h3>
+      <p class="muted">Stripe アカウントを開設すると、このコミュニティの売上を入金できます。</p>
+      <button class="primary" :disabled="onboarding" @click="handleOnboarding">
+        {{ onboarding ? '移動中…' : '受け取りを開始する' }}
+      </button>
+      <p class="hint">Stripe の画面で情報入力後に戻ってください。</p>
+    </section>
+
+    <section class="card" v-else-if="community && stripeReady">
       <div class="row">
         <div>
           <p class="label">アカウント状態</p>
-          <h3>{{ stripeReady ? '受け取り可能です' : 'まだ開設されていません' }}</h3>
-          <p class="muted">決済受け取りを有効化すると、イベントの売上を入金できます。</p>
+          <h3>受け取り可能です</h3>
+          <p class="muted">このコミュニティの残高と入出金を管理できます。</p>
         </div>
         <div class="status-block">
           <p class="small">アカウント ID</p>
-          <strong>{{ community.stripeAccountId || '未作成' }}</strong>
+          <strong>{{ community.stripeAccountId }}</strong>
         </div>
       </div>
-
-      <button class="primary" :disabled="onboarding" @click="handleOnboarding">
-        {{ onboarding ? '移動中…' : stripeReady ? '受け取り情報を更新' : '受け取りを開始する' }}
-      </button>
-      <p class="hint">Stripe の画面で情報入力後に戻ってください。</p>
-      <button class="ghost" type="button" @click="goPayments">取引履歴を見る</button>
+      <div class="stat-grid" v-if="balance">
+        <article class="stat">
+          <p>総収入</p>
+          <strong>{{ formatYen(balance.grossPaid) }}</strong>
+        </article>
+        <article class="stat">
+          <p>受け取り可能</p>
+          <strong>{{ formatYen(balance.net) }}</strong>
+          <small v-if="balance.stripeBalance">Stripe 利用可能：{{ formatYen(balance.stripeBalance.available) }}</small>
+        </article>
+        <article class="stat">
+          <p>プラットフォーム手数料</p>
+          <strong>{{ formatYen(balance.platformFee) }}</strong>
+        </article>
+        <article class="stat">
+          <p>返金済み</p>
+          <strong>{{ formatYen(balance.refunded) }}</strong>
+        </article>
+      </div>
+      <div class="action-row">
+        <button class="primary" :disabled="onboarding" @click="handleOnboarding">
+          {{ onboarding ? '移動中…' : '受け取り情報を更新' }}
+        </button>
+        <button class="ghost" type="button" @click="goPayments">取引履歴を見る</button>
+      </div>
+      <p class="hint">口座情報の変更や入金設定は Stripe 画面から行えます。</p>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -30,20 +60,26 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import { fetchConsoleCommunity, startCommunityStripeOnboarding } from '../../../api/client';
-import type { ConsoleCommunityDetail } from '../../../types/api';
+import { fetchConsoleCommunity, fetchCommunityBalance, startCommunityStripeOnboarding } from '../../../api/client';
+import type { ConsoleCommunityBalance, ConsoleCommunityDetail } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
 const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
 const error = ref<string | null>(null);
+const balance = ref<ConsoleCommunityBalance | null>(null);
+const isLiffClientMode = computed(() => isLiffClient());
 
+// onboarded フラグが欠けるケースにも対応し、ID があれば基本「開通済み」とみなす
 const stripeReady = computed(
-  () => !!(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded),
+  () => !!community.value?.stripeAccountId && (community.value?.stripeAccountOnboarded ?? true),
 );
 const pageTitle = computed(() => '受け取り設定');
+const formatYen = (value?: number | null) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
 
 const loadCommunity = async () => {
   error.value = null;
@@ -89,7 +125,19 @@ const goBack = () => {
   router.back();
 };
 
-onMounted(loadCommunity);
+const loadBalance = async () => {
+  if (!community.value?.id || !stripeReady.value) return;
+  try {
+    balance.value = await fetchCommunityBalance(community.value.id, { period: 'all' });
+  } catch (err) {
+    balance.value = null;
+  }
+};
+
+onMounted(async () => {
+  await loadCommunity();
+  await loadBalance();
+});
 </script>
 
 <style scoped>

@@ -32,8 +32,75 @@
       "noManagedHint": "まずはコミュニティを作成してみましょう。",
       "createNew": "新しいコミュニティを作成"
     },
+    "communityEvents": {
+      "title": "コミュニティのイベント"
+    },
     "eventManage": {
       "title": "イベント管理"
+    },
+    "portal": {
+      "title": "コミュニティポータル",
+      "subtitle": "テンプレートと表示ブロックを選択してください",
+      "back": "戻る",
+      "loading": "読み込み中…",
+      "error": "設定を読み込めませんでした",
+      "themeTitle": "テンプレート",
+      "layoutTitle": "表示ブロック",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "保存しました",
+      "lockedTitle": "ポータル機能はアップグレードが必要です",
+      "lockedDesc": "ポータル公開は有料プランの機能です。プランを変更してご利用ください。",
+      "upgrade": "プランを確認する",
+      "modules": {
+        "hero": {
+          "name": "ヒーロー",
+          "desc": "大きなカバーとタグ"
+        },
+        "about": {
+          "name": "紹介",
+          "desc": "コミュニティ説明"
+        },
+        "upcoming": {
+          "name": "開催中",
+          "desc": "募集しているイベント"
+        },
+        "past": {
+          "name": "過去イベント",
+          "desc": "これまでの開催"
+        },
+        "moments": {
+          "name": "ハイライト",
+          "desc": "写真・カバーのコラージュ"
+        }
+      },
+      "themes": {
+        "clean": {
+          "name": "クリーン",
+          "desc": "白ベース + 淡いグラデ"
+        },
+        "immersive": {
+          "name": "イマーシブ",
+          "desc": "暗めのカバーとオーバーレイ"
+        },
+        "warm": {
+          "name": "ウォーム",
+          "desc": "暖色と丸みのカード"
+        },
+        "collage": {
+          "name": "コラージュ",
+          "desc": "テクスチャと写真感"
+        }
+      }
+  },
+  "payout": {
+    "title": "社群財務"
+  },
+  "ticketScanner": {
+      "title": "チケットスキャン"
+    },
+    "home": {
+      "title": "コンソール"
     }
   },
   "subscription": {
@@ -121,58 +188,6 @@
       "failed": "決済に失敗しました。再試行してください。"
     }
   },
-  "console": {
-    "access": {
-      "logo": "MORE Console",
-      "managing": "管理中のコミュニティ",
-      "roleOwner": "主催者",
-      "roleAdmin": "管理者",
-      "noCommunities": "まだ管理できるコミュニティがありません。",
-      "create": "コミュニティを作成",
-      "loginRequired": "主催者コンソールを利用するにはログインが必要です。",
-      "loginCta": "ログイン / 主催者申請",
-      "applyRequired": "主催者申請が必要です",
-      "applyHint": "申請が承認されるとコンソール機能を利用できます。",
-      "applyCta": "主催者申請ページへ",
-      "noManagedTitle": "管理対象のコミュニティがありません",
-      "noManagedHint": "まずはコミュニティを作成してみましょう。",
-      "createNew": "新しいコミュニティを作成"
-    },
-    "communityEvents": {
-      "title": "コミュニティのイベント"
-    },
-    "eventManage": {
-      "title": "イベント管理"
-    },
-    "portal": {
-      "title": "コミュニティポータル",
-      "subtitle": "テンプレートと表示ブロックを選択してください",
-      "back": "戻る",
-      "loading": "読み込み中…",
-      "error": "設定を読み込めませんでした",
-      "themeTitle": "テンプレート",
-      "layoutTitle": "表示ブロック",
-      "save": "保存",
-      "saving": "保存中…",
-      "saved": "保存しました",
-      "lockedTitle": "ポータル機能はアップグレードが必要です",
-      "lockedDesc": "ポータル公開は有料プランの機能です。プランを変更してご利用ください。",
-      "upgrade": "プランを確認する",
-      "modules": {
-        "hero": { "name": "ヒーロー", "desc": "大きなカバーとタグ" },
-        "about": { "name": "紹介", "desc": "コミュニティ説明" },
-        "upcoming": { "name": "開催中", "desc": "募集しているイベント" },
-        "past": { "name": "過去イベント", "desc": "これまでの開催" },
-        "moments": { "name": "ハイライト", "desc": "写真・カバーのコラージュ" }
-      },
-      "themes": {
-        "clean": { "name": "クリーン", "desc": "白ベース + 淡いグラデ" },
-        "immersive": { "name": "イマーシブ", "desc": "暗めのカバーとオーバーレイ" },
-        "warm": { "name": "ウォーム", "desc": "暖色と丸みのカード" },
-        "collage": { "name": "コラージュ", "desc": "テクスチャと写真感" }
-      }
-    }
-  },
   "mobile": {
     "settings": {
       "title": "一般設定",
@@ -211,10 +226,26 @@
         "updated": "画像を更新しました"
       },
       "cards": {
-        "events": { "title": "参加したイベント", "description": "予約・チケット", "cta": "見る" },
-        "payments": { "title": "支払い履歴", "description": "お支払い記録", "cta": "見る" },
-        "favorites": { "title": "お気に入りイベント", "description": "お気に入り", "cta": "見る" },
-        "settings": { "title": "設定", "description": "アプリ環境", "cta": "開く" }
+        "events": {
+          "title": "参加したイベント",
+          "description": "予約・チケット",
+          "cta": "見る"
+        },
+        "payments": {
+          "title": "支払い履歴",
+          "description": "お支払い記録",
+          "cta": "見る"
+        },
+        "favorites": {
+          "title": "お気に入りイベント",
+          "description": "お気に入り",
+          "cta": "見る"
+        },
+        "settings": {
+          "title": "設定",
+          "description": "アプリ環境",
+          "cta": "開く"
+        }
       }
     },
     "locale": {

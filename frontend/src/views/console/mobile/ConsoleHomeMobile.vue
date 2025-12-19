@@ -103,19 +103,19 @@
     <section class="action-grid">
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goAllEvents">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" loading="lazy" />
+          <img :src="eventManageIcon" alt="" loading="lazy" />
         </div>
         <p class="action-title">イベント管理</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" loading="lazy" />
+          <img :src="payoutIcon" alt="" loading="lazy" />
         </div>
         <p class="action-title">入金・振込</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
+          <img :src="checkIcon" alt="" />
         </div>
         <p class="action-title">チェックイン</p>
       </button>
@@ -312,11 +312,12 @@ import {
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import payoutIcon from '../../../assets/account.svg';
+import checkIcon from '../../../assets/check.svg';
+import eventManageIcon from '../../../assets/enventmanagement.svg';
 // Inline SVG data URIs to avoid network requests and首屏闪现
 const defaultCommunityAvatar =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='; // transparent pixel to avoid placeholder art
-const defaultActionIcon =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjYiIHkxPSI2IiB4Mj0iNDIiIHkyPSI0MiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTIiIGZpbGw9InVybCgjZykiLz4KICA8cGF0aCBkPSJNMjQgMTR2MjBNMTQgMjRoMjAiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPgo=';
 const defaultEventCover =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
 import type { ConsoleCommunityDetail, ConsoleEventSummary, CommunityAnalytics } from '../../../types/api';
@@ -414,14 +415,17 @@ const stats = computed(() => ({
 const activeCommunityVersion = computed(() => communityStore.activeCommunityVersion.value);
 
 const displayEvents = computed(() =>
-  events.value.slice(0, 5).map((event) => ({
-    id: event.id,
-    title: getLocalizedText(event.title),
-    status: event.status,
-    dateTimeText: formatDate(event.startTime, event.endTime),
-    entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-    coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
-  })),
+  events.value
+    .filter((event) => event.status !== 'cancelled')
+    .slice(0, 5)
+    .map((event) => ({
+      id: event.id,
+      title: getLocalizedText(event.title),
+      status: event.status,
+      dateTimeText: formatDate(event.startTime, event.endTime),
+      entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
+      coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
+    })),
 );
 
 const formatJPY = (amount: number) =>
@@ -643,6 +647,8 @@ const statusLabel = (status: string) => {
       return '受付中';
     case 'closed':
       return '終了';
+    case 'cancelled':
+      return '取消済み';
     default:
       return '下書き';
   }
@@ -654,6 +660,8 @@ const statusBadgeClass = (status: string) => {
       return 'bg-emerald-100 text-emerald-700';
     case 'closed':
       return 'bg-slate-100 text-slate-500';
+    case 'cancelled':
+      return 'bg-rose-100 text-rose-700';
     default:
       return 'bg-amber-100 text-amber-700';
   }
@@ -950,7 +958,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   margin: 2px 0 0;
   font-size: 15px;
   font-weight: 600;
-  color: #0b4f8f;
+  color: #ffffff;
 }
 
 .action-grid {
@@ -1148,8 +1156,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .action-icon img {
-  width: 28px;
-  height: 28px;
+  width: 56px;
+  height: 56px;
 }
 
 .action-title {

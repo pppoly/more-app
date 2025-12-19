@@ -78,18 +78,20 @@ const communityId = computed(() => route.params.communityId as string);
 const isAdmin = computed(() => Boolean(user.value?.isAdmin));
 
 const normalizedEvents = computed(() =>
-  events.value.map((event) => ({
-    id: event.id,
-    title: getLocalizedText(event.title),
-    status: event.status,
-    dateTimeText: formatDate(event.startTime, event.endTime),
-    entrySummary: event.visibility === 'public' ? '公開で募集しています' : '限定メンバー向けで募集しています',
-    coverStyle: {
-      backgroundImage: `url(${event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-    },
-  })),
+  events.value
+    .filter((event) => event.status !== 'cancelled') // 取消済みは一覧に表示しない
+    .map((event) => ({
+      id: event.id,
+      title: getLocalizedText(event.title),
+      status: event.status,
+      dateTimeText: formatDate(event.startTime, event.endTime),
+      entrySummary: event.visibility === 'public' ? '公開で募集しています' : '限定メンバー向けで募集しています',
+      coverStyle: {
+        backgroundImage: `url(${event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      },
+    })),
 );
 
 const filteredEvents = computed(() => {
@@ -169,6 +171,8 @@ const statusLabel = (status: string) => {
       return '受付中';
     case 'closed':
       return '終了';
+    case 'cancelled':
+      return '取消済み';
     default:
       return '下書き';
   }
@@ -180,6 +184,8 @@ const statusDotClass = (status: string) => {
       return 'dot open';
     case 'closed':
       return 'dot closed';
+    case 'cancelled':
+      return 'dot cancelled';
     default:
       return 'dot draft';
   }

@@ -2,30 +2,30 @@
   <div class="payments">
     <header class="top">
       <div>
-        <p class="eyebrow">收款 / 交易</p>
+        <p class="eyebrow">取引</p>
         <h1>{{ headerTitle }}</h1>
-        <p class="muted" v-if="eventTitle">当前筛选：{{ eventTitle }}</p>
+        <p class="muted" v-if="eventTitle">対象イベント：{{ eventTitle }}</p>
       </div>
-      <button class="ghost" type="button" @click="goBack">返回</button>
+      <button class="ghost" type="button" @click="goBack">戻る</button>
     </header>
 
-    <section class="card" v-if="balance">
+    <section class="card" v-if="balance && !lockedEvent">
       <div class="stat-grid">
         <article class="stat">
-          <p>总收款</p>
+          <p>総収入</p>
           <strong>{{ formatYen(balance.grossPaid) }}</strong>
         </article>
         <article class="stat">
-          <p>可提现</p>
+          <p>受け取り可能</p>
           <strong>{{ formatYen(balance.net) }}</strong>
-          <small v-if="balance.stripeBalance">Stripe 可用：{{ formatYen(balance.stripeBalance.available) }}</small>
+          <small v-if="balance.stripeBalance">Stripe 利用可能：{{ formatYen(balance.stripeBalance.available) }}</small>
         </article>
         <article class="stat">
-          <p>平台费</p>
+          <p>プラットフォーム手数料</p>
           <strong>{{ formatYen(balance.platformFee) }}</strong>
         </article>
         <article class="stat">
-          <p>已退款</p>
+          <p>返金済み</p>
           <strong>{{ formatYen(balance.refunded) }}</strong>
         </article>
       </div>
@@ -33,34 +33,34 @@
 
     <section class="card filters">
       <div class="filter-row">
-        <label>
-          事件筛选
-          <input v-model="eventId" type="text" placeholder="留空表示全部活动" @keyup.enter="reload" />
+        <label v-if="!lockedEvent">
+          イベントID
+          <input v-model="eventId" type="text" placeholder="空なら全イベント" @keyup.enter="reload" />
         </label>
         <label>
-          状态
+          ステータス
           <select v-model="status" @change="reload">
-            <option value="">全部</option>
-            <option value="paid">已支付</option>
-            <option value="pending">待支付</option>
-            <option value="refunded">已退款</option>
+            <option value="">すべて</option>
+            <option value="paid">支払い完了</option>
+            <option value="pending">支払い待ち</option>
+            <option value="refunded">返金済み</option>
           </select>
         </label>
       </div>
       <div class="actions">
-        <button class="ghost" type="button" @click="clearFilters">清空</button>
-        <button class="primary" type="button" :disabled="loading" @click="reload">刷新</button>
+        <button class="ghost" type="button" @click="clearFilters">クリア</button>
+        <button class="primary" type="button" :disabled="loading" @click="reload">更新</button>
       </div>
     </section>
 
     <section class="card list" :aria-busy="loading">
       <div class="list-head">
-        <h2>交易流水</h2>
-        <span class="muted">{{ payments.total }} 笔</span>
+        <h2>取引一覧</h2>
+        <span class="muted">{{ payments.total }} 件</span>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
-      <p v-else-if="loading">加载中...</p>
-      <p v-else-if="!payments.items.length" class="empty">暂无交易记录。</p>
+      <p v-else-if="loading">読み込み中…</p>
+      <p v-else-if="!payments.items.length" class="empty">表示できる取引がありません。</p>
       <ul v-else class="pay-list">
         <li v-for="item in payments.items" :key="item.id" class="pay-item">
           <div class="pay-main">
@@ -108,7 +108,8 @@ const router = useRouter();
 const store = useConsoleCommunityStore();
 
 const communityId = computed(() => (route.params.communityId as string) || store.activeCommunityId.value);
-const initialEventId = computed(() => (route.query.eventId as string | undefined) || '');
+const lockedEventId = computed(() => (route.query.eventId as string | undefined) || '');
+const initialEventId = computed(() => lockedEventId.value);
 
 const payments = ref<ConsolePaymentList>({ items: [], page: 1, pageSize: 20, total: 0 });
 const balance = ref<ConsoleCommunityBalance | null>(null);
@@ -117,6 +118,7 @@ const error = ref('');
 const page = ref(1);
 const status = ref<string>('');
 const eventId = ref(initialEventId.value);
+const lockedEvent = computed(() => !!lockedEventId.value);
 const refundLoading = ref<Record<string, boolean>>({});
 
 const eventTitle = computed(() => {
@@ -125,7 +127,9 @@ const eventTitle = computed(() => {
   return target?.event?.title ?? '';
 });
 
-const headerTitle = computed(() => (communityId.value ? '社区收款' : '收款'));
+const headerTitle = computed(() =>
+  lockedEvent.value ? 'イベントの取引' : communityId.value ? 'コミュニティの取引' : '取引',
+);
 
 const formatYen = (value: number) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
@@ -136,11 +140,11 @@ const formatDate = (value: string) =>
 const statusLabel = (s: string) => {
   switch (s) {
     case 'paid':
-      return '已支付';
+      return '支払い完了';
     case 'pending':
-      return '待支付';
+      return '支払い待ち';
     case 'refunded':
-      return '已退款';
+      return '返金済み';
     default:
       return s;
   }
@@ -159,7 +163,7 @@ const statusClass = (s: string) => {
 };
 
 const loadBalance = async () => {
-  if (!communityId.value) return;
+  if (!communityId.value || lockedEvent.value) return;
   try {
     balance.value = await fetchCommunityBalance(communityId.value);
   } catch (err) {
@@ -196,7 +200,7 @@ const setPage = (value: number) => {
 };
 
 const clearFilters = () => {
-  eventId.value = '';
+  eventId.value = lockedEventId.value || '';
   status.value = '';
   page.value = 1;
   reload();

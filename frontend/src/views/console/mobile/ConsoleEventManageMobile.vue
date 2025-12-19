@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <ConsoleTopBar titleKey="console.eventManage.title" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" titleKey="console.eventManage.title" @back="goBack" />
 
     <div v-if="showSkeleton" class="skeleton-overlay" aria-hidden="true">
       <div class="skeleton-stack">
@@ -252,9 +252,11 @@ import { useResourceConfig } from '../../../composables/useResourceConfig';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import moreIcon from '../../../assets/icons/more-horizontal.svg';
 import QRCode from 'qrcode';
+import { isLiffClient } from '../../../utils/device';
 
 const route = useRoute();
 const router = useRouter();
+const isLiffClientMode = computed(() => isLiffClient());
 const eventId = computed(() => route.params.eventId as string);
 const communityId = computed(() => eventDetail.value?.communityId);
 
@@ -696,6 +698,9 @@ const formatDate = (start: string, end?: string) => {
 
 onMounted(() => {
   loadData();
+  if (isLiffClientMode.value && typeof document !== 'undefined') {
+    document.title = 'イベント管理';
+  }
 });
 
 const reload = () => loadData();

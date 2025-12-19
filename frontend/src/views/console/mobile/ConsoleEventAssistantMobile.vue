@@ -1,7 +1,13 @@
 <template>
   <div class="assistant-shell" :style="screenStyle">
     <div class="assistant-topbar-wrap">
-      <ConsoleTopBar class="assistant-topbar" title="イベントアシスタント" :sticky="true" @back="goBack" />
+      <ConsoleTopBar
+        v-if="!isLiffClientMode"
+        class="assistant-topbar"
+        title="イベントアシスタント"
+        :sticky="true"
+        @back="goBack"
+      />
       <div class="top-actions" v-if="communityId">
         <button type="button" class="new-session-btn" @click="startNewConversation">
           ＋ 新しい相談
@@ -230,6 +236,7 @@ import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
@@ -271,6 +278,7 @@ const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
+const isLiffClientMode = computed(() => isLiffClient());
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
