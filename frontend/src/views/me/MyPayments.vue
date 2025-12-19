@@ -30,6 +30,24 @@
       </button>
     </section>
 
+    <section class="disclosure">
+      <p class="disclosure-title">返金・支払いの重要なお知らせ</p>
+      <ul>
+        <li>返金可否・割合・期限は各イベント/教室の表示条件が優先されます。</li>
+        <li>返金手数料・為替差・振込手数料・チャージバック費用等が控除される場合があります。</li>
+        <li>コンテンツ・安全性・履行は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
+      </ul>
+      <div class="disclosure-links">
+        <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
+        <span>・</span>
+        <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
+        <span>・</span>
+        <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
+        <span>・</span>
+        <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
+      </div>
+    </section>
+
     <section class="list">
       <article v-if="loading" class="payment-card payment-card--skeleton" v-for="n in 3" :key="`s-${n}`"></article>
 
@@ -363,6 +381,39 @@ const goBack = () => {
   background: #0f172a;
   color: #fff;
   border-color: #0f172a;
+}
+
+.disclosure {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #1f2a3d;
+  line-height: 1.5;
+}
+
+.disclosure-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.disclosure ul {
+  padding-left: 18px;
+  margin: 0 0 6px;
+}
+
+.disclosure-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.disclosure a {
+  color: #2563eb;
+  text-decoration: underline;
 }
 
 .list {

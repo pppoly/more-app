@@ -335,10 +335,7 @@ watch(
 );
 
 onMounted(() => {
-  if (!user.value) {
-    router.replace({ name: 'organizer-apply', query: { redirect: route.fullPath } });
-    return;
-  }
+  // 主催者申請へのリダイレクトは行わず、未ログイン時は後続処理でログイン誘導とする
   loadEvent();
 });
 

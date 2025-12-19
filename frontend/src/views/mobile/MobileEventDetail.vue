@@ -234,6 +234,26 @@
             </ul>
           </div>
         </section>
+
+        <section class="event-section">
+          <h2 class="m-section-title">重要なお知らせ / 法令リンク</h2>
+          <div class="m-event-card disclosure-card">
+            <ul class="disclosure-list">
+              <li>コンテンツ・安全性・履行は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
+              <li>返金可否・割合・期限、手数料/為替差/振込手数料は表示条件が優先されます。</li>
+              <li>危険行為の回避、年齢・健康条件、遅刻・欠席時の扱い、録画/録音/転載禁止（適用時）にご注意ください。</li>
+            </ul>
+            <div class="disclosure-links">
+              <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
+              <span>・</span>
+              <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
+              <span>・</span>
+              <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
+              <span>・</span>
+              <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer class="event-footer">
@@ -1979,6 +1999,32 @@ watch(
   border: none;
   background: transparent;
   color: var(--m-color-text-secondary);
+}
+
+.disclosure-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.disclosure-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.disclosure-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.disclosure-links a {
+  color: #2563eb;
+  text-decoration: underline;
 }
 
 .participant-list {

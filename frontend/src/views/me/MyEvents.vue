@@ -35,6 +35,24 @@
           <RouterLink class="ghost-btn" to="/events">イベントを探す</RouterLink>
         </article>
 
+        <section class="disclosure-card">
+          <p class="disclosure-title">返金・キャンセル / 法令リンク</p>
+          <ul class="disclosure-list">
+            <li>返金可否・割合・期限はイベント表示条件が優先されます。申請期限超過は返金不可の場合があります。</li>
+            <li>返金手数料・為替差・振込手数料・チャージバック費用等が控除される場合があります。</li>
+            <li>コンテンツ・安全性・履行は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
+          </ul>
+          <div class="disclosure-links">
+            <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
+            <span>・</span>
+            <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
+            <span>・</span>
+            <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
+            <span>・</span>
+            <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
+          </div>
+        </section>
+
         <div v-for="item in filteredEvents" :key="item.registrationId" class="ticket-card-wrapper">
           <article
             class="ticket-card ticket-card--with-cover"
@@ -564,6 +582,40 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .feedback--info {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.disclosure-card {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #1f2a3d;
+  line-height: 1.5;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.disclosure-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.disclosure-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.disclosure-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.disclosure-links a {
+  color: #2563eb;
+  text-decoration: underline;
 }
 
 .ticket-card-wrapper {

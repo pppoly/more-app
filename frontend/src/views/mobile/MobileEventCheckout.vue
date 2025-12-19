@@ -21,6 +21,24 @@
         </button>
       </div>
       <p v-if="registrationError" class="error-text">{{ registrationError }}</p>
+
+      <div class="disclosure">
+        <p class="disclosure-title">料金・返金条件 / 法令表示</p>
+        <ul>
+          <li>表示額に基づき Stripe で決済されます（税・手数料の扱いは表示どおり）。</li>
+          <li>返金可否/割合/期限はイベントの表示条件が優先。返金手数料・為替差・振込手数料等が控除される場合があります。</li>
+          <li>コンテンツ・安全性・実施は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
+        </ul>
+        <div class="disclosure-links">
+          <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
+          <span>・</span>
+          <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
+          <span>・</span>
+          <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
+          <span>・</span>
+          <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -109,10 +127,8 @@ const loadEvent = async () => {
 };
 
 onMounted(() => {
-  if (!user.value) {
-    router.replace({ name: 'organizer-apply', query: { redirect: route.fullPath } });
-    return;
-  }
+  // ここでは主催者申請ページへはリダイレクトせず、利用者がそのまま申し込みできるようにする。
+  // 未ログインの場合は後続の API で認証エラーとなるので、フロント側で適宜ログイン誘導を行う。
   loadEvent();
 });
 
@@ -297,5 +313,38 @@ const formatDate = (value: string) => {
   margin: 6px 0 0;
   font-size: 13px;
   color: #dc2626;
+}
+
+.disclosure {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #1f2a3d;
+  line-height: 1.5;
+}
+
+.disclosure-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.disclosure ul {
+  padding-left: 18px;
+  margin: 0 0 6px;
+}
+
+.disclosure-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.disclosure a {
+  color: #2563eb;
+  text-decoration: underline;
 }
 </style>

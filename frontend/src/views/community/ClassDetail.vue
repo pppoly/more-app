@@ -13,11 +13,11 @@
 
       <section class="section">
         <div class="section-head">
-          <p class="section-title">日程を選択</p>
-          <p class="section-sub">1回ごとの申し込みです</p>
-        </div>
-        <div class="lesson-options">
-          <button
+        <p class="section-title">日程を選択</p>
+        <p class="section-sub">1回ごとの申し込みです</p>
+      </div>
+      <div class="lesson-options">
+        <button
             v-for="lesson in detail?.upcomingLessons || []"
             :key="lesson.id"
             class="lesson-row"
@@ -40,6 +40,24 @@
             </div>
           </button>
           <p v-if="!(detail?.upcomingLessons?.length)" class="empty">日程が登録されていません</p>
+        </div>
+      </section>
+
+      <section class="section disclosure-card">
+        <p class="disclosure-title">重要なお知らせ / 法令リンク</p>
+        <ul class="disclosure-list">
+          <li>教室の内容・安全性・返金条件は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
+          <li>返金可否・割合・期限、手数料/為替差/振込手数料は表示条件が優先されます。</li>
+          <li>危険行為の回避、年齢・健康条件、遅刻・欠席時の扱い、録画/録音/転載禁止（適用時）にご注意ください。</li>
+        </ul>
+        <div class="disclosure-links">
+          <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
+          <span>・</span>
+          <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
+          <span>・</span>
+          <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
+          <span>・</span>
+          <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
         </div>
       </section>
     </div>
@@ -334,6 +352,39 @@ const goBack = () => {
 }
 .banner-actions {
   margin-top: 8px;
+}
+
+.disclosure-card {
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  color: #1f2a3d;
+  line-height: 1.5;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.disclosure-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.disclosure-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.disclosure-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.disclosure-links a {
+  color: #2563eb;
+  text-decoration: underline;
 }
 .pill {
   background: #e0e7ff;
