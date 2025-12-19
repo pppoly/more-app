@@ -294,19 +294,11 @@ const selectCategory = (id: string) => {
 const formatDateTime = (start: string, end?: string | null) => {
   const s = new Date(start);
   const e = end ? new Date(end) : null;
-  const startText = s.toLocaleString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][s.getDay()];
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const startText = `${s.getMonth() + 1}/${s.getDate()}(${wd}) ${pad(s.getHours())}:${pad(s.getMinutes())}`;
   if (!e) return startText;
-  const endText = e.toLocaleString('ja-JP', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const endText = `${pad(e.getHours())}:${pad(e.getMinutes())}`;
   return `${startText} – ${endText}`;
 };
 

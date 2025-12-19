@@ -2,12 +2,6 @@
   <div class="my-payments-page">
     <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" titleKey="me.payments.title" @back="goBack" />
 
-    <section class="page-head">
-      <p class="page-eyebrow">マイページ</p>
-      <h1 class="page-title">支払い・返金をまとめて確認</h1>
-      <p class="page-subtext">キャンセルや返金の操作はありません。記録と明細の確認用です。</p>
-    </section>
-
     <section class="summary">
       <div class="summary-card">
         <p class="summary-label">合計支払い額</p>
@@ -153,12 +147,14 @@ const formatDateTime = (value?: string | null) =>
 const statusText = (rec: PaymentRecord) => {
   const total = rec.amount || 0;
   const refunded = rec.refundedAmount ?? 0;
+  if (rec.status === 'cancel_requested') return '返金処理中';
+  if (rec.status === 'cancelled' && total > 0) return '返金処理中';
   if (rec.refundStatus === 'pending' || rec.status === 'pending_refund') return '返金処理中';
   if (refunded > 0) {
     return refunded >= total && total > 0 ? '返金済み（全額）' : `返金済み（一部 ¥${formatYen(refunded)})`;
   }
   if (rec.paymentStatus === 'refunded') return '返金済み（全額）';
-  if (rec.paymentStatus === 'paid') return '支払い完了';
+  if (rec.paymentStatus === 'paid' || rec.status === 'paid') return '支払い完了';
   return '支払い待ち';
 };
 

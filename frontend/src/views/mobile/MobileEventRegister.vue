@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-register">
-    <ConsoleTopBar class="topbar" titleKey="mobile.eventRegister.title" @back="router.back()" />
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventRegister.title" @back="router.back()" />
 
     <section v-if="loading" class="register-skeleton">
       <div class="skeleton-hero shimmer"></div>
@@ -36,7 +36,6 @@
           <p class="line-label">チケット</p>
           <p class="line-value">{{ selectedTicket?.name || '参加チケット' }}</p>
         </div>
-        <span class="price-chip price-chip--ghost">{{ detail.priceText }}</span>
       </article>
 
       <p v-if="registrationUnavailableReason" class="ios-notice">
@@ -174,12 +173,14 @@ import {
 } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
 const { preferredLangs } = useLocale();
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
@@ -473,13 +474,12 @@ const inputType = (type: string) => {
   }
 };
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    weekday: 'short',
-    hour: '2-digit',
-  });
+const formatDate = (value: string) => {
+  const d = new Date(value);
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()}(${wd}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 </script>
 
 <style scoped>

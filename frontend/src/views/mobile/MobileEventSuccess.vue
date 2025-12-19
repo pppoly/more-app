@@ -1,6 +1,6 @@
 <template>
   <div class="success-page">
-    <ConsoleTopBar class="topbar" titleKey="mobile.eventSuccess.title" @back="router.back()" />
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventSuccess.title" @back="router.back()" />
     <div class="content">
       <div class="hero">
         <div class="hero-icon" aria-hidden="true">
@@ -30,13 +30,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 onMounted(() => {
   // 清理成功页数据，若无来源则回到列表

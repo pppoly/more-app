@@ -95,7 +95,9 @@ export class MeService {
       const coverImageUrl = buildAssetUrl(galleries[0]?.imageUrl);
       const paymentStatusFromPayment = registration?.payment?.status;
       const derivedPaymentStatus =
-        (rest.amount ?? 0) === 0
+        rest.status === 'paid'
+          ? 'paid'
+          : (rest.amount ?? 0) === 0
           ? 'paid'
           : rest.paymentStatus === 'paid'
             ? 'paid'

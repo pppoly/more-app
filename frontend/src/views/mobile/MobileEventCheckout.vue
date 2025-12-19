@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-pay-confirm">
-    <ConsoleTopBar class="topbar" titleKey="mobile.eventCheckout.title" @back="goBack" />
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventCheckout.title" @back="goBack" />
     <section v-if="loading" class="state-card">読み込み中…</section>
     <section v-else-if="error" class="state-card state-card--error">
       {{ error }}
@@ -35,12 +35,14 @@ import { useAuth } from '../../composables/useAuth';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
 const { preferredLangs } = useLocale();
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
@@ -174,13 +176,12 @@ const goBack = () => {
   router.back();
 };
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    weekday: 'short',
-    hour: '2-digit',
-  });
+const formatDate = (value: string) => {
+  const d = new Date(value);
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()}(${wd}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 </script>
 
 <style scoped>

@@ -2,11 +2,6 @@
   <div class="my-events-page">
     <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイイベント" @back="goBack" />
     <header class="page-header">
-      <div class="page-header__text">
-        <p class="page-eyebrow">マイイベント</p>
-        <h1>参加・チケット・支払いの確認ページ</h1>
-        <p class="page-subtext">申込状況や支払い、QR をここでまとめて確認できます。下のフィルターで状態を切り替えられます。</p>
-      </div>
       <div class="segmented-control" role="tablist">
         <button
           v-for="tab in filterTabs"
@@ -284,6 +279,7 @@ const phaseLabel = (item: MyEventItem) => {
 };
 
 const stateSentence = (item: MyEventItem) => {
+  if (item.status === 'cancel_requested') return 'キャンセル申請中です。主催者の確認をお待ちください。';
   if (item.status === 'cancelled') return '参加はキャンセルされました';
   if (item.status === 'rejected') return '申込が却下されました';
   if (item.status === 'pending_refund' || item.status === 'refunded') return '返金処理中です';
@@ -332,7 +328,7 @@ const emptyStateMessage = computed(() => {
   return '気になるイベントを探してみましょう。';
 });
 
-const showBanner = (type: 'success' | 'error', message: string) => {
+const showBanner = (type: 'success' | 'error' | 'info', message: string) => {
   banner.value = { type, message };
   window.setTimeout(() => {
     banner.value = null;
@@ -385,11 +381,16 @@ const cancelRegistration = async (item: MyEventItem) => {
   if (!sure) return;
   cancelingId.value = item.registrationId;
   try {
-    await cancelMyRegistration(item.registrationId);
+    const result = await cancelMyRegistration(item.registrationId);
+    const nextStatus = result?.status || 'cancelled';
     events.value = events.value.map((event) =>
-      event.registrationId === item.registrationId ? { ...event, status: 'cancelled' } : event,
+      event.registrationId === item.registrationId ? { ...event, status: nextStatus } : event,
     );
-    showBanner('success', 'キャンセルしました。');
+    if (nextStatus === 'cancel_requested') {
+      showBanner('info', 'キャンセル申請を受け付けました。有料イベントは主催者確認後に処理されます。');
+    } else {
+      showBanner('success', 'キャンセルしました。');
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'キャンセルに失敗しました。しばらくして再試行してください。';
     showBanner('error', message);
@@ -401,7 +402,7 @@ const cancelRegistration = async (item: MyEventItem) => {
 const canCancel = (item: MyEventItem) => {
   if (isVoidTicket(item)) return false;
   if (!isUpcoming(item)) return false;
-  return !['refunded', 'pending_refund', 'cancelled', 'rejected'].includes(item.status);
+  return !['refunded', 'pending_refund', 'cancelled', 'rejected', 'cancel_requested'].includes(item.status);
 };
 
 const goBack = () => {
@@ -557,6 +558,11 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .feedback--error {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.feedback--info {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .ticket-card-wrapper {
