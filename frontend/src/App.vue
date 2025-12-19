@@ -12,6 +12,18 @@
     <LiffOpenPrompt />
     <LiffStatusBadge />
     <LiffDebugPanel :visible="debugParam" />
+    <LoginRequiredSheet
+      :visible="authSheets.state.login.visible"
+      :pending-action="authSheets.state.login.pendingAction"
+      @login="authSheets.goLogin"
+      @close="authSheets.hideLoginSheet"
+    />
+    <ForbiddenSheet
+      :visible="authSheets.state.forbidden.visible"
+      :reason="authSheets.state.forbidden.reason"
+      @primary="onForbiddenPrimary"
+      @close="authSheets.hideForbiddenSheet"
+    />
     <button
       v-if="showLiffOpenButton"
       type="button"
@@ -64,7 +76,7 @@
       </AppShell>
     </template>
     <template v-else>
-      <header v-if="!showBrandBar" class="app-header">
+      <header v-if="!showBrandBar && !hideDesktopNav" class="app-header">
         <div class="brand">
           <h1>SOCIALMORE</h1>
           <nav>
@@ -139,6 +151,9 @@ import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
 import LineRedirectOverlay from './components/common/LineRedirectOverlay.vue';
 import LiffDebugPanel from './components/common/LiffDebugPanel.vue';
+import LoginRequiredSheet from './components/auth/LoginRequiredSheet.vue';
+import ForbiddenSheet from './components/auth/ForbiddenSheet.vue';
+import { useAuthSheets, injectAuthSheetsContext } from './composables/useAuthSheets';
 
 const { user, initializing, logout, loginWithLiffProfile, needsLiffOpen } = useAuth();
 const isMobile = ref(false);
@@ -159,12 +174,15 @@ const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
 const brandBarForRoute = computed(() => showBrandBar.value && isRootNavRoute.value);
 const hideLegacyHeader = computed(() => isLiffClientMode.value || showBrandBar.value);
+const hideDesktopNav = computed(() => Boolean(currentRoute.meta?.hideDesktopNav));
 const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
 const router = useRouter();
 const currentRoute = useRoute();
+injectAuthSheetsContext(router, currentRoute);
 const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
+const authSheets = useAuthSheets();
 const keepAliveRoutes = ['MobileEvents'];
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
@@ -279,6 +297,14 @@ onUnmounted(() => {
 const goToLogin = () => {
   const redirect = currentRoute.fullPath || '/';
   router.push({ name: 'auth-login', query: { redirect } });
+};
+
+const onForbiddenPrimary = () => {
+  if (authSheets.state.forbidden.reason === 'NOT_ORGANIZER') {
+    authSheets.goOrganizerApply();
+    return;
+  }
+  authSheets.hideForbiddenSheet();
 };
 
 const openInLine = () => {

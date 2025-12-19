@@ -18,9 +18,7 @@ export class MeService {
         userId,
       },
       orderBy: {
-        event: {
-          startTime: 'asc',
-        },
+        createdAt: 'desc',
       },
       select: {
         id: true,
@@ -70,17 +68,32 @@ export class MeService {
             },
           },
         },
+        lesson: {
+          select: {
+            id: true,
+            startAt: true,
+            endAt: true,
+            status: true,
+            class: {
+              select: {
+                id: true,
+                title: true,
+                locationName: true,
+                community: {
+                  select: { id: true, name: true, slug: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
     return registrations.map((registration) => {
-      const { event, ...rest } = registration;
-      const galleries = (event as any)?.galleries ?? [];
+      const { event, lesson, ...rest } = registration as any;
+      const galleries = event?.galleries ?? [];
       const coverImageUrl = buildAssetUrl(galleries[0]?.imageUrl);
-      const { galleries: _omit, ...eventData } = event as typeof event & {
-        galleries?: { imageUrl: string | null }[];
-      };
-      const paymentStatusFromPayment = (registration as any)?.payment?.status;
+      const paymentStatusFromPayment = registration?.payment?.status;
       const derivedPaymentStatus =
         (rest.amount ?? 0) === 0
           ? 'paid'
@@ -100,11 +113,23 @@ export class MeService {
         amount: rest.amount,
         attended: rest.attended,
         noShow: rest.noShow,
-        refundRequest: (rest as any)?.refundRequest ?? null,
-        event: {
-          ...eventData,
-          coverImageUrl,
-        },
+        refundRequest: rest?.refundRequest ?? null,
+        event: event
+          ? {
+              ...event,
+              coverImageUrl,
+            }
+          : null,
+        lesson: lesson
+          ? {
+              ...lesson,
+              class: lesson.class
+                ? {
+                    ...lesson.class,
+                  }
+                : null,
+            }
+          : null,
       };
     });
   }
@@ -189,7 +214,7 @@ export class MeService {
       throw new NotFoundException('キャンセル可能な申込が見つかりません');
     }
 
-    if (new Date(registration.event.startTime) <= new Date()) {
+    if (registration.event && new Date(registration.event.startTime) <= new Date()) {
       throw new BadRequestException('イベント開始後はキャンセルできません');
     }
 

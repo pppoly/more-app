@@ -8,6 +8,8 @@ import type {
   AiCommunityUsage,
   CommunityAnalytics,
   CommunityPortal,
+  ClassSummary,
+  ClassDetail,
   ConsoleEventAssistantLog,
   EventAssistantDashboard,
   ConsoleCommunityDetail,
@@ -91,6 +93,16 @@ function normalizeError(error: any) {
   reportError('http:request_failed', { url, status, message });
   if (status === 401 && unauthorizedHandler) {
     unauthorizedHandler({ status, url });
+  }
+  if (status === 403) {
+    try {
+      const { useAuthSheets } = require('../composables/useAuthSheets');
+      const sheets = useAuthSheets();
+      const reason = error?.response?.data?.error || 'FORBIDDEN';
+      sheets.showForbiddenSheet({ reason, returnTo: undefined });
+    } catch {
+      // ignore sheet errors in non-UI contexts
+    }
   }
   const wrapped = new Error(message);
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -191,6 +203,24 @@ export async function fetchCommunityBySlug(slug: string): Promise<CommunityPorta
 
 export async function fetchCommunityFollowStatus(communityId: string) {
   const { data } = await apiClient.get<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
+  return data;
+}
+
+export async function fetchCommunityClasses(communityId: string): Promise<ClassSummary[]> {
+  const { data } = await apiClient.get<ClassSummary[]>(`/communities/${communityId}/classes`);
+  return data;
+}
+
+export async function fetchClassDetail(classId: string): Promise<ClassDetail> {
+  const { data } = await apiClient.get<ClassDetail>(`/classes/${classId}`);
+  return data;
+}
+
+export async function createClassRegistration(classId: string, lessonId: string) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string; paymentStatus: string; paymentRequired: boolean; amount: number }>(
+    `/classes/${classId}/registrations`,
+    { lessonId },
+  );
   return data;
 }
 
@@ -434,6 +464,64 @@ export async function fetchManagedCommunities(): Promise<ManagedCommunity[]> {
 
 export async function fetchCommunityAnalytics(communityId: string): Promise<CommunityAnalytics> {
   const { data } = await apiClient.get<CommunityAnalytics>(`/console/communities/${communityId}/analytics`);
+  return data;
+}
+
+export async function fetchConsoleClasses(): Promise<ClassSummary[]> {
+  const { data } = await apiClient.get<ClassSummary[]>('/console/classes');
+  return data;
+}
+
+export async function createConsoleClass(payload: {
+  title: string;
+  description?: string;
+  locationName?: string;
+  priceYenPerLesson: number;
+  defaultCapacity?: number | null;
+}): Promise<ClassSummary> {
+  const { data } = await apiClient.post<ClassSummary>('/console/classes', payload);
+  return data;
+}
+
+export async function updateConsoleClass(classId: string, payload: Partial<{
+  title: string;
+  description?: string | null;
+  locationName?: string | null;
+  priceYenPerLesson?: number;
+  defaultCapacity?: number | null;
+  status?: string;
+}>): Promise<ClassSummary> {
+  const { data } = await apiClient.patch<ClassSummary>(`/console/classes/${classId}`, payload);
+  return data;
+}
+
+export async function deleteConsoleClass(classId: string) {
+  const { data } = await apiClient.delete(`/console/classes/${classId}`);
+  return data;
+}
+
+export async function batchCreateLessons(classId: string, lessons: Array<{ startAt: string; endAt?: string; capacity?: number | null; }>) {
+  const { data } = await apiClient.post(`/console/classes/${classId}/lessons/batch`, { lessons });
+  return data;
+}
+
+export async function cancelLesson(lessonId: string) {
+  const { data } = await apiClient.patch(`/console/lessons/${lessonId}/cancel`, {});
+  return data;
+}
+
+export async function deleteLesson(lessonId: string) {
+  const { data } = await apiClient.delete(`/console/lessons/${lessonId}`);
+  return data;
+}
+
+export async function fetchLessonRegistrations(lessonId: string) {
+  const { data } = await apiClient.get(`/console/lessons/${lessonId}/registrations`);
+  return data;
+}
+
+export async function fetchLessonPaymentSummary(lessonId: string) {
+  const { data } = await apiClient.get(`/console/lessons/${lessonId}/payments/summary`);
   return data;
 }
 

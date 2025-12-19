@@ -151,6 +151,31 @@ export interface CommunityPortal {
   };
 }
 
+export interface Lesson {
+  id: string;
+  classId: string;
+  startAt: string;
+  endAt?: string | null;
+  capacity?: number | null;
+  status: string;
+}
+
+export interface ClassSummary {
+  id: string;
+  communityId: string;
+  title: string;
+  description?: string | null;
+  locationName?: string | null;
+  priceYenPerLesson: number;
+  defaultCapacity?: number | null;
+  status: string;
+  nextLesson?: Lesson | null;
+}
+
+export interface ClassDetail extends ClassSummary {
+  upcomingLessons: Lesson[];
+}
+
 export interface DevLoginResponse {
   accessToken: string;
   user: UserProfile;
@@ -193,7 +218,19 @@ export interface MyEventItem {
     refundedAmount?: number | null;
     reason?: string | null;
   } | null;
-  event: EventWithCommunity;
+  event: EventWithCommunity | null;
+  lesson?: {
+    id: string;
+    startAt: string;
+    endAt?: string | null;
+    status: string;
+    class?: {
+      id: string;
+      title: string | LocalizedContent;
+      locationName?: string | null;
+      community?: CommunitySummary;
+    } | null;
+  } | null;
 }
 
 export interface MockPaymentResponse {

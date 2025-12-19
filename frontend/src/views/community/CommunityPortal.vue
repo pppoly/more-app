@@ -32,6 +32,19 @@
         <div class="info-tags" v-if="heroLabels.length">
           <span v-for="label in heroLabels" :key="label">#{{ label }}</span>
         </div>
+        <div v-if="showClassesEntry" class="portal-actions">
+          <button class="portal-action-btn" type="button" @click="goClasses">
+            <div class="portal-action__icon">
+              <span class="i-lucide-graduation-cap"></span>
+            </div>
+            <div class="portal-action__body">
+              <p class="portal-action__title">教室 / Classes</p>
+              <p class="portal-action__desc">毎週の教室・講座の一覧</p>
+            </div>
+            <span v-if="classesCount !== null" class="badge">{{ classesCount }}</span>
+            <span class="i-lucide-chevron-right"></span>
+          </button>
+        </div>
         <button class="follow-btn" :class="{ 'is-following': following }" type="button" :disabled="followBusy" @click="toggleFollow">
           {{ following ? 'フォロー中' : 'フォロー' }}
         </button>
@@ -99,7 +112,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchCommunityBySlug, fetchCommunityFollowStatus, followCommunity, unfollowCommunity } from '../../api/client';
+import {
+  fetchCommunityBySlug,
+  fetchCommunityClasses,
+  fetchCommunityFollowStatus,
+  followCommunity,
+  unfollowCommunity,
+} from '../../api/client';
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
@@ -117,6 +136,7 @@ const slug = computed(() => route.params.slug as string);
 const community = ref<CommunityPortal | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const classesCount = ref<number | null>(null);
 const resourceConfig = useResourceConfig();
 const { slotMap } = resourceConfig;
 const toast = useToast();
@@ -164,6 +184,16 @@ const loadCommunity = async (value: string) => {
     const data = await fetchCommunityBySlug(value);
     community.value = data;
     following.value = Boolean(data.isFollowing);
+    classesCount.value = null;
+    if (data?.id) {
+      try {
+        const cls = await fetchCommunityClasses(data.id);
+        classesCount.value = cls.length;
+      } catch (err) {
+        classesCount.value = 0;
+        console.warn('load classes failed', err);
+      }
+    }
   } catch (err) {
     error.value = 'コミュニティが存在しないか、非公開です';
   } finally {
@@ -333,6 +363,12 @@ const loadFollow = async () => {
     console.warn('load follow failed', err);
   }
 };
+
+const goClasses = () => {
+  router.push({ name: 'community-classes', params: { slug: route.params.slug } });
+};
+
+const showClassesEntry = computed(() => (classesCount.value ?? 0) > 0);
 
 watch(
   () => community.value?.id,
@@ -591,6 +627,42 @@ const toggleFollow = async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.portal-actions {
+  margin: 4px 0 8px;
+}
+.portal-action-btn {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-weight: 700;
+}
+.portal-action__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #eef2ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4338ca;
+  font-size: 18px;
+}
+.portal-action__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.portal-action__desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 .community-name {
   margin: 0;

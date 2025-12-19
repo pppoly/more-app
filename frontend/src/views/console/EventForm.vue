@@ -3,7 +3,7 @@
       class="console-section"
       :class="{ 'console-section--mobile': isMobileLayout, 'sheet-open': sheetOpen }"
     >
-    <ConsoleTopBar v-if="isMobileLayout" titleKey="console.eventForm.title" @back="goBack" />
+    <ConsoleTopBar v-if="isMobileLayout && !isLiffClientMode" titleKey="console.eventForm.title" @back="goBack" />
     <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
@@ -732,6 +732,7 @@ interface BuilderField extends RegistrationFormField {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineBrowser());
 const goBack = () => router.back();
 const showLocationPicker = ref(false);
 const mapLoading = ref(false);

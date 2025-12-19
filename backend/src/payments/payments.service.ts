@@ -224,12 +224,13 @@ export class PaymentsService {
   }
 
   async createMockPayment(userId: string, registrationId: string) {
-    const registration = await this.prisma.eventRegistration.findUnique({
+    const registration = (await this.prisma.eventRegistration.findUnique({
       where: { id: registrationId },
       select: {
         id: true,
         userId: true,
         eventId: true,
+        lessonId: true,
         amount: true,
         paymentStatus: true,
         event: {
@@ -237,8 +238,13 @@ export class PaymentsService {
             communityId: true,
           },
         },
+        lesson: {
+          select: {
+            class: { select: { communityId: true } },
+          },
+        },
       },
-    });
+    })) as any;
 
     if (!registration) {
       throw new NotFoundException('Registration not found');
@@ -257,8 +263,9 @@ export class PaymentsService {
     const payment = await this.prisma.payment.create({
       data: {
         userId,
-        communityId: registration.event?.communityId,
-        eventId: registration.eventId,
+        communityId: registration.event?.communityId ?? registration.lesson?.class.communityId,
+        eventId: registration.eventId ?? null,
+        lessonId: registration.lessonId ?? undefined,
         registrationId,
         amount,
         platformFee: 0,
@@ -292,7 +299,7 @@ export class PaymentsService {
   }
 
   async createStripeCheckout(userId: string, registrationId: string) {
-    const registration = await this.prisma.eventRegistration.findUnique({
+    const registration = (await this.prisma.eventRegistration.findUnique({
       where: { id: registrationId },
       include: {
         event: {
@@ -300,8 +307,13 @@ export class PaymentsService {
             community: true,
           },
         },
+        lesson: {
+          include: {
+            class: { select: { community: true, title: true } },
+          },
+        },
       },
-    });
+    })) as any;
 
     if (!registration) {
       throw new NotFoundException('Registration not found');
@@ -320,14 +332,14 @@ export class PaymentsService {
       throw new BadRequestException('有料イベントではありません');
     }
 
-    const event = registration.event;
-    if (!event) {
-      throw new NotFoundException('Event not found');
-    }
-
-    const community = event.community;
+    const event = (registration as any).event;
+    const lesson = (registration as any).lesson;
+    const community = event?.community ?? lesson?.class?.community;
     if (!community) {
       throw new NotFoundException('Community not found');
+    }
+    if (!event && !lesson) {
+      throw new NotFoundException('Event or lesson not found');
     }
 
     if (!community.stripeAccountId || !community.stripeAccountOnboarded) {
@@ -342,7 +354,8 @@ export class PaymentsService {
     const percent = planFee.percent;
     const fixed = planFee.fixed;
     const platformFee = Math.min(amount, Math.round((amount * percent) / 100) + fixed);
-    const eventTitle = this.getLocalizedText(event.title) || 'MORE Event';
+    const titleSource = event ? event.title : lesson?.class.title;
+    const eventTitle = this.getLocalizedText(titleSource) || 'MORE Class';
 
     const session = await this.stripeService.client.checkout.sessions.create({
       mode: 'payment',
@@ -359,7 +372,9 @@ export class PaymentsService {
       ],
       metadata: {
         registrationId,
-        eventId: event.id,
+        eventId: event?.id,
+        lessonId: lesson?.id,
+        classId: lesson?.classId,
         communityId: community.id,
         userId,
         planId: community.pricingPlanId ?? 'free',
@@ -385,7 +400,8 @@ export class PaymentsService {
       update: {
         userId,
         communityId: community.id,
-        eventId: event.id,
+        eventId: event?.id,
+        lessonId: lesson?.id,
         amount,
         platformFee,
         feePercent: percent,
@@ -397,7 +413,8 @@ export class PaymentsService {
       create: {
         userId,
         communityId: community.id,
-        eventId: event.id,
+        eventId: event?.id,
+        lessonId: lesson?.id,
         registrationId,
         amount,
         platformFee,
@@ -439,30 +456,30 @@ export class PaymentsService {
     switch (event.type) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded':
-        await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        await this.handleCheckoutSessionCompleted(event.data.object);
         break;
       case 'checkout.session.expired':
-        await this.handleCheckoutSessionExpired(event.data.object as Stripe.Checkout.Session);
+        await this.handleCheckoutSessionExpired(event.data.object);
         break;
       case 'invoice.payment_succeeded':
-        await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        await this.handleInvoicePaymentSucceeded(event.data.object);
         break;
       case 'invoice.payment_failed':
-        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        await this.handleInvoicePaymentFailed(event.data.object);
         break;
       case 'charge.dispute.created':
       case 'charge.dispute.closed':
-        await this.handleChargeDispute(event.type, event.data.object as Stripe.Dispute);
+        await this.handleChargeDispute(event.type, event.data.object);
         break;
       case 'payment_intent.payment_failed':
-        await this.handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+        await this.handlePaymentIntentFailed(event.data.object);
         break;
       case 'customer.subscription.deleted':
       case 'customer.subscription.updated':
-        await this.handleSubscriptionLifecycle(event.data.object as Stripe.Subscription);
+        await this.handleSubscriptionLifecycle(event.data.object);
         break;
       case 'charge.refunded':
-        await this.handleChargeRefunded(event.data.object as Stripe.Charge);
+        await this.handleChargeRefunded(event.data.object);
         break;
       default:
         this.logger.debug(`Unhandled Stripe event: ${event.type}`);
@@ -485,10 +502,18 @@ export class PaymentsService {
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
-    if (!payment.eventId) {
-      throw new BadRequestException('イベント情報が不足しています');
+    if (payment.eventId) {
+      await this.permissions.assertEventManager(userId, payment.eventId);
+    } else if (payment.lessonId) {
+      const lesson = await this.prisma.lesson.findUnique({
+        where: { id: payment.lessonId },
+        include: { class: true },
+      });
+      if (!lesson) throw new NotFoundException('Lesson not found');
+      await this.permissions.assertCommunityManager(userId, lesson.class.communityId);
+    } else {
+      throw new BadRequestException('決済の紐付け情報が不足しています');
     }
-    await this.permissions.assertEventManager(userId, payment.eventId);
     if (payment.status !== 'paid') {
       throw new BadRequestException('この支払いは返金できません');
     }
@@ -523,6 +548,7 @@ export class PaymentsService {
       metadata: {
         paymentId,
         eventId: payment.eventId,
+        lessonId: payment.lessonId,
         requestedBy: userId,
         reason: reason ?? '',
       },
@@ -585,6 +611,7 @@ export class PaymentsService {
         status: 'paid',
         stripePaymentIntentId: paymentIntentId ?? payment.stripePaymentIntentId,
         stripeCheckoutSessionId: session.id,
+        lessonId: payment.lessonId ?? (session.metadata?.lessonId),
       },
     });
 

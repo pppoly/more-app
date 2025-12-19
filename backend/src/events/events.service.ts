@@ -382,9 +382,20 @@ export class EventsService {
       paymentStatus: registration.paymentStatus,
       paymentRequired: !isFree,
       amount: registration.amount,
-      eventId: registration.event.id,
+      eventId: registration.event?.id ?? eventId,
       ticketTypeId: registration.ticketTypeId,
-      event: registration.event,
+      event: registration.event ?? {
+        id: eventId,
+        title: event.title,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        locationText: event.locationText,
+        community: {
+          id: event.communityId,
+          name: this.getLocalizedText(event.title) || '',
+          slug: '',
+        },
+      },
     };
   }
 

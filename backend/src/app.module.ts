@@ -22,6 +22,7 @@ import { AdminCommunityTagsController } from './admin/admin-community-tags.contr
 import { AssetModule } from './asset/asset.module';
 import { BullModule } from '@nestjs/bullmq';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { ClassesModule } from './classes/classes.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     I18nModule,
     AssetModule,
     AnalyticsModule,
+    ClassesModule,
   ],
   controllers: [HealthController, HelloController, AdminPaymentsController, AdminPaymentsOpsController, AdminUsersController, AdminCommunitiesController, AdminEventsListController, AdminCommunityTagsController],
   providers: [],

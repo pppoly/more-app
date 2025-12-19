@@ -38,6 +38,54 @@ async function bootstrap() {
   const apiUploadsPrefix = buildPrefixedPath(globalPrefix, process.env.UPLOADS_HTTP_PREFIX || 'uploads');
   app.useStaticAssets(UPLOAD_ROOT, { prefix: apiUploadsPrefix });
 
+  // Desktop redirect to promo in test environment
+  const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+  const enableDesktopPromoEnv =
+    process.env.DESKTOP_PROMO === '1' || envLabel === 'test' || envLabel === 'testing' || envLabel === 'staging';
+  app.use((req: any, res: any, next: any) => {
+    if (req.method !== 'GET') return next();
+    const accept = (req.headers.accept as string | undefined) || '';
+    if (!accept.includes('text/html')) return next();
+
+    const host = (req.headers.host as string | undefined)?.toLowerCase() || '';
+    const shouldPromo = enableDesktopPromoEnv || host.includes('test.');
+    if (!shouldPromo) return next();
+
+    const path = req.path || req.originalUrl || '';
+    const allowPrefixes = [
+      '/api/',
+      '/assets/',
+      '/uploads/',
+      '/favicon',
+      '/manifest',
+      '/auth/',
+      '/liff',
+      '/callback',
+      '/oauth',
+      '/promo',
+      '/health',
+      '/metrics',
+    ];
+    if (
+      allowPrefixes.some((p) => path.startsWith(p)) ||
+      path.endsWith('.js') ||
+      path.endsWith('.css') ||
+      path.endsWith('.map')
+    ) {
+      return next();
+    }
+
+    const ua = (req.headers['user-agent'] as string | undefined) || '';
+    const isMobile = /Mobile|Android|iPhone|iPod|iPad/i.test(ua);
+    if (!ua) return next(); // no UA, allow
+    if (isMobile) return next();
+
+    if (path.startsWith('/promo')) return next();
+    const original = req.originalUrl || req.url || path;
+    const from = encodeURIComponent(original);
+    return res.redirect(302, `/promo?from=${from}`);
+  });
+
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || '0.0.0.0';
   await app.listen(port, host);

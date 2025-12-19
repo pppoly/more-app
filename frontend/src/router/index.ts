@@ -23,6 +23,7 @@ import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
+import { useAuthSheets } from '../composables/useAuthSheets';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -160,6 +161,21 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/promo',
+    name: 'promo',
+    component: () => import('../views/promo/PromoPage.vue'),
+    meta: {
+      title: 'ご案内',
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: 'プロモページ',
+      desktopAllowed: true,
+      hideDesktopNav: true,
+    },
+  },
+  {
     path: '/auth/setup',
     name: 'auth-setup',
     component: () => import('../views/auth/SetupProfile.vue'),
@@ -272,6 +288,60 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           flushContent: true,
         },
+      },
+      {
+        path: 'classes',
+        name: 'ConsoleMobileClasses',
+        component: () => import('../views/console/mobile/ConsoleClassesListMobile.vue'),
+        meta: {
+          title: '教室管理',
+          hideShellHeader: true,
+          hideTabbar: true,
+          layout: 'console-mobile',
+          flushContent: true,
+          devPageName: 'Console-教室列表',
+        },
+      },
+      {
+        path: 'classes/new',
+        name: 'ConsoleMobileClassForm',
+        component: () => import('../views/console/mobile/ConsoleClassFormMobile.vue'),
+        meta: {
+          title: '教室を作成',
+          hideShellHeader: true,
+          hideTabbar: true,
+          layout: 'console-mobile',
+          flushContent: true,
+          devPageName: 'Console-教室表单',
+        },
+      },
+      {
+        path: 'classes/:classId/lessons',
+        name: 'ConsoleMobileLessons',
+        component: () => import('../views/console/mobile/ConsoleLessonsMobile.vue'),
+        meta: {
+          title: 'レッスン管理',
+          hideShellHeader: true,
+          hideTabbar: true,
+          layout: 'console-mobile',
+          flushContent: true,
+          devPageName: 'Console-レッスン管理',
+        },
+        props: true,
+      },
+      {
+        path: 'lessons/:lessonId/registrations',
+        name: 'ConsoleMobileLessonRegistrations',
+        component: () => import('../views/console/mobile/ConsoleLessonRegistrationsMobile.vue'),
+        meta: {
+          title: '申込一覧',
+          hideShellHeader: true,
+          hideTabbar: true,
+          layout: 'console-mobile',
+          flushContent: true,
+          devPageName: 'Console-レッスン申込',
+        },
+        props: true,
       },
       {
         path: 'communities/new',
@@ -689,6 +759,34 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/community/:slug/classes',
+    name: 'community-classes',
+    component: () => import('../views/community/CommunityClassesList.vue'),
+    meta: {
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      mobileOnly: true,
+      flushContent: true,
+      devPageName: '社区教室列表',
+    },
+    props: true,
+  },
+  {
+    path: '/community/:slug/classes/:classId',
+    name: 'community-class-detail',
+    component: () => import('../views/community/ClassDetail.vue'),
+    meta: {
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      mobileOnly: true,
+      flushContent: true,
+      devPageName: '社区教室详情',
+    },
+    props: true,
+  },
+  {
     path: '/me/events',
     name: 'my-events',
     component: MyEvents,
@@ -788,7 +886,13 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const auth = useAuth();
+  const sheets = useAuthSheets();
   const mobile = isMobile();
+  const isTestHost = typeof window !== 'undefined' && window.location.hostname.includes('test.socialmore.jp');
+  const isTestMode = import.meta.env.MODE === 'test' || isTestHost;
+  if (isTestMode && !mobile && to.path !== '/promo' && !to.meta?.desktopAllowed) {
+    return next({ path: '/promo', query: { from: to.fullPath } });
+  }
 
   if (mobile && to.meta.desktopOnly) {
     return next({ name: 'events' });
@@ -812,22 +916,40 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.meta.requiresAuth && !auth.user.value) {
-    return next({ name: 'organizer-apply' });
+    const isTest =
+      import.meta.env.MODE === 'test' ||
+      (typeof window !== 'undefined' && window.location.hostname.includes('test.socialmore.jp'));
+    const isMobileUA = mobile;
+    const promoCandidate = to.path !== '/promo';
+    if (isTest && !isMobileUA && promoCandidate) {
+      return next({ path: '/promo', query: { from: to.fullPath } });
+    }
+    const showed = sheets.showLoginSheet({ returnTo: to.fullPath });
+    if (showed) return next(false);
+    return next({ name: 'auth-login', query: { redirect: to.fullPath } });
   }
 
   if (to.meta.requiresAdmin && !auth.user.value?.isAdmin) {
+    const showed = sheets.showForbiddenSheet({ reason: 'NOT_ADMIN', returnTo: to.fullPath });
+    if (showed) return next(false);
     return next({ name: 'home' });
   }
 
   if (to.meta.requiresOrganizer && !auth.user.value?.isOrganizer && !auth.user.value?.isAdmin) {
-    return next({ name: 'organizer-apply' });
+    const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
+    if (showed) return next(false);
+    return next({ name: 'organizer-apply', query: { redirect: to.fullPath } });
   }
 
   return next();
 });
 
 router.afterEach((to, from) => {
-  if (import.meta.env.DEV || import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'test') {
+  const enableDebug = () => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('router_debug') === '1';
+  };
+  if (import.meta.env.DEV && enableDebug()) {
     // eslint-disable-next-line no-console
     console.log('[router] nav', { from: from.fullPath, to: to.fullPath, name: to.name });
   }

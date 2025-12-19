@@ -60,6 +60,7 @@ model Community {
   pricingPlan    PricingPlan?       @relation(fields: [pricingPlanId], references: [id])
   members        CommunityMember[]
   events         Event[]
+  classes        Class[]
   payments       Payment[]
   aiEventDraftLogs AiEventDraftLog[]
 }

@@ -273,7 +273,18 @@ export class ConsoleEventsService {
       throw new NotFoundException('Refund request not found');
     }
     const registration = request.registration;
-    await this.permissions.assertEventManager(userId, registration.eventId);
+    if (registration.eventId) {
+      await this.permissions.assertEventManager(userId, registration.eventId);
+    } else if (registration.lessonId) {
+      const lesson = await this.prisma.lesson.findUnique({
+        where: { id: registration.lessonId },
+        include: { class: true },
+      });
+      if (!lesson) throw new NotFoundException('Lesson not found');
+      await this.permissions.assertCommunityManager(userId, lesson.class.communityId);
+    } else {
+      throw new BadRequestException('紐付けイベントがありません');
+    }
 
     if (['processing', 'completed', 'rejected'].includes(request.status)) {
       throw new ConflictException('Refund request already processed');

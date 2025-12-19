@@ -596,7 +596,7 @@ export class AiService {
 
     const formatBreakdown = <T extends { _count: { _all: number } }>(items: T[], key: keyof T) =>
       items.map((item) => ({
-        label: ((item[key] as string | null) ?? '未标注') as string,
+        label: ((item[key] as string | null) ?? '未标注'),
         count: item._count._all,
       }));
 

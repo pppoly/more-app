@@ -17,6 +17,7 @@ import { reportError } from '../utils/reporting';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import { trackEvent } from '../utils/analytics';
 import { isLineBrowser } from '../utils/device';
+import { useAuthSheets } from './useAuthSheets';
 
 interface AuthState {
   user: UserProfile | null;
@@ -49,6 +50,7 @@ const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
+const authSheets = useAuthSheets();
 const liffAuthHardStopped = ref(false);
 
 function sanitizeLiffState(raw: string | null): string {
@@ -392,7 +394,8 @@ function handleUnauthorized(context?: { status?: number; url?: string }) {
       });
     return;
   }
-  if (typeof window !== 'undefined') {
+  const showed = authSheets.showLoginSheet();
+  if (!showed && typeof window !== 'undefined') {
     const redirect = encodeURIComponent(window.location.pathname + window.location.search);
     const loginUrl = `/auth/login?redirect=${redirect}`;
     if (window.location.pathname !== '/auth/login') {
@@ -443,6 +446,7 @@ export function useAuth() {
       const response = await apiDevLogin(name, language);
       setToken(response.accessToken);
       state.user = normalizeUser(response.user);
+      authSheets.hideLoginSheet();
       applyUserLocale(state.user);
       consoleCommunityStore.loadCommunities(true).catch(() => undefined);
     } finally {

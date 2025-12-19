@@ -107,6 +107,15 @@
         </div>
         <p class="action-title">イベント管理</p>
       </button>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goClasses">
+        <div class="action-icon">
+          <span class="i-lucide-graduation-cap"></span>
+        </div>
+        <div class="action-copy">
+          <p class="action-title">教室管理</p>
+          <p class="action-sub">教室・講座を運営</p>
+        </div>
+      </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">
           <img :src="payoutIcon" alt="" loading="lazy" />
@@ -532,6 +541,10 @@ const goTicketScanner = () => {
 const goAllEvents = () => {
   if (!communityId.value) return;
   router.push({ name: 'ConsoleMobileCommunityEvents', params: { communityId: communityId.value } });
+};
+
+const goClasses = () => {
+  router.push({ name: 'ConsoleMobileClasses' });
 };
 
 const openManage = (eventId: string) => {
@@ -1156,6 +1169,16 @@ const normalizeLogoUrl = (raw?: string | null) => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.action-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.action-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .action-icon img {

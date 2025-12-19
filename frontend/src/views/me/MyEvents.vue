@@ -54,8 +54,8 @@
             </div>
             <div class="ticket-card__top">
               <div>
-                <p class="ticket-card__date">{{ formatDate(item.event.startTime) }}</p>
-                <p class="ticket-card__community">{{ item.event.community.name }}</p>
+                <p class="ticket-card__date">{{ formatDate(displayStart(item)) }}</p>
+                <p class="ticket-card__community">{{ displayCommunity(item) }}</p>
               </div>
           <div class="ticket-card__qr">
             <button
@@ -71,11 +71,11 @@
           </div>
         </div>
         <div class="ticket-card__body">
-          <h2 class="ticket-card__title">{{ titleFor(item.event) }}</h2>
-          <p class="ticket-card__meta">{{ item.event.locationText }}</p>
+          <h2 class="ticket-card__title">{{ displayTitle(item) }}</h2>
+          <p class="ticket-card__meta">{{ displayLocation(item) }}</p>
           <p class="ticket-card__state-line">{{ stateSentence(item) }}</p>
           <div class="ticket-card__badges">
-            <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item.event) }}</span>
+            <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item) }}</span>
             <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
             <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
             <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
@@ -173,12 +173,16 @@ onMounted(() => {
 const isVoidTicket = (item: MyEventItem) =>
   ['cancelled', 'refunded', 'pending_refund', 'rejected'].includes(item.status);
 
-const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && new Date(item.event.startTime) > new Date();
+const getStartTime = (item: MyEventItem) => {
+  if (item.lesson?.startAt) return new Date(item.lesson.startAt);
+  if (item.event?.startTime) return new Date(item.event.startTime);
+  return new Date(0);
+};
+
+const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && getStartTime(item) > new Date();
 
 const sortedEvents = computed(() =>
-  [...events.value].sort(
-    (a, b) => new Date(b.event.startTime).getTime() - new Date(a.event.startTime).getTime(),
-  ),
+  [...events.value].sort((a, b) => getStartTime(b).getTime() - getStartTime(a).getTime()),
 );
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
@@ -206,6 +210,17 @@ const filteredEvents = computed(() => {
   return sortedEvents.value.filter((item) => active.matcher(item));
 });
 
+const displayStart = (item: MyEventItem) => item.lesson?.startAt || item.event?.startTime || '';
+const displayCommunity = (item: MyEventItem) =>
+  item.lesson?.class?.community?.name || item.event?.community.name || '';
+const displayLocation = (item: MyEventItem) =>
+  item.lesson?.class?.locationName || item.event?.locationText || '';
+const displayTitle = (item: MyEventItem) => {
+  if (item.lesson?.class?.title) return getLocalizedText(item.lesson.class.title);
+  if (item.event) return getLocalizedText(item.event.title);
+  return 'クラス';
+};
+
 const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
 const statusLabel = (item: MyEventItem) => {
   const map: Record<string, string> = {
@@ -230,13 +245,15 @@ const statusClass = (item: MyEventItem) => {
 };
 
 const formatDate = (value: string) =>
-  new Date(value).toLocaleString('ja-JP', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  value
+    ? new Date(value).toLocaleString('ja-JP', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        weekday: 'short',
+      })
+    : '';
 
 const paymentLabel = (item: MyEventItem) => {
   if ((item.amount ?? 0) === 0) return '無料';
@@ -251,10 +268,16 @@ const paymentClass = (item: MyEventItem) => {
   return item.paymentStatus === 'paid' ? 'badge--paid' : 'badge--pending';
 };
 
-const phaseLabel = (event: MyEventItem['event']) => {
+const phaseLabel = (item: MyEventItem) => {
   const now = Date.now();
-  const start = new Date(event.startTime).getTime();
-  const end = event.endTime ? new Date(event.endTime).getTime() : start;
+  const startVal = displayStart(item);
+  if (!startVal) return '開催予定';
+  const start = new Date(startVal).getTime();
+  const end = item.lesson?.endAt
+    ? new Date(item.lesson.endAt).getTime()
+    : item.event?.endTime
+      ? new Date(item.event.endTime).getTime()
+      : start;
   if (now < start) return '開催前';
   if (now >= start && now <= end) return '開催中';
   return '開催終了';
@@ -395,11 +418,12 @@ const hashToIndex = (value: string, length: number) => {
 };
 
 const coverUrlFor = (item: MyEventItem) => {
-  if (item.event.coverImageUrl) return item.event.coverImageUrl;
+  if (item.event?.coverImageUrl) return item.event.coverImageUrl;
   const fallbacks = fallbackCoverImages.value.length
     ? fallbackCoverImages.value
     : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
-  const index = hashToIndex(item.event.id, fallbacks.length || 1);
+  const hashId = item.event?.id || item.lesson?.id || 'fallback';
+  const index = hashToIndex(hashId, fallbacks.length || 1);
   return fallbacks[index];
 };
 

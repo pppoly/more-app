@@ -134,7 +134,7 @@ export class CommunitiesService {
   private extractPortalConfig(description: any) {
     const defaultConfig = { theme: 'clean', layout: ['hero', 'about', 'upcoming', 'past', 'moments'] };
     if (description && typeof description === 'object' && description._portalConfig) {
-      const cfg = description._portalConfig as any;
+      const cfg = description._portalConfig;
       const theme = typeof cfg.theme === 'string' ? cfg.theme : defaultConfig.theme;
       const layout = Array.isArray(cfg.layout) && cfg.layout.length ? cfg.layout : defaultConfig.layout;
       return { theme, layout };
