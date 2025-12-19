@@ -109,7 +109,7 @@
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goClasses">
         <div class="action-icon">
-          <span class="i-lucide-graduation-cap"></span>
+          <img :src="classIcon" alt="class" loading="lazy" class="action-icon__img" />
         </div>
         <div class="action-copy">
           <p class="action-title">教室管理</p>
@@ -324,6 +324,7 @@ import { resolveAssetUrl } from '../../../utils/assetUrl';
 import payoutIcon from '../../../assets/account.svg';
 import checkIcon from '../../../assets/check.svg';
 import eventManageIcon from '../../../assets/enventmanagement.svg';
+import classIcon from '../../../assets/class.svg';
 import { isLineInAppBrowser } from '../../../utils/liff';
 // Inline SVG data URIs to avoid network requests and首屏闪现
 const defaultCommunityAvatar =

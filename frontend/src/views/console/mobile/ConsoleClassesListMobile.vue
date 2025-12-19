@@ -155,8 +155,12 @@ const displayDescription = (cls: any) => {
     typeof desc === 'string'
       ? desc
       : desc?.ja || desc?.['ja-JP'] || desc?.zh || desc?.['zh-CN'] || desc?.original || '';
-  if (!text || text.trim().length < 2) return '説明なし';
-  return text.trim();
+  if (text && text.trim().length > 0) {
+    const t = text.trim();
+    return t.length > 80 ? `${t.slice(0, 80)}…` : t;
+  }
+  if (cls.locationName) return cls.locationName;
+  return '説明なし';
 };
 </script>
 
