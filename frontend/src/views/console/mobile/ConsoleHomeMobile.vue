@@ -9,7 +9,7 @@
         <div class="sk-tile" v-for="n in 6" :key="`tile-${n}`"></div>
       </div>
     </div>
-    <section class="top-bar" :class="{ 'top-bar--empty': !hasCommunity }">
+    <section v-if="showTopBar" class="top-bar" :class="{ 'top-bar--empty': !hasCommunity }">
       <div class="top-main">
         <button
           class="avatar-btn"
@@ -315,6 +315,7 @@ import { resolveAssetUrl } from '../../../utils/assetUrl';
 import payoutIcon from '../../../assets/account.svg';
 import checkIcon from '../../../assets/check.svg';
 import eventManageIcon from '../../../assets/enventmanagement.svg';
+import { isLineInAppBrowser } from '../../../utils/liff';
 // Inline SVG data URIs to avoid network requests and首屏闪现
 const defaultCommunityAvatar =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='; // transparent pixel to avoid placeholder art
@@ -338,6 +339,7 @@ const copyPageSize = 10;
 const pickerLoading = ref(false);
 const pricingPlanId = ref<string | null>(null);
 const monthRevenueText = ref<string>('¥0');
+const showTopBar = computed(() => !isLineInAppBrowser());
 const heroLogoUrl = ref<string | null>(null);
 const heroLoading = ref(true);
 let logoRequestId = 0;

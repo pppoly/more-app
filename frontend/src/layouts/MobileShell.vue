@@ -104,6 +104,7 @@ import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
 import { APP_TARGET } from '../config';
+import { isLineInAppBrowser } from '../utils/liff';
 
 const props = defineProps<{
   forceHideHeader?: boolean;
@@ -125,7 +126,7 @@ const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 const contentTopPaddingStyle = computed(() => ({}));
-const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff');
+const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff' || isLineInAppBrowser());
 
 const tabIcons = {
   events: {
