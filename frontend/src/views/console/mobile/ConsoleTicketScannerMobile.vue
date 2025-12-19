@@ -81,6 +81,7 @@ import { checkinRegistration } from '../../../api/client';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { useRouter, useRoute } from 'vue-router';
 import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 
 type ScanState = 'idle' | 'scanning' | 'submitting' | 'result';
@@ -90,7 +91,7 @@ type Result =
 
 const router = useRouter();
 const route = useRoute();
-const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const videoEl = ref<HTMLVideoElement | null>(null);
 const captureInput = ref<HTMLInputElement | null>(null);
 const state = ref<ScanState>('idle');

@@ -1,10 +1,6 @@
 <template>
-<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': forceHideHeader }">
-  <header
-    v-if="routeReady && !forceHideHeader && !showBrandTopBar && !route.meta?.hideShellHeader"
-    class="mobile-shell__header"
-    :style="headerSafeAreaStyle"
-  >
+<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': isLiffMode }">
+  <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
       <span v-else>創</span>
@@ -204,6 +200,7 @@ const showHeader = computed(() => {
       return false;
     }
   }
+  if (props.showBrandTopBar) return false;
   return !route.meta?.hideShellHeader && !props.forceHideHeader;
 });
 const isFlush = computed(() => Boolean(route.meta?.flushContent));

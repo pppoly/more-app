@@ -9,6 +9,6 @@ export default defineConfig({
   engine: "classic",
   datasource: {
     url: env("DATABASE_URL"),
-    shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
+    // Shadow DBを使わない方針（migrate dev 非推奨）。実DBの状態を前提に migrate deploy で適用する。
   },
 });

@@ -11,10 +11,16 @@
     "build": "nest build",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
     "prisma:generate": "prisma generate",
+    "prisma:migrate:diff": "DATABASE_URL=$DATABASE_URL prisma migrate diff --from-url \"$DATABASE_URL\" --to-schema-datamodel prisma/schema.prisma --script",
+    "prisma:migrate:deploy": "DATABASE_URL=$DATABASE_URL prisma migrate deploy",
+    "prisma:migrate:verify": "node scripts/verify-no-shadow.js",
     "seed": "ts-node prisma/seed.ts",
     "prisma:seed": "ts-node prisma/seed.ts",
     "seed:community-tags": "ts-node prisma/seed-community-tags.ts",
-    "postinstall": "npm run prisma:generate"
+    "postinstall": "npm run prisma:generate",
+    "verify:payments-replay": "ts-node scripts/verify-payments-replay.ts",
+    "verify:payments-out-of-order": "ts-node scripts/verify-payments-out-of-order.ts",
+    "verify:payments-partial-refund": "ts-node scripts/verify-payments-partial-refund.ts"
   },
   "dependencies": {
     "@google-cloud/aiplatform": "^5.13.0",

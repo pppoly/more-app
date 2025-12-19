@@ -107,6 +107,7 @@ import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
+import { isLineInAppBrowser } from '../../utils/liff';
 import { APP_TARGET } from '../../config';
 
 type FilterId = 'all' | 'paid' | 'refunded';
@@ -128,7 +129,7 @@ interface PaymentRecord {
 
 const router = useRouter();
 const route = useRoute();
-const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const debugMode = computed(() => route.query.debug === '1');
 
 const loading = ref(true);

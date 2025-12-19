@@ -135,8 +135,11 @@
       </article>
 
       <section class="consent-line">
-        申し込みを確定すると、利用規約・プライバシーに同意したものとみなされます。
-        <button type="button" class="inline-link">プライバシー</button>
+        申し込みを確定すると、
+        <button type="button" class="inline-link" @click="openTerms">利用規約</button>
+        ・
+        <button type="button" class="inline-link" @click="openPrivacy">プライバシーポリシー</button>
+        に同意したものとみなされます。
       </section>
 
       <p v-if="registrationError" class="ios-error">{{ registrationError }}</p>
@@ -389,6 +392,16 @@ const proceedToCheckout = () => {
   };
   sessionStorage.setItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));
   router.push({ name: 'MobileEventCheckout', params: { eventId: eventId.value } });
+};
+
+const openTerms = () => {
+  const url = `${window.location.origin}/legal/terms`;
+  window.open(url, '_blank', 'noopener');
+};
+
+const openPrivacy = () => {
+  const url = `${window.location.origin}/legal/privacy`;
+  window.open(url, '_blank', 'noopener');
 };
 
 const submitFreeRegistration = async () => {

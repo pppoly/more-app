@@ -56,11 +56,12 @@ import { fetchEventAssistantLogs } from '../../../api/client';
 import type { ConsoleEventAssistantLog } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 
 const route = useRoute();
 const router = useRouter();
-const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const communityId = computed(() => route.params.communityId as string | undefined);
 
 const logs = ref<ConsoleEventAssistantLog[]>([]);

@@ -708,6 +708,9 @@ import {
   CONSOLE_EVENT_NOTE_RESULT_KEY,
   CONSOLE_EVENT_FORM_DRAFT_KEY,
 } from '../../constants/console';
+import { APP_TARGET } from '../../config';
+import { isLineBrowser, isLiffClient } from '../../utils/device';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 type FieldKey =
   | 'title'
@@ -732,7 +735,9 @@ interface BuilderField extends RegistrationFormField {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineBrowser());
+const isLiffClientMode = computed(
+  () => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient() || isLineBrowser(),
+);
 const goBack = () => router.back();
 const showLocationPicker = ref(false);
 const mapLoading = ref(false);

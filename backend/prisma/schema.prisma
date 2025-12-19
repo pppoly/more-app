@@ -7,7 +7,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model User {
@@ -36,6 +35,8 @@ model User {
   promptDefinitionsApproved PromptDefinition[] @relation("PromptApprovedBy")
   updatedI18nMessages I18nMessage[] @relation("I18nMessageUpdatedBy")
   analyticsEvents AnalyticsEvent[]
+  gatewayEvents PaymentGatewayEvent[]
+  ledgerEntries LedgerEntry[]
 }
 
 model Community {
@@ -63,6 +64,8 @@ model Community {
   classes        Class[]
   payments       Payment[]
   aiEventDraftLogs AiEventDraftLog[]
+  gatewayEvents  PaymentGatewayEvent[]
+  ledgerEntries  LedgerEntry[]
 }
 
 model CommunityTagCategory {
@@ -146,6 +149,7 @@ model Event {
   checkins               EventCheckin[]
   galleries              EventGallery[]
   payments               Payment[]
+  gatewayEvents          PaymentGatewayEvent[]
 }
 
 model Class {
@@ -177,6 +181,8 @@ model Lesson {
   payments       Payment[]
   refundRequests RefundRequest[]
   checkins       EventCheckin[]
+  gatewayEvents  PaymentGatewayEvent[]
+  ledgerEntries  LedgerEntry[]
 
   @@index([classId, startAt])
 }
@@ -215,8 +221,11 @@ model EventRegistration {
   checkins      EventCheckin[]
   payment       Payment?        @relation("RegistrationPayment")
   refundRequest RefundRequest?
+  gatewayEvents PaymentGatewayEvent[]
+  ledgerEntries LedgerEntry[]
 
   @@unique([userId, lessonId])
+  @@unique([eventId, userId])
 }
 
 model EventCheckin {
@@ -272,6 +281,13 @@ model Payment {
   currency                String   @default("jpy")
   status                  String   @default("pending")
   method                  String   @default("stripe")
+  // provider-agnostic anchors
+  provider                String?
+  providerObjectId        String?
+  providerObjectType      String?
+  providerAccountId       String?
+  providerBalanceTxId     String?
+  idempotencyKey          String?   @unique
   stripePaymentIntentId   String?
   stripeChargeId          String?
   stripeRefundId          String?
@@ -284,6 +300,11 @@ model Payment {
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
   lesson                  Lesson?   @relation(fields: [lessonId], references: [id])
   refundRequests          RefundRequest[]
+  gatewayEvents           PaymentGatewayEvent[]
+  ledgerEntries           LedgerEntry[]
+
+  @@index([provider, providerObjectId])
+  @@index([providerBalanceTxId])
 }
 
 model RefundRequest {
@@ -291,6 +312,7 @@ model RefundRequest {
   registrationId   String   @unique
   lessonId         String?
   paymentId        String?
+  idempotencyKey   String?  @unique
   decision         String?
   status           String   @default("requested")
   requestedAmount  Int
@@ -303,6 +325,90 @@ model RefundRequest {
   registration     EventRegistration @relation(fields: [registrationId], references: [id])
   payment          Payment?          @relation(fields: [paymentId], references: [id])
   lesson           Lesson?           @relation(fields: [lessonId], references: [id])
+}
+
+// 保存外部決済ゲートウェイとのやり取りを全件記録する監査ログ
+model PaymentGatewayEvent {
+  id             String   @id @default(cuid())
+  paymentId      String?
+  registrationId String?
+  eventId        String?
+  lessonId       String?
+  communityId    String?
+  userId         String?
+  gateway        String   // stripe/mock/other
+  provider       String?  // alias of gateway, kept for compatibility
+  providerEventId String?
+  providerAccountId String?
+  providerObjectId  String?
+  eventType      String   // checkout_created/webhook/charge.refunded 等
+  status         String   // success/failure/ignored
+  message        String?
+  payload        Json?
+  payloadHash    String?
+  receivedAt     DateTime @default(now())
+  processedAt    DateTime?
+  attempts       Int      @default(0)
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  payment        Payment?          @relation(fields: [paymentId], references: [id])
+  registration   EventRegistration? @relation(fields: [registrationId], references: [id])
+  event          Event?            @relation(fields: [eventId], references: [id])
+  lesson         Lesson?           @relation(fields: [lessonId], references: [id])
+  community      Community?        @relation(fields: [communityId], references: [id])
+  user           User?             @relation(fields: [userId], references: [id])
+
+  @@index([paymentId])
+  @@index([registrationId])
+  @@index([eventId])
+  @@index([lessonId])
+  @@index([communityId])
+  @@index([userId])
+  @@index([gateway, eventType])
+  @@index([status])
+  @@unique([provider, providerEventId], name: "provider_providerEventId")
+}
+
+// 不可变的资金账本条目，唯一真实来源
+model LedgerEntry {
+  id                     String   @id @default(cuid())
+  businessPaymentId      String
+  businessRegistrationId String?
+  businessLessonId       String?
+  businessCommunityId    String?
+  userId                 String?
+  entryType              String   // charge/refund/dispute/adjustment
+  direction              String   // in/out
+  amount                 Int
+  currency               String   @default("jpy")
+  provider               String
+  providerObjectType     String?
+  providerObjectId       String?
+  providerBalanceTxId    String?
+  providerAccountId      String?
+  idempotencyKey         String   @unique
+  status                 String   @default("booked") // booked/reversed
+  reversalOfLedgerId     String?
+  reversedByLedgerId     String?
+  occurredAt             DateTime @default(now())
+  metadata               Json?
+  createdAt              DateTime @default(now())
+
+  payment      Payment? @relation(fields: [businessPaymentId], references: [id])
+  registration EventRegistration? @relation(fields: [businessRegistrationId], references: [id])
+  lesson       Lesson? @relation(fields: [businessLessonId], references: [id])
+  community    Community? @relation(fields: [businessCommunityId], references: [id])
+  user         User? @relation(fields: [userId], references: [id])
+
+  @@index([provider, providerObjectId])
+  @@index([businessPaymentId])
+  @@index([businessRegistrationId])
+  @@index([businessLessonId])
+  @@index([businessCommunityId])
+  @@index([userId])
+  @@index([providerBalanceTxId])
+  @@index([entryType])
 }
 
 model I18nMessage {

@@ -237,6 +237,7 @@ import { getLocalizedText } from '../../../utils/i18nContent';
 import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 
 type ChatRole = 'user' | 'assistant';
@@ -279,7 +280,7 @@ const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
-const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);

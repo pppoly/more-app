@@ -69,6 +69,7 @@ import { fetchConsoleCommunity, fetchCommunityBalance, startCommunityStripeOnboa
 import type { ConsoleCommunityBalance, ConsoleCommunityDetail } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 
 const store = useConsoleCommunityStore();
@@ -77,7 +78,7 @@ const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
 const error = ref<string | null>(null);
 const balance = ref<ConsoleCommunityBalance | null>(null);
-const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 
 const stripeReady = computed(
   () => !!community.value?.stripeAccountId && (community.value?.stripeAccountOnboarded ?? true),

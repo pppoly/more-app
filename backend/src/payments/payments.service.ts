@@ -11,6 +11,9 @@ import { StripeService } from '../stripe/stripe.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { Prisma, Payment } from '@prisma/client';
 import Stripe from 'stripe';
+import { buildIdempotencyKey } from './idempotency.util';
+
+const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
 
 @Injectable()
 export class PaymentsService {
@@ -28,6 +31,18 @@ export class PaymentsService {
     if (key.includes('starter')) return { percent: 2, fixed: 0, planId };
     if (key.includes('free')) return { percent: 5, fixed: 0, planId };
     return { percent: 5, fixed: 0, planId: planId || 'free' };
+  }
+
+  private assertAmount(amount: number, currency: string) {
+    if (currency.toLowerCase() !== 'jpy') {
+      throw new BadRequestException('JPY以外の通貨はサポートしていません');
+    }
+    if (amount <= 0) {
+      throw new BadRequestException('支払い金額が不正です');
+    }
+    if (amount > MAX_PAYMENT_AMOUNT_JPY) {
+      throw new BadRequestException('支払い金額が上限を超えています');
+    }
   }
 
   async listCommunityPayments(
@@ -224,76 +239,120 @@ export class PaymentsService {
   }
 
   async createMockPayment(userId: string, registrationId: string) {
-    const registration = (await this.prisma.eventRegistration.findUnique({
-      where: { id: registrationId },
-      select: {
-        id: true,
-        userId: true,
-        eventId: true,
-        lessonId: true,
-        amount: true,
-        paymentStatus: true,
-        event: {
-          select: {
-            communityId: true,
+    const result = await this.prisma.$transaction(async (tx) => {
+      const registration = (await tx.eventRegistration.findUnique({
+        where: { id: registrationId },
+        select: {
+          id: true,
+          userId: true,
+          eventId: true,
+          lessonId: true,
+          amount: true,
+          paymentStatus: true,
+          event: {
+            select: {
+              communityId: true,
+            },
+          },
+          lesson: {
+            select: {
+              class: { select: { communityId: true } },
+            },
           },
         },
-        lesson: {
-          select: {
-            class: { select: { communityId: true } },
-          },
+      })) as any;
+
+      if (!registration) {
+        throw new NotFoundException('Registration not found');
+      }
+
+      if (registration.userId !== userId) {
+        throw new ForbiddenException('You cannot pay for this registration');
+      }
+
+      if (registration.paymentStatus === 'paid') {
+        throw new BadRequestException('Registration already paid');
+      }
+
+      const amount = registration.amount ?? 0;
+      this.assertAmount(amount, 'jpy');
+
+      const payment = await tx.payment.create({
+        data: {
+          userId,
+          communityId: registration.event?.communityId ?? registration.lesson?.class.communityId,
+          eventId: registration.eventId ?? null,
+          lessonId: registration.lessonId ?? undefined,
+          registrationId,
+          amount,
+          platformFee: 0,
+          currency: 'jpy',
+          status: 'paid',
+          method: 'mock',
+          idempotencyKey: buildIdempotencyKey('mock', 'charge', 'registration', registrationId, amount, 'jpy'),
         },
-      },
-    })) as any;
+        select: {
+          id: true,
+          status: true,
+          amount: true,
+          eventId: true,
+          lessonId: true,
+          communityId: true,
+        },
+      });
 
-    if (!registration) {
-      throw new NotFoundException('Registration not found');
-    }
+      await tx.eventRegistration.update({
+        where: { id: registrationId },
+        data: {
+          status: 'paid',
+          paidAmount: amount,
+          paymentStatus: 'paid',
+          payment: { connect: { id: payment.id } },
+        },
+      });
 
-    if (registration.userId !== userId) {
-      throw new ForbiddenException('You cannot pay for this registration');
-    }
-
-    if (registration.paymentStatus === 'paid') {
-      throw new BadRequestException('Registration already paid');
-    }
-
-    const amount = registration.amount ?? 0;
-
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId,
-        communityId: registration.event?.communityId ?? registration.lesson?.class.communityId,
-        eventId: registration.eventId ?? null,
-        lessonId: registration.lessonId ?? undefined,
-        registrationId,
+      await this.createLedgerEntryIfMissing({
+        tx,
+        businessPaymentId: payment.id,
+        businessRegistrationId: registrationId,
+        businessCommunityId: registration.event?.communityId ?? registration.lesson?.class.communityId,
+        businessLessonId: registration.lessonId ?? undefined,
+        entryType: 'charge',
+        direction: 'in',
         amount,
-        platformFee: 0,
         currency: 'jpy',
-        status: 'paid',
-        method: 'mock',
-      },
-      select: {
-        id: true,
-        status: true,
-        amount: true,
-      },
+        provider: 'mock',
+        providerObjectType: 'mock',
+        providerObjectId: payment.id,
+        idempotencyKey: `mock:payment:${payment.id}`,
+        occurredAt: new Date(),
+        metadata: { registrationId },
+      });
+
+      return {
+        payment,
+        amount,
+        registration,
+      };
     });
 
-    await this.prisma.eventRegistration.update({
-      where: { id: registrationId },
-      data: {
-        status: 'paid',
-        paidAmount: amount,
-        paymentStatus: 'paid',
-        payment: { connect: { id: payment.id } },
-      },
+    await this.logGatewayEvent({
+      gateway: 'mock',
+      eventType: 'payment.completed',
+      status: 'success',
+      paymentId: result.payment.id,
+      registrationId,
+      eventId: result.payment.eventId ?? undefined,
+      lessonId: result.payment.lessonId ?? undefined,
+      communityId: result.payment.communityId ?? undefined,
+      userId,
+      payload: { amount: result.amount },
     });
 
     return {
-      paymentId: payment.id,
-      status: payment.status,
-      amount: payment.amount,
+      paymentId: result.payment.id,
+      status: result.payment.status,
+      amount: result.payment.amount,
       registrationId,
     };
   }
@@ -395,6 +454,8 @@ export class PaymentsService {
       throw new InternalServerErrorException('Stripe Checkout URLを生成できませんでした');
     }
 
+    const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
+
     await this.prisma.payment.upsert({
       where: { registrationId },
       update: {
@@ -409,6 +470,7 @@ export class PaymentsService {
         status: 'pending',
         method: 'stripe',
         stripeCheckoutSessionId: session.id,
+        idempotencyKey,
       },
       create: {
         userId,
@@ -423,7 +485,20 @@ export class PaymentsService {
         status: 'pending',
         method: 'stripe',
         stripeCheckoutSessionId: session.id,
+        idempotencyKey,
       },
+    });
+
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'checkout.session.created',
+      status: 'success',
+      registrationId,
+      eventId: event?.id ?? undefined,
+      lessonId: lesson?.id ?? undefined,
+      communityId: community.id,
+      userId,
+      payload: { sessionId: session.id, amount, platformFee },
     });
 
     return {
@@ -450,39 +525,83 @@ export class PaymentsService {
       event = this.stripeService.client.webhooks.constructEvent(payload, signature, webhookSecret);
     } catch (error) {
       this.logger.error('Failed to verify Stripe webhook signature', error instanceof Error ? error.stack : String(error));
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: 'webhook.verification_failed',
+        status: 'failure',
+        message: error instanceof Error ? error.message : String(error),
+      });
       throw new BadRequestException('Invalid Stripe signature');
     }
 
-    switch (event.type) {
-      case 'checkout.session.completed':
-      case 'checkout.session.async_payment_succeeded':
-        await this.handleCheckoutSessionCompleted(event.data.object);
-        break;
-      case 'checkout.session.expired':
-        await this.handleCheckoutSessionExpired(event.data.object);
-        break;
-      case 'invoice.payment_succeeded':
-        await this.handleInvoicePaymentSucceeded(event.data.object);
-        break;
-      case 'invoice.payment_failed':
-        await this.handleInvoicePaymentFailed(event.data.object);
-        break;
-      case 'charge.dispute.created':
-      case 'charge.dispute.closed':
-        await this.handleChargeDispute(event.type, event.data.object);
-        break;
-      case 'payment_intent.payment_failed':
-        await this.handlePaymentIntentFailed(event.data.object);
-        break;
-      case 'customer.subscription.deleted':
-      case 'customer.subscription.updated':
-        await this.handleSubscriptionLifecycle(event.data.object);
-        break;
-      case 'charge.refunded':
-        await this.handleChargeRefunded(event.data.object);
-        break;
-      default:
-        this.logger.debug(`Unhandled Stripe event: ${event.type}`);
+    const gatewayEvent = await this.upsertGatewayEvent(event);
+    if (gatewayEvent.processedAt) {
+      return { received: true };
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 再読防止のロック：同一 event が並行到達しても processedAt を二重に書かない
+        const locked = await tx.paymentGatewayEvent.findUnique({ where: { id: gatewayEvent.id }, select: { processedAt: true } });
+        if (locked?.processedAt) return;
+
+        await tx.paymentGatewayEvent.update({
+          where: { id: gatewayEvent.id },
+          data: { attempts: { increment: 1 } as any, status: 'received' },
+        });
+
+        switch (event.type) {
+          case 'checkout.session.completed':
+          case 'checkout.session.async_payment_succeeded':
+            await this.handleCheckoutSessionCompleted(event.data.object, tx);
+            break;
+          case 'checkout.session.expired':
+            await this.handleCheckoutSessionExpired(event.data.object, tx);
+            break;
+          case 'invoice.payment_succeeded':
+            await this.handleInvoicePaymentSucceeded(event.data.object);
+            break;
+          case 'invoice.payment_failed':
+            await this.handleInvoicePaymentFailed(event.data.object);
+            break;
+          case 'charge.dispute.created':
+          case 'charge.dispute.closed':
+            await this.handleChargeDispute(event.type, event.data.object);
+            break;
+          case 'payment_intent.payment_failed':
+            await this.handlePaymentIntentFailed(event.data.object, tx);
+            break;
+          case 'customer.subscription.deleted':
+          case 'customer.subscription.updated':
+            await this.handleSubscriptionLifecycle(event.data.object);
+            break;
+          case 'charge.refunded':
+            await this.handleChargeRefunded(event.data.object, tx);
+            break;
+          default:
+            this.logger.debug(`Unhandled Stripe event: ${event.type}`);
+            await tx.paymentGatewayEvent.update({
+              where: { id: gatewayEvent.id },
+              data: { status: 'ignored', processedAt: new Date() },
+            });
+            return;
+        }
+
+        await tx.paymentGatewayEvent.update({
+          where: { id: gatewayEvent.id },
+          data: { processedAt: new Date(), status: 'processed' } as any,
+        });
+      });
+    } catch (err: any) {
+      await this.prisma.paymentGatewayEvent.update({
+        where: { id: gatewayEvent.id },
+        data: {
+          status: 'failed',
+          errorMessage: err instanceof Error ? err.message : String(err),
+          attempts: { increment: 1 } as any,
+        },
+      });
+      throw err;
     }
 
     return { received: true };
@@ -556,19 +675,52 @@ export class PaymentsService {
 
     await this.markPaymentRefunded(payment, refund.id);
 
+    await this.createLedgerEntryIfMissing({
+      tx: this.prisma,
+      businessPaymentId: payment.id,
+      businessRegistrationId: payment.registrationId ?? undefined,
+      businessLessonId: payment.lessonId ?? undefined,
+      businessCommunityId: payment.communityId ?? undefined,
+      entryType: 'refund',
+      direction: 'refund',
+      amount: amount ?? payment.amount,
+      currency: payment.currency ?? 'jpy',
+      provider: 'stripe',
+      providerObjectType: 'refund',
+      providerObjectId: refund.id,
+      providerBalanceTxId: undefined,
+      providerAccountId: payment.communityId ?? undefined,
+      idempotencyKey: `stripe:refund:${refund.id}`,
+      occurredAt: new Date(),
+      metadata: { reason },
+    });
+
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'refund.requested',
+      status: 'success',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId,
+      payload: { refundId: refund.id, amount },
+    });
+
     return {
       refundId: refund.id,
       status: 'refunded',
     };
   }
 
-  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, tx: Prisma.TransactionClient = this.prisma) {
     const registrationId = session.metadata?.registrationId;
     const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
     if (registrationId) {
       whereClauses.push({ registrationId });
     }
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await tx.payment.findFirst({
       where: { OR: whereClauses },
     });
     if (!payment) {
@@ -597,6 +749,15 @@ export class PaymentsService {
         return;
       }
       this.logger.warn(`No payment found for checkout session ${session.id}`);
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: 'checkout.session.completed',
+        status: 'ignored',
+        registrationId,
+        communityId: session.metadata?.communityId,
+        message: `Payment not found for checkout session ${session.id}`,
+        payload: { sessionId: session.id },
+      });
       return;
     }
 
@@ -605,7 +766,12 @@ export class PaymentsService {
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
 
-    await this.prisma.payment.update({
+    if (['refunded', 'partial_refunded', 'disputed'].includes(payment.status)) {
+      this.logger.warn(`Skip setting paid because payment ${payment.id} already in terminal status ${payment.status}`);
+      return;
+    }
+
+    await tx.payment.update({
       where: { id: payment.id },
       data: {
         status: 'paid',
@@ -616,7 +782,7 @@ export class PaymentsService {
     });
 
     if (payment.registrationId) {
-      await this.prisma.eventRegistration.update({
+      await tx.eventRegistration.update({
         where: { id: payment.registrationId },
         data: {
           status: 'paid',
@@ -625,6 +791,38 @@ export class PaymentsService {
         },
       });
     }
+
+    await this.createLedgerEntryIfMissing({
+      tx,
+      businessPaymentId: payment.id,
+      businessRegistrationId: payment.registrationId ?? undefined,
+      businessLessonId: payment.lessonId ?? undefined,
+      businessCommunityId: payment.communityId ?? undefined,
+      entryType: 'charge',
+      direction: 'in',
+      amount: payment.amount,
+      currency: payment.currency ?? 'jpy',
+      provider: 'stripe',
+      providerObjectType: 'checkout.session',
+      providerObjectId: session.id,
+      providerAccountId: session.metadata?.communityId,
+      idempotencyKey: `stripe:checkout.completed:${session.id}`,
+      occurredAt: new Date(),
+      metadata: { paymentIntentId },
+    });
+
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'checkout.session.completed',
+      status: 'success',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId: payment.userId,
+      payload: { sessionId: session.id, paymentIntentId },
+    });
   }
 
   private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
@@ -721,27 +919,39 @@ export class PaymentsService {
     this.logger.log(`Subscription updated: ${subscription.id}, community=${communityId}, plan=${planId}`);
   }
 
-  private async handleCheckoutSessionExpired(session: Stripe.Checkout.Session) {
+  private async handleCheckoutSessionExpired(session: Stripe.Checkout.Session, tx: Prisma.TransactionClient = this.prisma) {
     const registrationId = session.metadata?.registrationId;
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await tx.payment.findFirst({
       where: { stripeCheckoutSessionId: session.id },
     });
     if (payment) {
-      await this.prisma.payment.update({
+      await tx.payment.update({
         where: { id: payment.id },
         data: { status: 'pending' },
       });
     }
     if (registrationId) {
-      await this.prisma.eventRegistration.updateMany({
+      await tx.eventRegistration.updateMany({
         where: { id: registrationId, paymentStatus: 'pending' },
         data: { paymentStatus: 'pending', status: 'cancelled' },
       });
     }
     this.logger.log(`Checkout session expired: ${session.id}, registration=${registrationId ?? 'n/a'}`);
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'checkout.session.expired',
+      status: 'success',
+      paymentId: payment?.id ?? undefined,
+      registrationId,
+      eventId: payment?.eventId ?? undefined,
+      lessonId: payment?.lessonId ?? undefined,
+      communityId: payment?.communityId ?? session.metadata?.communityId,
+      userId: payment?.userId ?? undefined,
+      payload: { sessionId: session.id },
+    });
   }
 
-  private async handleChargeRefunded(charge: Stripe.Charge) {
+  private async handleChargeRefunded(charge: Stripe.Charge, tx: Prisma.TransactionClient = this.prisma) {
     const paymentIntentId =
       typeof charge.payment_intent === 'string'
         ? charge.payment_intent
@@ -751,15 +961,42 @@ export class PaymentsService {
       whereClauses.push({ stripePaymentIntentId: paymentIntentId });
     }
 
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await tx.payment.findFirst({
       where: { OR: whereClauses },
     });
     if (!payment) {
       this.logger.warn(`No payment matched refunded charge ${charge.id}`);
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: 'charge.refunded',
+        status: 'ignored',
+        message: `No payment matched charge ${charge.id}`,
+        payload: { chargeId: charge.id },
+      });
       return;
     }
 
-    await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id);
+    await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id, tx);
+
+    await this.createLedgerEntryIfMissing({
+      tx,
+      businessPaymentId: payment.id,
+      businessRegistrationId: payment.registrationId ?? undefined,
+      businessLessonId: payment.lessonId ?? undefined,
+      businessCommunityId: payment.communityId ?? undefined,
+      entryType: 'refund',
+      direction: 'refund',
+      amount: charge.amount_refunded ?? payment.amount,
+      currency: charge.currency ?? 'jpy',
+      provider: 'stripe',
+      providerObjectType: 'charge',
+      providerObjectId: charge.id,
+      providerBalanceTxId: (charge.balance_transaction as string) ?? undefined,
+      providerAccountId: undefined,
+      idempotencyKey: `stripe:charge.refunded:${charge.id}`,
+      occurredAt: new Date(),
+      metadata: { paymentIntentId },
+    });
   }
 
   private async handleChargeDispute(eventType: string, dispute: Stripe.Dispute) {
@@ -773,6 +1010,13 @@ export class PaymentsService {
     });
     if (!payment) {
       this.logger.warn(`No payment matched disputed charge ${chargeId}`);
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: eventType,
+        status: 'ignored',
+        message: `No payment matched disputed charge ${chargeId}`,
+        payload: { disputeId: dispute.id },
+      });
       return;
     }
 
@@ -792,32 +1036,48 @@ export class PaymentsService {
     }
   }
 
-  private async handlePaymentIntentFailed(intent: Stripe.PaymentIntent) {
+  private async handlePaymentIntentFailed(intent: Stripe.PaymentIntent, tx: Prisma.TransactionClient = this.prisma) {
     const paymentIntentId = intent.id;
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await tx.payment.findFirst({
       where: { stripePaymentIntentId: paymentIntentId },
     });
     if (!payment) return;
 
-    await this.prisma.payment.update({
+    await tx.payment.update({
       where: { id: payment.id },
       data: { status: 'failed' },
     });
 
     if (payment.registrationId) {
-      await this.prisma.eventRegistration.update({
+      await tx.eventRegistration.update({
         where: { id: payment.registrationId },
         data: { paymentStatus: 'failed', status: 'pending' },
       });
     }
     this.logger.warn(`Payment intent failed: ${paymentIntentId}, payment=${payment.id}`);
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'payment_intent.payment_failed',
+      status: 'failure',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId: payment.userId,
+      payload: { paymentIntentId },
+    });
   }
 
-  private async markPaymentRefunded(payment: Payment, refundId?: string | null) {
+  private async markPaymentRefunded(
+    payment: Payment,
+    refundId?: string | null,
+    tx: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
     if (payment.status === 'refunded') {
       return;
     }
-    await this.prisma.payment.update({
+    await tx.payment.update({
       where: { id: payment.id },
       data: {
         status: 'refunded',
@@ -826,7 +1086,7 @@ export class PaymentsService {
     });
 
     if (payment.registrationId) {
-      await this.prisma.eventRegistration.update({
+      await tx.eventRegistration.update({
         where: { id: payment.registrationId },
         data: {
           paymentStatus: 'refunded',
@@ -835,6 +1095,19 @@ export class PaymentsService {
         },
       });
     }
+
+    await this.logGatewayEvent({
+      gateway: payment.method ?? 'unknown',
+      eventType: 'payment.refunded',
+      status: 'success',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId: payment.userId,
+      payload: { refundId },
+    });
   }
 
   private async recordSubscriptionPayment(invoice: Stripe.Invoice, communityId: string, planId: string) {
@@ -959,5 +1232,211 @@ export class PaymentsService {
       }
     }
     return '';
+  }
+
+  private async logGatewayEvent({
+    gateway,
+    providerEventId,
+    providerObjectId,
+    providerAccountId,
+    eventType,
+    status,
+    paymentId,
+    registrationId,
+    eventId,
+    lessonId,
+    communityId,
+    userId,
+    message,
+    payload,
+  }: {
+    gateway: string;
+    providerEventId?: string | null;
+    providerObjectId?: string | null;
+    providerAccountId?: string | null;
+    eventType: string;
+    status: string;
+    paymentId?: string | null;
+    registrationId?: string | null;
+    eventId?: string | null;
+    lessonId?: string | null;
+    communityId?: string | null;
+    userId?: string | null;
+    message?: string;
+    payload?: any;
+  }) {
+    try {
+      await this.prisma.paymentGatewayEvent.create({
+        data: {
+          gateway,
+          provider: gateway,
+          providerEventId: providerEventId ?? undefined,
+          providerObjectId: providerObjectId ?? undefined,
+          providerAccountId: providerAccountId ?? undefined,
+          eventType,
+          status,
+          paymentId: paymentId ?? undefined,
+          registrationId: registrationId ?? undefined,
+          eventId: eventId ?? undefined,
+          lessonId: lessonId ?? undefined,
+          communityId: communityId ?? undefined,
+          userId: userId ?? undefined,
+          message: message ?? undefined,
+          payload: payload ?? undefined,
+          payloadHash: payload ? this.hashPayload(payload) : undefined,
+          receivedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to log gateway event ${eventType}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async upsertGatewayEvent(event: Stripe.Event) {
+    const providerEventId = event.id;
+    const payloadHash = this.hashPayload(event);
+    const now = new Date();
+    return this.prisma.paymentGatewayEvent.upsert({
+      where: { provider_providerEventId: { provider: 'stripe', providerEventId } } as any,
+      update: { payload: event as any, payloadHash, attempts: { increment: 1 } as any },
+      create: {
+        gateway: 'stripe',
+        provider: 'stripe',
+        providerEventId,
+        eventType: `webhook.${event.type}`,
+        status: 'pending',
+        payload: event as any,
+        payloadHash,
+        receivedAt: now,
+      },
+    });
+  }
+
+  private async createLedgerEntryIfMissing({
+    tx,
+    businessPaymentId,
+    businessRegistrationId,
+    businessLessonId,
+    businessCommunityId,
+    entryType,
+    direction,
+    amount,
+    currency,
+    provider,
+    providerObjectType,
+    providerObjectId,
+    providerBalanceTxId,
+    providerAccountId,
+    idempotencyKey,
+    occurredAt,
+    metadata,
+  }: {
+    tx: PrismaService | Prisma.TransactionClient;
+    businessPaymentId: string;
+    businessRegistrationId?: string;
+    businessLessonId?: string;
+    businessCommunityId?: string;
+    entryType: string;
+    direction: string;
+    amount: number;
+    currency: string;
+    provider: string;
+    providerObjectType?: string | null;
+    providerObjectId?: string | null;
+    providerBalanceTxId?: string | null;
+    providerAccountId?: string | null;
+    idempotencyKey: string;
+    occurredAt?: Date;
+    metadata?: any;
+  }) {
+    if (currency.toLowerCase() !== 'jpy') {
+      throw new BadRequestException('ledger currency mismatch');
+    }
+    const existing = await tx.ledgerEntry.findUnique({
+      where: { idempotencyKey },
+    });
+    if (existing) return existing;
+    return tx.ledgerEntry.create({
+      data: {
+        businessPaymentId,
+        businessRegistrationId: businessRegistrationId ?? undefined,
+        businessLessonId: businessLessonId ?? undefined,
+        businessCommunityId: businessCommunityId ?? undefined,
+        entryType,
+        direction,
+        amount,
+        currency,
+        provider,
+        providerObjectType: providerObjectType ?? undefined,
+        providerObjectId: providerObjectId ?? undefined,
+        providerBalanceTxId: providerBalanceTxId ?? undefined,
+        providerAccountId: providerAccountId ?? undefined,
+        idempotencyKey,
+        occurredAt: occurredAt ?? new Date(),
+        metadata: metadata ?? undefined,
+      },
+    });
+  }
+
+  private hashPayload(payload: any): string {
+    try {
+      const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      let hash = 0;
+      for (let i = 0; i < json.length; i++) {
+        const chr = json.charCodeAt(i);
+        hash = (hash << 5) - hash + chr;
+        hash |= 0;
+      }
+      return `${hash}`;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Ledger 集計から支払いの事実を算出する（Payment はビジネスビューであり真実ではない）
+   */
+  async getPaymentSummaryFromLedger(paymentId: string) {
+    const entries = await this.prisma.ledgerEntry.findMany({
+      where: { businessPaymentId: paymentId, status: 'booked' },
+    });
+    if (!entries.length) {
+      return {
+        paymentId,
+        paidAmount: 0,
+        refundedAmount: 0,
+        disputedAmount: 0,
+        netAmount: 0,
+        currency: 'jpy',
+        status: 'pending',
+        entryCount: 0,
+        lastOccurredAt: null,
+      };
+    }
+    const currency = entries[0].currency ?? 'jpy';
+    const paidAmount = entries
+      .filter((e) => e.entryType === 'charge' && e.direction === 'in')
+      .reduce((s, e) => s + e.amount, 0);
+    const refundedAmount = entries.filter((e) => e.entryType === 'refund').reduce((s, e) => s + e.amount, 0);
+    const disputedAmount = entries.filter((e) => e.entryType === 'dispute').reduce((s, e) => s + e.amount, 0);
+    const netAmount = paidAmount - refundedAmount - disputedAmount;
+    let status: string = 'paid';
+    if (paidAmount === 0 && refundedAmount === 0 && disputedAmount === 0) status = 'pending';
+    else if (refundedAmount + disputedAmount >= paidAmount) status = 'refunded';
+    else if (refundedAmount + disputedAmount > 0) status = 'partial_refunded';
+    const lastOccurredAt = entries.reduce((d, e) => (d > e.occurredAt ? d : e.occurredAt), entries[0].occurredAt);
+    return {
+      paymentId,
+      paidAmount,
+      refundedAmount,
+      disputedAmount,
+      netAmount,
+      currency,
+      status,
+      entryCount: entries.length,
+      lastOccurredAt,
+    };
   }
 }

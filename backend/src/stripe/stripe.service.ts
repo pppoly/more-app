@@ -12,8 +12,24 @@ export class StripeService {
   readonly enabled: boolean;
 
   constructor() {
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const strictEnv = ['uat', 'production', 'prod'].includes(envLabel);
     const secretKey = process.env.STRIPE_SECRET_KEY;
     this.publishableKey = process.env.STRIPE_PUBLISHABLE_KEY || null;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || null;
+    const frontendBaseUrlRaw = process.env.FRONTEND_BASE_URL;
+
+    if (strictEnv) {
+      const missing: string[] = [];
+      if (!secretKey) missing.push('STRIPE_SECRET_KEY');
+      if (!this.publishableKey) missing.push('STRIPE_PUBLISHABLE_KEY');
+      if (!webhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
+      if (!frontendBaseUrlRaw) missing.push('FRONTEND_BASE_URL');
+      if (missing.length) {
+        throw new Error(`Missing required Stripe environment variables (${envLabel}): ${missing.join(', ')}`);
+      }
+    }
+
     if (!secretKey) {
       this.logger.warn('STRIPE_SECRET_KEY is not set. Stripe features will not work.');
       this.stripe = null;
@@ -23,8 +39,14 @@ export class StripeService {
         apiVersion: '2025-02-24.acacia',
       });
       this.enabled = true;
+      if (strictEnv && secretKey.startsWith('sk_test_')) {
+        this.logger.warn(`Strict environment ${envLabel} is using Stripe test key`);
+      }
     }
-    const sanitizedFrontend = this.sanitizeBaseUrl(process.env.FRONTEND_BASE_URL);
+    const sanitizedFrontend = this.sanitizeBaseUrl(frontendBaseUrlRaw);
+    if (strictEnv && !frontendBaseUrlRaw) {
+      throw new Error('FRONTEND_BASE_URL is required for Stripe redirect URLs');
+    }
     this.frontendBaseUrl = sanitizedFrontend;
     this.logger.log(`Stripe frontend base URL: ${this.frontendBaseUrl}`);
     this.successUrlBase =

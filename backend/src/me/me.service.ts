@@ -228,6 +228,7 @@ export class MeService {
       where: { id: registrationId },
       data: { status: 'cancelled' },
     });
+    await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
 
     return { registrationId, status: 'cancelled' };
   }
@@ -266,6 +267,7 @@ export class MeService {
         where: { id: registrationId },
         data: { status: 'cancelled', paymentStatus: 'cancelled' },
       });
+      await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
       return { registrationId, status: 'cancelled' };
     }
 
@@ -278,6 +280,7 @@ export class MeService {
           approvedAmount: null,
           refundedAmount: null,
           reason: reason ?? null,
+          idempotencyKey: `refund:${registrationId}`,
         },
         create: {
           registrationId,
@@ -285,6 +288,7 @@ export class MeService {
           status: 'requested',
           requestedAmount: registration.amount ?? 0,
           reason: reason ?? null,
+          idempotencyKey: `refund:${registrationId}`,
         },
       });
       await this.prisma.eventRegistration.update({
@@ -298,8 +302,32 @@ export class MeService {
       where: { id: registrationId },
       data: { status: 'cancelled' },
     });
+    await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
 
     return { registrationId, status: 'cancelled' };
+  }
+
+  private async ensureZeroLedgerEntry(registrationId: string, idempotencyKey: string) {
+    try {
+      await this.prisma.ledgerEntry.upsert({
+        where: { idempotencyKey },
+        update: {},
+        create: {
+          businessPaymentId: 'zero', // marker
+          businessRegistrationId: registrationId,
+          entryType: 'adjustment',
+          direction: 'in',
+          amount: 0,
+          currency: 'jpy',
+          provider: 'internal',
+          idempotencyKey,
+        },
+      });
+    } catch (error) {
+      // best effort; do not block cancellation
+      // eslint-disable-next-line no-console
+      console.warn('Failed to write zero ledger entry', error);
+    }
   }
 
   private getSupportedLocales() {

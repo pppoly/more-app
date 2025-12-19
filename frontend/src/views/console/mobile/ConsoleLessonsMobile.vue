@@ -13,7 +13,7 @@
         <button class="primary add-btn" type="button" @click="openSheet">＋ 上課日程を追加</button>
       </div>
     </div>
-    <p class="page-hint">この教室で開催する、各回の上課日程を管理します</p>
+    <p v-if="showTopBar" class="page-hint">この教室で開催する、各回の上課日程を管理します</p>
     <div v-if="loading" class="skeleton">
       <div class="sk-card" v-for="n in 3" :key="n">
         <div class="sk-line"></div>

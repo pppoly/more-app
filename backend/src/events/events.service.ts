@@ -8,6 +8,8 @@ interface CreateRegistrationDto {
   formAnswers?: Prisma.JsonValue;
 }
 
+type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
+
 @Injectable()
 export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -241,166 +243,168 @@ export class EventsService {
   }
 
   async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      include: { ticketTypes: true, community: true },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        include: { ticketTypes: true, community: true },
+      });
 
-    if (!event) {
-      throw new NotFoundException('Event not found');
-    }
+      if (!event) {
+        throw new NotFoundException('Event not found');
+      }
 
-    if (event.status !== 'open') {
-      throw new BadRequestException('Event is not open for registration');
-    }
+      if (event.status !== 'open') {
+        throw new BadRequestException('Event is not open for registration');
+      }
 
-    if (event.visibility !== 'public' && event.visibility !== 'community-only') {
-      throw new BadRequestException('Event is not available for registration');
-    }
+      if (event.visibility !== 'public' && event.visibility !== 'community-only') {
+        throw new BadRequestException('Event is not available for registration');
+      }
 
-    const now = new Date();
-    // 注册截止时间暂时不阻止用户报名，保持开放体验
+      // 注册截止时间暂时不阻止用户报名，保持开放体验
+      await this.ensureActiveMembership(event.communityId, userId, tx);
 
-    await this.ensureActiveMembership(event.communityId, userId);
-
-    const existing = await this.prisma.eventRegistration.findFirst({
-      where: {
-        eventId,
-        userId,
-        NOT: { status: 'cancelled' },
-      },
-      include: {
-        event: {
-          select: {
-            id: true,
-            title: true,
-            startTime: true,
-            endTime: true,
-            locationText: true,
-            community: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
+      const existing = await tx.eventRegistration.findFirst({
+        where: {
+          eventId,
+          userId,
+          NOT: { status: 'cancelled' },
+        },
+        include: {
+          event: {
+            select: {
+              id: true,
+              title: true,
+              startTime: true,
+              endTime: true,
+              locationText: true,
+              community: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
               },
             },
           },
-        },
-      },
-    });
-
-    if (existing) {
-      return {
-        registrationId: existing.id,
-        status: existing.status,
-        paymentStatus: existing.paymentStatus ?? 'paid',
-        paymentRequired: existing.paymentStatus !== 'paid',
-        amount: existing.amount ?? 0,
-        eventId: existing.eventId,
-        ticketTypeId: existing.ticketTypeId ?? undefined,
-        event: existing.event,
-      };
-    }
-
-    let eventTicketTypes = event.ticketTypes;
-    if (!eventTicketTypes.length) {
-      const fallbackName = this.getLocalizedText(event.title) || '参加チケット';
-      const fallbackTicket = await this.prisma.eventTicketType.create({
-        data: {
-          eventId,
-          name: { original: fallbackName },
-          type: 'free',
-          price: 0,
-          quota: event.maxParticipants ?? 100,
         },
       });
-      eventTicketTypes = [fallbackTicket];
-    }
 
-    let ticketType =
-      dto.ticketTypeId &&
-      eventTicketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
+      if (existing) {
+        return {
+          registrationId: existing.id,
+          status: existing.status,
+          paymentStatus: existing.paymentStatus ?? 'paid',
+          paymentRequired: existing.paymentStatus !== 'paid',
+          amount: existing.amount ?? 0,
+          eventId: existing.eventId,
+          ticketTypeId: existing.ticketTypeId ?? undefined,
+          event: existing.event,
+        };
+      }
 
-    if (!ticketType) {
-      ticketType =
-        eventTicketTypes.find((ticket) => ticket.type === 'free') ||
-        eventTicketTypes[0];
-    }
+      let eventTicketTypes = event.ticketTypes;
+      if (!eventTicketTypes.length) {
+        const fallbackName = this.getLocalizedText(event.title) || '参加チケット';
+        const fallbackTicket = await tx.eventTicketType.create({
+          data: {
+            eventId,
+            name: { original: fallbackName },
+            type: 'free',
+            price: 0,
+            quota: event.maxParticipants ?? 100,
+          },
+        });
+        eventTicketTypes = [fallbackTicket];
+      }
 
-    if (!ticketType) {
-      throw new BadRequestException('No ticket types available for this event');
-    }
+      let ticketType =
+        dto.ticketTypeId &&
+        eventTicketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
 
-    const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
-    const requireApproval = Boolean(event.requireApproval);
-    const initialStatus = requireApproval
-      ? 'pending'
-      : isFree
-        ? 'paid'
-        : 'approved';
-    const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
+      if (!ticketType) {
+        ticketType =
+          eventTicketTypes.find((ticket) => ticket.type === 'free') ||
+          eventTicketTypes[0];
+      }
 
-    const registration = await this.prisma.eventRegistration.create({
-      data: {
-        eventId,
-        userId,
-        ticketTypeId: ticketType.id,
-        status: initialStatus,
-        formAnswers: dto.formAnswers ?? Prisma.JsonNull,
-        amount: ticketType.price ?? 0,
-        paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
-        paymentStatus: initialPaymentStatus,
-      },
-      select: {
-        id: true,
-        status: true,
-        ticketTypeId: true,
-        amount: true,
-        paymentStatus: true,
-        event: {
-          select: {
-            id: true,
-            title: true,
-            startTime: true,
-            endTime: true,
-            locationText: true,
-            community: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
+      if (!ticketType) {
+        throw new BadRequestException('No ticket types available for this event');
+      }
+
+      const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
+      const requireApproval = Boolean(event.requireApproval);
+      const initialStatus = requireApproval
+        ? 'pending'
+        : isFree
+          ? 'paid'
+          : 'approved';
+      const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
+
+      const registration = await tx.eventRegistration.create({
+        data: {
+          eventId,
+          userId,
+          ticketTypeId: ticketType.id,
+          status: initialStatus,
+          formAnswers: dto.formAnswers ?? Prisma.JsonNull,
+          amount: ticketType.price ?? 0,
+          paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
+          paymentStatus: initialPaymentStatus,
+        },
+        select: {
+          id: true,
+          status: true,
+          ticketTypeId: true,
+          amount: true,
+          paymentStatus: true,
+          event: {
+            select: {
+              id: true,
+              title: true,
+              startTime: true,
+              endTime: true,
+              locationText: true,
+              community: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
               },
             },
           },
         },
-      },
+      });
+
+      return {
+        registrationId: registration.id,
+        status: registration.status,
+        paymentStatus: registration.paymentStatus,
+        paymentRequired: !isFree,
+        amount: registration.amount,
+        eventId: registration.event?.id ?? eventId,
+        ticketTypeId: registration.ticketTypeId,
+        event: registration.event ?? {
+          id: eventId,
+          title: event.title,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          locationText: event.locationText,
+          community: {
+            id: event.communityId,
+            name: this.getLocalizedText(event.title) || '',
+            slug: '',
+          },
+        },
+      };
     });
 
-    return {
-      registrationId: registration.id,
-      status: registration.status,
-      paymentStatus: registration.paymentStatus,
-      paymentRequired: !isFree,
-      amount: registration.amount,
-      eventId: registration.event?.id ?? eventId,
-      ticketTypeId: registration.ticketTypeId,
-      event: registration.event ?? {
-        id: eventId,
-        title: event.title,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        locationText: event.locationText,
-        community: {
-          id: event.communityId,
-          name: this.getLocalizedText(event.title) || '',
-          slug: '',
-        },
-      },
-    };
+    return result;
   }
 
-  private async ensureActiveMembership(communityId: string, userId: string) {
-    const member = await this.prisma.communityMember.findUnique({
+  private async ensureActiveMembership(communityId: string, userId: string, db: PrismaClientOrTx = this.prisma) {
+    const member = await db.communityMember.findUnique({
       where: { communityId_userId: { communityId, userId } },
     });
 
@@ -409,7 +413,7 @@ export class EventsService {
     }
 
     if (!member) {
-      await this.prisma.communityMember.create({
+      await db.communityMember.create({
         data: {
           communityId,
           userId,

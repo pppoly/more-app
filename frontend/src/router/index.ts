@@ -936,9 +936,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.meta.requiresOrganizer && !auth.user.value?.isOrganizer && !auth.user.value?.isAdmin) {
-    const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
-    if (showed) return next(false);
-    return next({ name: 'organizer-apply', query: { redirect: to.fullPath } });
+    // コンソール配下のみ主理人チェックを強制。ユーザー側動線は通す。
+    if (to.path.startsWith('/console')) {
+      const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
+      if (showed) return next(false);
+      return next({ name: 'home' });
+    }
+    return next();
   }
 
   return next();
