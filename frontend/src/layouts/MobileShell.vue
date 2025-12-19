@@ -103,6 +103,7 @@ import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
+import { APP_TARGET } from '../config';
 
 const props = defineProps<{
   forceHideHeader?: boolean;
@@ -124,6 +125,7 @@ const contentEl = ref<HTMLElement | null>(null);
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 const contentTopPaddingStyle = computed(() => ({}));
+const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff');
 
 const tabIcons = {
   events: {
@@ -186,8 +188,8 @@ const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ロ
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
   // LIFF 時はトップレベルのみタブ表示
-  if (props.isLiff && !props.rootNavRoute) return false;
-  const topLevelOnly = props.showBrandTopBar || props.isLiff;
+  if (isLiffMode.value && !props.rootNavRoute) return false;
+  const topLevelOnly = props.showBrandTopBar || isLiffMode.value;
   const baseMatch = (path: string, tabPath: string) =>
     topLevelOnly ? path === tabPath : path === tabPath || path.startsWith(`${tabPath}/`);
   return tabs.value.some((tab) => baseMatch(route.path, tab.path));
@@ -196,7 +198,7 @@ const showTabbar = computed(() => {
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const showHeader = computed(() => {
   // LIFF 内ではトップレベル（/me /console /admin）は LINE の UI に委ねる
-  if (props.isLiff) {
+  if (isLiffMode.value) {
     if (route.path.startsWith('/me') || route.path.startsWith('/console') || route.path.startsWith('/admin')) {
       return false;
     }

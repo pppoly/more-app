@@ -704,8 +704,10 @@ const routes: RouteRecordRaw[] = [
 const APP_NAME = 'SOCIALMORE';
 
 const resolvePageTitle = (to: any) => {
-  const metaTitle = (to.meta?.title as string | undefined) || (to.meta?.devPageName as string | undefined);
-  return metaTitle?.trim() || APP_NAME;
+  const metaTitle = (to.meta?.title as string | undefined) || (to.meta?.liffTitle as string | undefined);
+  if (metaTitle && metaTitle.trim()) return metaTitle.trim();
+  if (typeof to.name === 'string' && to.name) return to.name;
+  return APP_NAME;
 };
 
 const applyPageTitle = async (to: any) => {
