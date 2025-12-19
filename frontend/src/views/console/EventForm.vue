@@ -3,7 +3,7 @@
       class="console-section"
       :class="{ 'console-section--mobile': isMobileLayout, 'sheet-open': sheetOpen }"
     >
-    <ConsoleTopBar v-if="isMobileLayout" title="イベント作成" @back="goBack" />
+    <ConsoleTopBar v-if="isMobileLayout" titleKey="console.eventForm.title" @back="goBack" />
     <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">

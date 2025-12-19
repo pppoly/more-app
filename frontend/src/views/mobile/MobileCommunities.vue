@@ -85,6 +85,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
+import { APP_TARGET } from '../../config';
 
 type CommunityCardItem = {
   id: string;
@@ -102,7 +103,7 @@ const router = useRouter();
 const activeCommunities = ref<CommunityCardItem[]>([]);
 const quietCommunities = ref<CommunityCardItem[]>([]);
 const quietOpen = ref(false);
-const isLiffClientMode = computed(() => isLiffClient());
+const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
 
 const goBack = () => {
   router.push({ name: 'MobileMe' });

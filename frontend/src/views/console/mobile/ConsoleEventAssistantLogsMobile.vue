@@ -1,7 +1,13 @@
 <template>
   <div class="logs-shell">
     <div class="assistant-topbar-wrap">
-      <ConsoleTopBar class="assistant-topbar" title="AI 履歴" :sticky="true" @back="goBack" />
+      <ConsoleTopBar
+        v-if="!isLiffClientMode"
+        class="assistant-topbar"
+        titleKey="console.eventAssistant.logs"
+        :sticky="true"
+        @back="goBack"
+      />
     </div>
 
     <section class="logs-body" v-if="loading">
@@ -49,9 +55,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { fetchEventAssistantLogs } from '../../../api/client';
 import type { ConsoleEventAssistantLog } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
+import { APP_TARGET } from '../../../config';
 
 const route = useRoute();
 const router = useRouter();
+const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
 const communityId = computed(() => route.params.communityId as string | undefined);
 
 const logs = ref<ConsoleEventAssistantLog[]>([]);

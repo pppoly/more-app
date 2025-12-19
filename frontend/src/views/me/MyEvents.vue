@@ -129,6 +129,7 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useConfirm } from '../../composables/useConfirm';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
+import { APP_TARGET } from '../../config';
 
 type FilterTabId = 'upcoming' | 'past' | 'all';
 
@@ -143,7 +144,7 @@ const qrVisible = ref(false);
 const qrTicket = ref<MyEventItem | null>(null);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
-const isLiffClientMode = computed(() => isLiffClient());
+const isLiffClientMode = computed(() => isLiffClient() || APP_TARGET === 'liff');
 const resourceConfigStore = useResourceConfig();
 const { confirm: confirmDialog } = useConfirm();
 const { slotMap } = resourceConfigStore;

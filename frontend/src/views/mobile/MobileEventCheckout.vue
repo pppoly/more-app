@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-pay-confirm">
-    <ConsoleTopBar class="topbar" title="支払い内容の確認" @back="goBack" />
+    <ConsoleTopBar class="topbar" titleKey="mobile.eventCheckout.title" @back="goBack" />
     <section v-if="loading" class="state-card">読み込み中…</section>
     <section v-else-if="error" class="state-card state-card--error">
       {{ error }}

@@ -1,6 +1,6 @@
 <template>
   <div class="success-page">
-    <ConsoleTopBar class="topbar" title="申込完了" @back="router.back()" />
+    <ConsoleTopBar class="topbar" titleKey="mobile.eventSuccess.title" @back="router.back()" />
     <div class="content">
       <div class="hero">
         <div class="hero-icon" aria-hidden="true">

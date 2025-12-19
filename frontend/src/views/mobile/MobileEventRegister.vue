@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-register">
-    <ConsoleTopBar class="topbar" title="イベント申込" @back="router.back()" />
+    <ConsoleTopBar class="topbar" titleKey="mobile.eventRegister.title" @back="router.back()" />
 
     <section v-if="loading" class="register-skeleton">
       <div class="skeleton-hero shimmer"></div>

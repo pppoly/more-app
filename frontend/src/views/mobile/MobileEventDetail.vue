@@ -87,7 +87,7 @@
               </div>
               <div v-if="showHeaderActions" class="event-hero-actions">
                 <button class="event-action-icon" type="button" @click="shareEvent">
-                  <span class="i-lucide-share-2"></span>
+                  <img :src="shareIcon" alt="share" class="event-action-icon__img" />
                 </button>
                 <button
                   class="event-action-icon"
@@ -95,7 +95,7 @@
                   type="button"
                   @click="handleFavoriteToggle"
                 >
-                  <span class="i-lucide-bookmark"></span>
+                  <img :src="followIcon" alt="follow" class="event-action-icon__img" />
                 </button>
               </div>
             </div>
@@ -310,6 +310,8 @@ import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
+import shareIcon from '../../assets/share.svg';
+import followIcon from '../../assets/follow.svg';
 
 const route = useRoute();
 const router = useRouter();
@@ -1660,15 +1662,20 @@ watch(
   color: var(--m-color-text-primary);
 }
 
-.event-action-icon .i-lucide-share-2,
-.event-action-icon .i-lucide-bookmark {
-  font-size: 1rem;
+.event-action-icon__img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .event-action-icon.is-active {
   background: linear-gradient(135deg, #2563eb, #60a5fa);
   color: #fff;
   border-color: #1d4ed8;
+}
+
+.event-action-icon.is-active .event-action-icon__img {
+  filter: brightness(0) invert(1);
 }
 
 .view-count {
