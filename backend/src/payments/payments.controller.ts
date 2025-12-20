@@ -22,6 +22,9 @@ export class PaymentsController {
   @Post('stripe/webhook')
   handleStripeWebhook(@Req() req: Request) {
     const signature = req.headers['stripe-signature'] as string | undefined;
+    // debug headers
+    console.log('[stripe webhook] headers keys:', Object.keys(req.headers));
+    console.log('[stripe webhook] stripe-signature:', signature);
     return this.paymentsService.handleStripeWebhook(signature, req.body as Buffer);
   }
 
