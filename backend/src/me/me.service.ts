@@ -206,8 +206,12 @@ export class MeService {
         id: true,
         amount: true,
         paymentStatus: true,
+        lessonId: true,
         event: {
           select: { startTime: true },
+        },
+        payment: {
+          select: { id: true },
         },
       },
     });
@@ -221,7 +225,30 @@ export class MeService {
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
-      throw new BadRequestException('有料イベントのキャンセルはサポートにお問い合わせください');
+      const refundRequest = await this.prisma.refundRequest.upsert({
+        where: { registrationId },
+        update: {
+          status: 'requested',
+          decision: null,
+          approvedAmount: null,
+          refundedAmount: null,
+          reason: null,
+          paymentId: registration.payment?.id ?? null,
+        },
+        create: {
+          registrationId,
+          paymentId: registration.payment?.id ?? null,
+          status: 'requested',
+          requestedAmount: registration.amount ?? 0,
+          reason: null,
+          lessonId: registration.lessonId ?? null,
+        },
+      });
+      await this.prisma.eventRegistration.update({
+        where: { id: registrationId },
+        data: { status: 'cancel_requested' },
+      });
+      return { registrationId, status: 'cancel_requested', refundRequest };
     }
 
     await this.prisma.eventRegistration.update({
@@ -280,15 +307,15 @@ export class MeService {
           approvedAmount: null,
           refundedAmount: null,
           reason: reason ?? null,
-          idempotencyKey: `refund:${registrationId}`,
+          paymentId: registration.payment?.id ?? null,
         },
         create: {
           registrationId,
-          paymentId: registration.payment?.id,
+          paymentId: registration.payment?.id ?? null,
           status: 'requested',
           requestedAmount: registration.amount ?? 0,
           reason: reason ?? null,
-          idempotencyKey: `refund:${registrationId}`,
+          lessonId: registration.lessonId ?? null,
         },
       });
       await this.prisma.eventRegistration.update({

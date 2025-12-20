@@ -106,9 +106,10 @@ const regenerate = async () => {
 .card {
   width: 100%;
   max-width: 420px;
-  background: rgba(255, 255, 255, 0.95);
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.98);
   border-radius: 18px;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
+  /* 移除阴影，保持轻边框 */
   padding: 28px 22px;
   text-align: center;
   border: 1px solid rgba(15, 23, 42, 0.06);
@@ -144,6 +145,7 @@ h1 {
   flex-direction: column;
   gap: 10px;
   margin-top: 10px;
+  width: 100%;
 }
 .btn {
   width: 100%;
