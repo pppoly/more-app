@@ -15,6 +15,9 @@
     "stripeLinkFailed": "リンクを作成できませんでした。時間をおいて再試行するか、サポートへご連絡ください。",
     "qrScanFailed": "読み取りに失敗しました。もう一度スキャンするか、写真をアップロードしてください。"
   },
+  "payments": {
+    "title": "支払い履歴"
+  },
   "console": {
     "access": {
       "logo": "MORE Console",
@@ -198,15 +201,26 @@
         "label": "言語設定 / Language",
         "meta": "表示言語を切り替える"
       },
-      "notifications": {
-        "label": "通知・アプリ設定",
-        "meta": "アプリ権限と環境設定"
-      },
-      "localeSheet": {
-        "title": "表示言語を選択",
-        "subtitle": "変更すると表示順などに影響します",
-        "active": "使用中"
-      },
+  "notifications": {
+    "label": "通知・アプリ設定",
+    "meta": "アプリ権限と環境設定"
+  },
+  "legal": {
+    "title": "法務・ポリシー",
+    "terms": {
+      "label": "利用規約",
+      "meta": "サービス利用に関する条件"
+    },
+    "privacy": {
+      "label": "プライバシーポリシー",
+      "meta": "個人情報の取り扱い"
+    }
+  },
+  "localeSheet": {
+    "title": "表示言語を選択",
+    "subtitle": "変更すると表示順などに影響します",
+    "active": "使用中"
+  },
       "toast": {
         "notificationsPending": "通知設定は準備中です"
       }

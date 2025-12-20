@@ -64,17 +64,6 @@
                 />
                 <div v-else class="cover cover-fallback">MORE</div>
                 <div class="cover-gradient"></div>
-                <div v-if="event.showAvatars && event.attendees.length" class="overlay-avatars">
-                  <div class="avatar-row">
-                    <img
-                      v-for="(avatar, idx) in event.attendees"
-                      :key="`${event.id}-att-${idx}`"
-                      :src="avatar"
-                      alt="attendee"
-                    />
-                    <span v-if="event.attendeesMore > 0" class="avatar-more">+{{ event.attendeesMore }}</span>
-                  </div>
-                </div>
               </div>
               <div class="card-body">
                 <h2 class="title">{{ event.title }}</h2>
@@ -504,11 +493,6 @@ onMounted(loadEvents);
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.35) 100%);
-}
-.overlay-avatars {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
 }
 .avatar-row {
   display: flex;

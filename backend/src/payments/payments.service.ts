@@ -416,9 +416,12 @@ export class PaymentsService {
     const titleSource = event ? event.title : lesson?.class.title;
     const eventTitle = this.getLocalizedText(titleSource) || 'MORE Class';
 
+    // Expire Checkout after 30 minutes to avoid long-held pending locks.
+    const expiresAt = Math.floor(Date.now() / 1000) + 30 * 60;
     const session = await this.stripeService.client.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
+      expires_at: expiresAt,
       line_items: [
         {
           price_data: {
@@ -927,13 +930,13 @@ export class PaymentsService {
     if (payment) {
       await tx.payment.update({
         where: { id: payment.id },
-        data: { status: 'pending' },
+        data: { status: 'cancelled' },
       });
     }
     if (registrationId) {
       await tx.eventRegistration.updateMany({
         where: { id: registrationId, paymentStatus: 'pending' },
-        data: { paymentStatus: 'pending', status: 'cancelled' },
+        data: { paymentStatus: 'cancelled', status: 'cancelled' },
       });
     }
     this.logger.log(`Checkout session expired: ${session.id}, registration=${registrationId ?? 'n/a'}`);

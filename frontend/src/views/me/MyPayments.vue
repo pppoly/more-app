@@ -133,7 +133,7 @@ type FilterId = 'all' | 'paid' | 'refunded';
 interface PaymentRecord {
   registrationId: string;
   eventTitle: string;
-  eventDate: string;
+  eventDate?: string | null;
   amount: number;
   status: string;
   paymentStatus?: string;
@@ -156,16 +156,25 @@ const records = ref<PaymentRecord[]>([]);
 const activeFilter = ref<FilterId>('all');
 
 const formatYen = (value: number) => value.toLocaleString('ja-JP');
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' });
-const formatDateTime = (value?: string | null) =>
-  value
-    ? new Date(value).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : '—';
+const formatDate = (value?: string | null) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' });
+};
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
 
 const statusText = (rec: PaymentRecord) => {
   const total = rec.amount || 0;
   const refunded = rec.refundedAmount ?? 0;
+  const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+  const refundingLike = ['cancel_requested', 'cancelled', 'pending_refund', 'processing_refund'];
+  if (refundingLike.includes(rec.status)) return '返金処理中';
   if (rec.status === 'cancel_requested') return '返金処理中';
   if (rec.status === 'cancelled' && total > 0) return '返金処理中';
   if (rec.refundStatus === 'pending' || rec.status === 'pending_refund') return '返金処理中';
@@ -173,7 +182,7 @@ const statusText = (rec: PaymentRecord) => {
     return refunded >= total && total > 0 ? '返金済み（全額）' : `返金済み（一部 ¥${formatYen(refunded)})`;
   }
   if (rec.paymentStatus === 'refunded') return '返金済み（全額）';
-  if (rec.paymentStatus === 'paid' || rec.status === 'paid') return '支払い完了';
+  if (paidLike.includes(rec.paymentStatus || '') || paidLike.includes(rec.status)) return '支払い完了';
   return '支払い待ち';
 };
 
@@ -191,35 +200,52 @@ const statusClass = (rec: PaymentRecord) => {
   return 'chip';
 };
 
-const buildPhase = (event: MyEventItem['event']) => {
+const buildPhase = (event: MyEventItem['event'], lesson: MyEventItem['lesson']) => {
   const now = Date.now();
-  const start = new Date(event.startTime).getTime();
-  const end = event.endTime ? new Date(event.endTime).getTime() : start;
+  const startStr = event?.startTime ?? lesson?.startAt ?? null;
+  const endStr = event?.endTime ?? lesson?.endAt ?? null;
+  if (!startStr) return '開催予定';
+  const start = new Date(startStr).getTime();
+  const end = endStr ? new Date(endStr).getTime() : start;
+  if (isNaN(start)) return '開催予定';
   if (now < start) return '開催前';
   if (now >= start && now <= end) return '開催中';
   return '開催終了';
 };
 
 const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
-  items.map((item) => {
-    const refund = item.refundRequest;
-    const paymentMethod = (item as any).paymentMethod || 'Stripe';
-    const createdAt = (item as any).createdAt ?? item.event.startTime;
-    return {
-      registrationId: item.registrationId,
-      eventTitle: getLocalizedText(item.event.title),
-      eventDate: item.event.startTime,
-      amount: item.amount ?? 0,
-      status: item.status,
-      paymentStatus: item.paymentStatus,
-      refundStatus: refund?.status ?? null,
-      refundedAmount: refund?.refundedAmount ?? null,
-      refundReason: refund?.reason ?? null,
-      method: paymentMethod,
-      paidAt: createdAt,
-      phase: buildPhase(item.event),
-    };
-  });
+  items
+    .map((item) => {
+      try {
+        const refund = item.refundRequest;
+        const paymentMethod = (item as any).paymentMethod || 'Stripe';
+        const createdAt = (item as any).createdAt ?? item.event?.startTime ?? item.lesson?.startAt ?? null;
+        const sourceTitle = item.event
+          ? getLocalizedText(item.event.title)
+          : item.lesson?.class?.title
+            ? getLocalizedText(item.lesson.class.title)
+            : '—';
+        const eventDate = item.event?.startTime ?? item.lesson?.startAt ?? null;
+        return {
+          registrationId: item.registrationId,
+          eventTitle: sourceTitle || '—',
+          eventDate,
+          amount: item.amount ?? 0,
+          status: item.status,
+          paymentStatus: item.paymentStatus,
+          refundStatus: refund?.status ?? null,
+          refundedAmount: refund?.refundedAmount ?? null,
+          refundReason: refund?.reason ?? null,
+          method: paymentMethod,
+          paidAt: createdAt,
+          phase: buildPhase(item.event, item.lesson),
+        };
+      } catch (err) {
+        console.warn('[payments] skip record', item?.registrationId, err);
+        return null;
+      }
+    })
+    .filter((item): item is PaymentRecord => Boolean(item));
 
 const loadPayments = async () => {
   loading.value = true;
@@ -228,7 +254,10 @@ const loadPayments = async () => {
     const events = await fetchMyEvents();
     records.value = mapToRecords(events);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'ネットワークが不安定です。しばらくしてから再度お試しください。';
+    const message =
+      (err as any)?.response?.data?.message ||
+      (err instanceof Error ? err.message : 'ネットワークが不安定です。しばらくしてから再度お試しください。');
+    error.value = Array.isArray(message) ? message.join(', ') : message;
   } finally {
     loading.value = false;
   }
@@ -336,7 +365,7 @@ const goBack = () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
-  margin-bottom: 12px;
+  margin: 12px 0 12px;
 }
 
 .summary-card {
@@ -387,7 +416,7 @@ const goBack = () => {
   background: #f1f5f9;
   border-radius: 12px;
   padding: 12px;
-  margin: 0 0 12px;
+  margin: 8px 0 12px;
   font-size: 13px;
   color: #1f2a3d;
   line-height: 1.5;

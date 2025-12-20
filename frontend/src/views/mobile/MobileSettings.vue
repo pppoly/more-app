@@ -21,6 +21,26 @@
       </div>
     </section>
 
+    <section class="settings-section">
+      <h2 class="m-section-title">{{ t('mobile.settings.legal.title') }}</h2>
+      <div class="settings-list">
+        <a class="settings-item" href="/legal/terms" target="_blank" rel="noopener">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.legal.terms.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.legal.terms.meta') }}</p>
+          </div>
+          <span class="i-lucide-external-link"></span>
+        </a>
+        <a class="settings-item" href="/legal/privacy" target="_blank" rel="noopener">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.legal.privacy.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.legal.privacy.meta') }}</p>
+          </div>
+          <span class="i-lucide-external-link"></span>
+        </a>
+      </div>
+    </section>
+
     <section class="settings-section" v-if="isLoggedIn">
       <h2 class="m-section-title">{{ t('header.default') }}</h2>
       <div class="settings-list">

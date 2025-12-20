@@ -15,6 +15,9 @@
     "stripeLinkFailed": "开通链接生成失败，请稍后重试或联系支持。",
     "qrScanFailed": "扫码失败，请重试或上传二维码照片。"
   },
+  "payments": {
+    "title": "支付记录"
+  },
   "nav": {
     "back": "返回",
     "events": "活动",
@@ -126,15 +129,26 @@
         "label": "语言设置",
         "meta": "切换界面语言"
       },
-      "notifications": {
-        "label": "通知与应用",
-        "meta": "权限和偏好设置"
-      },
-      "localeSheet": {
-        "title": "选择界面语言",
-        "subtitle": "更换后会影响内容展示顺序",
-        "active": "使用中"
-      },
+  "notifications": {
+    "label": "通知与应用",
+    "meta": "权限和偏好设置"
+  },
+  "legal": {
+    "title": "法律与合规",
+    "terms": {
+      "label": "服务条款",
+      "meta": "MORE 的使用条款"
+    },
+    "privacy": {
+      "label": "隐私政策",
+      "meta": "个人信息处理方式"
+    }
+  },
+  "localeSheet": {
+    "title": "选择界面语言",
+    "subtitle": "更换后会影响内容展示顺序",
+    "active": "使用中"
+  },
       "toast": {
         "notificationsPending": "通知设置开发中"
       }

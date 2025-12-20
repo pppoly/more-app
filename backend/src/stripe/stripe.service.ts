@@ -13,13 +13,19 @@ export class StripeService {
 
   constructor() {
     const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
-    const strictEnv = ['uat', 'production', 'prod'].includes(envLabel);
-    const secretKey = process.env.STRIPE_SECRET_KEY;
-    this.publishableKey = process.env.STRIPE_PUBLISHABLE_KEY || null;
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || null;
-    const frontendBaseUrlRaw = process.env.FRONTEND_BASE_URL;
+    const isLive = ['production', 'prod', 'live'].includes(envLabel);
+    const isUat = envLabel === 'uat' || envLabel === 'staging';
+    // Single .env with both keys; APP_ENV toggles which set to use
+    const secretKey = isLive ? process.env.STRIPE_SECRET_KEY_LIVE : process.env.STRIPE_SECRET_KEY_TEST;
+    this.publishableKey = isLive
+      ? process.env.STRIPE_PUBLISHABLE_KEY_LIVE || null
+      : process.env.STRIPE_PUBLISHABLE_KEY_TEST || null;
+    const webhookSecret = isLive
+      ? process.env.STRIPE_WEBHOOK_SECRET_LIVE || null
+      : process.env.STRIPE_WEBHOOK_SECRET_TEST || null;
+    const frontendBaseUrlRaw = isLive ? process.env.FRONTEND_BASE_URL_LIVE : process.env.FRONTEND_BASE_URL_UAT;
 
-    if (strictEnv) {
+    if (isLive || isUat) {
       const missing: string[] = [];
       if (!secretKey) missing.push('STRIPE_SECRET_KEY');
       if (!this.publishableKey) missing.push('STRIPE_PUBLISHABLE_KEY');
@@ -39,12 +45,12 @@ export class StripeService {
         apiVersion: '2025-02-24.acacia',
       });
       this.enabled = true;
-      if (strictEnv && secretKey.startsWith('sk_test_')) {
-        this.logger.warn(`Strict environment ${envLabel} is using Stripe test key`);
+      if (isLive && secretKey.startsWith('sk_test_')) {
+        this.logger.warn(`Live environment ${envLabel} is using Stripe test key`);
       }
     }
     const sanitizedFrontend = this.sanitizeBaseUrl(frontendBaseUrlRaw);
-    if (strictEnv && !frontendBaseUrlRaw) {
+    if ((isLive || isUat) && !frontendBaseUrlRaw) {
       throw new Error('FRONTEND_BASE_URL is required for Stripe redirect URLs');
     }
     this.frontendBaseUrl = sanitizedFrontend;

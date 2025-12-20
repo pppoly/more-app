@@ -15,6 +15,9 @@
     "stripeLinkFailed": "Could not create the link. Please try again later or contact support.",
     "qrScanFailed": "Scan failed. Try again or upload a photo of the code."
   },
+  "payments": {
+    "title": "Payment history"
+  },
   "console": {
     "access": {
       "logo": "MORE Console",
@@ -171,15 +174,26 @@
         "label": "Language",
         "meta": "Choose display language"
       },
-      "notifications": {
-        "label": "Notifications & app",
-        "meta": "App permissions and preferences"
-      },
-      "localeSheet": {
-        "title": "Choose display language",
-        "subtitle": "Changing this may affect how titles are shown",
-        "active": "Active"
-      },
+  "notifications": {
+    "label": "Notifications & app",
+    "meta": "App permissions and preferences"
+  },
+  "legal": {
+    "title": "Legal & compliance",
+    "terms": {
+      "label": "Terms of Service",
+      "meta": "Conditions for using MORE"
+    },
+    "privacy": {
+      "label": "Privacy Policy",
+      "meta": "How we handle your data"
+    }
+  },
+  "localeSheet": {
+    "title": "Choose display language",
+    "subtitle": "Changing this may affect how titles are shown",
+    "active": "Active"
+  },
       "toast": {
         "notificationsPending": "Notification settings coming soon"
       }
