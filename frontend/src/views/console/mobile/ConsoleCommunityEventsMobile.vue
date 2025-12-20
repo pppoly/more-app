@@ -39,7 +39,6 @@
         <p class="next-steps__title">次にできること</p>
         <div class="next-steps__actions">
           <button type="button" class="hint-btn" @click="createNew">新しいイベントを作成</button>
-          <button type="button" class="hint-btn ghost" @click="openDashboard">申込状況を確認</button>
         </div>
       </div>
     </section>
@@ -138,11 +137,6 @@ const openManage = (eventId: string, status: string) => {
     return;
   }
   router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
-};
-
-const openDashboard = () => {
-  if (!communityId.value) return;
-  router.push({ name: 'ConsoleMobileAssistantDashboard', params: { communityId: communityId.value } });
 };
 
 const goBack = () => {

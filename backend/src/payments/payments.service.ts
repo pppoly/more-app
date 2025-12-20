@@ -71,7 +71,25 @@ export class PaymentsService {
         include: {
           user: { select: { id: true, name: true, avatarUrl: true } },
           event: { select: { id: true, title: true } },
-          registration: { select: { id: true, ticketTypeId: true } },
+          registration: {
+            select: {
+              id: true,
+              ticketTypeId: true,
+              refundRequest: {
+                select: {
+                  id: true,
+                  status: true,
+                  decision: true,
+                  requestedAmount: true,
+                  approvedAmount: true,
+                  refundedAmount: true,
+                  reason: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.payment.count({ where }),
@@ -103,6 +121,19 @@ export class PaymentsService {
         createdAt: item.createdAt,
         stripePaymentIntentId: item.stripePaymentIntentId ?? null,
         stripeRefundId: item.stripeRefundId ?? null,
+        refundRequest: item.registration?.refundRequest
+          ? {
+              id: item.registration.refundRequest.id,
+              status: item.registration.refundRequest.status,
+              decision: item.registration.refundRequest.decision ?? null,
+              requestedAmount: item.registration.refundRequest.requestedAmount,
+              approvedAmount: item.registration.refundRequest.approvedAmount ?? null,
+              refundedAmount: item.registration.refundRequest.refundedAmount ?? null,
+              reason: item.registration.refundRequest.reason ?? null,
+              createdAt: item.registration.refundRequest.createdAt,
+              updatedAt: item.registration.refundRequest.updatedAt,
+            }
+          : null,
       })),
     };
   }

@@ -1,6 +1,6 @@
 <template>
   <div class="lessons-page">
-    <ConsoleTopBar v-if="showTopBar" title="上課管理" @back="goBack" />
+    <ConsoleTopBar v-if="showTopBar" title="レッスン管理" @back="goBack" />
 
     <div v-if="classDetail" class="hero">
       <div class="hero-bg"></div>
@@ -10,10 +10,10 @@
         <p class="class-meta">
           ¥{{ classDetail.priceYenPerLesson.toLocaleString() }} / 回・定員 {{ classDetail.defaultCapacity ?? '未設定' }}
         </p>
-        <button class="primary add-btn" type="button" @click="openSheet">＋ 上課日程を追加</button>
+        <button class="primary add-btn" type="button" @click="openSheet">＋ レッスンを追加</button>
       </div>
     </div>
-    <p v-if="showTopBar" class="page-hint">この教室で開催する、各回の上課日程を管理します</p>
+    <p v-if="showTopBar" class="page-hint">この教室で開催する、各回のレッスン日程を管理します</p>
     <div v-if="loading" class="skeleton">
       <div class="sk-card" v-for="n in 3" :key="n">
         <div class="sk-line"></div>
@@ -27,9 +27,9 @@
     <div v-else>
       <div v-if="!lessons.length" class="state empty">
         <div class="empty-card">
-          <p class="empty-title">まだ上課日程がありません</p>
-          <p class="empty-desc">参加者が申し込めるように、まず最初の上課日程を追加しましょう</p>
-          <button class="ghost large" type="button" @click="openSheet">最初の上課日程を追加</button>
+          <p class="empty-title">まだレッスン日程がありません</p>
+          <p class="empty-desc">参加者が申し込めるように、まず最初のレッスンを追加しましょう</p>
+          <button class="ghost large" type="button" @click="openSheet">最初のレッスンを追加</button>
           <p class="hint">※ 右上の「＋」からも追加できます</p>
         </div>
       </div>
@@ -69,8 +69,8 @@
     <teleport to="body">
       <div v-if="showSheet" class="sheet-overlay" @click.self="closeSheet">
         <div class="sheet">
-          <div class="sheet-head">
-            <p class="sheet-title">上課日程を追加</p>
+            <div class="sheet-head">
+            <p class="sheet-title">レッスンを追加</p>
             <button class="close" type="button" @click="closeSheet"><span class="i-lucide-x"></span></button>
           </div>
           <div class="sheet-body">
@@ -190,7 +190,7 @@ const submitBatch = async () => {
   try {
     submitting.value = true;
     await batchCreateLessons(route.params.classId as string, batchRows.value);
-    toast.show('上課日程を追加しました');
+    toast.show('レッスン日程を追加しました');
     const start = defaultStart();
     batchRows.value = [{ startAt: start, endAt: defaultEnd(start), capacity: null }];
     await load();

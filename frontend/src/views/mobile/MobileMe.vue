@@ -5,8 +5,7 @@
         <div class="me-hero__avatar-wrap">
           <button class="me-hero__avatar" type="button" @click="handleAvatarTap" :disabled="avatarUploading">
             <div v-if="avatarUploading" class="me-hero__avatar-spinner"></div>
-            <img v-if="user?.avatarUrl" :src="user.avatarUrl" alt="user" />
-            <span v-else>{{ userInitials }}</span>
+            <AppAvatar :src="user?.avatarUrl" :name="user?.name" :size="80" />
           </button>
         </div>
         <div class="me-hero__info">
@@ -73,6 +72,7 @@ import { validateAvatarFile } from '../../utils/validateAvatarFile';
 import { useI18n } from 'vue-i18n';
 import ImageCropperModal from '../../components/ImageCropperModal.vue';
 import { useToast } from '../../composables/useToast';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const router = useRouter();
 const route = useRoute();

@@ -2,21 +2,6 @@
   <div class="my-payments-page">
     <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" titleKey="me.payments.title" @back="goBack" />
 
-    <section class="summary">
-      <div class="summary-card">
-        <p class="summary-label">合計支払い額</p>
-        <p class="summary-value">¥{{ formatYen(summary.totalPaid) }}</p>
-      </div>
-      <div class="summary-card">
-        <p class="summary-label">返金済み</p>
-        <p class="summary-value">¥{{ formatYen(summary.totalRefunded) }}</p>
-      </div>
-      <div class="summary-card">
-        <p class="summary-label">返金処理中</p>
-        <p class="summary-value">¥{{ formatYen(summary.totalRefundPending) }}</p>
-      </div>
-    </section>
-
     <section class="filters">
       <button
         v-for="tab in filterTabs"
@@ -28,24 +13,6 @@
       >
         {{ tab.label }} ({{ tab.count }})
       </button>
-    </section>
-
-    <section class="disclosure">
-      <p class="disclosure-title">返金・支払いの重要なお知らせ</p>
-      <ul>
-        <li>返金可否・割合・期限は各イベント/教室の表示条件が優先されます。</li>
-        <li>返金手数料・為替差・振込手数料・チャージバック費用等が控除される場合があります。</li>
-        <li>コンテンツ・安全性・履行は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
-      </ul>
-      <div class="disclosure-links">
-        <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
-        <span>・</span>
-        <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
-        <span>・</span>
-        <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
-        <span>・</span>
-        <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
-      </div>
     </section>
 
     <section class="list">
@@ -290,26 +257,6 @@ const filteredRecords = computed(() => {
   return paidRecords.filter((rec) => statusText(rec).includes('返金'));
 });
 
-const summary = computed(() => {
-  let totalPaid = 0;
-  let totalRefunded = 0;
-  let totalRefundPending = 0;
-  records.value.forEach((rec) => {
-    const amt = rec.amount ?? 0;
-    const refunded = rec.refundedAmount ?? 0;
-    if (rec.paymentStatus === 'paid' || rec.paymentStatus === 'refunded' || rec.status === 'pending_refund') {
-      totalPaid += amt;
-    }
-    if (rec.refundStatus === 'pending' || rec.status === 'pending_refund') {
-      totalRefundPending += rec.refundedAmount ?? rec.amount ?? 0;
-    }
-    if (refunded > 0 || rec.paymentStatus === 'refunded') {
-      totalRefunded += refunded || amt;
-    }
-  });
-  return { totalPaid, totalRefunded, totalRefundPending };
-});
-
 const goBack = () => {
   router.push({ name: 'MobileMe' });
 };
@@ -319,7 +266,7 @@ const goBack = () => {
 .my-payments-page {
   min-height: 100vh;
   background: #f5f7fb;
-  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px)) 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(64px + env(safe-area-inset-bottom, 0px)) 16px;
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
   width: 100%;
@@ -330,7 +277,8 @@ const goBack = () => {
 .topbar {
   margin-left: calc(-16px - env(safe-area-inset-left, 0px));
   margin-right: calc(-16px - env(safe-area-inset-right, 0px));
-  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
+  margin-top: 0;
+  margin-bottom: 12px;
 }
 
 .page-head {
@@ -361,39 +309,11 @@ const goBack = () => {
   color: #475569;
 }
 
-.summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-  margin: 12px 0 12px;
-}
-
-.summary-card {
-  background: #fff;
-  border-radius: 14px;
-  padding: 12px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(15, 23, 42, 0.04);
-}
-
-.summary-label {
-  margin: 0;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.summary-value {
-  margin: 4px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
 .filters {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 4px 0 12px;
+  margin: 8px 0 16px;
 }
 
 .filter-chip {

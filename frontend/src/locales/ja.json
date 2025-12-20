@@ -38,6 +38,9 @@
     "communityEvents": {
       "title": "コミュニティのイベント"
     },
+    "eventForm": {
+      "title": "イベント作成"
+    },
     "eventManage": {
       "title": "イベント管理"
     },
@@ -333,6 +336,11 @@
       "submit": "送信して開放",
       "success": "開放完了！コンソールへ移動します。",
       "error": "開放に失敗しました。少し待って再試行してください。"
+    }
+  },
+  "me": {
+    "payments": {
+      "title": "支払い履歴"
     }
   },
   "nav": {

@@ -76,10 +76,7 @@
               <span class="ticket-dot"></span>
               <span class="ticket-name">{{ ticket.name }}</span>
             </div>
-            <div class="ticket-progress">
-              <div class="ticket-progress-bar" :style="{ width: ticket.progressPercent + '%' }"></div>
-            </div>
-            <span class="ticket-count">{{ ticket.confirmed }}/{{ ticket.capacity }}</span>
+            <span class="ticket-count">{{ ticket.confirmed }}/{{ ticket.capacity }} 人</span>
           </div>
         </div>
       </section>
@@ -106,8 +103,7 @@
           @click="openEntryAction(entry)"
         >
           <div class="avatar-shell">
-            <img v-if="entry.avatarUrl" :src="entry.avatarUrl" class="avatar" alt="" />
-            <span v-else class="avatar empty">{{ entry.initials }}</span>
+            <AppAvatar :src="entry.avatarUrl" :name="entry.name" :size="46" />
           </div>
           <div class="entry-main">
             <div class="entry-head">
@@ -129,10 +125,7 @@
         <button class="action-secondary" type="button" @click="openPublicPage">
           公開ページを見る
         </button>
-        <button class="action-primary" type="button" @click="editEvent">
-          内容を編集
-        </button>
-        <button class="action-secondary" type="button" @click="openShareSheet">
+        <button class="action-primary" type="button" @click="openShareSheet">
           共有
         </button>
         <button class="action-more" type="button" aria-label="その他操作" @click="openMoreActions">
@@ -143,13 +136,42 @@
       <div v-if="showMoreSheet" class="sheet-mask" @click.self="closeMoreActions">
         <div class="sheet">
           <div class="sheet-handle"></div>
+          <button class="sheet-action" type="button" @click="handleEditEvent">
+            内容を編集
+          </button>
           <button class="sheet-action" type="button" :disabled="!communityId" @click="handlePayments">
             支払い・取引
           </button>
-          <button class="sheet-action danger" type="button" :disabled="cancelling" @click="cancelEvent">
+          <button
+            v-if="!isEventCancelled"
+            class="sheet-action danger"
+            type="button"
+            :disabled="cancelling"
+            @click="openCancelSheet"
+          >
             {{ cancelling ? '取消中…' : 'イベントを取消' }}
           </button>
           <button class="sheet-close" type="button" @click="closeMoreActions">閉じる</button>
+        </div>
+      </div>
+
+      <div v-if="showCancelSheet && !isEventCancelled" class="sheet-mask" @click.self="closeCancelSheet">
+        <div class="sheet cancel-sheet">
+          <div class="sheet-handle"></div>
+          <p class="sheet-title">イベントを取消しますか？</p>
+          <p class="cancel-desc">取消すると申込受付が停止され、元に戻せません。</p>
+          <div class="cancel-card">
+            <p class="cancel-card__title">取消の影響</p>
+            <ul class="cancel-list">
+              <li>有料の申込がある場合、まとめて返金処理を試みます。</li>
+              <li>返金の反映には時間がかかることがあります。</li>
+            </ul>
+            <p v-if="paidRegistrationsCount" class="cancel-meta">有料の申込: {{ paidRegistrationsCount }} 件</p>
+          </div>
+          <button class="sheet-action danger" type="button" :disabled="cancelling" @click="confirmCancelEvent">
+            {{ cancelling ? '取消中…' : '取消を確定' }}
+          </button>
+          <button class="sheet-close" type="button" @click="closeCancelSheet">戻る</button>
         </div>
       </div>
 
@@ -158,8 +180,7 @@
           <div class="sheet-handle"></div>
           <div class="flex items-center mb-3">
             <div class="avatar-shell">
-              <img v-if="activeEntry.avatarUrl" :src="activeEntry.avatarUrl" class="avatar" alt="" />
-              <span v-else class="avatar empty">{{ activeEntry.initials }}</span>
+              <AppAvatar :src="activeEntry.avatarUrl" :name="activeEntry.name" :size="46" />
             </div>
             <div class="ml-2">
               <p class="sheet-name">{{ activeEntry.name }}</p>
@@ -170,19 +191,19 @@
           </div>
           <button
             v-if="activeEntry.status === 'pending'"
-            class="sheet-action"
-            :disabled="entryActionLoading[activeEntry.id]"
-            @click="approveEntry"
-          >
-            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '承認する' }}
-          </button>
-          <button
-            v-if="activeEntry.status === 'pending'"
             class="sheet-action danger"
             :disabled="entryActionLoading[activeEntry.id]"
             @click="rejectEntry"
           >
             {{ entryActionLoading[activeEntry.id] ? '処理中…' : '拒否する' }}
+          </button>
+          <button
+            v-if="canRefundEntry(activeEntry)"
+            class="sheet-action danger"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="refundEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '返金してキャンセル' }}
           </button>
           <button class="sheet-close" @click="closeEntryAction">閉じる</button>
         </div>
@@ -238,9 +259,9 @@ import {
   fetchConsoleEvent,
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
-  approveEventRegistration,
   rejectEventRegistration,
   cancelConsoleEvent,
+  refundPayment,
 } from '../../../api/client';
 import type {
   ConsoleEventDetail,
@@ -255,6 +276,7 @@ import QRCode from 'qrcode';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
+import AppAvatar from '../../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -278,7 +300,9 @@ const registrations = ref<ConsoleEventRegistrationItem[]>([]);
 const activeEntry = ref<ReturnType<typeof mapEntry> | null>(null);
 const memberListRef = ref<HTMLElement | null>(null);
 const showMoreSheet = ref(false);
+const showCancelSheet = ref(false);
 const entryActionLoading = ref<Record<string, boolean>>({});
+const isEventCancelled = computed(() => eventDetail.value?.status === 'cancelled');
 
 const eventCard = computed(() => {
   if (!eventDetail.value) return null;
@@ -326,6 +350,7 @@ const summaryCard = computed(() => {
     })),
   };
 });
+const paidRegistrationsCount = computed(() => summary.value?.paidRegistrations ?? 0);
 
 const entries = computed(() => registrations.value.map(mapEntry));
 
@@ -338,6 +363,8 @@ function mapEntry(reg: ConsoleEventRegistrationItem) {
     ticketName: reg.ticket?.name ?? '未設定',
     status: reg.status,
     paymentStatus: reg.paymentStatus,
+    paymentId: reg.paymentId ?? null,
+    amount: reg.amount ?? null,
     attended: reg.attended,
     noShow: reg.noShow,
     createdAtText: new Date(reg.createdAt).toLocaleString('ja-JP', {
@@ -410,15 +437,29 @@ const openMoreActions = () => {
 const closeMoreActions = () => {
   showMoreSheet.value = false;
 };
+const openCancelSheet = () => {
+  if (cancelling.value || isEventCancelled.value) return;
+  showCancelSheet.value = true;
+  closeMoreActions();
+};
+const closeCancelSheet = () => {
+  showCancelSheet.value = false;
+};
+const handleEditEvent = () => {
+  editEvent();
+  closeMoreActions();
+};
 const handlePayments = () => {
   openPayments();
   closeMoreActions();
 };
+const confirmCancelEvent = async () => {
+  closeCancelSheet();
+  await cancelEvent();
+};
 
 const cancelEvent = async () => {
-  if (!eventCard.value || cancelling.value) return;
-  const sure = window.confirm('キャンセルすると支払い済みの参加者に返金処理を試みます。続行しますか？');
-  if (!sure) return;
+  if (!eventCard.value || cancelling.value || isEventCancelled.value) return;
   cancelling.value = true;
   error.value = '';
   try {
@@ -466,6 +507,8 @@ const entryStatusLabel = (entry: ReturnType<typeof mapEntry>) => {
       return '審査待ち';
     case 'approved':
       return '承認済み';
+    case 'cancel_requested':
+      return '返金申請中';
     case 'rejected':
       return '拒否';
     case 'paid':
@@ -492,6 +535,7 @@ const entryStatusBadgeClass = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.attended) return 'bg-emerald-100 text-emerald-700';
   if (entry.noShow) return 'bg-rose-100 text-rose-600';
   if (entry.status === 'pending') return 'bg-amber-100 text-amber-700';
+  if (entry.status === 'cancel_requested') return 'bg-amber-100 text-amber-700';
   if (entry.status === 'approved' || entry.status === 'paid') return 'bg-slate-800 text-white';
   if (entry.status === 'refunded') return 'bg-blue-100 text-blue-700';
   if (entry.status === 'pending_refund') return 'bg-amber-100 text-amber-700';
@@ -651,22 +695,6 @@ const generatePoster = async () => {
   }
 };
 
-const approveEntry = async () => {
-  if (!activeEntry.value) return;
-  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
-  try {
-    await approveEventRegistration(eventId.value, activeEntry.value.id);
-    registrations.value = registrations.value.map((reg) =>
-      reg.registrationId === activeEntry.value?.id ? { ...reg, status: 'approved' } : reg,
-    );
-    closeEntryAction();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '承認に失敗しました';
-  } finally {
-    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
-  }
-};
-
 const rejectEntry = async () => {
   if (!activeEntry.value) return;
   entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
@@ -678,6 +706,31 @@ const rejectEntry = async () => {
     closeEntryAction();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '拒否に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
+};
+
+const formatYen = (value?: number | null) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+
+const canRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
+  Boolean(entry.paymentId) &&
+  entry.paymentStatus === 'paid' &&
+  !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status);
+
+const refundEntry = async () => {
+  if (!activeEntry.value || !activeEntry.value.paymentId) return;
+  const amountText = activeEntry.value.amount ? ` (${formatYen(activeEntry.value.amount)})` : '';
+  const sure = window.confirm(`この参加者をキャンセルして返金しますか？${amountText}`);
+  if (!sure) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await refundPayment(activeEntry.value.paymentId, { reason: 'console_kick_refund' });
+    await reload();
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '返金に失敗しました';
   } finally {
     entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
   }
@@ -788,12 +841,10 @@ const reload = () => loadData();
   border-radius: 999px;
   transition: width 0.25s ease;
 }
-.ticket-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.ticket-row { display: grid; grid-template-columns: auto auto; align-items: center; gap: 10px; }
 .ticket-meta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .ticket-dot { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(120deg, #22d3ee, #22c55e); }
 .ticket-name { font-size: 13px; color: #0f172a; font-weight: 600; }
-.ticket-progress { height: 6px; background: #f8fafc; border-radius: 999px; overflow: hidden; border: 1px solid #e2e8f0; }
-.ticket-progress-bar { height: 100%; background: linear-gradient(120deg, #22c55e, #0ea5e9); }
 .ticket-count { font-size: 12px; color: #0f172a; font-weight: 600; }
 .participants { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .avatar-stack { display: flex; align-items: center; }
@@ -806,8 +857,9 @@ const reload = () => loadData();
 
 .entry-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
 .entry-row:last-child { border-bottom: none; }
-.avatar-shell { width: 46px; height: 46px; border-radius: 14px; background: #f8fafc; border: 1px solid #e2e8f0; display: grid; place-items: center; overflow: hidden; }
-.avatar-shell .avatar { width: 100%; height: 100%; border: none; margin: 0; }
+.avatar-shell { position: relative; width: 46px; height: 46px; border-radius: 14px; background: #f8fafc; border: 1px solid #e2e8f0; display: grid; place-items: center; overflow: hidden; }
+.avatar-shell .avatar { width: 100%; height: 100%; border: none; margin: 0; object-fit: cover; }
+.avatar-shell .avatar-fallback-text { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: #475569; font-weight: 700; }
 .avatar.empty { display: grid; place-items: center; font-size: 14px; color: #475569; background: #e2e8f0; }
 .entry-main { min-width: 0; }
 .entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -823,7 +875,7 @@ const reload = () => loadData();
   bottom: 0;
   padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto;
   gap: 8px;
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid #e2e8f0;
@@ -870,6 +922,11 @@ const reload = () => loadData();
 .sheet-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px; text-align: center; }
 .sheet-error { font-size: 12px; color: #b91c1c; margin: 4px 0 8px; text-align: center; }
 .sheet-close { width: 100%; padding: 12px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; margin-top: 10px; }
+.cancel-desc { margin: 0 0 10px; font-size: 13px; color: #475569; line-height: 1.6; text-align: center; }
+.cancel-card { border-radius: 12px; border: 1px solid #fed7aa; background: #fff7ed; padding: 12px; display: grid; gap: 6px; }
+.cancel-card__title { margin: 0; font-size: 12px; font-weight: 700; color: #c2410c; }
+.cancel-list { margin: 0; padding-left: 18px; color: #7c2d12; font-size: 12px; line-height: 1.5; }
+.cancel-meta { margin: 0; font-size: 12px; font-weight: 700; color: #b45309; }
 
 .qr-preview-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.32); display: grid; place-items: center; z-index: 60; padding: 16px; }
 .qr-preview-card { background: #fff; padding: 16px; border-radius: 16px; width: min(420px, 100%); position: relative; box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18); text-align: center; }

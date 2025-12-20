@@ -183,6 +183,11 @@
       "zhTw": "繁體中文"
     }
   },
+  "me": {
+    "payments": {
+      "title": "支付记录"
+    }
+  },
   "console": {
     "access": {
       "logo": "MORE Console",
@@ -217,6 +222,9 @@
       "noManagedTitle": "暂无可管理的社群",
       "noManagedHint": "先创建一个社群开始吧。",
       "createNew": "创建新的社群"
+    },
+    "eventForm": {
+      "title": "创建活动"
     },
     "portal": {
       "title": "社群门户",

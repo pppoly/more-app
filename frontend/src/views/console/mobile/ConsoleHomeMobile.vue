@@ -111,10 +111,7 @@
         <div class="action-icon">
           <img :src="classIcon" alt="class" loading="lazy" class="action-icon__img" />
         </div>
-        <div class="action-copy">
-          <p class="action-title">教室管理</p>
-          <p class="action-sub">教室・講座を運営</p>
-        </div>
+        <p class="action-title">教室管理</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">

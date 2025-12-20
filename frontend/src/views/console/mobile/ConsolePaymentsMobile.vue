@@ -73,14 +73,35 @@
           </div>
           <div class="pay-actions">
             <span class="pill" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
+            <span v-if="item.refundRequest" class="pill" :class="refundStatusClass(item.refundRequest.status)">
+              {{ refundStatusLabel(item.refundRequest, item.amount) }}
+            </span>
+            <div v-if="item.refundRequest && item.refundRequest.status === 'requested'" class="refund-action-row">
+              <button
+                class="danger action-btn"
+                type="button"
+                :disabled="refundLoading[item.id]"
+                @click="approveRefundRequest(item)"
+              >
+                {{ refundLoading[item.id] ? '处理中...' : '同意退款' }}
+              </button>
+              <button
+                class="ghost action-btn"
+                type="button"
+                :disabled="refundLoading[item.id]"
+                @click="rejectRefundRequest(item)"
+              >
+                拒绝
+              </button>
+            </div>
             <button
-              v-if="item.status === 'paid'"
-              class="danger"
+              v-else-if="item.status === 'paid' && (!item.refundRequest || item.refundRequest.status === 'rejected')"
+              class="danger action-btn"
               type="button"
               :disabled="refundLoading[item.id]"
               @click="requestRefund(item)"
             >
-              {{ refundLoading[item.id] ? '处理中...' : '退款' }}
+              {{ refundLoading[item.id] ? '处理中...' : '主动退款' }}
             </button>
           </div>
         </li>
@@ -99,8 +120,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchCommunityBalance, fetchCommunityPayments, refundPayment } from '../../../api/client';
-import type { ConsoleCommunityBalance, ConsolePaymentItem, ConsolePaymentList } from '../../../types/api';
+import { decideRefundRequest, fetchCommunityBalance, fetchCommunityPayments, refundPayment } from '../../../api/client';
+import type {
+  ConsoleCommunityBalance,
+  ConsolePaymentItem,
+  ConsolePaymentList,
+  ConsolePaymentRefundRequest,
+} from '../../../types/api';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 
 const route = useRoute();
@@ -156,6 +182,40 @@ const statusClass = (s: string) => {
     case 'pending':
       return 'pill-warn';
     case 'refunded':
+      return 'pill-muted';
+    default:
+      return 'pill-muted';
+  }
+};
+
+const refundStatusLabel = (request: ConsolePaymentRefundRequest, fallbackAmount?: number) => {
+  const amount =
+    request.status === 'completed'
+      ? request.refundedAmount ?? request.approvedAmount ?? request.requestedAmount ?? fallbackAmount
+      : request.requestedAmount ?? fallbackAmount;
+  const amountText = amount != null ? ` ${formatYen(amount)}` : '';
+  switch (request.status) {
+    case 'requested':
+      return `退款申请${amountText}`;
+    case 'processing':
+      return `退款处理中${amountText}`;
+    case 'completed':
+      return `已退款${amountText}`;
+    case 'rejected':
+      return '已拒绝退款';
+    default:
+      return `退款${request.status}`;
+  }
+};
+
+const refundStatusClass = (status: string) => {
+  switch (status) {
+    case 'requested':
+    case 'processing':
+      return 'pill-warn';
+    case 'completed':
+      return 'pill-ok';
+    case 'rejected':
       return 'pill-muted';
     default:
       return 'pill-muted';
@@ -220,6 +280,38 @@ const requestRefund = async (item: ConsolePaymentItem) => {
     await loadBalance();
   } catch (err) {
     alert(err instanceof Error ? err.message : '退款失败');
+  } finally {
+    refundLoading.value = { ...refundLoading.value, [item.id]: false };
+  }
+};
+
+const approveRefundRequest = async (item: ConsolePaymentItem) => {
+  if (!item.refundRequest) return;
+  const amount = item.refundRequest.requestedAmount ?? item.amount;
+  const sure = window.confirm(`确认同意「${item.user.name}」退款 ${formatYen(amount)} 吗？`);
+  if (!sure) return;
+  refundLoading.value = { ...refundLoading.value, [item.id]: true };
+  try {
+    await decideRefundRequest(item.refundRequest.id, { decision: 'approve_full' });
+    await loadPayments();
+    await loadBalance();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : '退款审批失败');
+  } finally {
+    refundLoading.value = { ...refundLoading.value, [item.id]: false };
+  }
+};
+
+const rejectRefundRequest = async (item: ConsolePaymentItem) => {
+  if (!item.refundRequest) return;
+  const sure = window.confirm(`确认拒绝「${item.user.name}」的退款申请吗？`);
+  if (!sure) return;
+  refundLoading.value = { ...refundLoading.value, [item.id]: true };
+  try {
+    await decideRefundRequest(item.refundRequest.id, { decision: 'reject' });
+    await loadPayments();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : '退款审批失败');
   } finally {
     refundLoading.value = { ...refundLoading.value, [item.id]: false };
   }
@@ -400,6 +492,16 @@ h1 {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+}
+.refund-action-row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.action-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 10px;
 }
 .pill {
   padding: 4px 10px;

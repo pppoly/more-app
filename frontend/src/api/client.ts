@@ -355,6 +355,23 @@ export async function fetchMyEvents(): Promise<MyEventItem[]> {
   return data;
 }
 
+export interface MyCommunityItem {
+  id: string;
+  name: string;
+  slug: string;
+  role?: string | null;
+  lastActiveAt?: string | null;
+  avatarUrl?: string | null;
+  lastEventAt?: string | null;
+  coverImage?: string | null;
+  coverImageUrl?: string | null;
+}
+
+export async function fetchMyCommunities(): Promise<MyCommunityItem[]> {
+  const { data } = await apiClient.get<MyCommunityItem[]>('/me/communities');
+  return data;
+}
+
 export async function cancelMyRegistration(registrationId: string): Promise<{ registrationId: string; status: string }> {
   const { data } = await apiClient.post<{ registrationId: string; status: string }>(
     `/me/events/${registrationId}/cancel`,
@@ -428,6 +445,17 @@ export async function refundPayment(
   const { data } = await apiClient.post<{ refundId: string; status: string }>(
     `/console/payments/${paymentId}/refund`,
     payload ?? {},
+  );
+  return data;
+}
+
+export async function decideRefundRequest(
+  requestId: string,
+  payload: { decision: 'approve_full' | 'approve_partial' | 'reject'; amount?: number; reason?: string },
+): Promise<{ requestId: string; status: string; approvedAmount?: number; refundId?: string }> {
+  const { data } = await apiClient.post<{ requestId: string; status: string; approvedAmount?: number; refundId?: string }>(
+    `/console/refund-requests/${requestId}/decision`,
+    payload,
   );
   return data;
 }

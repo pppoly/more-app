@@ -1,6 +1,6 @@
 <template>
   <div class="mobile-shell console-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
-    <header v-if="false" class="mobile-shell__header" :style="headerSafeAreaStyle"></header>
+    <header v-if="showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle"></header>
 
     <main
       :class="[
@@ -118,6 +118,13 @@ const activeTab = computed(() => {
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
+const isLiffMode = computed(
+  () => typeof window !== 'undefined' && !!(window as any).liff,
+);
+const showHeader = computed(() => {
+  if (isLiffMode.value) return false;
+  return !route.meta?.hideShellHeader;
+});
 
 // Console 内部不再渲染第二层底部导航，避免与全局导航叠加
 const showTabbar = computed(() => false);

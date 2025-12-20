@@ -4,6 +4,20 @@ import type { Express } from 'express';
 import { buildAssetUrl } from '../common/storage/asset-path';
 import { AssetService } from '../asset/asset.service';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
+const DEFAULT_COMMUNITY_AVATAR = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+
+function extractCommunityLogo(description: any): string | null {
+  if (!description || typeof description !== 'object') return null;
+  const record = description as Record<string, any>;
+  if (typeof record.logoImageUrl === 'string') return record.logoImageUrl;
+  if (record._portalConfig && typeof record._portalConfig.logoImageUrl === 'string') {
+    return record._portalConfig.logoImageUrl;
+  }
+  if (record.original && typeof record.original.logoImageUrl === 'string') {
+    return record.original.logoImageUrl;
+  }
+  return null;
+}
 
 @Injectable()
 export class MeService {
@@ -11,6 +25,67 @@ export class MeService {
     private readonly prisma: PrismaService,
     private readonly assetService: AssetService,
   ) {}
+
+  async getMyCommunities(userId: string, includeInactive = false) {
+    const memberships = await this.prisma.communityMember.findMany({
+      where: { userId, status: 'active' },
+      orderBy: { lastActiveAt: 'desc' },
+      select: {
+        communityId: true,
+        role: true,
+        lastActiveAt: true,
+        community: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            coverImageUrl: true,
+            pricingPlanId: true,
+            status: true,
+            events: {
+              orderBy: { startTime: 'desc' },
+              take: 1,
+              select: { startTime: true },
+            },
+          },
+        },
+      },
+    });
+
+    return memberships
+      .map((membership) => {
+        const community = membership.community;
+        if (!community) return null;
+        const lastEvent = community.events?.[0];
+        const coverRawCandidate =
+          (typeof community.coverImageUrl === 'string' && community.coverImageUrl.trim()) ||
+          extractCommunityLogo(community.description);
+        const coverRaw = typeof coverRawCandidate === 'string' ? coverRawCandidate : null;
+        const coverImageResolved = buildAssetUrl(coverRaw);
+        const logoImageUrl = buildAssetUrl(extractCommunityLogo(community.description));
+        const avatarUrl = coverImageResolved || logoImageUrl || DEFAULT_COMMUNITY_AVATAR;
+        const imageUrl = avatarUrl;
+        const base = {
+          id: community.id,
+          name: community.name,
+          slug: community.slug,
+          role: membership.role,
+          lastActiveAt: membership.lastActiveAt,
+          avatarUrl,
+          imageUrl,
+          coverImage: coverImageResolved,
+          coverImageUrl: community.coverImageUrl ?? null,
+          logoImageUrl,
+          lastEventAt: lastEvent?.startTime ?? null,
+        };
+        if (!includeInactive && community.status && community.status !== 'active') {
+          return null;
+        }
+        return base;
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }
 
   async getMyEvents(userId: string) {
     const registrations = await this.prisma.eventRegistration.findMany({

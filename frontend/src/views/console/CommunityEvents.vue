@@ -47,7 +47,6 @@
             <div class="event-actions">
               <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">编辑</RouterLink>
               <RouterLink :to="{ name: 'event-detail', params: { eventId: event.id } }">预览</RouterLink>
-              <RouterLink :to="{ name: 'console-event-registrations', params: { eventId: event.id } }">报名</RouterLink>
             </div>
           </div>
         </li>

@@ -27,14 +27,22 @@ export class ContentModerationService {
   private vertexTextClient: PredictionServiceClient | null = null;
   private readonly projectId: string | undefined;
   private readonly credentialsReady: boolean;
+  private readonly disabled: boolean;
 
   constructor() {
+    this.disabled = process.env.CONTENT_MODERATION_DISABLED === 'true';
     this.projectId = process.env.GOOGLE_PROJECT_ID;
-    this.credentialsReady = this.ensureCredentials();
+    this.credentialsReady = this.disabled ? false : this.ensureCredentials();
+    if (this.disabled) {
+      this.logger.log('Content moderation is disabled by CONTENT_MODERATION_DISABLED=true');
+    }
     this.initClients();
   }
 
   async moderateText(text: string | null | undefined): Promise<ModerationResult> {
+    if (this.disabled) {
+      return { decision: 'approve' };
+    }
     if (!text || !text.trim()) {
       return { decision: 'approve' };
     }
@@ -72,6 +80,9 @@ export class ContentModerationService {
   }
 
   async moderateImageFromBuffer(buffer: Buffer, filename?: string): Promise<ModerationResult> {
+    if (this.disabled) {
+      return { decision: 'approve' };
+    }
     if (!buffer || !buffer.length) {
       return { decision: 'approve' };
     }
@@ -132,6 +143,11 @@ export class ContentModerationService {
   }
 
   private initClients() {
+    if (this.disabled) {
+      this.visionClient = null;
+      this.vertexTextClient = null;
+      return;
+    }
     if (!this.credentialsReady) {
       this.visionClient = null;
       this.vertexTextClient = null;

@@ -2,7 +2,7 @@
   <div class="class-form">
     <ConsoleTopBar v-if="showTopBar" :title="isEdit ? '教室を編集' : '教室を作成'" @back="goBack" />
     <div class="info-banner">
-      <p class="info-text">教室は長期のコースです。作成後に、上課の日程（回次）を追加します</p>
+      <p class="info-text">教室は長期のコースです。作成後に、レッスンの日程（各回）を追加します</p>
     </div>
     <form @submit.prevent="handleSubmit" class="form">
       <div v-if="loading" class="skeleton">

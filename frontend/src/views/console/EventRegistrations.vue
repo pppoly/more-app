@@ -58,8 +58,7 @@
         </div>
         <div class="avatar-wall" v-if="summary.avatars.length">
           <div v-for="avatar in summary.avatars" :key="avatar.userId" class="avatar-item">
-            <img v-if="avatar.avatarUrl" :src="avatar.avatarUrl" :alt="avatar.name || 'member'" />
-            <div v-else class="avatar-fallback">{{ avatarInitial(avatar.name) }}</div>
+            <AppAvatar :src="avatar.avatarUrl" :name="avatar.name" :size="48" />
             <small>{{ avatar.name || 'ゲスト' }}</small>
           </div>
         </div>
@@ -94,8 +93,7 @@
               <tr>
                 <td>
                   <div class="user-cell">
-                    <img v-if="reg.user.avatarUrl" :src="reg.user.avatarUrl" :alt="reg.user.name" />
-                    <div class="avatar-fallback" v-else>{{ avatarInitial(reg.user.name) }}</div>
+                    <AppAvatar :src="reg.user.avatarUrl" :name="reg.user.name" :size="40" />
                     <div>
                       <p>{{ reg.user.name }}</p>
                       <small>ID: {{ reg.user.id }}</small>
@@ -123,14 +121,6 @@
                 <td class="actions-cell">
                   <div class="actions-stack">
                     <div v-if="reg.status === 'pending'" class="actions-inline">
-                      <button
-                        type="button"
-                        class="secondary tiny"
-                        :disabled="actionLoading[reg.registrationId]"
-                        @click="handleApprove(reg.registrationId)"
-                      >
-                        {{ actionLoading[reg.registrationId] ? '処理中…' : '承認' }}
-                      </button>
                       <button
                         type="button"
                         class="ghost tiny"
@@ -175,7 +165,6 @@ import {
   fetchEventRegistrationsSummary,
   fetchEventRegistrations,
   exportEventRegistrationsCsv,
-  approveEventRegistration,
   rejectEventRegistration,
   cancelConsoleEvent,
 } from '../../api/client';
@@ -186,6 +175,7 @@ import type {
   EventRegistrationsSummary,
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const eventId = route.params.eventId as string;
@@ -313,21 +303,6 @@ const statusClass = (status: string) => {
   if (status === 'pending_refund') return 'pending';
   if (status === 'rejected' || status === 'cancelled') return 'noshow';
   return 'pending';
-};
-
-const handleApprove = async (registrationId: string) => {
-  actionLoading.value = { ...actionLoading.value, [registrationId]: true };
-  try {
-    await approveEventRegistration(eventId, registrationId);
-    const target = registrations.value.find((r) => r.registrationId === registrationId);
-    if (target) {
-      target.status = 'approved';
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '审批失败，请重试';
-  } finally {
-    actionLoading.value = { ...actionLoading.value, [registrationId]: false };
-  }
 };
 
 const handleReject = async (registrationId: string) => {

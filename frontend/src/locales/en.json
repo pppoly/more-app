@@ -34,6 +34,9 @@
       "noManagedTitle": "No managed communities",
       "noManagedHint": "Create a community to get started.",
       "createNew": "Create a new community"
+    },
+    "eventForm": {
+      "title": "Create event"
     }
   },
   "subscription": {
@@ -226,6 +229,11 @@
       "ja": "Japanese",
       "zh": "Simplified Chinese",
       "zhTw": "Traditional Chinese"
+    }
+  },
+  "me": {
+    "payments": {
+      "title": "Payment history"
     }
   },
   "nav": {

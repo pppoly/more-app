@@ -35,7 +35,7 @@
         <div v-if="showClassesEntry" class="portal-actions">
           <button class="portal-action-btn" type="button" @click="goClasses">
             <div class="portal-action__icon">
-              <span class="i-lucide-graduation-cap"></span>
+              <img :src="classIcon" alt="" loading="lazy" class="portal-action__icon-image" />
             </div>
             <div class="portal-action__body">
               <p class="portal-action__title">教室 / Classes</p>
@@ -51,8 +51,7 @@
         <div class="member-row" v-if="memberAvatars.length">
           <div class="member-track">
             <div v-for="member in memberAvatars" :key="member.id" class="member-avatar">
-              <img v-if="member.avatarUrl" :src="member.avatarUrl" :alt="member.name || 'member'" />
-              <span v-else>{{ member.initial }}</span>
+              <AppAvatar :src="member.avatarUrl" :name="member.name" :size="36" />
             </div>
           </div>
           <span class="member-count">{{ memberCount }} 人</span>
@@ -126,7 +125,9 @@ import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 import backIcon from '../../assets/icons/arrow-back.svg';
+import classIcon from '../../assets/class.svg';
 import { isLineInAppBrowser } from '../../utils/liff';
 
 const route = useRoute();
@@ -644,8 +645,8 @@ const toggleFollow = async () => {
   font-weight: 700;
 }
 .portal-action__icon {
-  width: 40px;
-  height: 40px;
+  width: 80px;
+  height: 80px;
   border-radius: 12px;
   background: #eef2ff;
   display: inline-flex;
@@ -653,6 +654,11 @@ const toggleFollow = async () => {
   justify-content: center;
   color: #4338ca;
   font-size: 18px;
+}
+.portal-action__icon-image {
+  width: 80px;
+  height: 80px;
+  display: block;
 }
 .portal-action__title {
   margin: 0;

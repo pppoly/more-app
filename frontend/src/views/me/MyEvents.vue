@@ -29,85 +29,73 @@
       </article>
 
       <template v-else>
-        <article v-if="!filteredEvents.length" class="state-card">
+        <article v-if="!groupedEvents.length" class="state-card">
           <p class="state-card__title">{{ emptyStateTitle }}</p>
           <p class="state-card__message">{{ emptyStateMessage }}</p>
           <RouterLink class="ghost-btn" to="/events">イベントを探す</RouterLink>
         </article>
 
-        <section class="disclosure-card">
-          <p class="disclosure-title">返金・キャンセル / 法令リンク</p>
-          <ul class="disclosure-list">
-            <li>返金可否・割合・期限はイベント表示条件が優先されます。申請期限超過は返金不可の場合があります。</li>
-            <li>返金手数料・為替差・振込手数料・チャージバック費用等が控除される場合があります。</li>
-            <li>コンテンツ・安全性・履行は主催者の責任です。プラットフォームは中継・決済連携のみ提供します。</li>
-          </ul>
-          <div class="disclosure-links">
-            <a href="/legal/docs/PAYMENT_NOTICE_FOR_UI.md" target="_blank" rel="noopener">支払案内</a>
-            <span>・</span>
-            <a href="/legal/docs/REFUND_NOTICE_FOR_UI.md" target="_blank" rel="noopener">返金案内</a>
-            <span>・</span>
-            <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a>
-            <span>・</span>
-            <a href="/legal/privacy" target="_blank" rel="noopener">プライバシー</a>
-          </div>
-        </section>
-
-        <div v-for="item in filteredEvents" :key="item.registrationId" class="ticket-card-wrapper">
-          <article
+        <div v-else>
+          <div v-for="group in groupedEvents" :key="group.id" class="group-block">
+            <p class="group-title">{{ group.title }}</p>
+            <div v-for="item in group.items" :key="item.registrationId" class="ticket-card-wrapper">
+              <article
             class="ticket-card ticket-card--with-cover"
-            :class="{
-              'ticket-card--validated': item.attended,
-              'ticket-card--void': isVoidTicket(item),
-            }"
-            :style="ticketCoverStyle(item)"
-          >
-            <div v-if="item.attended && !isVoidTicket(item)" class="ticket-card__tear">
-              <span>検証済み</span>
-            </div>
-            <div class="ticket-card__top">
-              <div>
-                <p class="ticket-card__date">{{ formatDate(displayStart(item)) }}</p>
-                <p class="ticket-card__community">{{ displayCommunity(item) }}</p>
-              </div>
-          <div class="ticket-card__qr">
-            <button
-              v-if="isUpcoming(item) && canCancel(item)"
-              type="button"
-              class="ticket-card__cancel ticket-card__cancel--ghost"
-              @click="cancelRegistration(item)"
-              :disabled="cancelingId === item.registrationId"
+              :class="{
+                'ticket-card--validated': item.attended,
+                'ticket-card--void': isVoidTicket(item),
+                'ticket-card--refunding': isRefunding(item),
+              }"
+              :style="ticketCoverStyle(item)"
             >
-              {{ cancelingId === item.registrationId ? '処理中…' : '参加をキャンセルする' }}
-            </button>
-            <span class="ticket-card__code">#{{ item.registrationId.slice(0, 8).toUpperCase() }}</span>
+              <span v-if="isRefunding(item)" class="ticket-card__flag ticket-card__flag--refunding">キャンセル申請中</span>
+              <div v-if="item.attended && !isVoidTicket(item)" class="ticket-card__tear">
+                <span>検証済み</span>
+              </div>
+              <div class="ticket-card__top">
+                <div>
+                    <p class="ticket-card__date">{{ formatDate(displayStart(item)) }}</p>
+                    <p class="ticket-card__community">{{ displayCommunity(item) }}</p>
+                  </div>
+                  <div class="ticket-card__qr">
+                    <button
+                      v-if="isUpcoming(item) && canCancel(item)"
+                      type="button"
+                      class="ticket-card__cancel ticket-card__cancel--ghost"
+                      @click="cancelRegistration(item)"
+                      :disabled="cancelingId === item.registrationId"
+                    >
+                      {{ cancelingId === item.registrationId ? '処理中…' : '参加をキャンセルする' }}
+                    </button>
+                    <span class="ticket-card__code">#{{ item.registrationId.slice(0, 8).toUpperCase() }}</span>
+                  </div>
+                </div>
+                <div class="ticket-card__body">
+                  <h2 class="ticket-card__title">{{ displayTitle(item) }}</h2>
+                  <p v-if="isExpired(item)" class="ticket-card__expired-label">有効期限切れ（未チェックイン）</p>
+                  <div class="ticket-card__badges">
+                    <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item) }}</span>
+                    <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
+                    <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
+                    <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
+                  </div>
+                  <p v-if="refundNotice(item)" class="ticket-card__notice">{{ refundNotice(item) }}</p>
+                </div>
+                <footer class="ticket-card__footer">
+                  <button
+                    v-if="!isVoidTicket(item) && item.status !== 'cancel_requested'"
+                    type="button"
+                    class="ticket-btn"
+                    @click="openTicketQr(item)"
+                  >
+                    QRコードを表示
+                  </button>
+                  <div v-else class="ticket-card__void-footer">無効なチケット</div>
+                </footer>
+              </article>
+              <div v-if="isVoidTicket(item)" class="ticket-card__void-stamp">無効</div>
+            </div>
           </div>
-        </div>
-        <div class="ticket-card__body">
-          <h2 class="ticket-card__title">{{ displayTitle(item) }}</h2>
-          <p class="ticket-card__meta">{{ displayLocation(item) }}</p>
-          <p class="ticket-card__state-line">{{ stateSentence(item) }}</p>
-          <div class="ticket-card__badges">
-            <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item) }}</span>
-            <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
-            <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
-            <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
-          </div>
-          <p v-if="refundNotice(item)" class="ticket-card__notice">{{ refundNotice(item) }}</p>
-        </div>
-            <footer class="ticket-card__footer">
-              <button
-                v-if="!isVoidTicket(item)"
-                type="button"
-                class="ticket-btn"
-                @click="openTicketQr(item)"
-              >
-                QRコードを表示
-              </button>
-              <div v-else class="ticket-card__void-footer">無効なチケット</div>
-            </footer>
-          </article>
-          <div v-if="isVoidTicket(item)" class="ticket-card__void-stamp">無効</div>
         </div>
       </template>
     </section>
@@ -193,11 +181,30 @@ const getStartTime = (item: MyEventItem) => {
   return new Date(0);
 };
 
+const getEndTime = (item: MyEventItem) => {
+  if (item.lesson?.endAt) return new Date(item.lesson.endAt);
+  if (item.event?.endTime) return new Date(item.event.endTime);
+  return getStartTime(item);
+};
+
 const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && getStartTime(item) > new Date();
+const isExpired = (item: MyEventItem) => !item.attended && !isUpcoming(item) && !isVoidTicket(item);
 
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => getStartTime(b).getTime() - getStartTime(a).getTime()),
 );
+
+const isEligibleTicket = (item: MyEventItem) => {
+  const amount = item.amount ?? 0;
+  const paymentOk =
+    ['paid', 'refunded', 'pending_refund', 'cancel_requested', 'cancelled'].includes(item.paymentStatus || '') ||
+    ['paid', 'refunded', 'pending_refund', 'cancel_requested', 'cancelled'].includes(item.status);
+  if (amount > 0) return paymentOk;
+  // 無料の場合は審査中/却下を除外
+  return !['pending', 'rejected'].includes(item.status);
+};
+
+const eligibleEvents = computed(() => sortedEvents.value.filter((item) => isEligibleTicket(item)));
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
   { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) },
@@ -206,9 +213,9 @@ const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item:
 ];
 
 const filterCounts = computed(() => ({
-  upcoming: sortedEvents.value.filter((item) => isUpcoming(item)).length,
-  past: sortedEvents.value.filter((item) => !isUpcoming(item)).length,
-  all: sortedEvents.value.length,
+  upcoming: eligibleEvents.value.filter((item) => isUpcoming(item)).length,
+  past: eligibleEvents.value.filter((item) => !isUpcoming(item)).length,
+  all: eligibleEvents.value.length,
 }));
 
 const filterTabs = computed(() =>
@@ -220,8 +227,43 @@ const filterTabs = computed(() =>
 
 const filteredEvents = computed(() => {
   const active = filterDefinitions.find((tab) => tab.id === activeTab.value);
-  if (!active) return sortedEvents.value;
-  return sortedEvents.value.filter((item) => active.matcher(item));
+  if (!active) return eligibleEvents.value;
+  return eligibleEvents.value.filter((item) => active.matcher(item));
+});
+
+const groupOrder: Array<{ id: string; title: string }> = [
+  { id: 'upcoming_paid', title: 'これから参加' },
+  { id: 'refunding', title: '返金・キャンセル処理中' },
+  { id: 'refunded', title: '返金済み / キャンセル済み' },
+  { id: 'attended', title: '参加済み' },
+  { id: 'unpaid', title: '支払い待ち' },
+];
+
+const groupIdFor = (item: MyEventItem): string => {
+  const paidLike = item.paymentStatus === 'paid' || item.status === 'paid' || (item.amount ?? 0) === 0;
+  const refundedLike = item.status === 'refunded' || item.paymentStatus === 'refunded' || item.status === 'cancelled';
+  const refundingLike =
+    item.status === 'cancel_requested' || item.status === 'pending_refund' || item.status === 'pending_refund';
+  if (refundingLike) return 'refunding';
+  if (refundedLike) return 'refunded';
+  if (item.attended) return 'attended';
+  if (isExpired(item)) return 'expired';
+  if (!paidLike) return 'unpaid';
+  if (isUpcoming(item)) return 'upcoming_paid';
+  return 'attended';
+};
+
+const groupedEvents = computed(() => {
+  const groups: Record<string, MyEventItem[]> = {};
+  groupOrder.forEach((g) => (groups[g.id] = []));
+  filteredEvents.value.forEach((item) => {
+    const gid = groupIdFor(item);
+    if (!groups[gid]) groups[gid] = [];
+    groups[gid].push(item);
+  });
+  return groupOrder
+    .map((g) => ({ ...g, items: groups[g.id] || [] }))
+    .filter((g) => g.items.length > 0);
 });
 
 const displayStart = (item: MyEventItem) => item.lesson?.startAt || item.event?.startTime || '';
@@ -322,6 +364,7 @@ const attendanceLabel = (item: MyEventItem) => {
   if (item.status === 'refunded' || item.status === 'pending_refund') return '返金処理中';
   if (item.attended) return '出席済み';
   if (item.noShow) return '欠席';
+  if (isExpired(item)) return '有効期限切れ';
   if (isUpcoming(item)) return '参加予定';
   return '記録中';
 };
@@ -331,6 +374,7 @@ const attendanceClass = (item: MyEventItem) => {
   if (item.status === 'refunded' || item.status === 'pending_refund') return 'badge--info';
   if (item.attended) return 'badge--attended';
   if (item.noShow) return 'badge--noshow';
+  if (isExpired(item)) return 'badge--void';
   if (isUpcoming(item)) return 'badge--upcoming';
   return 'badge--pending';
 };
@@ -456,6 +500,9 @@ const ticketCoverStyle = (item: MyEventItem) => {
     backgroundPosition: 'center',
   };
 };
+
+const isRefunding = (item: MyEventItem) =>
+  item.status === 'cancel_requested' || item.status === 'pending_refund' || item.status === 'pending_refund';
 </script>
 
 <style scoped>
@@ -560,6 +607,17 @@ const ticketCoverStyle = (item: MyEventItem) => {
   overflow-x: hidden;
   box-sizing: border-box;
 }
+.group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.group-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
 
 .feedback {
   margin: 0;
@@ -582,40 +640,6 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .feedback--info {
   background: #eff6ff;
   color: #1d4ed8;
-}
-
-.disclosure-card {
-  background: #f1f5f9;
-  border-radius: 12px;
-  padding: 12px;
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: #1f2a3d;
-  line-height: 1.5;
-  border: 1px solid rgba(15, 23, 42, 0.05);
-}
-
-.disclosure-title {
-  margin: 0 0 6px;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.disclosure-list {
-  margin: 0 0 6px;
-  padding-left: 18px;
-}
-
-.disclosure-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  font-size: 13px;
-}
-
-.disclosure-links a {
-  color: #2563eb;
-  text-decoration: underline;
 }
 
 .ticket-card-wrapper {
@@ -648,6 +672,10 @@ const ticketCoverStyle = (item: MyEventItem) => {
 .ticket-card--void {
   filter: grayscale(0.85);
   opacity: 0.7;
+}
+.ticket-card--refunding {
+  border: 1px dashed rgba(234, 88, 12, 0.8);
+  box-shadow: 0 12px 28px rgba(234, 88, 12, 0.16);
 }
 
 .ticket-card__void-stamp {
@@ -946,6 +974,28 @@ const ticketCoverStyle = (item: MyEventItem) => {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 6px;
+}
+.ticket-card__expired-label {
+  margin: 4px 0;
+  font-size: 12px;
+  color: #9f1239;
+  font-weight: 700;
+}
+.ticket-card__flag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(234, 88, 12, 0.9);
+  color: #fff;
+  z-index: 2;
+}
+.ticket-card__flag--refunding {
+  background: rgba(234, 88, 12, 0.9);
+  border: 1px solid rgba(234, 88, 12, 0.7);
 }
 
 .ticket-card__badge {

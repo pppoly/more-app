@@ -17,10 +17,10 @@
         class="guide light"
       >
         <div>
-          <p class="guide-title">上課日程が未設定の教室があります。</p>
+          <p class="guide-title">レッスン日程が未設定の教室があります。</p>
           <p class="guide-desc">教室を選んで日程を追加しましょう。</p>
         </div>
-        <button class="ghost" type="button" @click="goFirstEmptyLessons">日程を追加する</button>
+        <button class="ghost" type="button" @click="goFirstEmptyLessons">レッスンを追加する</button>
       </div>
 
       <div v-if="!classes.length" class="state empty">
@@ -32,9 +32,9 @@
           </div>
           <div class="empty-body">
             <p class="state-title">教室を作成して、定期講座を始めましょう</p>
-            <p class="state-sub">まず教室を作成し、あとで上課の日程を追加できます</p>
+            <p class="state-sub">まず教室を作成し、あとでレッスンの日程を追加できます</p>
             <button class="primary large" type="button" @click="goCreate">教室を作成</button>
-            <p class="hint">作成後に、上課の日程を追加できます</p>
+            <p class="hint">作成後に、レッスンの日程を追加できます</p>
           </div>
         </div>
       </div>
@@ -52,7 +52,7 @@
               <p class="meta">{{ displayDescription(cls) }}</p>
               <p class="meta small">¥{{ cls.priceYenPerLesson.toLocaleString() }} / 回</p>
               <div class="card-actions">
-                <button class="ghost small" type="button" @click.stop="openLessons(cls.id)">上課管理</button>
+                <button class="ghost small" type="button" @click.stop="openLessons(cls.id)">レッスン管理</button>
                 <button class="ghost small" type="button" @click.stop="openEdit(cls.id)">教室編集</button>
               </div>
             </div>

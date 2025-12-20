@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Query,
   Post,
   Req,
   UploadedFile,
@@ -24,6 +25,11 @@ export class MeController {
   @Get('events')
   getMyEvents(@Req() req: any) {
     return this.meService.getMyEvents(req.user.id);
+  }
+
+  @Get('communities')
+  getMyCommunities(@Req() req: any, @Query('includeInactive') includeInactive?: string) {
+    return this.meService.getMyCommunities(req.user.id, includeInactive === '1');
   }
 
   @Post('avatar')

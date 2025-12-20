@@ -803,6 +803,7 @@ const routes: RouteRecordRaw[] = [
     name: 'my-payments',
     component: MyPayments,
     meta: {
+      title: '支払い履歴',
       devPageName: '支払い履歴',
       hideTabbar: true,
       hideShellHeader: true,

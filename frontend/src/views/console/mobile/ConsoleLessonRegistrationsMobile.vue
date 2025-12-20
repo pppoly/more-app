@@ -51,16 +51,19 @@
     <div v-else>
       <div v-if="!filteredRegistrations.length" class="state empty">
         <p class="empty-title">まだ申込がありません</p>
-        <p class="empty-desc">上課日程を追加したあと、参加者に申込リンクを共有できます</p>
+        <p class="empty-desc">レッスン日程を追加したあと、参加者に申込リンクを共有できます</p>
         <div class="actions">
-          <button class="ghost" type="button" @click="goBack">上課管理に戻る</button>
+          <button class="ghost" type="button" @click="goBack">レッスン管理に戻る</button>
         </div>
       </div>
       <div v-else class="reg-list">
         <article v-for="reg in filteredRegistrations" :key="reg.id" class="reg-card">
+          <span v-if="reg.status === 'cancel_requested'" class="flag">キャンセル申請中</span>
           <div class="row">
             <div class="user">
-              <div class="avatar">{{ avatarInitial(reg.user?.name) }}</div>
+              <div class="avatar-shell">
+                <AppAvatar :src="reg.user?.avatarUrl" :name="reg.user?.name" :size="36" />
+              </div>
               <div>
                 <p class="user-name">{{ reg.user?.name || 'ゲスト' }}</p>
                 <p class="meta small">{{ formatDate(reg.createdAt) }}</p>
@@ -69,6 +72,13 @@
             <div class="status-block">
               <span class="badge" :class="badgeClass(reg.paymentStatus)">{{ paymentLabel(reg.paymentStatus) }}</span>
               <p class="amount">{{ amountLabel(reg.amount) }}</p>
+            </div>
+          </div>
+          <div v-if="reg.status === 'cancel_requested'" class="action-row">
+            <p class="hint">参加者からキャンセル申請が届いています。決済履歴で返金を処理してください。</p>
+            <div class="action-buttons">
+              <button class="ghost small" type="button" disabled>返金を承認（準備中）</button>
+              <button class="ghost small" type="button" disabled>申請を却下（準備中）</button>
             </div>
           </div>
         </article>
@@ -83,6 +93,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { fetchLessonPaymentSummary, fetchLessonRegistrations } from '../../../api/client';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
+import AppAvatar from '../../../components/common/AppAvatar.vue';
 
 interface RegistrationItem {
   id: string;
@@ -141,11 +152,6 @@ const unpaidCount = computed(() =>
   registrations.value.filter((reg) => (reg.paymentStatus || '').toLowerCase().includes('unpaid')).length,
 );
 
-const avatarInitial = (name?: string | null) => {
-  if (!name) return '？';
-  return name.trim().slice(0, 1).toUpperCase();
-};
-
 const formatDate = (value?: string) => {
   if (!value) return '';
   const d = new Date(value);
@@ -160,7 +166,7 @@ const formatDate = (value?: string) => {
 };
 
 const displayDate = (startAt?: string, endAt?: string) => {
-  if (!startAt) return '上課日程';
+  if (!startAt) return 'レッスン日程';
   const start = formatDate(startAt);
   if (!endAt) return start;
   const end = formatDate(endAt).split(' ').pop() || '';
@@ -310,6 +316,29 @@ const amountLabel = (amount?: number | null) => {
   border-radius: 12px;
   padding: 12px;
   background: #fff;
+  position: relative;
+}
+.flag {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  background: #f97316;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.action-row {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .row {
   display: flex;
@@ -376,6 +405,11 @@ const amountLabel = (amount?: number | null) => {
   margin: 0;
   font-weight: 800;
   color: #0f172a;
+}
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
 }
 .skeleton {
   display: flex;

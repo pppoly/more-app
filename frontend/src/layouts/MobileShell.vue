@@ -194,12 +194,10 @@ const showTabbar = computed(() => {
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
 const showHeader = computed(() => {
-  // LIFF 内ではトップレベル（/me /console /admin）は LINE の UI に委ねる
-  if (isLiffMode.value) {
-    if (route.path.startsWith('/me') || route.path.startsWith('/console') || route.path.startsWith('/admin')) {
-      return false;
-    }
-  }
+  const hideForLiff =
+    isLiffMode.value &&
+    (route.path.startsWith('/me') || route.path.startsWith('/console') || route.path.startsWith('/admin'));
+  if (hideForLiff) return false;
   if (props.showBrandTopBar) return false;
   return !route.meta?.hideShellHeader && !props.forceHideHeader;
 });

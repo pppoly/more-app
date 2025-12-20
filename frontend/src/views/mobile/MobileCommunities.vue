@@ -1,78 +1,38 @@
 <template>
   <div class="communities-page">
     <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイコミュニティ" @back="goBack" />
-    <section class="page-head">
-      <p class="page-eyebrow">私が所属するコミュニティ</p>
-      <h1 class="page-title">あなたがつながっている場</h1>
-      <p class="page-subtext">活動の動きやお知らせをここでまとめて確認できます。</p>
-    </section>
 
     <section class="section">
-      <div class="section-head">
-        <p class="section-title">活発なコミュニティ</p>
+      <div v-if="loading" class="card-list">
+        <article v-for="n in 3" :key="`s-${n}`" class="community-card community-card--skeleton"></article>
       </div>
-      <div v-if="activeCommunities.length" class="card-list">
-        <article v-for="item in activeCommunities" :key="item.id" class="community-card" @click="goToCommunity(item)">
-          <img v-if="item.coverImage" class="community-cover" :src="item.coverImage" alt="" />
-          <div v-else class="community-cover"></div>
-          <div class="community-body">
-            <p class="community-name">{{ item.name }}</p>
-            <p class="community-status">{{ item.statusLine || '最新の動きがここに表示されます' }}</p>
-            <div class="community-meta">
-              <span v-if="item.role" class="role-chip">{{ item.role }}</span>
-            </div>
-            <button class="cta-btn" type="button" @click.stop="goToCommunity(item)">
-              {{ item.cta || 'コミュニティを見る' }}
-            </button>
+      <div v-else-if="error" class="state-card">
+        <p class="state-title">コミュニティを読み込めませんでした</p>
+        <p class="state-text">{{ error }}</p>
+        <button class="ghost-btn" type="button" @click="loadCommunities">再読み込み</button>
+      </div>
+      <div v-else-if="activeCommunities.length || quietCommunities.length" class="card-list">
+        <article
+          v-for="item in [...activeCommunities, ...quietCommunities]"
+          :key="item.id"
+          class="community-card"
+          @click="goToCommunity(item)"
+        >
+          <div class="community-avatar">
+            <AppAvatar :src="item.imageUrl" :name="item.name" :size="52" :rounded="false" />
           </div>
+          <div class="community-body">
+            <div class="community-head">
+              <p class="community-name">{{ item.name }}</p>
+            </div>
+            <p class="community-status">{{ formatStatus(item) }}</p>
+          </div>
+          <button class="cta-btn" type="button" @click.stop="goToCommunity(item)">
+            {{ item.cta || '開く' }}
+          </button>
         </article>
       </div>
       <div v-else class="state-card">
-        <p class="state-title">最近動きのあるコミュニティがまだありません</p>
-        <p class="state-text">イベントやお知らせが出るとここに表示されます。</p>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-head">
-        <p class="section-title">その他のコミュニティ</p>
-        <button type="button" class="ghost-btn" @click="quietOpen = !quietOpen">
-          {{ quietOpen ? '折りたたむ' : '表示する' }}
-        </button>
-      </div>
-      <transition name="fade">
-        <div v-if="quietOpen">
-          <div v-if="quietCommunities.length" class="card-list card-list--quiet">
-            <article
-              v-for="item in quietCommunities"
-              :key="item.id"
-              class="community-card"
-              @click="goToCommunity(item)"
-            >
-              <img v-if="item.coverImage" class="community-cover" :src="item.coverImage" alt="" />
-              <div v-else class="community-cover"></div>
-              <div class="community-body">
-                <p class="community-name">{{ item.name }}</p>
-                <p class="community-status">{{ item.statusLine || '更新待ちのコミュニティ' }}</p>
-                <div class="community-meta">
-                  <span v-if="item.role" class="role-chip">{{ item.role }}</span>
-                </div>
-                <button class="cta-btn" type="button" @click.stop="goToCommunity(item)">
-                  {{ item.cta || 'コミュニティを見る' }}
-                </button>
-              </div>
-            </article>
-          </div>
-          <div v-else class="state-card state-card--quiet">
-            <p class="state-title">更新のないコミュニティはここに表示されます</p>
-            <p class="state-text">動きがあれば自動で上の「活発なコミュニティ」に移動します。</p>
-          </div>
-        </div>
-      </transition>
-    </section>
-
-    <section v-if="!activeCommunities.length && !quietCommunities.length" class="section">
-      <div class="state-card">
         <p class="state-title">コミュニティに参加すると、ここで活動やお知らせをまとめて確認できます。</p>
         <p class="state-text">興味のあるコミュニティに参加して、イベント情報を受け取りましょう。</p>
       </div>
@@ -87,6 +47,8 @@ import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
 import { APP_TARGET } from '../../config';
+import { fetchMyCommunities, type MyCommunityItem } from '../../api/client';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 type CommunityCardItem = {
   id: string;
@@ -96,19 +58,95 @@ type CommunityCardItem = {
   role?: string;
   cta?: string;
   slug?: string;
+  avatarUrl?: string | null;
+  imageUrl: string;
 };
 
 const router = useRouter();
 
-// 数据接入前保持为空，确保无 mock 数据。
 const activeCommunities = ref<CommunityCardItem[]>([]);
 const quietCommunities = ref<CommunityCardItem[]>([]);
 const quietOpen = ref(false);
+const loading = ref(false);
+const error = ref<string | null>(null);
+// できるだけネットワーク経由で取得されるデフォルト画像（無い場合は後段のフォールバックへ）
+const runtimeDefaultAvatar =
+  typeof window !== 'undefined'
+    ? `${window.location.origin}/api/v1/uploads/dev/default/user-avatar/2025/12/17/afe77b91-deac-4c81-975b-38eba833e9c9_orig.png`
+    : '';
+const apiOrigin =
+  (import.meta.env.VITE_API_BASE_URL || '').replace(/\/api\/v1\/?$/, '') ||
+  (typeof window !== 'undefined' ? window.location.origin : '');
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 
 const goBack = () => {
   router.push({ name: 'MobileMe' });
 };
+
+const formatStatus = (item: CommunityCardItem) => {
+  if (item.statusLine && item.statusLine.trim().length) return item.statusLine;
+  return '最新の動きがここに表示されます';
+};
+
+const resolveImage = (url?: string | null) => {
+  if (!url) return runtimeDefaultAvatar;
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/')) return `${apiOrigin}${url}`;
+  return url;
+};
+
+const classifyCommunities = (items: MyCommunityItem[]) => {
+  const now = Date.now();
+  const active: CommunityCardItem[] = [];
+  const quiet: CommunityCardItem[] = [];
+  items.forEach((item) => {
+    const lastActive = item.lastActiveAt ? new Date(item.lastActiveAt).getTime() : null;
+    const daysSinceActive = lastActive ? (now - lastActive) / (1000 * 60 * 60 * 24) : null;
+    const target = daysSinceActive !== null && daysSinceActive <= 30 ? active : quiet;
+    const imageUrl = resolveImage(
+      (item as any).imageUrl ||
+        item.avatarUrl ||
+        item.coverImage ||
+        (item as any).coverImageUrl ||
+        (item as any).logoImageUrl ||
+        runtimeDefaultAvatar,
+    );
+    target.push({
+      id: item.id,
+      name: item.name,
+      slug: item.slug,
+      avatarUrl: item.avatarUrl || null,
+      coverImage: item.coverImage || (item as any).coverImageUrl || (item as any).logoImageUrl || null,
+      imageUrl: imageUrl || runtimeDefaultAvatar,
+      statusLine:
+        item.lastEventAt && new Date(item.lastEventAt).toString() !== 'Invalid Date'
+          ? `最終更新 ${new Date(item.lastEventAt).toLocaleDateString('ja-JP')}`
+          : lastActive
+            ? `最終更新 ${new Date(lastActive).toLocaleDateString('ja-JP')}`
+            : '',
+      role: item.role ?? undefined,
+      cta: '開く',
+    });
+  });
+  activeCommunities.value = active;
+  quietCommunities.value = quiet;
+};
+
+const loadCommunities = async () => {
+  loading.value = true;
+  error.value = null;
+  try {
+    const data = await fetchMyCommunities();
+    classifyCommunities(data);
+  } catch (err) {
+    error.value =
+      (err as any)?.response?.data?.message || (err instanceof Error ? err.message : 'コミュニティ取得に失敗しました');
+  } finally {
+    loading.value = false;
+  }
+};
+
+loadCommunities();
 
 const goToCommunity = (item: CommunityCardItem) => {
   if (item.slug) {
@@ -132,38 +170,11 @@ const goToCommunity = (item: CommunityCardItem) => {
 .topbar {
   margin-left: calc(-16px - env(safe-area-inset-left, 0px));
   margin-right: calc(-16px - env(safe-area-inset-right, 0px));
-  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
-}
-
-.page-head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 10px 0 14px;
-}
-
-.page-eyebrow {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: #64748b;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.page-subtext {
-  margin: 0;
-  font-size: 13px;
-  color: #475569;
+  margin-top: 0;
 }
 
 .section {
-  margin-bottom: 14px;
+  margin: 10px 0 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -188,9 +199,13 @@ const goToCommunity = (item: CommunityCardItem) => {
   gap: 10px;
 }
 
-.card-list--quiet .community-card {
-  opacity: 0.85;
-  border-color: rgba(15, 23, 42, 0.08);
+.community-card--skeleton {
+  height: 160px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+  border: 0;
+  box-shadow: none;
 }
 
 .state-card {
@@ -237,6 +252,15 @@ const goToCommunity = (item: CommunityCardItem) => {
 .fade-leave-to {
   opacity: 0;
 }
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
 </style>
 
 <style scoped>
@@ -245,28 +269,50 @@ const goToCommunity = (item: CommunityCardItem) => {
   border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.06);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  overflow: hidden;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
 }
 
-.community-cover {
+.community-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.community-avatar img {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  background: linear-gradient(135deg, #e2e8f0, #f8fafc);
+  height: 100%;
   object-fit: cover;
+}
+.avatar-fallback {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .community-body {
-  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  flex: 1;
+}
+
+.community-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .community-name {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -275,12 +321,6 @@ const goToCommunity = (item: CommunityCardItem) => {
   margin: 0;
   font-size: 13px;
   color: #475569;
-}
-
-.community-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .role-chip {
@@ -292,15 +332,14 @@ const goToCommunity = (item: CommunityCardItem) => {
 }
 
 .cta-btn {
-  margin-top: 4px;
-  width: 100%;
+  margin-left: auto;
   border: none;
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 10px;
+  padding: 8px 12px;
   background: #0f172a;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
 }
 </style>

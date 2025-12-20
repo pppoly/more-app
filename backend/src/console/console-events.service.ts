@@ -190,6 +190,7 @@ export class ConsoleEventsService {
       include: {
         user: { select: { id: true, name: true, avatarUrl: true } },
         ticketType: { select: { id: true, name: true, price: true } },
+        payment: { select: { id: true } },
       },
     });
 
@@ -211,6 +212,7 @@ export class ConsoleEventsService {
           : null,
         status: reg.status,
         paymentStatus: reg.paymentStatus,
+        paymentId: reg.payment?.id ?? null,
         attended: reg.attended,
         noShow: reg.noShow,
         amount: reg.amount,

@@ -240,6 +240,18 @@ export interface MockPaymentResponse {
   amount: number;
 }
 
+export interface ConsolePaymentRefundRequest {
+  id: string;
+  status: string;
+  decision?: string | null;
+  requestedAmount: number;
+  approvedAmount?: number | null;
+  refundedAmount?: number | null;
+  reason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ConsolePaymentItem {
   id: string;
   user: {
@@ -260,6 +272,7 @@ export interface ConsolePaymentItem {
   createdAt: string;
   stripePaymentIntentId?: string | null;
   stripeRefundId?: string | null;
+  refundRequest?: ConsolePaymentRefundRequest | null;
 }
 
 export interface ConsolePaymentList {
@@ -411,6 +424,7 @@ export interface ConsoleEventRegistrationItem {
   } | null;
   status: string;
   paymentStatus: string;
+  paymentId?: string | null;
   attended: boolean;
   noShow: boolean;
   amount?: number | null;

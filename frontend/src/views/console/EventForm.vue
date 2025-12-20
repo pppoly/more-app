@@ -1358,7 +1358,8 @@ const confirmFieldEditor = () => {
   if (!editingField.value) return;
   const meta = fieldMeta[editingField.value];
   if (meta.type === 'number') {
-    const trimmed = fieldDraft.value.trim();
+    const rawValue = fieldDraft.value;
+    const trimmed = String(rawValue ?? '').trim();
     if (!trimmed) {
       (form as any)[editingField.value] = null;
     } else {
@@ -2142,9 +2143,20 @@ const loadCopyEvents = async () => {
 
 const importGalleryToPending = async (detail: ConsoleEventDetail) => {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
-  if (!detail.galleries?.length) return;
   revokeLocalCoverPreviews();
-  const gallerySlice = detail.galleries.slice(0, MAX_COVERS);
+  const galleryItems = Array.isArray(detail.galleries) ? detail.galleries : [];
+  const resolvedCoverUrl = detail.coverImageUrl ? resolveAssetUrl(detail.coverImageUrl) : '';
+  const hasCoverInGallery =
+    resolvedCoverUrl &&
+    galleryItems.some((item) => resolveAssetUrl(item.imageUrl) === resolvedCoverUrl);
+  const sources = [
+    ...(resolvedCoverUrl && !hasCoverInGallery
+      ? [{ id: 'cover', imageUrl: detail.coverImageUrl || resolvedCoverUrl, order: 0 }]
+      : []),
+    ...galleryItems,
+  ];
+  if (!sources.length) return;
+  const gallerySlice = sources.slice(0, MAX_COVERS);
   let successCount = 0;
   const tasks = gallerySlice.map(async (item, index) => {
     try {
