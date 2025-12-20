@@ -418,6 +418,39 @@ export class PaymentsService {
 
     // Expire Checkout after 30 minutes to avoid long-held pending locks.
     const expiresAt = Math.floor(Date.now() / 1000) + 30 * 60;
+    // Prepare local payment first to bind metadata
+    const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
+    const payment = await this.prisma.payment.upsert({
+      where: { registrationId },
+      update: {
+        userId,
+        communityId: community.id,
+        eventId: event?.id,
+        lessonId: lesson?.id,
+        amount,
+        platformFee,
+        feePercent: percent,
+        currency: 'jpy',
+        status: 'pending',
+        method: 'stripe',
+        idempotencyKey,
+      },
+      create: {
+        userId,
+        communityId: community.id,
+        eventId: event?.id,
+        lessonId: lesson?.id,
+        registrationId,
+        amount,
+        platformFee,
+        feePercent: percent,
+        currency: 'jpy',
+        status: 'pending',
+        method: 'stripe',
+        idempotencyKey,
+      },
+    });
+
     const session = await this.stripeService.client.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -433,6 +466,7 @@ export class PaymentsService {
         },
       ],
       metadata: {
+        paymentId: payment.id,
         registrationId,
         eventId: event?.id,
         lessonId: lesson?.id,
@@ -446,6 +480,10 @@ export class PaymentsService {
       success_url: `${this.stripeService.successUrlBase}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: this.stripeService.cancelUrlBase,
       payment_intent_data: {
+        metadata: {
+          paymentId: payment.id,
+          registrationId,
+        },
         application_fee_amount: platformFee,
         transfer_data: {
           destination: community.stripeAccountId,
@@ -457,39 +495,9 @@ export class PaymentsService {
       throw new InternalServerErrorException('Stripe Checkout URLを生成できませんでした');
     }
 
-    const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
-
-    await this.prisma.payment.upsert({
-      where: { registrationId },
-      update: {
-        userId,
-        communityId: community.id,
-        eventId: event?.id,
-        lessonId: lesson?.id,
-        amount,
-        platformFee,
-        feePercent: percent,
-        currency: 'jpy',
-        status: 'pending',
-        method: 'stripe',
-        stripeCheckoutSessionId: session.id,
-        idempotencyKey,
-      },
-      create: {
-        userId,
-        communityId: community.id,
-        eventId: event?.id,
-        lessonId: lesson?.id,
-        registrationId,
-        amount,
-        platformFee,
-        feePercent: percent,
-        currency: 'jpy',
-        status: 'pending',
-        method: 'stripe',
-        stripeCheckoutSessionId: session.id,
-        idempotencyKey,
-      },
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { stripeCheckoutSessionId: session.id },
     });
 
     await this.logGatewayEvent({
@@ -558,6 +566,25 @@ export class PaymentsService {
           case 'checkout.session.async_payment_succeeded':
             await this.handleCheckoutSessionCompleted(event.data.object, tx);
             break;
+          case 'payment_intent.succeeded': {
+            const intent = event.data.object as Stripe.PaymentIntent;
+            const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
+            if (!paymentId) {
+              this.logger.warn(`Stripe PI succeeded but no paymentId in metadata: ${intent.id}`);
+              break;
+            }
+            await tx.payment.update({
+              where: { id: paymentId },
+              data: {
+                status: 'paid',
+                stripePaymentIntentId: intent.id,
+                provider: 'stripe',
+                providerObjectType: 'payment_intent',
+                providerObjectId: intent.id,
+              },
+            });
+            break;
+          }
           case 'checkout.session.expired':
             await this.handleCheckoutSessionExpired(event.data.object, tx);
             break;
