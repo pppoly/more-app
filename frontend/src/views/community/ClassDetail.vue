@@ -258,6 +258,9 @@ const handleSubmit = async () => {
     const res = await createClassRegistration(route.params.classId as string, lessonId);
     if (res.paymentRequired) {
       const checkout = await createStripeCheckout(res.registrationId);
+      if (checkout.resume) {
+        toast.show('未完了の決済があります。決済を再開してください。');
+      }
       window.location.href = checkout.checkoutUrl;
       return;
     }

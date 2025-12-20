@@ -409,6 +409,55 @@ export class PaymentsService {
       throw new BadRequestException('Stripe決済が現在利用できません');
     }
 
+    const existingPending = await this.prisma.payment.findFirst({
+      where: { registrationId, status: 'pending', method: 'stripe' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existingPending?.stripeCheckoutSessionId) {
+      try {
+        const existingSession = await this.stripeService.client.checkout.sessions.retrieve(
+          existingPending.stripeCheckoutSessionId,
+        );
+        const existingPaymentIntentId =
+          typeof existingSession.payment_intent === 'string'
+            ? existingSession.payment_intent
+            : existingSession.payment_intent?.id ?? null;
+
+        if (existingSession.status === 'open' && existingSession.url) {
+          this.logger.log(
+            `Resume Stripe checkout: session=${existingSession.id}, paymentId=${existingPending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
+          );
+          return { checkoutUrl: existingSession.url, resume: true };
+        }
+
+        if (existingSession.status === 'complete' && existingSession.payment_status === 'paid') {
+          await this.prisma.payment.update({
+            where: { id: existingPending.id },
+            data: {
+              status: 'paid',
+              stripePaymentIntentId: existingPaymentIntentId ?? existingPending.stripePaymentIntentId,
+              stripeCheckoutSessionId: existingSession.id,
+            },
+          });
+          if (registrationId) {
+            await this.prisma.eventRegistration.update({
+              where: { id: registrationId },
+              data: { paymentStatus: 'paid', status: 'paid', paidAmount: existingPending.amount },
+            });
+          }
+          this.logger.log(
+            `Existing Stripe session already paid: session=${existingSession.id}, paymentId=${existingPending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
+          );
+          return { checkoutUrl: this.stripeService.successUrlBase, resume: false };
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Failed to resume existing Stripe session ${existingPending.stripeCheckoutSessionId} for payment ${existingPending.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     const planFee = this.resolvePlanFee(community.pricingPlanId);
     const percent = planFee.percent;
     const fixed = planFee.fixed;
@@ -495,10 +544,47 @@ export class PaymentsService {
       throw new InternalServerErrorException('Stripe Checkout URLを生成できませんでした');
     }
 
-    await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { stripeCheckoutSessionId: session.id },
-    });
+    try {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          stripeCheckoutSessionId: session.id,
+        },
+      });
+      this.logger.log(
+        `Stripe checkout session created: session=${session.id}, payment_intent=null, paymentId=${payment.id}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to store checkout session id for payment ${payment.id}: session ${session.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
+    try {
+      const refreshedSession = await this.stripeService.client.checkout.sessions.retrieve(session.id);
+      const refreshedPaymentIntentId =
+        typeof refreshedSession.payment_intent === 'string'
+          ? refreshedSession.payment_intent
+          : refreshedSession.payment_intent?.id ?? null;
+      this.logger.log(
+        `Retrieved session payment_intent=${refreshedPaymentIntentId ?? 'null'} for session=${session.id} paymentId=${payment.id}`,
+      );
+      if (refreshedPaymentIntentId) {
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: { stripePaymentIntentId: refreshedPaymentIntentId },
+        });
+        this.logger.log(
+          `Stored stripePaymentIntentId for payment ${payment.id}: ${refreshedPaymentIntentId} (session ${session.id})`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to retrieve/update payment_intent for session ${session.id}, payment ${payment.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     await this.logGatewayEvent({
       gateway: 'stripe',
@@ -522,7 +608,12 @@ export class PaymentsService {
       this.logger.warn('Stripe webhook received but Stripe is not enabled');
       return { received: true };
     }
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const webhookSecret =
+      process.env.STRIPE_WEBHOOK_SECRET ??
+      (['production', 'prod', 'live'].includes(envLabel)
+        ? process.env.STRIPE_WEBHOOK_SECRET_LIVE
+        : process.env.STRIPE_WEBHOOK_SECRET_TEST);
     if (!webhookSecret) {
       this.logger.error('STRIPE_WEBHOOK_SECRET is not configured');
       throw new InternalServerErrorException('Stripe webhook secret is not configured');
@@ -569,12 +660,15 @@ export class PaymentsService {
           case 'payment_intent.succeeded': {
             const intent = event.data.object as Stripe.PaymentIntent;
             const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
-            if (!paymentId) {
-              this.logger.warn(`Stripe PI succeeded but no paymentId in metadata: ${intent.id}`);
+            const payment =
+              (paymentId ? await tx.payment.findUnique({ where: { id: paymentId } }) : null) ??
+              (await tx.payment.findFirst({ where: { stripePaymentIntentId: intent.id } }));
+            if (!payment) {
+              this.logger.warn(`Stripe PI succeeded but no payment matched: paymentId=${paymentId ?? 'n/a'}, intent=${intent.id}`);
               break;
             }
             await tx.payment.update({
-              where: { id: paymentId },
+              where: { id: payment.id },
               data: {
                 status: 'paid',
                 stripePaymentIntentId: intent.id,

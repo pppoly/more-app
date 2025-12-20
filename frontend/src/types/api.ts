@@ -285,6 +285,7 @@ export interface ConsoleCommunityBalance {
 
 export interface StripeCheckoutResponse {
   checkoutUrl: string;
+  resume?: boolean;
 }
 
 export interface SubscriptionResponse {

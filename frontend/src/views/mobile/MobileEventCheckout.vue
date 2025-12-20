@@ -141,7 +141,10 @@ const handlePay = async () => {
     pendingPayment.value = registration;
     if (registration.paymentRequired && (registration.amount ?? 0) > 0) {
       try {
-        const { checkoutUrl } = await createStripeCheckout(registration.registrationId);
+        const { checkoutUrl, resume } = await createStripeCheckout(registration.registrationId);
+        if (resume) {
+          window.alert('未完了の決済があります。決済を再開してください。');
+        }
         sessionStorage.setItem(
           MOBILE_EVENT_PENDING_PAYMENT_KEY,
           JSON.stringify({

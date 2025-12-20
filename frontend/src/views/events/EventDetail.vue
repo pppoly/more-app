@@ -342,7 +342,10 @@ const handleStripeCheckout = async () => {
   isRedirecting.value = true;
   registrationError.value = null;
   try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
+    const { checkoutUrl, resume } = await createStripeCheckout(pendingPayment.value.registrationId);
+    if (resume) {
+      window.alert('未完了の決済があります。決済を再開してください。');
+    }
     window.location.href = checkoutUrl;
   } catch (err: any) {
     const message =

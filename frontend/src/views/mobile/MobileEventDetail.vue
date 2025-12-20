@@ -1116,11 +1116,14 @@ const handleStripeCheckout = async () => {
   if (!pendingPayment.value) return;
   isRedirecting.value = true;
   registrationError.value = null;
-  try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
-    window.location.href = checkoutUrl;
-  } catch (err: any) {
-    const message =
+    try {
+      const { checkoutUrl, resume } = await createStripeCheckout(pendingPayment.value.registrationId);
+      if (resume) {
+        window.alert('未完了の決済があります。決済を再開してください。');
+      }
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      const message =
       err?.response?.data?.message ?? (err instanceof Error ? err.message : 'Stripe Checkoutの開始に失敗しました');
     registrationError.value = message;
     isRedirecting.value = false;
