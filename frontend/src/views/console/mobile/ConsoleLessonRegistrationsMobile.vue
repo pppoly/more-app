@@ -16,15 +16,19 @@
     <section class="kpi-card">
       <div class="kpi">
         <p class="kpi-label">申込数</p>
-        <p class="kpi-value">{{ registrations.length }}件</p>
+        <p class="kpi-value">{{ summaryTotals.totalCount }}件</p>
       </div>
-      <div class="kpi">
-        <p class="kpi-label">支払い合計（この回）</p>
-        <p class="kpi-value">¥{{ (summary?.totalAmount ?? 0).toLocaleString() }}</p>
+      <div v-if="summaryTotals.paidTotal > 0" class="kpi">
+        <p class="kpi-label">支払い済み合計</p>
+        <p class="kpi-value">¥{{ summaryTotals.paidTotal.toLocaleString() }}</p>
       </div>
-      <div class="kpi">
-        <p class="kpi-label">未払い</p>
-        <p class="kpi-value">{{ unpaidCount }}件</p>
+      <div v-if="summaryTotals.unpaidTotal > 0" class="kpi">
+        <p class="kpi-label">未払い合計</p>
+        <p class="kpi-value">¥{{ summaryTotals.unpaidTotal.toLocaleString() }}</p>
+      </div>
+      <div v-if="summaryTotals.refundingCount > 0" class="kpi">
+        <p class="kpi-label">返金中</p>
+        <p class="kpi-value">{{ summaryTotals.refundingCount }}件</p>
       </div>
     </section>
 
@@ -50,7 +54,17 @@
     </div>
     <div v-else>
       <div v-if="!filteredRegistrations.length" class="state empty">
-        <p class="empty-title">まだ申込がありません</p>
+        <p class="empty-title">
+          {{
+            activeFilter === 'paid'
+              ? '支払い済みの申込はありません'
+              : activeFilter === 'unpaid'
+                ? '未払いの申込はありません'
+                : activeFilter === 'refund'
+                  ? '返金中の申込はありません'
+                  : 'まだ申込がありません'
+          }}
+        </p>
         <p class="empty-desc">レッスン日程を追加したあと、参加者に申込リンクを共有できます</p>
         <div class="actions">
           <button class="ghost" type="button" @click="goBack">レッスン管理に戻る</button>
@@ -70,8 +84,9 @@
               </div>
             </div>
             <div class="status-block">
-              <span class="badge" :class="badgeClass(reg.paymentStatus)">{{ paymentLabel(reg.paymentStatus) }}</span>
-              <p class="amount">{{ amountLabel(reg.amount) }}</p>
+              <span class="badge" :class="badgeClass(reg.normalizedStatus)">{{ reg.statusLabel }}</span>
+              <p v-if="reg.amountYen !== null" class="amount">¥{{ reg.amountYen.toLocaleString() }}</p>
+              <p v-else class="amount hint">代表者が支払い</p>
             </div>
           </div>
           <div v-if="reg.status === 'cancel_requested'" class="action-row">
@@ -137,20 +152,61 @@ const goBack = () => {
   router.back();
 };
 
+type NormalizedStatus = 'paid' | 'unpaid' | 'refunding' | 'refunded' | 'failed';
+
+const normalizeStatus = (raw?: string): NormalizedStatus => {
+  const s = (raw || '').toLowerCase();
+  if (s.includes('refund')) return 'refunding';
+  if (s.includes('refunded')) return 'refunded';
+  if (s.includes('paid') || s.includes('succeeded')) return 'paid';
+  if (s.includes('fail')) return 'failed';
+  return 'unpaid';
+};
+
+const statusLabelMap: Record<NormalizedStatus, string> = {
+  paid: '支払い済み',
+  unpaid: '未払い',
+  refunding: '返金中',
+  refunded: '返金済み',
+  failed: '支払い失敗',
+};
+
+const normalizeRegistration = (reg: RegistrationItem) => {
+  const normalizedStatus = normalizeStatus(reg.paymentStatus || reg.status);
+  const amountField = typeof reg.amount === 'number' ? reg.amount : (reg as any).paidAmount;
+  const amountYen = typeof amountField === 'number' && amountField > 0 ? amountField : null;
+  return {
+    ...reg,
+    normalizedStatus,
+    amountYen,
+    statusLabel: statusLabelMap[normalizedStatus] ?? '状態不明',
+  };
+};
+
+const normalizedRegistrations = computed(() => registrations.value.map(normalizeRegistration));
+
 const filteredRegistrations = computed(() => {
-  if (activeFilter.value === 'all') return registrations.value;
-  return registrations.value.filter((reg) => {
-    const status = (reg.paymentStatus || '').toLowerCase();
-    if (activeFilter.value === 'paid') return status.includes('paid') || status.includes('succeeded');
-    if (activeFilter.value === 'unpaid') return status.includes('unpaid') || status.includes('pending');
-    if (activeFilter.value === 'refund') return status.includes('refund');
-    return true;
-  });
+  let list = normalizedRegistrations.value;
+  if (activeFilter.value === 'paid') list = list.filter((r) => r.normalizedStatus === 'paid');
+  if (activeFilter.value === 'unpaid') list = list.filter((r) => r.normalizedStatus === 'unpaid');
+  if (activeFilter.value === 'refund')
+    list = list.filter((r) => r.normalizedStatus === 'refunding' || r.normalizedStatus === 'refunded');
+  return list;
 });
 
-const unpaidCount = computed(() =>
-  registrations.value.filter((reg) => (reg.paymentStatus || '').toLowerCase().includes('unpaid')).length,
-);
+const summaryTotals = computed(() => {
+  const list = filteredRegistrations.value;
+  const totalCount = list.length;
+  let paidTotal = 0;
+  let unpaidTotal = 0;
+  let refundingCount = 0;
+  list.forEach((reg) => {
+    if (reg.amountYen && reg.normalizedStatus === 'paid') paidTotal += reg.amountYen;
+    if (reg.amountYen && reg.normalizedStatus === 'unpaid') unpaidTotal += reg.amountYen;
+    if (reg.normalizedStatus === 'refunding' || reg.normalizedStatus === 'refunded') refundingCount += 1;
+  });
+  return { totalCount, paidTotal, unpaidTotal, refundingCount };
+});
 
 const formatDate = (value?: string) => {
   if (!value) return '';
@@ -173,31 +229,11 @@ const displayDate = (startAt?: string, endAt?: string) => {
   return `${start}–${end}`;
 };
 
-const paymentLabel = (status?: string) => {
-  const s = (status || '').toLowerCase();
-  if (s.includes('refund')) return '返金中';
-  if (s.includes('paid') || s.includes('succeeded')) return '支払い済み';
-  if (s.includes('unpaid') || s.includes('pending')) return '未払い';
-  return '状態不明';
-};
-
-const statusLabel = (status?: string) => {
-  if (!status) return '';
-  if (status === 'cancelled') return 'キャンセル';
-  return '受付中';
-};
-
-const badgeClass = (status?: string) => {
-  const s = (status || '').toLowerCase();
-  if (s.includes('refund')) return 'badge warn';
-  if (s.includes('paid') || s.includes('succeeded')) return 'badge success';
-  if (s.includes('unpaid') || s.includes('pending')) return 'badge muted';
-  return 'badge';
-};
-
-const amountLabel = (amount?: number | null) => {
-  if (!amount || amount <= 0) return '無料';
-  return `¥${amount.toLocaleString()}`;
+const badgeClass = (status: NormalizedStatus) => {
+  if (status === 'refunding' || status === 'refunded') return 'badge warn';
+  if (status === 'paid') return 'badge success';
+  if (status === 'unpaid') return 'badge muted';
+  return 'badge muted';
 };
 </script>
 
@@ -396,6 +432,10 @@ const amountLabel = (amount?: number | null) => {
 .badge.muted {
   background: #e5e7eb;
   color: #475569;
+}
+.badge.warn {
+  background: #fef9c3;
+  color: #92400e;
 }
 .chip.cancelled {
   background: #fee2e2;
