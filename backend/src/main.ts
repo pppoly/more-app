@@ -11,13 +11,14 @@ const buildPrefixedPath = (...segments: string[]) => {
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Disable Nest built-in body parser to allow custom raw handler for Stripe webhook
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const globalPrefix = 'api/v1';
-  // Raise body size limits to tolerate description HTML with inline images.
+  // Register parsers manually: raw for Stripe webhook FIRST, then json/urlencoded for others.
+  app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
   app.use(bodyParser.json({ limit: '15mb' }));
   app.use(bodyParser.urlencoded({ limit: '15mb', extended: true }));
   app.setGlobalPrefix(globalPrefix);
-  app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
   const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';
   const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? defaultConfiguredOrigins)
     .split(',')
