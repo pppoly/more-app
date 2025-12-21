@@ -259,17 +259,6 @@ export class EventsService {
         throw new BadRequestException('Event is not available for registration');
       }
 
-      const now = new Date();
-      if (event.regStartTime && now < event.regStartTime) {
-        throw new BadRequestException('Registration has not started');
-      }
-      const regEndTime = event.regEndTime ?? event.regDeadline ?? null;
-      if (regEndTime && now > regEndTime) {
-        throw new BadRequestException('Registration is closed');
-      }
-
-      await this.ensureActiveMembership(event.communityId, userId, tx);
-
       const existing = await tx.eventRegistration.findFirst({
         where: {
           userId,
@@ -296,6 +285,7 @@ export class EventsService {
       });
 
       if (existing && !['cancelled', 'rejected', 'refunded'].includes(existing.status)) {
+        await this.ensureActiveMembership(event.communityId, userId, tx);
         return {
           registrationId: existing.id,
           status: existing.status,
@@ -318,6 +308,17 @@ export class EventsService {
           },
         };
       }
+
+      const now = new Date();
+      if (event.regStartTime && now < event.regStartTime) {
+        throw new BadRequestException('Registration has not started');
+      }
+      const regEndTime = event.regEndTime ?? event.regDeadline ?? null;
+      if (regEndTime && now > regEndTime) {
+        throw new BadRequestException('Registration is closed');
+      }
+
+      await this.ensureActiveMembership(event.communityId, userId, tx);
 
       let eventTicketTypes = event.ticketTypes;
       if (!eventTicketTypes.length) {
