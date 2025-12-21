@@ -130,21 +130,29 @@
                         {{ actionLoading[reg.registrationId] ? '処理中…' : '拒否' }}
                       </button>
                     </div>
-                    <button type="button" class="ghost" @click="toggleAnswers(reg.registrationId)">
+                    <button
+                      v-if="hasRegistrationForm"
+                      type="button"
+                      class="ghost"
+                      @click="toggleAnswers(reg.registrationId)"
+                    >
                       {{ expandedRows[reg.registrationId] ? 'フォームを閉じる' : 'フォームを見る' }}
                     </button>
+                    <span v-else class="muted">申込フォームなし</span>
                   </div>
                 </td>
               </tr>
               <tr v-if="expandedRows[reg.registrationId]" class="answers-row">
                 <td colspan="7">
-                  <div v-if="formEntries(reg).length" class="answers">
+                  <div v-if="hasRegistrationForm && formEntries(reg).length" class="answers">
                     <div v-for="[key, value] in formEntries(reg)" :key="key" class="answer-row">
                       <span class="answer-label">{{ key }}</span>
                       <span class="answer-value">{{ formatAnswer(value) }}</span>
                     </div>
                   </div>
-                  <p v-else class="muted">追加情報はありません。</p>
+                  <p v-else class="muted">
+                    {{ hasRegistrationForm ? '回答はありません。' : 'このイベントは申込フォーム未設定です。' }}
+                  </p>
                 </td>
               </tr>
             </template>
@@ -213,6 +221,9 @@ const eventStatusState = computed(() => {
 });
 const eventStatusLabel = computed(() => getEventStatusLabel(eventStatusState.value));
 const eventStatusClass = computed(() => (eventStatusState.value === 'open' ? 'open' : 'closed'));
+const hasRegistrationForm = computed(
+  () => Boolean(eventDetail.value?.registrationFormSchema?.length),
+);
 
 const load = async () => {
   loading.value = true;

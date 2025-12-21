@@ -237,7 +237,7 @@ const handlePay = async () => {
             registrationError.value =
               registrationWindow.value.reason ?? '申込受付は終了しました。';
           } else {
-            registrationError.value = '申込情報が見つかりません。最初からやり直してください。';
+            registrationError.value = '申込記録が見つかりません。最初からやり直してください。';
           }
           return;
         }
