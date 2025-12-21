@@ -172,7 +172,7 @@ const allowWebContinue = ref(false);
 const showLineModal = ref(false);
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
-const brandBarForRoute = computed(() => showBrandBar.value && isRootNavRoute.value);
+const brandBarForRoute = computed(() => showBrandBar.value && currentRoute.path === '/events');
 const hideLegacyHeader = computed(() => isLiffClientMode.value || showBrandBar.value);
 const hideDesktopNav = computed(() => Boolean(currentRoute.meta?.hideDesktopNav));
 const mediaQuery =
