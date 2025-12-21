@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import { UPLOAD_ROOT } from './common/storage/upload-root';
+import type { IncomingMessage } from 'http';
 
 const normalizePathSegment = (segment: string) => segment.replace(/^\/+|\/+$/g, '');
 const buildPrefixedPath = (...segments: string[]) => {
@@ -15,9 +17,45 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const globalPrefix = 'api/v1';
   // Register parsers manually: raw for Stripe webhook FIRST, then json/urlencoded for others.
-  app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
-  app.use(bodyParser.json({ limit: '15mb' }));
-  app.use(bodyParser.urlencoded({ limit: '15mb', extended: true }));
+  const stripeWebhookPath = '/api/v1/payments/stripe/webhook';
+  const stripeWebhookDebug = process.env.STRIPE_WEBHOOK_DEBUG === '1';
+  const isStripeWebhook = (req: express.Request) => {
+    const path = (req.originalUrl || '').split('?')[0] || req.path;
+    return path === stripeWebhookPath;
+  };
+  const stripeRawType = (req: IncomingMessage) => {
+    const header = req.headers['content-type'];
+    const contentType = Array.isArray(header) ? header.join(';') : header || '';
+    return /^application\/json\b/i.test(contentType) || /\+json\b/i.test(contentType);
+  };
+  const stripeRawBodyParser = express.raw({ type: stripeRawType });
+  app.use(stripeWebhookPath, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.method !== 'POST') return next();
+    return stripeRawBodyParser(req, res, next);
+  });
+  app.use(stripeWebhookPath, (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    if (req.method !== 'POST') return next();
+    if (stripeWebhookDebug) {
+      const body = req.body as unknown;
+      const isBuffer = Buffer.isBuffer(body);
+      const length = isBuffer ? body.length : body ? Buffer.byteLength(String(body)) : 0;
+      const contentType = req.headers['content-type'] ?? '';
+      console.log(
+        `[stripe webhook debug] method=${req.method} content-type=${contentType} bodyType=${typeof body} isBuffer=${isBuffer} length=${length}`,
+      );
+    }
+    return next();
+  });
+  const jsonParser = bodyParser.json({ limit: '15mb' });
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isStripeWebhook(req)) return next();
+    return jsonParser(req, res, next);
+  });
+  const urlencodedParser = bodyParser.urlencoded({ limit: '15mb', extended: true });
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isStripeWebhook(req)) return next();
+    return urlencodedParser(req, res, next);
+  });
   app.setGlobalPrefix(globalPrefix);
   const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';
   const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? defaultConfiguredOrigins)

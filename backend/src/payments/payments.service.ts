@@ -659,7 +659,7 @@ export class PaymentsService {
     };
   }
 
-  async handleStripeWebhook(signature: string | undefined, payload: Buffer) {
+  async handleStripeWebhook(rawBody: Buffer, signature?: string) {
     if (!this.stripeService.enabled) {
       this.logger.warn('Stripe webhook received but Stripe is not enabled');
       return { received: true };
@@ -674,20 +674,30 @@ export class PaymentsService {
       this.logger.error('STRIPE_WEBHOOK_SECRET is not configured');
       throw new InternalServerErrorException('Stripe webhook secret is not configured');
     }
+    const payloadInfo = this.describeStripeWebhookPayload(rawBody);
+    const signaturePresent = Boolean(signature);
     if (!signature) {
+      this.logger.warn(
+        `Stripe webhook signature is missing (eventId=${payloadInfo.eventId}, sig=missing, rawBody=${payloadInfo.length} bytes)`,
+      );
       throw new BadRequestException('Missing Stripe signature');
     }
 
     let event: Stripe.Event;
     try {
-      event = this.stripeService.client.webhooks.constructEvent(payload, signature, webhookSecret);
+      event = this.stripeService.client.webhooks.constructEvent(rawBody, signature, webhookSecret);
     } catch (error) {
-      this.logger.error('Failed to verify Stripe webhook signature', error instanceof Error ? error.stack : String(error));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to verify Stripe webhook signature (eventId=${payloadInfo.eventId}, sig=${
+          signaturePresent ? 'present' : 'missing'
+        }, rawBody=${payloadInfo.length} bytes): ${errorMessage}`,
+      );
       await this.logGatewayEvent({
         gateway: 'stripe',
         eventType: 'webhook.verification_failed',
         status: 'failure',
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage,
       });
       throw new BadRequestException('Invalid Stripe signature');
     }
@@ -789,6 +799,22 @@ export class PaymentsService {
 
   async refundStripePayment(userId: string, paymentId: string, reason?: string) {
     return this.refundStripePaymentInternal(userId, paymentId, undefined, reason);
+  }
+
+  private describeStripeWebhookPayload(rawBody: Buffer) {
+    const length = Buffer.isBuffer(rawBody) ? rawBody.length : 0;
+    let eventId = 'n/a';
+    if (Buffer.isBuffer(rawBody) && rawBody.length > 0) {
+      try {
+        const parsed = JSON.parse(rawBody.toString('utf8')) as { id?: string };
+        if (parsed && typeof parsed.id === 'string') {
+          eventId = parsed.id;
+        }
+      } catch {
+        // ignore parse errors for logging
+      }
+    }
+    return { eventId, length };
   }
 
   async refundStripePaymentInternal(userId: string, paymentId: string, amount?: number, reason?: string) {

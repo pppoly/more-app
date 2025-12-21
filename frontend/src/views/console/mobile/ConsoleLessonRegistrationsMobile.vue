@@ -229,6 +229,12 @@ const displayDate = (startAt?: string, endAt?: string) => {
   return `${start}–${end}`;
 };
 
+const statusLabel = (status: string) => {
+  if (status === 'cancelled') return 'キャンセル';
+  if (status === 'scheduled') return '受付中';
+  return '受付中';
+};
+
 const badgeClass = (status: NormalizedStatus) => {
   if (status === 'refunding' || status === 'refunded') return 'badge warn';
   if (status === 'paid') return 'badge success';
