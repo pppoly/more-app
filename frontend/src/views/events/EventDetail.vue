@@ -221,11 +221,75 @@ const formAnswers = reactive<Record<string, any>>({});
 const auth = useAuth();
 const isLoggedIn = computed(() => Boolean(auth.user.value));
 
+const requiresApproval = computed(() => {
+  if (!event.value) return false;
+  const config = (event.value.config as Record<string, any>) ?? {};
+  return Boolean(event.value.requireApproval ?? config.requireApproval);
+});
+
+const capacityState = computed(() => {
+  if (!event.value) {
+    return { capacity: null, currentParticipants: 0, enableWaitlist: false, isFull: false };
+  }
+  const config = (event.value.config as Record<string, any>) ?? {};
+  const capacityRaw =
+    typeof event.value.maxParticipants === 'number'
+      ? event.value.maxParticipants
+      : typeof config.capacity === 'number'
+        ? config.capacity
+        : typeof config.maxParticipants === 'number'
+          ? config.maxParticipants
+          : null;
+  const capacity = typeof capacityRaw === 'number' && Number.isFinite(capacityRaw) ? capacityRaw : null;
+  const currentRaw = config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0;
+  const currentParticipants = Number.isFinite(Number(currentRaw)) ? Number(currentRaw) : 0;
+  const enableWaitlist = Boolean(config.enableWaitlist);
+  const isFull = capacity !== null && capacity > 0 ? currentParticipants >= capacity : false;
+  return { capacity, currentParticipants, enableWaitlist, isFull };
+});
+
+const eventLifecycle = computed(() => {
+  if (!event.value) return 'scheduled';
+  if (event.value.status === 'cancelled') return 'cancelled';
+  const now = new Date();
+  const start = new Date(event.value.startTime);
+  const end = event.value.endTime ? new Date(event.value.endTime) : null;
+  if (now < start) return 'scheduled';
+  if (end && now > end) return 'ended';
+  return 'ongoing';
+});
+
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '現在このイベントは申込受付を行っていません。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
+
+const registrationWindowState = computed(() => resolveRegistrationWindow(event.value));
+
 const registrationUnavailableReason = computed(() => {
   if (!event.value) return null;
-  if (event.value.status !== 'open') return '現在このイベントは申込受付を行っていません。';
   if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
     return '公開範囲の制限により申し込みできません。';
+  }
+  if (eventLifecycle.value === 'cancelled') {
+    return 'イベントはキャンセルされました。';
+  }
+  if (eventLifecycle.value === 'ended') {
+    return 'イベントは終了しました。';
+  }
+  const window = registrationWindowState.value;
+  if (!window.open) return window.reason;
+  if (capacityState.value.isFull) {
+    return capacityState.value.enableWaitlist
+      ? '満席のためキャンセル待ちのみ受付中です。'
+      : '満席のため受付終了しました。';
   }
   return null;
 });
@@ -278,22 +342,30 @@ const mapUrl = computed(() => {
   }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.locationText)}`;
 });
-const ctaLabel = computed(() => {
-  if (!isLoggedIn.value) return 'ログイン';
-  if (pendingPayment.value) return '支払いを完了する';
-  if (pendingApproval.value) return '審査中';
-  if (registrationUnavailableReason.value) return '受付終了';
-  if (hasRegistered.value) return '参加予定です';
-  return '参加する';
+const ctaState = computed(() => {
+  if (!event.value) return { label: '読み込み中…', disabled: true };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止しました', disabled: true };
+  if (pendingPayment.value) return { label: '支払いへ進む', disabled: false };
+  if (pendingApproval.value) return { label: '予約済み', disabled: true };
+  if (hasRegistered.value) return { label: '参加予定です', disabled: true };
+  if (!isLoggedIn.value) {
+    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false };
+  }
+  if (eventLifecycle.value === 'ended') return { label: '終了しました', disabled: true };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付開始前' : '受付終了';
+    return { label, disabled: true };
+  }
+  if (capacityState.value.isFull) {
+    if (capacityState.value.enableWaitlist) {
+      return { label: 'キャンセル待ちで申し込む', disabled: true };
+    }
+    return { label: '満席', disabled: true };
+  }
+  return { label: requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む', disabled: false };
 });
-const ctaDisabled = computed(
-  () =>
-    isRegistering.value ||
-    isRedirecting.value ||
-    hasRegistered.value ||
-    pendingApproval.value ||
-    (Boolean(registrationUnavailableReason.value) && !pendingPayment.value),
-);
+const ctaLabel = computed(() => ctaState.value.label);
+const ctaDisabled = computed(() => ctaState.value.disabled || isRegistering.value || isRedirecting.value);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '--';

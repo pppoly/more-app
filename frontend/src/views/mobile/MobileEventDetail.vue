@@ -361,6 +361,33 @@ const showBackButton = computed(() => !isLineInAppBrowser());
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
 
+const requiresApproval = computed(() => {
+  if (!event.value) return false;
+  const config = (event.value.config as Record<string, any>) ?? {};
+  return Boolean(event.value.requireApproval ?? config.requireApproval);
+});
+
+const capacityState = computed(() => {
+  if (!event.value) {
+    return { capacity: null, currentParticipants: 0, enableWaitlist: false, isFull: false };
+  }
+  const config = (event.value.config as Record<string, any>) ?? {};
+  const capacityRaw =
+    typeof event.value.maxParticipants === 'number'
+      ? event.value.maxParticipants
+      : typeof config.capacity === 'number'
+        ? config.capacity
+        : typeof config.maxParticipants === 'number'
+          ? config.maxParticipants
+          : null;
+  const capacity = typeof capacityRaw === 'number' && Number.isFinite(capacityRaw) ? capacityRaw : null;
+  const currentRaw = config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0;
+  const currentParticipants = Number.isFinite(Number(currentRaw)) ? Number(currentRaw) : 0;
+  const enableWaitlist = Boolean(config.enableWaitlist);
+  const isFull = capacity !== null && capacity > 0 ? currentParticipants >= capacity : false;
+  return { capacity, currentParticipants, enableWaitlist, isFull };
+});
+
 const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
 const isFavoriteEvent = computed(() => {
   const currentId = detail.value?.id;
@@ -416,7 +443,19 @@ const eventLifecycle = computed(() => {
   if (end && now > end) return 'ended';
   return 'ongoing';
 });
-const registrationWindow = computed(() => (event.value?.status === 'open' ? 'open' : 'closed'));
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '受付は終了しています。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
+const registrationWindowState = computed(() => resolveRegistrationWindow(event.value));
+const registrationWindow = computed(() => (registrationWindowState.value.open ? 'open' : 'closed'));
 
 const refundHint = computed(() => {
   if (eventLifecycle.value === 'cancelled') {
@@ -435,16 +474,13 @@ const computeCtaState = () => {
     return { label: '読み込み中…', disabled: true, hint: '' };
   }
   if (eventLifecycle.value === 'cancelled') {
-    return { label: '受付終了', disabled: true, hint: 'イベントはキャンセルされました。' };
-  }
-  if (!isLoggedIn.value) {
-    return { label: 'ログインして申し込む', disabled: false, hint: '' };
+    return { label: '中止しました', disabled: true, hint: 'イベントはキャンセルされました。' };
   }
   if (registrationStatus.value === 'pending_payment') {
-    return { label: '支払いを完了して参加する', disabled: false, hint: 'お支払い待ちです。' };
+    return { label: '支払いへ進む', disabled: false, hint: 'お支払い待ちです。' };
   }
   if (registrationStatus.value === 'pending') {
-    return { label: '審査中', disabled: true, hint: '主催者の承認をお待ちください。' };
+    return { label: '予約済み', disabled: true, hint: '主催者の承認をお待ちください。' };
   }
   if (registrationStatus.value === 'paid') {
     return { label: '参加チケットを見る', disabled: false, hint: refundHint.value };
@@ -467,8 +503,32 @@ const computeCtaState = () => {
   if (legacyRefund.value) {
     return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
   }
+  if (!isLoggedIn.value) {
+    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false, hint: '' };
+  }
+  if (eventLifecycle.value === 'ended') {
+    return { label: '終了しました', disabled: true, hint: 'イベントは終了しました。' };
+  }
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付開始前' : '受付終了';
+    return { label, disabled: true, hint: registrationWindowState.value.reason ?? '' };
+  }
+  if (capacityState.value.isFull) {
+    if (capacityState.value.enableWaitlist) {
+      return {
+        label: 'キャンセル待ちで申し込む',
+        disabled: true,
+        hint: '満席のためキャンセル待ちのみ受付中です。',
+      };
+    }
+    return { label: '満席', disabled: true, hint: '定員に達しました。' };
+  }
   const canApply = registrationWindow.value === 'open';
-  return { label: canApply ? '参加する' : '受付終了', disabled: !canApply, hint: '' };
+  return {
+    label: canApply ? (requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む') : '受付終了',
+    disabled: !canApply,
+    hint: canApply ? '' : registrationWindowState.value.reason ?? '',
+  };
 };
 const ctaState = computed(computeCtaState);
 const ctaLabel = computed(() => ctaState.value.label);
@@ -693,18 +753,7 @@ const participantPreview = computed(() => participantsList.value.slice(0, 20));
 const hasMoreParticipants = computed(() => participantsList.value.length > participantPreview.value.length);
 const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
 
-const ctaHint = computed(() => {
-  if (!detail.value) return '';
-  if (refundHint.value) return refundHint.value;
-  if (registrationStatus.value === 'pending_payment') return 'お支払い待ちです。';
-  if (registrationStatus.value === 'pending') return '主催者の承認をお待ちください。';
-  if (registrationStatus.value === 'cancel_requested') return 'キャンセル申請中です。';
-  if (registrationStatus.value === 'cancelled') {
-    return registrationWindow.value === 'open' ? '再申込できます。' : '申込はキャンセルされています。';
-  }
-  if (legacyRefund.value) return '旧データによる返金状態です。';
-  return '';
-});
+const ctaHint = computed(() => ctaState.value.hint ?? '');
 const participantsTotalLabel = computed(() =>
   participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
 );

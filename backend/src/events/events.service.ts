@@ -146,10 +146,11 @@ export class EventsService {
       descriptionHtml: true,
       registrationFormSchema: true,
       config: true,
-      category: true,
-      minParticipants: true,
-      maxParticipants: true,
-      registrations: {
+        category: true,
+        minParticipants: true,
+        maxParticipants: true,
+        requireApproval: true,
+        registrations: {
         where: successRegistrationWhere,
         orderBy: { createdAt: 'desc' },
         take: 24,

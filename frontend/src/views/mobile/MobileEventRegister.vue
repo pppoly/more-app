@@ -252,15 +252,24 @@ const selectedTicket = computed(() => {
   };
 });
 const requiresPayment = computed(() => (selectedTicket.value?.price ?? 0) > 0);
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '現在このイベントは申込受付を行っていません。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
 const registrationUnavailableReason = computed(() => {
   if (!event.value) return null;
-  if (event.value.status !== 'open') {
-    return '現在このイベントは申込受付を行っていません。';
-  }
   if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
     return '公開範囲の制限により申し込みできません。';
   }
-  return null;
+  const window = resolveRegistrationWindow(event.value);
+  return window.open ? null : window.reason;
 });
 const ctaLabel = computed(() => {
   if (registrationUnavailableReason.value) return '受付終了';

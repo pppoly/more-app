@@ -107,6 +107,7 @@ export interface EventDetail {
   category?: string | null;
   minParticipants?: number | null;
   maxParticipants?: number | null;
+  requireApproval?: boolean;
   registrationFormSchema?: RegistrationFormField[] | null;
   config?: Record<string, any> | null;
   ticketTypes?: Array<{

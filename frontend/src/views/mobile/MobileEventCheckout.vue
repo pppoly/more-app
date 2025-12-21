@@ -16,7 +16,7 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="btn primary" :disabled="submitting" @click="handlePay">
+        <button type="button" class="btn primary" :disabled="ctaDisabled" @click="handlePay">
           {{ ctaLabel }}
         </button>
       </div>
@@ -109,13 +109,32 @@ const hasPaidTicket = computed(
   () => event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
 );
 
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: true, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '申込受付は終了しています。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
+
+const registrationWindow = computed(() => resolveRegistrationWindow(event.value));
+
 const ctaLabel = computed(() => {
   const amount = pendingPayment.value?.amount ?? null;
   if (submitting.value) return '処理中…';
+  if (!pendingPayment.value && !registrationWindow.value.open) return '受付終了';
   if (amount !== null && amount > 0) return `${currencyFormatter.format(amount)} を支払う`;
   if (!pendingPayment.value) return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
   return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
 });
+
+const ctaDisabled = computed(
+  () => submitting.value || (!pendingPayment.value && !registrationWindow.value.open),
+);
 
 const loadPendingPayment = () => {
   try {
@@ -214,11 +233,21 @@ const handlePay = async () => {
         if (serverPending) {
           pendingPayment.value = serverPending;
         } else {
-          registrationError.value = '申込情報が見つかりません。最初からやり直してください。';
+          if (!registrationWindow.value.open) {
+            registrationError.value =
+              registrationWindow.value.reason ?? '申込受付は終了しました。';
+          } else {
+            registrationError.value = '申込情報が見つかりません。最初からやり直してください。';
+          }
           return;
         }
       }
       if (!pendingPayment.value) {
+        if (!registrationWindow.value.open) {
+          registrationError.value =
+            registrationWindow.value.reason ?? '申込受付は終了しました。';
+          return;
+        }
         const registration = await createRegistration(eventId.value, {
           ticketTypeId: draft?.ticketTypeId,
           formAnswers: draft?.formAnswers,
