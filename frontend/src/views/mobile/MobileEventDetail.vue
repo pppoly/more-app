@@ -1100,6 +1100,15 @@ const handleStripeCheckout = async () => {
       if (resume) {
         window.alert('未完了の決済があります。決済を再開してください。');
       }
+      sessionStorage.setItem(
+        MOBILE_EVENT_PENDING_PAYMENT_KEY,
+        JSON.stringify({
+          registrationId: pendingPayment.value.registrationId,
+          amount: pendingPayment.value.amount,
+          eventId: detail.value?.id ?? eventId.value,
+          source: 'mobile',
+        }),
+      );
       window.location.href = checkoutUrl;
     } catch (err: any) {
       const message =

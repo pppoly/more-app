@@ -134,6 +134,7 @@ const handlePay = async () => {
             registrationId: registration.registrationId,
             amount: registration.amount,
             eventId: registration.eventId,
+            source: 'mobile',
           }),
         );
         window.location.href = checkoutUrl;

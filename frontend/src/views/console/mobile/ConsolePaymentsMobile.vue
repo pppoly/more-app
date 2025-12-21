@@ -2,7 +2,7 @@
   <div class="payments">
     <ConsoleTopBar v-if="!isLiffClientMode" :title="headerTitle" @back="goBack" />
 
-    <!-- 社群取引ページではKPIを省略し、一覧操作に集中 -->
+    <!-- コミュニティ取引ページではKPIを省略し、一覧操作に集中 -->
 
     <section class="card filters">
       <div class="filter-stack">
@@ -89,7 +89,7 @@
                 :disabled="refundLoading[item.id]"
                 @click="approveRefundRequest(item)"
               >
-                {{ refundLoading[item.id] ? '处理中...' : '同意退款' }}
+                {{ refundLoading[item.id] ? '処理中...' : '返金を承認' }}
               </button>
               <button
                 class="ghost action-btn"
@@ -97,7 +97,7 @@
                 :disabled="refundLoading[item.id]"
                 @click="rejectRefundRequest(item)"
               >
-                拒绝
+                却下
               </button>
             </div>
             <button
@@ -107,16 +107,16 @@
               :disabled="refundLoading[item.id]"
               @click="requestRefund(item)"
             >
-              {{ refundLoading[item.id] ? '处理中...' : '主动退款' }}
+              {{ refundLoading[item.id] ? '処理中...' : '返金を実行' }}
             </button>
           </div>
         </li>
       </ul>
       <div class="pager" v-if="payments.total > payments.pageSize">
-        <button class="ghost" :disabled="page === 1" @click="setPage(page - 1)">上一页</button>
-        <span class="muted">第 {{ page }} 页</span>
+        <button class="ghost" :disabled="page === 1" @click="setPage(page - 1)">前へ</button>
+        <span class="muted">{{ page }} ページ目</span>
         <button class="ghost" :disabled="page * payments.pageSize >= payments.total" @click="setPage(page + 1)">
-          下一页
+          次へ
         </button>
       </div>
     </section>
@@ -297,7 +297,7 @@ const displayTitle = (item: ConsolePaymentItem) => {
   if (item.lesson?.class?.title) {
     return `${getLocalizedText(item.lesson.class.title)}（レッスン）`;
   }
-  return '未关联（クラス/イベント無し）';
+  return '未紐づけ（クラス/イベントなし）';
 };
 
 const goBack = () => {
@@ -305,7 +305,7 @@ const goBack = () => {
 };
 
 const requestRefund = async (item: ConsolePaymentItem) => {
-  const sure = window.confirm(`确认为「${item.user.name}」退款 ${formatYen(item.amount)} 吗？`);
+  const sure = window.confirm(`「${item.user.name}」に ${formatYen(item.amount)} を返金しますか？`);
   if (!sure) return;
   refundLoading.value = { ...refundLoading.value, [item.id]: true };
   try {
@@ -313,7 +313,7 @@ const requestRefund = async (item: ConsolePaymentItem) => {
     await loadPayments();
     await loadBalance();
   } catch (err) {
-    alert(err instanceof Error ? err.message : '退款失败');
+    alert(err instanceof Error ? err.message : '返金に失敗しました');
   } finally {
     refundLoading.value = { ...refundLoading.value, [item.id]: false };
   }
@@ -322,7 +322,7 @@ const requestRefund = async (item: ConsolePaymentItem) => {
 const approveRefundRequest = async (item: ConsolePaymentItem) => {
   if (!item.refundRequest) return;
   const amount = item.refundRequest.requestedAmount ?? item.amount;
-  const sure = window.confirm(`确认同意「${item.user.name}」退款 ${formatYen(amount)} 吗？`);
+  const sure = window.confirm(`「${item.user.name}」の返金申請を承認しますか？（${formatYen(amount)}）`);
   if (!sure) return;
   refundLoading.value = { ...refundLoading.value, [item.id]: true };
   try {
@@ -330,7 +330,7 @@ const approveRefundRequest = async (item: ConsolePaymentItem) => {
     await loadPayments();
     await loadBalance();
   } catch (err) {
-    alert(err instanceof Error ? err.message : '退款审批失败');
+    alert(err instanceof Error ? err.message : '返金審査に失敗しました');
   } finally {
     refundLoading.value = { ...refundLoading.value, [item.id]: false };
   }
@@ -338,14 +338,14 @@ const approveRefundRequest = async (item: ConsolePaymentItem) => {
 
 const rejectRefundRequest = async (item: ConsolePaymentItem) => {
   if (!item.refundRequest) return;
-  const sure = window.confirm(`确认拒绝「${item.user.name}」的退款申请吗？`);
+  const sure = window.confirm(`「${item.user.name}」の返金申請を却下しますか？`);
   if (!sure) return;
   refundLoading.value = { ...refundLoading.value, [item.id]: true };
   try {
     await decideRefundRequest(item.refundRequest.id, { decision: 'reject' });
     await loadPayments();
   } catch (err) {
-    alert(err instanceof Error ? err.message : '退款审批失败');
+    alert(err instanceof Error ? err.message : '返金審査に失敗しました');
   } finally {
     refundLoading.value = { ...refundLoading.value, [item.id]: false };
   }

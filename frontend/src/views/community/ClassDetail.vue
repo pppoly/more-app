@@ -101,6 +101,7 @@ import type { ClassDetail, Lesson } from '../../types/api';
 import { useToast } from '../../composables/useToast';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../utils/liff';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
 const route = useRoute();
 const router = useRouter();
@@ -244,6 +245,14 @@ const handleSubmit = async () => {
       if (checkout.resume) {
         toast.show('未完了の決済があります。決済を再開してください。');
       }
+      sessionStorage.setItem(
+        MOBILE_EVENT_PENDING_PAYMENT_KEY,
+        JSON.stringify({
+          registrationId: res.registrationId,
+          source: 'class',
+          classId: route.params.classId,
+        }),
+      );
       window.location.href = checkout.checkoutUrl;
       return;
     }

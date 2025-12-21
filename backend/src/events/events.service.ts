@@ -324,7 +324,7 @@ export class EventsService {
         ? 'pending'
         : isFree
           ? 'paid'
-          : 'approved';
+          : 'pending_payment';
       const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
 
       const baseData = {

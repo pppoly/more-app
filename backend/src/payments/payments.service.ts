@@ -721,7 +721,7 @@ export class PaymentsService {
         switch (event.type) {
           case 'checkout.session.completed':
           case 'checkout.session.async_payment_succeeded':
-            await this.handleCheckoutSessionCompleted(event.data.object, tx);
+            await this.handleCheckoutSessionCompleted(event.data.object, tx, event.id);
             break;
           case 'payment_intent.succeeded': {
             const intent = event.data.object as Stripe.PaymentIntent;
@@ -920,7 +920,11 @@ export class PaymentsService {
     };
   }
 
-  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, tx: Prisma.TransactionClient = this.prisma) {
+  private async handleCheckoutSessionCompleted(
+    session: Stripe.Checkout.Session,
+    tx: Prisma.TransactionClient = this.prisma,
+    eventId?: string,
+  ) {
     const registrationId = session.metadata?.registrationId;
     const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
     if (registrationId) {
@@ -998,24 +1002,44 @@ export class PaymentsService {
       });
     }
 
-    await this.createLedgerEntryIfMissing({
-      tx,
-      businessPaymentId: payment.id,
-      businessRegistrationId: payment.registrationId ?? undefined,
-      businessLessonId: payment.lessonId ?? undefined,
-      businessCommunityId: payment.communityId ?? undefined,
-      entryType: 'charge',
-      direction: 'in',
-      amount: payment.amount,
-      currency: payment.currency ?? 'jpy',
-      provider: 'stripe',
-      providerObjectType: 'checkout.session',
-      providerObjectId: session.id,
-      providerAccountId: session.metadata?.communityId,
-      idempotencyKey: `stripe:checkout.completed:${session.id}`,
-      occurredAt: new Date(),
-      metadata: { paymentIntentId },
-    });
+    try {
+      await this.createLedgerEntryIfMissing({
+        tx,
+        businessPaymentId: payment.id,
+        businessRegistrationId: payment.registrationId ?? undefined,
+        businessLessonId: payment.lessonId ?? undefined,
+        businessCommunityId: payment.communityId ?? undefined,
+        entryType: 'charge',
+        direction: 'in',
+        amount: payment.amount,
+        currency: payment.currency ?? 'jpy',
+        provider: 'stripe',
+        providerObjectType: 'checkout.session',
+        providerObjectId: session.id,
+        providerAccountId: session.metadata?.communityId,
+        idempotencyKey: `stripe:checkout.completed:${session.id}`,
+        occurredAt: new Date(),
+        metadata: { paymentIntentId },
+        logContext: {
+          eventId,
+          sessionId: session.id,
+        },
+      });
+    } catch (err) {
+      const errorName = err instanceof Error ? err.name : 'UnknownError';
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const shouldRetry = this.shouldRetryLedgerError(err);
+      this.logger.error(
+        `[ledger] failed event=${eventId ?? 'n/a'} session=${session.id} paymentId=${
+          session.metadata?.paymentId ?? payment.id ?? 'n/a'
+        } registrationId=${
+          session.metadata?.registrationId ?? payment.registrationId ?? 'n/a'
+        } paymentIntent=${paymentIntentId ?? 'n/a'} error=${errorName}: ${errorMessage} retry=${shouldRetry}`,
+      );
+      if (shouldRetry) {
+        throw err;
+      }
+    }
 
     await this.logGatewayEvent({
       gateway: 'stripe',
@@ -1538,6 +1562,7 @@ export class PaymentsService {
     idempotencyKey,
     occurredAt,
     metadata,
+    logContext,
   }: {
     tx: PrismaService | Prisma.TransactionClient;
     businessPaymentId: string;
@@ -1556,15 +1581,43 @@ export class PaymentsService {
     idempotencyKey: string;
     occurredAt?: Date;
     metadata?: any;
+    logContext?: {
+      eventId?: string;
+      sessionId?: string;
+    };
   }) {
+    const missing: string[] = [];
+    if (!businessPaymentId) missing.push('businessPaymentId');
+    if (!businessCommunityId) missing.push('businessCommunityId');
+    if (!entryType) missing.push('entryType');
+    if (!direction) missing.push('direction');
+    if (!provider) missing.push('provider');
+    if (!idempotencyKey) missing.push('idempotencyKey');
+    if (amount === null || amount === undefined || Number.isNaN(amount)) missing.push('amount');
+    if (!currency) missing.push('currency');
+    if (missing.length) {
+      this.logger.warn(
+        `[ledger] missing fields: ${missing.join(', ')} payment=${businessPaymentId || 'n/a'}`,
+      );
+      throw new BadRequestException(`ledger missing fields: ${missing.join(', ')}`);
+    }
     if (currency.toLowerCase() !== 'jpy') {
       throw new BadRequestException('ledger currency mismatch');
     }
     const existing = await tx.ledgerEntry.findUnique({
       where: { idempotencyKey },
     });
-    if (existing) return existing;
-    return tx.ledgerEntry.create({
+    if (existing) {
+      if (logContext) {
+        this.logger.log(
+          `[ledger] exists payment=${businessPaymentId} session=${logContext.sessionId ?? 'n/a'} event=${
+            logContext.eventId ?? 'n/a'
+          }`,
+        );
+      }
+      return existing;
+    }
+    const created = await tx.ledgerEntry.create({
       data: {
         businessPaymentId,
         businessRegistrationId: businessRegistrationId ?? undefined,
@@ -1584,6 +1637,38 @@ export class PaymentsService {
         metadata: metadata ?? undefined,
       },
     });
+    if (logContext) {
+      this.logger.log(
+        `[ledger] created payment=${businessPaymentId} session=${logContext.sessionId ?? 'n/a'} event=${
+          logContext.eventId ?? 'n/a'
+        }`,
+      );
+    }
+    return created;
+  }
+
+  private shouldRetryLedgerError(error: unknown) {
+    if (error instanceof BadRequestException || error instanceof NotFoundException) return false;
+    if (error instanceof Prisma.PrismaClientKnownRequestError) return false;
+    if (error instanceof Prisma.PrismaClientValidationError) return false;
+    if (error instanceof Prisma.PrismaClientInitializationError) return true;
+    if (error instanceof Prisma.PrismaClientRustPanicError) return true;
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : '';
+    const retrySignals = [
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      'EPIPE',
+      'Connection terminated',
+      'Connection refused',
+      'timeout',
+      'timed out',
+      'could not connect',
+    ];
+    if (retrySignals.some((signal) => message.includes(signal))) return true;
+    if (/timeout|connection/i.test(name)) return true;
+    return false;
   }
 
   private hashPayload(payload: any): string {

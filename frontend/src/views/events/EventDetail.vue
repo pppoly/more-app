@@ -196,6 +196,7 @@ import {
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { useAuth } from '../../composables/useAuth';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
 const route = useRoute();
 const router = useRouter();
@@ -346,6 +347,15 @@ const handleStripeCheckout = async () => {
     if (resume) {
       window.alert('未完了の決済があります。決済を再開してください。');
     }
+    sessionStorage.setItem(
+      MOBILE_EVENT_PENDING_PAYMENT_KEY,
+      JSON.stringify({
+        registrationId: pendingPayment.value.registrationId,
+        amount: pendingPayment.value.amount,
+        eventId: eventId.value,
+        source: 'desktop',
+      }),
+    );
     window.location.href = checkoutUrl;
   } catch (err: any) {
     const message =

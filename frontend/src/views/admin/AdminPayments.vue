@@ -45,13 +45,13 @@
             </div>
             <span class="pill" :class="statusClass(item.status)">{{ item.status }}</span>
           </div>
-          <p class="meta">事件: {{ item.event?.title || '—' }}</p>
-          <p class="meta">用户: {{ item.user?.name || item.user?.id || '—' }}</p>
+          <p class="meta">イベント: {{ item.event?.title || '—' }}</p>
+          <p class="meta">ユーザー: {{ item.user?.name || item.user?.id || '—' }}</p>
           <p class="meta">
-            平台费: ¥{{ formatNumber(item.platformFee) }}
+            プラットフォーム手数料: ¥{{ formatNumber(item.platformFee) }}
             <span v-if="item.feePercent !== null" class="muted">({{ item.feePercent }}%)</span>
           </p>
-          <p class="meta">创建: {{ formatDate(item.createdAt) }}</p>
+          <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
           <div class="actions">
             <button class="ghost" type="button" :disabled="busyId === item.id" @click="diagnose(item.id)">診断</button>
             <button

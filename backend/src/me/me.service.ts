@@ -181,11 +181,17 @@ export class MeService {
               : ['paid', 'succeeded', 'captured'].includes(paymentStatusFromPayment || '')
                 ? 'paid'
                 : paymentStatusFromPayment === 'refunded'
-                  ? 'refunded'
-                  : rest.paymentStatus || 'unpaid';
+                ? 'refunded'
+                : rest.paymentStatus || 'unpaid';
+      const derivedStatus =
+        (rest.amount ?? 0) > 0 &&
+        derivedPaymentStatus === 'unpaid' &&
+        ['approved', 'paid'].includes(rest.status)
+          ? 'pending_payment'
+          : rest.status;
       return {
         registrationId: rest.id,
-        status: rest.status,
+        status: derivedStatus,
         paymentStatus: derivedPaymentStatus,
         amount: rest.amount,
         attended: rest.attended,
