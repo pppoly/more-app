@@ -14,6 +14,11 @@ import Stripe from 'stripe';
 import { buildIdempotencyKey } from './idempotency.util';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
+const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 30);
+const PAYMENT_PENDING_TIMEOUT_MS =
+  Number.isFinite(PAYMENT_PENDING_TIMEOUT_MINUTES) && PAYMENT_PENDING_TIMEOUT_MINUTES > 0
+    ? PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000
+    : 30 * 60 * 1000;
 
 @Injectable()
 export class PaymentsService {
@@ -42,6 +47,42 @@ export class PaymentsService {
     }
     if (amount > MAX_PAYMENT_AMOUNT_JPY) {
       throw new BadRequestException('支払い金額が上限を超えています');
+    }
+  }
+
+  private isPendingPaymentExpired(payment: Payment) {
+    if (!PAYMENT_PENDING_TIMEOUT_MS) return false;
+    return Date.now() - payment.createdAt.getTime() > PAYMENT_PENDING_TIMEOUT_MS;
+  }
+
+  private async expirePendingPayment(payment: Payment) {
+    try {
+      if (payment.stripeCheckoutSessionId && this.stripeService.enabled) {
+        try {
+          await this.stripeService.client.checkout.sessions.expire(payment.stripeCheckoutSessionId);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to expire Stripe session ${payment.stripeCheckoutSessionId} for payment ${payment.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'cancelled' },
+      });
+      if (payment.registrationId) {
+        await this.prisma.eventRegistration.updateMany({
+          where: { id: payment.registrationId, paymentStatus: { not: 'paid' } },
+          data: { paymentStatus: 'unpaid' },
+        });
+      }
+      this.logger.log(`Expired pending payment: payment=${payment.id}, registration=${payment.registrationId ?? 'n/a'}`);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to expire pending payment ${payment.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -456,6 +497,9 @@ export class PaymentsService {
     if (!event && !lesson) {
       throw new NotFoundException('Event or lesson not found');
     }
+    if (event?.requireApproval && registration.status !== 'approved') {
+      throw new BadRequestException('Registration is pending approval');
+    }
 
     if (!community.stripeAccountId || !community.stripeAccountOnboarded) {
       throw new BadRequestException('コミュニティがStripeアカウントと連携していません');
@@ -470,10 +514,16 @@ export class PaymentsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (existingPending?.stripeCheckoutSessionId) {
+    let activePending = existingPending;
+    if (activePending && this.isPendingPaymentExpired(activePending)) {
+      await this.expirePendingPayment(activePending);
+      activePending = null;
+    }
+
+    if (activePending?.stripeCheckoutSessionId) {
       try {
         const existingSession = await this.stripeService.client.checkout.sessions.retrieve(
-          existingPending.stripeCheckoutSessionId,
+          activePending.stripeCheckoutSessionId,
         );
         const existingPaymentIntentId =
           typeof existingSession.payment_intent === 'string'
@@ -482,34 +532,34 @@ export class PaymentsService {
 
         if (existingSession.status === 'open' && existingSession.url) {
           this.logger.log(
-            `Resume Stripe checkout: session=${existingSession.id}, paymentId=${existingPending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
+            `Resume Stripe checkout: session=${existingSession.id}, paymentId=${activePending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
           );
           return { checkoutUrl: existingSession.url, resume: true };
         }
 
         if (existingSession.status === 'complete' && existingSession.payment_status === 'paid') {
           await this.prisma.payment.update({
-            where: { id: existingPending.id },
+            where: { id: activePending.id },
             data: {
               status: 'paid',
-              stripePaymentIntentId: existingPaymentIntentId ?? existingPending.stripePaymentIntentId,
+              stripePaymentIntentId: existingPaymentIntentId ?? activePending.stripePaymentIntentId,
               stripeCheckoutSessionId: existingSession.id,
             },
           });
           if (registrationId) {
             await this.prisma.eventRegistration.update({
               where: { id: registrationId },
-              data: { paymentStatus: 'paid', status: 'paid', paidAmount: existingPending.amount },
+              data: { paymentStatus: 'paid', status: 'paid', paidAmount: activePending.amount },
             });
           }
           this.logger.log(
-            `Existing Stripe session already paid: session=${existingSession.id}, paymentId=${existingPending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
+            `Existing Stripe session already paid: session=${existingSession.id}, paymentId=${activePending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
           );
           return { checkoutUrl: this.stripeService.successUrlBase, resume: false };
         }
       } catch (error) {
         this.logger.warn(
-          `Failed to resume existing Stripe session ${existingPending.stripeCheckoutSessionId} for payment ${existingPending.id}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to resume existing Stripe session ${activePending.stripeCheckoutSessionId} for payment ${activePending.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -1162,8 +1212,8 @@ export class PaymentsService {
     }
     if (registrationId) {
       await tx.eventRegistration.updateMany({
-        where: { id: registrationId, paymentStatus: 'pending' },
-        data: { paymentStatus: 'cancelled', status: 'cancelled' },
+        where: { id: registrationId, paymentStatus: 'unpaid' },
+        data: { paymentStatus: 'unpaid' },
       });
     }
     this.logger.log(`Checkout session expired: ${session.id}, registration=${registrationId ?? 'n/a'}`);

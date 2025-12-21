@@ -376,11 +376,15 @@ export class ConsoleCommunitiesService {
     const totalEvents = await this.prisma.event.count({ where: { communityId } });
     const registrations = await this.prisma.eventRegistration.findMany({
       where: { event: { communityId } },
-      select: { attended: true, noShow: true },
+      select: { attended: true, noShow: true, status: true, paymentStatus: true, amount: true },
     });
-    const totalRegistrations = registrations.length;
-    const totalAttended = registrations.filter((reg) => reg.attended).length;
-    const totalNoShow = registrations.filter((reg) => reg.noShow).length;
+    const successfulRegistrations = registrations.filter((reg) => {
+      if (!['paid', 'approved'].includes(reg.status)) return false;
+      return reg.paymentStatus === 'paid' || (reg.amount ?? 0) === 0;
+    });
+    const totalRegistrations = successfulRegistrations.length;
+    const totalAttended = successfulRegistrations.filter((reg) => reg.attended).length;
+    const totalNoShow = successfulRegistrations.filter((reg) => reg.noShow).length;
     const followerCount = await this.prisma.communityMember.count({
       where: { communityId, status: 'active' },
     });

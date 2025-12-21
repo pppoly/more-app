@@ -389,20 +389,20 @@ export class ConsoleEventsService {
       include: { user: { select: { id: true, name: true, avatarUrl: true } } },
     });
 
-    const activeRegistrations = registrations.filter((reg) => reg.status !== 'rejected');
-    const total = activeRegistrations.length;
-    const paid = activeRegistrations.filter((reg) => reg.paymentStatus === 'paid').length;
-    const attended = activeRegistrations.filter((reg) => reg.attended).length;
-    const noShow = activeRegistrations.filter((reg) => reg.noShow).length;
+    const successfulRegistrations = registrations.filter((reg) => this.isSuccessfulRegistration(reg));
+    const total = successfulRegistrations.length;
+    const paid = successfulRegistrations.filter((reg) => reg.paymentStatus === 'paid').length;
+    const attended = successfulRegistrations.filter((reg) => reg.attended).length;
+    const noShow = successfulRegistrations.filter((reg) => reg.noShow).length;
     const capacity = fullEvent.maxParticipants ?? null;
 
     const groups = fullEvent.ticketTypes.map((ticket) => ({
       label: this.getLocalizedText(ticket.name),
-      count: activeRegistrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
+      count: successfulRegistrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
       capacity: ticket.quota ?? capacity,
     }));
 
-    const avatars = activeRegistrations.slice(0, 20).map((reg) => ({
+    const avatars = successfulRegistrations.slice(0, 20).map((reg) => ({
       userId: reg.userId,
       name: reg.user?.name ?? 'ゲスト',
       avatarUrl: reg.user?.avatarUrl ?? null,
@@ -421,6 +421,14 @@ export class ConsoleEventsService {
       groups,
       avatars,
     };
+  }
+
+  private isSuccessfulRegistration(reg: { status?: string | null; paymentStatus?: string | null; amount?: number | null }) {
+    const status = reg.status ?? '';
+    const paymentStatus = reg.paymentStatus ?? '';
+    const amount = reg.amount ?? 0;
+    if (!['paid', 'approved'].includes(status)) return false;
+    return paymentStatus === 'paid' || amount === 0;
   }
 
   async exportRegistrationsCsv(userId: string, eventId: string) {

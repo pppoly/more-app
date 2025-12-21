@@ -192,6 +192,7 @@ import {
   createStripeCheckout,
   fetchEventById,
   fetchEventGallery,
+  fetchMyEvents,
 } from '../../api/client';
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
@@ -210,6 +211,7 @@ const isRegistering = ref(false);
 const hasRegistered = ref(false);
 const registrationError = ref<string | null>(null);
 const pendingPayment = ref<{ registrationId: string; amount?: number } | null>(null);
+const pendingApproval = ref(false);
 const isPaying = ref(false);
 const isRedirecting = ref(false);
 const paymentMessage = ref<string | null>(null);
@@ -219,6 +221,15 @@ const formAnswers = reactive<Record<string, any>>({});
 const auth = useAuth();
 const isLoggedIn = computed(() => Boolean(auth.user.value));
 
+const registrationUnavailableReason = computed(() => {
+  if (!event.value) return null;
+  if (event.value.status !== 'open') return '現在このイベントは申込受付を行っていません。';
+  if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
+    return '公開範囲の制限により申し込みできません。';
+  }
+  return null;
+});
+
 const loadEvent = async (id: string) => {
   if (!id) {
     error.value = 'Missing event id';
@@ -227,6 +238,7 @@ const loadEvent = async (id: string) => {
   hasRegistered.value = false;
   registrationError.value = null;
   pendingPayment.value = null;
+  pendingApproval.value = false;
   paymentMessage.value = null;
   loading.value = true;
   error.value = null;
@@ -268,10 +280,20 @@ const mapUrl = computed(() => {
 });
 const ctaLabel = computed(() => {
   if (!isLoggedIn.value) return 'ログイン';
+  if (pendingPayment.value) return '支払いを完了する';
+  if (pendingApproval.value) return '審査中';
+  if (registrationUnavailableReason.value) return '受付終了';
   if (hasRegistered.value) return '参加予定です';
   return '参加する';
 });
-const ctaDisabled = computed(() => isRegistering.value || hasRegistered.value || Boolean(pendingPayment.value));
+const ctaDisabled = computed(
+  () =>
+    isRegistering.value ||
+    isRedirecting.value ||
+    hasRegistered.value ||
+    pendingApproval.value ||
+    (Boolean(registrationUnavailableReason.value) && !pendingPayment.value),
+);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '--';
@@ -286,6 +308,17 @@ const formatDate = (value?: string | null) => {
 const startRegistration = async () => {
   if (!eventId.value || !isLoggedIn.value) {
     registrationError.value = 'ログインしてください';
+    return;
+  }
+  if (pendingPayment.value) {
+    await handleStripeCheckout();
+    return;
+  }
+  if (pendingApproval.value) {
+    return;
+  }
+  if (registrationUnavailableReason.value) {
+    registrationError.value = registrationUnavailableReason.value;
     return;
   }
   if (formFields.value.length) {
@@ -312,9 +345,18 @@ const submitRegistration = async (answers: Record<string, any>) => {
 };
 
 const handleRegistrationResult = (registration: EventRegistrationSummary) => {
-  if (registration.paymentRequired) {
+  pendingApproval.value = false;
+  if (registration.status === 'pending') {
+    pendingPayment.value = null;
+    hasRegistered.value = false;
+    pendingApproval.value = true;
+    paymentMessage.value = '申込を審査中です。';
+    return;
+  }
+  if (registration.paymentRequired && (registration.amount ?? 0) > 0) {
     pendingPayment.value = { registrationId: registration.registrationId, amount: registration.amount };
     paymentMessage.value = 'お支払いを完了すると参加が確定します。';
+    hasRegistered.value = false;
   } else {
     hasRegistered.value = true;
     pendingPayment.value = null;
@@ -439,6 +481,53 @@ const openMap = () => {
     window.open(mapUrl.value, '_blank');
   }
 };
+
+const syncRegistrationStatus = async () => {
+  if (!isLoggedIn.value || !eventId.value) {
+    hasRegistered.value = false;
+    pendingPayment.value = null;
+    pendingApproval.value = false;
+    return;
+  }
+  pendingApproval.value = false;
+  try {
+    const myEvents = await fetchMyEvents();
+    const matched = myEvents.find((item) => item.event?.id === eventId.value) ?? null;
+    if (!matched) {
+      hasRegistered.value = false;
+      pendingPayment.value = null;
+      return;
+    }
+    if (matched.status === 'pending') {
+      pendingApproval.value = true;
+      hasRegistered.value = false;
+      pendingPayment.value = null;
+      return;
+    }
+    const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+    const paid =
+      paidLike.includes(matched.paymentStatus || '') ||
+      paidLike.includes(matched.status);
+    const amount = matched.amount ?? 0;
+    if (amount > 0 && !paid) {
+      pendingPayment.value = { registrationId: matched.registrationId, amount };
+      hasRegistered.value = false;
+      return;
+    }
+    pendingPayment.value = null;
+    hasRegistered.value = true;
+  } catch {
+    // ignore fetch failures
+  }
+};
+
+watch(
+  () => [eventId.value, isLoggedIn.value],
+  () => {
+    syncRegistrationStatus();
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>

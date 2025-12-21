@@ -15,6 +15,7 @@ export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listPublicOpenEvents() {
+    const successRegistrationWhere = this.successfulRegistrationWhere();
     const events = await this.prisma.event.findMany({
       where: {
         visibility: 'public',
@@ -53,11 +54,7 @@ export class EventsService {
           },
         },
         registrations: {
-          where: {
-            status: {
-              in: ['paid', 'approved'],
-            },
-          },
+          where: successRegistrationWhere,
           orderBy: { createdAt: 'desc' },
           take: 6,
           select: {
@@ -72,7 +69,7 @@ export class EventsService {
         },
         _count: {
           select: {
-            registrations: true,
+            registrations: { where: successRegistrationWhere },
           },
         },
         galleries: {
@@ -129,6 +126,7 @@ export class EventsService {
   async getEventById(id: string) {
     const DEFAULT_AVATAR =
       'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+    const successRegistrationWhere = this.successfulRegistrationWhere();
     const event = await this.prisma.event.findUnique({
       where: { id },
       select: {
@@ -152,7 +150,7 @@ export class EventsService {
       minParticipants: true,
       maxParticipants: true,
       registrations: {
-        where: { status: { in: ['paid', 'approved'] } },
+        where: successRegistrationWhere,
         orderBy: { createdAt: 'desc' },
         take: 24,
         select: {
@@ -168,7 +166,7 @@ export class EventsService {
         },
       },
       _count: {
-        select: { registrations: { where: { status: { in: ['paid', 'approved'] } } } },
+        select: { registrations: { where: successRegistrationWhere } },
       },
       galleries: {
         orderBy: { order: 'asc' },
@@ -261,7 +259,15 @@ export class EventsService {
         throw new BadRequestException('Event is not available for registration');
       }
 
-      // 注册截止时间暂时不阻止用户报名，保持开放体验
+      const now = new Date();
+      if (event.regStartTime && now < event.regStartTime) {
+        throw new BadRequestException('Registration has not started');
+      }
+      const regEndTime = event.regEndTime ?? event.regDeadline ?? null;
+      if (regEndTime && now > regEndTime) {
+        throw new BadRequestException('Registration is closed');
+      }
+
       await this.ensureActiveMembership(event.communityId, userId, tx);
 
       const existing = await tx.eventRegistration.findFirst({
@@ -288,6 +294,30 @@ export class EventsService {
           },
         },
       });
+
+      if (existing && !['cancelled', 'rejected', 'refunded'].includes(existing.status)) {
+        return {
+          registrationId: existing.id,
+          status: existing.status,
+          paymentStatus: existing.paymentStatus,
+          paymentRequired: (existing.amount ?? 0) > 0 && existing.paymentStatus !== 'paid',
+          amount: existing.amount ?? 0,
+          eventId: existing.event?.id ?? eventId,
+          ticketTypeId: existing.ticketTypeId ?? dto.ticketTypeId,
+          event: existing.event ?? {
+            id: eventId,
+            title: event.title,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            locationText: event.locationText,
+            community: {
+              id: event.communityId,
+              name: this.getLocalizedText(event.title) || '',
+              slug: '',
+            },
+          },
+        };
+      }
 
       let eventTicketTypes = event.ticketTypes;
       if (!eventTicketTypes.length) {
@@ -319,6 +349,7 @@ export class EventsService {
       }
 
       const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
+      await this.assertRegistrationCapacity(tx, event, ticketType, isFree);
       const requireApproval = Boolean(event.requireApproval);
       const initialStatus = requireApproval
         ? 'pending'
@@ -419,6 +450,38 @@ export class EventsService {
     });
 
     return result;
+  }
+
+  private successfulRegistrationWhere(): Prisma.EventRegistrationWhereInput {
+    return {
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
+    };
+  }
+
+  private async assertRegistrationCapacity(
+    db: PrismaClientOrTx,
+    event: { id: string; maxParticipants?: number | null },
+    ticketType: { id: string; quota?: number | null },
+    isFree: boolean,
+  ) {
+    const reservedStatuses = isFree ? ['paid', 'approved'] : ['paid', 'pending_payment', 'approved'];
+    if (event.maxParticipants !== null && event.maxParticipants !== undefined) {
+      const reservedTotal = await db.eventRegistration.count({
+        where: { eventId: event.id, status: { in: reservedStatuses } },
+      });
+      if (reservedTotal >= event.maxParticipants) {
+        throw new BadRequestException('Event is full');
+      }
+    }
+    if (ticketType.quota !== null && ticketType.quota !== undefined) {
+      const reservedByTicket = await db.eventRegistration.count({
+        where: { eventId: event.id, ticketTypeId: ticketType.id, status: { in: reservedStatuses } },
+      });
+      if (reservedByTicket >= ticketType.quota) {
+        throw new BadRequestException('Ticket quota reached');
+      }
+    }
   }
 
   private async ensureActiveMembership(communityId: string, userId: string, db: PrismaClientOrTx = this.prisma) {

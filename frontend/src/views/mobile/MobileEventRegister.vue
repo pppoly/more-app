@@ -251,9 +251,7 @@ const selectedTicket = computed(() => {
     price: ticket.price ?? 0,
   };
 });
-const requiresPayment = computed(() =>
-  event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
-);
+const requiresPayment = computed(() => (selectedTicket.value?.price ?? 0) > 0);
 const registrationUnavailableReason = computed(() => {
   if (!event.value) return null;
   if (event.value.status !== 'open') {
@@ -360,11 +358,12 @@ const applyDraftAnswers = () => {
     const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
     if (!raw) return;
     const stored = JSON.parse(raw);
-    if (stored?.eventId !== eventId.value || !stored?.answers) return;
+    const answers = stored?.formAnswers ?? stored?.answers;
+    if (stored?.eventId !== eventId.value || !answers) return;
     formFields.value.forEach((field, index) => {
       const key = fieldKey(field, index);
-      if (stored.answers[key] !== undefined) {
-        formValues[key] = stored.answers[key];
+      if (answers[key] !== undefined) {
+        formValues[key] = answers[key];
       }
     });
   } catch {
@@ -384,7 +383,8 @@ const proceedToCheckout = () => {
   }
   const payload = {
     eventId: eventId.value,
-    answers: { ...formValues },
+    formAnswers: { ...formValues },
+    ticketTypeId: defaultTicketId.value ?? undefined,
     savedAt: Date.now(),
   };
   sessionStorage.setItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));

@@ -373,6 +373,8 @@ const registrationStatus = computed(() => {
   switch (raw) {
     case 'pending_payment':
       return 'pending_payment';
+    case 'pending':
+      return 'pending';
     case 'paid':
     case 'approved':
       return 'paid';
@@ -435,8 +437,14 @@ const computeCtaState = () => {
   if (eventLifecycle.value === 'cancelled') {
     return { label: '受付終了', disabled: true, hint: 'イベントはキャンセルされました。' };
   }
+  if (!isLoggedIn.value) {
+    return { label: 'ログインして申し込む', disabled: false, hint: '' };
+  }
   if (registrationStatus.value === 'pending_payment') {
     return { label: '支払いを完了して参加する', disabled: false, hint: 'お支払い待ちです。' };
+  }
+  if (registrationStatus.value === 'pending') {
+    return { label: '審査中', disabled: true, hint: '主催者の承認をお待ちください。' };
   }
   if (registrationStatus.value === 'paid') {
     return { label: '参加チケットを見る', disabled: false, hint: refundHint.value };
@@ -688,6 +696,8 @@ const remainingParticipants = computed(() => Math.max(participantsList.value.len
 const ctaHint = computed(() => {
   if (!detail.value) return '';
   if (refundHint.value) return refundHint.value;
+  if (registrationStatus.value === 'pending_payment') return 'お支払い待ちです。';
+  if (registrationStatus.value === 'pending') return '主催者の承認をお待ちください。';
   if (registrationStatus.value === 'cancel_requested') return 'キャンセル申請中です。';
   if (registrationStatus.value === 'cancelled') {
     return registrationWindow.value === 'open' ? '再申込できます。' : '申込はキャンセルされています。';
@@ -1052,7 +1062,7 @@ const submitBooking = async () => {
   registrationError.value = null;
   try {
     const registration = await createRegistration(eventId.value, { formAnswers: { ...formValues } });
-    handleRegistrationResult(registration);
+    await handleRegistrationResult(registration);
     showBooking.value = false;
     await followIfNeeded();
   } catch (err) {
@@ -1062,17 +1072,31 @@ const submitBooking = async () => {
   }
 };
 
-const handleRegistrationResult = (registration: EventRegistrationSummary) => {
+const handleRegistrationResult = async (registration: EventRegistrationSummary) => {
   if (registration.paymentRequired) {
     pendingPayment.value = {
       registrationId: registration.registrationId,
       amount: registration.amount,
     };
     paymentMessage.value = 'お支払いを完了すると参加が確定します。';
+    sessionStorage.setItem(
+      MOBILE_EVENT_PENDING_PAYMENT_KEY,
+      JSON.stringify({
+        registrationId: registration.registrationId,
+        amount: registration.amount,
+        eventId: detail.value?.id ?? eventId.value,
+        source: 'mobile',
+      }),
+    );
+    if (detail.value) {
+      router.push({ name: 'MobileEventCheckout', params: { eventId: detail.value.id } });
+    }
+    return;
   } else {
     pendingPayment.value = null;
     paymentMessage.value = 'お申込みありがとうございます！';
   }
+  await checkRegistrationStatus();
 };
 
 const handleMockPayment = async () => {

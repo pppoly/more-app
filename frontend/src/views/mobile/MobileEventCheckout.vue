@@ -29,19 +29,31 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { createRegistration, createStripeCheckout, fetchEventById } from '../../api/client';
-import type { EventDetail, EventRegistrationSummary } from '../../types/api';
+import { createRegistration, createStripeCheckout, fetchEventById, fetchMyEvents } from '../../api/client';
+import type { EventDetail } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
-import { useAuth } from '../../composables/useAuth';
-import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_REGISTRATION_DRAFT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../utils/liff';
 
+type PendingPaymentPayload = {
+  registrationId: string;
+  amount?: number | null;
+  eventId?: string;
+  source?: string;
+};
+
+type RegistrationDraftPayload = {
+  eventId: string;
+  formAnswers?: Record<string, any>;
+  ticketTypeId?: string;
+  savedAt?: number;
+};
+
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
-const { user } = useAuth();
 const { preferredLangs } = useLocale();
 const showTopBar = computed(() => !isLineInAppBrowser());
 
@@ -50,7 +62,7 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const submitting = ref(false);
 const registrationError = ref<string | null>(null);
-const pendingPayment = ref<EventRegistrationSummary | null>(null);
+const pendingPayment = ref<PendingPaymentPayload | null>(null);
 
 const eventId = computed(() => props.eventId ?? (route.params.eventId as string));
 
@@ -81,16 +93,90 @@ const amountText = computed(() => {
     const min = Math.min(...prices);
     return min === max ? currencyFormatter.format(max) : `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
   }
-  const amount = pendingPayment.value.amount ?? 0;
+  const amount = pendingPayment.value.amount;
+  if (amount === null || amount === undefined) {
+    const prices = event.value?.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+    if (!prices.length) return '無料 / 未定';
+    const max = Math.max(...prices);
+    if (max === 0) return '無料';
+    const min = Math.min(...prices);
+    return min === max ? currencyFormatter.format(max) : `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
+  }
   return amount === 0 ? '無料' : currencyFormatter.format(amount);
 });
+
+const hasPaidTicket = computed(
+  () => event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
+);
 
 const ctaLabel = computed(() => {
   const amount = pendingPayment.value?.amount ?? null;
   if (submitting.value) return '処理中…';
-  if (!pendingPayment.value || amount === 0) return '無料で申し込む';
-  return `${currencyFormatter.format(amount)} を支払う`;
+  if (amount !== null && amount > 0) return `${currencyFormatter.format(amount)} を支払う`;
+  if (!pendingPayment.value) return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
+  return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
 });
+
+const loadPendingPayment = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as PendingPaymentPayload;
+    if (!stored?.registrationId) return null;
+    if (stored?.eventId && stored.eventId !== eventId.value) return null;
+    return stored;
+  } catch {
+    return null;
+  }
+};
+
+const loadDraftPayload = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as RegistrationDraftPayload & { answers?: Record<string, any> };
+    if (stored?.eventId !== eventId.value) return null;
+    return {
+      eventId: stored.eventId,
+      formAnswers: stored.formAnswers ?? stored.answers ?? undefined,
+      ticketTypeId: stored.ticketTypeId ?? undefined,
+      savedAt: stored.savedAt ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const storePendingPayment = (payload: PendingPaymentPayload) => {
+  const data: PendingPaymentPayload = {
+    ...payload,
+    eventId: payload.eventId ?? eventId.value,
+    source: payload.source ?? 'mobile',
+  };
+  sessionStorage.setItem(MOBILE_EVENT_PENDING_PAYMENT_KEY, JSON.stringify(data));
+};
+
+const loadPendingFromServer = async () => {
+  try {
+    const myEvents = await fetchMyEvents();
+    const matched = myEvents.find((item) => item.event?.id === eventId.value);
+    if (!matched) return null;
+    const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+    const paid = paidLike.includes(matched.paymentStatus || '') || paidLike.includes(matched.status);
+    const amount = matched.amount ?? 0;
+    if (amount > 0 && !paid) {
+      return {
+        registrationId: matched.registrationId,
+        amount,
+        eventId: matched.event?.id ?? eventId.value,
+        source: 'mobile',
+      } as PendingPaymentPayload;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
 
 const loadEvent = async () => {
   if (!eventId.value) {
@@ -113,6 +199,7 @@ onMounted(() => {
   // ここでは主催者申請ページへはリダイレクトせず、利用者がそのまま申し込みできるようにする。
   // 未ログインの場合は後続の API で認証エラーとなるので、フロント側で適宜ログイン誘導を行う。
   loadEvent();
+  pendingPayment.value = loadPendingPayment();
 });
 
 const handlePay = async () => {
@@ -120,39 +207,52 @@ const handlePay = async () => {
   submitting.value = true;
   registrationError.value = null;
   try {
-    const registration = await createRegistration(eventId.value, {});
-    pendingPayment.value = registration;
-    if (registration.paymentRequired && (registration.amount ?? 0) > 0) {
-      try {
-        const { checkoutUrl, resume } = await createStripeCheckout(registration.registrationId);
-        if (resume) {
-          window.alert('未完了の決済があります。決済を再開してください。');
+    if (!pendingPayment.value) {
+      const draft = loadDraftPayload();
+      if (!draft) {
+        const serverPending = await loadPendingFromServer();
+        if (serverPending) {
+          pendingPayment.value = serverPending;
+        } else {
+          registrationError.value = '申込情報が見つかりません。最初からやり直してください。';
+          return;
         }
-        sessionStorage.setItem(
-          MOBILE_EVENT_PENDING_PAYMENT_KEY,
-          JSON.stringify({
-            registrationId: registration.registrationId,
-            amount: registration.amount,
-            eventId: registration.eventId,
-            source: 'mobile',
-          }),
-        );
-        window.location.href = checkoutUrl;
-        return;
-      } catch (err: any) {
-        const message =
-          err?.response?.data?.message ??
-          err?.message ??
-          '支払いを開始できませんでした。Stripe 連携を確認してください。';
-        pendingPayment.value = null;
-        registrationError.value = message;
-        return;
+      }
+      if (!pendingPayment.value) {
+        const registration = await createRegistration(eventId.value, {
+          ticketTypeId: draft?.ticketTypeId,
+          formAnswers: draft?.formAnswers,
+        });
+        sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+        if (!registration.paymentRequired || (registration.amount ?? 0) === 0) {
+          sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+          const payload = buildSuccessPayload('free');
+          if (payload) {
+            goToSuccessPage(payload);
+          }
+          return;
+        }
+        pendingPayment.value = {
+          registrationId: registration.registrationId,
+          amount: registration.amount,
+          eventId: registration.eventId,
+          source: 'mobile',
+        };
       }
     }
-    const payload = buildSuccessPayload('free');
-    if (payload) {
-      goToSuccessPage(payload);
+
+    const activePayment = pendingPayment.value;
+    if (!activePayment) {
+      registrationError.value = '支払い情報を取得できませんでした。';
+      return;
     }
+
+    const { checkoutUrl, resume } = await createStripeCheckout(activePayment.registrationId);
+    if (resume) {
+      window.alert('未完了の決済があります。決済を再開してください。');
+    }
+    storePendingPayment(activePayment);
+    window.location.href = checkoutUrl;
   } catch (err) {
     registrationError.value = '処理に失敗しました';
   } finally {

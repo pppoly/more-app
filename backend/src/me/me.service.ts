@@ -289,7 +289,7 @@ export class MeService {
         paymentStatus: true,
         lessonId: true,
         event: {
-          select: { startTime: true },
+          select: { startTime: true, config: true, refundPolicy: true },
         },
         payment: {
           select: { id: true },
@@ -306,6 +306,9 @@ export class MeService {
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
+      if (!this.isRefundAllowed(registration.event)) {
+        throw new BadRequestException('Refunds are not allowed for this event');
+      }
       const refundRequest = await this.prisma.refundRequest.upsert({
         where: { registrationId },
         update: {
@@ -349,7 +352,7 @@ export class MeService {
       },
       include: {
         event: {
-          select: { startTime: true },
+          select: { startTime: true, config: true, refundPolicy: true },
         },
         payment: true,
       },
@@ -380,6 +383,9 @@ export class MeService {
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
+      if (!this.isRefundAllowed(registration.event)) {
+        throw new BadRequestException('Refunds are not allowed for this event');
+      }
       const refundRequest = await this.prisma.refundRequest.upsert({
         where: { registrationId },
         update: {
@@ -436,6 +442,25 @@ export class MeService {
       // eslint-disable-next-line no-console
       console.warn('Failed to write zero ledger entry', error);
     }
+  }
+
+  private isRefundAllowed(event?: { config?: unknown | null; refundPolicy?: unknown | null } | null) {
+    if (!event) return true;
+    const rawPolicy = event.refundPolicy ?? (event.config as any)?.refundPolicy;
+    if (rawPolicy === false) return false;
+    if (typeof rawPolicy === 'object' && rawPolicy !== null) {
+      const policy = rawPolicy as Record<string, any>;
+      if (policy.enabled === false) return false;
+      if (policy.allow === false) return false;
+      if (policy.type === 'no_refund') return false;
+    }
+    if (typeof rawPolicy === 'string') {
+      const normalized = rawPolicy.trim().toLowerCase();
+      if (['no_refund', 'no-refund', 'no refund', 'no refunds'].includes(normalized)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private getSupportedLocales() {
