@@ -439,7 +439,7 @@ const computeCtaState = () => {
     return { label: '支払いを完了して参加する', disabled: false, hint: 'お支払い待ちです。' };
   }
   if (registrationStatus.value === 'paid') {
-    return { label: '申込済み・チケットを見る', disabled: false, hint: refundHint.value };
+    return { label: '参加チケットを見る', disabled: false, hint: refundHint.value };
   }
   if (registrationStatus.value === 'cancel_requested') {
     const hint =
@@ -451,7 +451,7 @@ const computeCtaState = () => {
   if (registrationStatus.value === 'cancelled') {
     const canReapply = registrationWindow.value === 'open';
     return {
-      label: canReapply ? '再度申し込む' : 'キャンセル済み',
+      label: canReapply ? 'もう一度参加する' : 'キャンセル済み',
       disabled: !canReapply,
       hint: canReapply ? '再申込できます。' : '受付は終了しています。',
     };
@@ -460,7 +460,7 @@ const computeCtaState = () => {
     return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
   }
   const canApply = registrationWindow.value === 'open';
-  return { label: canApply ? 'イベントに申し込む' : '受付終了', disabled: !canApply, hint: '' };
+  return { label: canApply ? '参加する' : '受付終了', disabled: !canApply, hint: '' };
 };
 const ctaState = computed(computeCtaState);
 const ctaLabel = computed(() => ctaState.value.label);

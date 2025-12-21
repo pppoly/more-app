@@ -63,21 +63,13 @@
         <div class="panel-head">
           <div>
             <p class="eyebrow">参加状況</p>
-            <h2 class="panel-title">{{ summaryCard.totalConfirmed }}/{{ summaryCard.capacity }} 人</h2>
-            <p class="muted">支払い済み {{ summaryCard.paidCount }} 人</p>
+            <h2 class="panel-title">
+              {{ summaryCard.totalConfirmed }}/{{ summaryCard.capacity }} 人（支払い済み {{ summaryCard.paidCount }} 人）
+            </h2>
           </div>
         </div>
         <div class="progress-bar-wrap">
           <div class="progress-bar-fill" :style="{ width: summaryCard.progressPercent + '%' }"></div>
-        </div>
-        <div class="ticket-breakdown" v-if="summaryCard.tickets.length">
-          <div v-for="ticket in summaryCard.tickets.slice(0, 1)" :key="ticket.id" class="ticket-row">
-            <div class="ticket-meta">
-              <span class="ticket-dot"></span>
-              <span class="ticket-name">{{ ticket.name }}</span>
-            </div>
-            <span class="ticket-count">{{ ticket.confirmed }}/{{ ticket.capacity }} 人</span>
-          </div>
         </div>
       </section>
       <section v-else class="section-block inline-empty">
@@ -85,16 +77,10 @@
         <p class="muted">まだデータがありません。募集が始まるとここに表示されます。</p>
       </section>
 
-      <section class="section-block" ref="memberListRef">
+      <section class="panel" ref="memberListRef">
         <div class="panel-head">
-          <div>
-            <p class="eyebrow">参加者</p>
-            <h2 class="panel-title">リスト</h2>
-            <p class="count-text">{{ entries.length }} 人</p>
-          </div>
-          <button class="inline-link" type="button" @click="scrollToMemberList">
-            一覧を見る<span class="i-lucide-chevron-right ml-1"></span>
-          </button>
+          <h2 class="panel-title">申込者リスト</h2>
+          <span class="count-text">{{ entries.length }} 人</span>
         </div>
         <div
           v-for="entry in entries"
@@ -113,7 +99,7 @@
               </span>
             </div>
             <p class="entry-sub">
-              {{ entry.ticketName }} · {{ entry.createdAtText }}
+              <span class="entry-time">{{ entry.createdAtText }}</span>
             </p>
           </div>
           <span class="i-lucide-chevron-right text-slate-300"></span>
@@ -352,13 +338,37 @@ const summaryCard = computed(() => {
 });
 const paidRegistrationsCount = computed(() => summary.value?.paidRegistrations ?? 0);
 
-const entries = computed(() => registrations.value.map(mapEntry));
+const isSuccessfulRegistration = (reg: ConsoleEventRegistrationItem) => {
+  if (['approved', 'paid', 'attended'].includes(reg.status)) return true;
+  if (reg.paymentStatus === 'paid') return true;
+  return false;
+};
+
+const entries = computed(() => {
+  const deduped = new Map<string, ReturnType<typeof mapEntry>>();
+  registrations.value
+    .filter(isSuccessfulRegistration)
+    .forEach((reg) => {
+      const mapped = mapEntry(reg);
+      const key = reg.user.id || mapped.id;
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, mapped);
+        return;
+      }
+      // 取最新的报名记录
+      if (new Date(mapped.createdAtIso) > new Date(existing.createdAtIso)) {
+        deduped.set(key, mapped);
+      }
+    });
+  return Array.from(deduped.values());
+});
 
 function mapEntry(reg: ConsoleEventRegistrationItem) {
   return {
     id: reg.registrationId,
     name: reg.user.name || 'ゲスト',
-    avatarUrl: reg.user.avatarUrl ?? undefined,
+    avatarUrl: reg.user.avatarUrl ?? memberAvatarFallback.value,
     initials: reg.user.name?.charAt(0).toUpperCase() ?? 'U',
     ticketName: reg.ticket?.name ?? '未設定',
     status: reg.status,
@@ -367,6 +377,7 @@ function mapEntry(reg: ConsoleEventRegistrationItem) {
     amount: reg.amount ?? null,
     attended: reg.attended,
     noShow: reg.noShow,
+    createdAtIso: reg.createdAt,
     createdAtText: new Date(reg.createdAt).toLocaleString('ja-JP', {
       month: 'short',
       day: 'numeric',
@@ -542,10 +553,6 @@ const entryStatusBadgeClass = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.status === 'rejected' || entry.status === 'cancelled') return 'bg-slate-100 text-slate-500';
   if (entry.paymentStatus === 'paid') return 'bg-slate-800 text-white';
   return 'bg-slate-100 text-slate-500';
-};
-
-const scrollToMemberList = () => {
-  memberListRef.value?.scrollIntoView({ behavior: 'smooth' });
 };
 
 const openEntryAction = (entry: ReturnType<typeof mapEntry>) => {
@@ -841,11 +848,13 @@ const reload = () => loadData();
   border-radius: 999px;
   transition: width 0.25s ease;
 }
-.ticket-row { display: grid; grid-template-columns: auto auto; align-items: center; gap: 10px; }
-.ticket-meta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.ticket-dot { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(120deg, #22d3ee, #22c55e); }
-.ticket-name { font-size: 13px; color: #0f172a; font-weight: 600; }
-.ticket-count { font-size: 12px; color: #0f172a; font-weight: 600; }
+.ticket-row,
+.ticket-meta,
+.ticket-dot,
+.ticket-name,
+.ticket-count {
+  display: none;
+}
 .participants { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .avatar-stack { display: flex; align-items: center; }
 .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; margin-left: -10px; background: #e2e8f0; }
@@ -855,8 +864,28 @@ const reload = () => loadData();
 
 .inline-empty { padding: 8px 0; color: #9ca3af; font-size: 12px; background: transparent; border: none; margin-top: 8px; box-shadow: none; border-radius: 0; text-align: center; }
 
-.entry-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
-.entry-row:last-child { border-bottom: none; }
+.entry-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+  cursor: pointer;
+}
+.entry-row + .entry-row { margin-top: 8px; }
+.entry-row:active {
+  background: #e2e8f0;
+  box-shadow: none;
+  transform: translateY(1px);
+}
+@media (hover: hover) {
+  .entry-row:hover { background: #f1f5f9; }
+}
 .avatar-shell { position: relative; width: 46px; height: 46px; border-radius: 14px; background: #f8fafc; border: 1px solid #e2e8f0; display: grid; place-items: center; overflow: hidden; }
 .avatar-shell .avatar { width: 100%; height: 100%; border: none; margin: 0; object-fit: cover; }
 .avatar-shell .avatar-fallback-text { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: #475569; font-weight: 700; }
@@ -866,6 +895,7 @@ const reload = () => loadData();
 .entry-name { font-size: 14px; font-weight: 700; color: #0f172a; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-chip { padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid #e2e8f0; }
 .entry-sub { margin-top: 4px; font-size: 12px; color: #94a3b8; }
+.entry-time { font-weight: 600; color: #475569; }
 .empty-state { text-align: center; font-size: 12px; color: #94a3b8; padding: 10px 0; line-height: 1.5; }
 
 .action-bar {
@@ -889,6 +919,7 @@ const reload = () => loadData();
   color: #fff;
   font-weight: 700;
   padding: 12px;
+  font-size: 16px;
 }
 .action-secondary {
   border: 1px solid #e2e8f0;
@@ -897,6 +928,7 @@ const reload = () => loadData();
   color: #0f172a;
   font-weight: 700;
   padding: 12px;
+  font-size: 16px;
   
 }
 .action-more {

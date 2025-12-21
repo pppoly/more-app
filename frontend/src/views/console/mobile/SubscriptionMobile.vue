@@ -367,11 +367,16 @@ const confirmPayment = async () => {
       paying.value = false;
       return;
     }
+    const returnUrl =
+      window.location.origin +
+      (window.location.pathname.startsWith('/liff') ? '/liff/payments/return' : '/payments/return');
     const { error: stripeError, paymentIntent } = await stripeInstance.confirmPayment({
       elements: elementsInstance,
       clientSecret: paymentClientSecret.value,
       redirect: 'if_required',
-      confirmParams: {},
+      confirmParams: {
+        return_url: returnUrl,
+      },
     });
     if (stripeError) {
       error.value = stripeError.message || t('error.paymentFailed');

@@ -17,6 +17,7 @@ import AdminResourceManager from '../views/admin/AdminResourceManager.vue';
 import AdminResourceGroup from '../views/admin/AdminResourceGroup.vue';
 import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
+import PaymentReturn from '../views/payments/PaymentReturn.vue';
 import StripeReturn from '../views/console/StripeReturn.vue';
 import DesktopLanding from '../views/desktop/DesktopLanding.vue';
 import { useAuth } from '../composables/useAuth';
@@ -417,6 +418,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/EventForm.vue'),
         beforeEnter: communityRouteGuard,
         meta: {
+          title: 'イベント作成',
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
@@ -481,6 +483,7 @@ const routes: RouteRecordRaw[] = [
         name: 'ConsoleMobileEventPublishSuccess',
         component: () => import('../views/console/mobile/ConsoleEventPublishSuccessMobile.vue'),
         meta: {
+          title: '公開完了',
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
@@ -839,6 +842,32 @@ const routes: RouteRecordRaw[] = [
     meta: {
       devPageName: '支付取消',
       title: '申込未完了',
+    },
+  },
+  {
+    path: '/payments/return',
+    name: 'payment-return',
+    component: PaymentReturn,
+    meta: {
+      devPageName: '支付返回',
+      title: 'お支払い結果',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      layout: 'mobile-user',
+    },
+  },
+  {
+    path: '/liff/payments/return',
+    name: 'payment-return-liff',
+    component: PaymentReturn,
+    meta: {
+      devPageName: '支付返回(LIFF)',
+      title: 'お支払い結果',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      layout: 'mobile-user',
     },
   },
   {

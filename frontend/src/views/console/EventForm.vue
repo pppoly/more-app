@@ -211,19 +211,19 @@
         <button class="info-row info-row--primary" type="button" @click="openFieldEditor('title')">
           <span class="info-label">タイトル</span>
           <span class="info-value" :class="{ 'is-placeholder': !form.title }">
-            {{ form.title || 'あとで設定できます' }}
+            {{ form.title || '設定してください' }}
           </span>
         </button>
         <button class="info-row info-row--primary" type="button" @click="openTimeRange">
           <span class="info-label">日程</span>
           <span class="info-value" :class="{ 'is-placeholder': !timeRangeDisplay }">
-            {{ timeRangeDisplay || 'あとで設定できます' }}
+            {{ timeRangeDisplay || '設定してください' }}
           </span>
         </button>
         <button class="info-row info-row--primary" type="button" @click="openLocationPickerMain">
           <span class="info-label">場所</span>
           <span class="info-value" :class="{ 'is-placeholder': !form.locationText }">
-            {{ form.locationText || 'あとで設定できます' }}
+            {{ form.locationText || '設定してください' }}
           </span>
         </button>
         <p class="info-subhint">
@@ -1029,7 +1029,7 @@ const fetchPasteInsights = async (draft: string) => {
 type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
-  title: { label: 'タイトル', type: 'text', placeholder: 'あとで設定できます' },
+  title: { label: 'タイトル', type: 'text', placeholder: '設定してください' },
   description: { label: 'ショート説明', type: 'textarea', placeholder: 'あとで設定できます' },
   startTime: { label: '開始日時', type: 'datetime' },
   endTime: { label: '終了日時', type: 'datetime' },
@@ -1041,7 +1041,7 @@ const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placehol
   visibility: { label: '公開範囲', type: 'select' },
   visibleRange: { label: 'Console 可視範囲', type: 'select' },
   refundPolicy: { label: '返金ポリシー', type: 'textarea', placeholder: '例：イベント3日前まで全額返金' },
-  locationText: { label: '場所', type: 'text', placeholder: 'あとで設定できます' },
+  locationText: { label: '場所', type: 'text', placeholder: '設定してください' },
 };
 
 const currentFieldMeta = computed(() => (editingField.value ? fieldMeta[editingField.value] : null));
@@ -2495,19 +2495,87 @@ const extractNoteImagesFromHtml = (html?: string | null) => {
   }));
 };
 
-const openRichTextEditor = () => {
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('cover draft read failed'));
+    reader.readAsDataURL(file);
+  });
+
+const buildCoverDraft = async () => {
+  if (eventId.value || !localCoverPreviews.value.length || !pendingCoverFiles.value.length) return [];
+  const fileMap = new Map(pendingCoverFiles.value.map((entry) => [entry.id, entry.file]));
+  const covers: Array<{ id: string; imageUrl: string; order?: number }> = [];
+  for (const item of localCoverPreviews.value) {
+    const file = fileMap.get(item.id);
+    if (!file) continue;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      covers.push({ id: item.id, imageUrl: dataUrl, order: item.order });
+    } catch (err) {
+      console.warn('Failed to serialize cover draft', err);
+    }
+  }
+  return covers;
+};
+
+const restoreCoverDraft = async (covers: Array<{ id: string; imageUrl: string; order?: number }>) => {
+  if (eventId.value || !covers.length || typeof fetch === 'undefined') return;
+  revokeLocalCoverPreviews();
+  const restored: EventGalleryItem[] = [];
+  const restoredFiles: Array<{ id: string; file: File }> = [];
+  await Promise.all(
+    covers.map(async (item, index) => {
+      if (!item.imageUrl) return;
+      try {
+        const response = await fetch(item.imageUrl);
+        if (!response.ok) return;
+        const blob = await response.blob();
+        const id = item.id || `cover-${index}-${Date.now()}`;
+        const fileName = `cover-${id}.jpg`;
+        const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+        restoredFiles.push({ id, file });
+        const objectUrl = URL.createObjectURL(file);
+        restored.push({
+          id,
+          imageUrl: objectUrl,
+          order: item.order ?? index,
+        });
+      } catch {
+        // skip restore on failure
+      }
+    }),
+  );
+  if (restored.length) {
+    localCoverPreviews.value = restored;
+    pendingCoverFiles.value.push(...restoredFiles);
+  }
+};
+
+const openRichTextEditor = async () => {
   const payload = {
     text: form.description,
     html: form.descriptionHtml,
     images: [...richNoteImages.value],
-    covers: localCoverPreviews.value.map((item) => ({ id: item.id, imageUrl: item.imageUrl, order: item.order })),
   };
+  const covers = await buildCoverDraft();
   try {
-    sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
+    const draftPayload = covers.length ? { form, covers } : { form };
+    sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify(draftPayload));
   } catch (err) {
     console.warn('Failed to persist form draft', err);
+    try {
+      sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
+    } catch (fallbackErr) {
+      console.warn('Failed to persist fallback form draft', fallbackErr);
+    }
   }
-  sessionStorage.setItem(CONSOLE_EVENT_NOTE_CONTEXT_KEY, JSON.stringify(payload));
+  try {
+    sessionStorage.setItem(CONSOLE_EVENT_NOTE_CONTEXT_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Failed to persist note context', err);
+  }
   const paramsCommunity = eventCommunityId.value || communityId;
   if (!paramsCommunity) return;
   const query: Record<string, string> = {};
@@ -2540,42 +2608,14 @@ const applyNoteResultFromStorage = async () => {
       richNoteImages.value = payload.images;
     }
     if (Array.isArray(payload.covers) && payload.covers.length) {
-      // Restore local cover previews (cannot restore File blobs; previews remain for visibility)
-      revokeLocalCoverPreviews();
-      const restored: EventGalleryItem[] = [];
-      const restoredFiles: Array<{ id: string; file: File }> = [];
-      await Promise.all(
-        payload.covers.map(async (item, index) => {
-          try {
-            const response = await fetch(item.imageUrl);
-            if (!response.ok) return;
-            const blob = await response.blob();
-            const id = item.id || `cover-${index}-${Date.now()}`;
-            const fileName = `cover-${id}.jpg`;
-            const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
-            restoredFiles.push({ id, file });
-            const objectUrl = URL.createObjectURL(file);
-            restored.push({
-              id,
-              imageUrl: objectUrl,
-              order: item.order ?? index,
-            });
-          } catch {
-            // skip restore on failure
-          }
-        }),
-      );
-      if (restored.length) {
-        localCoverPreviews.value = restored;
-        pendingCoverFiles.value.push(...restoredFiles);
-      }
+      await restoreCoverDraft(payload.covers);
     }
   } catch (err) {
     console.warn('Failed to apply note result', err);
   }
 };
 
-const applyFormDraftFromStorage = () => {
+const applyFormDraftFromStorage = async () => {
   try {
     const raw = sessionStorage.getItem(CONSOLE_EVENT_FORM_DRAFT_KEY);
     if (!raw) return;
@@ -2592,6 +2632,9 @@ const applyFormDraftFromStorage = () => {
     }
     if (Array.isArray(savedForm.registrationForm)) {
       form.registrationForm = savedForm.registrationForm;
+    }
+    if (Array.isArray(saved?.covers) && saved.covers.length) {
+      await restoreCoverDraft(saved.covers);
     }
   } catch (err) {
     console.warn('Failed to restore form draft', err);
@@ -3096,7 +3139,7 @@ onMounted(async () => {
     }
   // prevent auto scroll/restore on mobile initial load
   window.scrollTo({ top: 0 });
-  applyFormDraftFromStorage();
+  await applyFormDraftFromStorage();
   await applyNoteResultFromStorage();
 });
 
@@ -3144,7 +3187,7 @@ onUnmounted(() => {
 });
 
 onActivated(() => {
-  applyFormDraftFromStorage();
+  void applyFormDraftFromStorage();
   void applyNoteResultFromStorage();
 });
 

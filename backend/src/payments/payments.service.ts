@@ -224,7 +224,11 @@ export class PaymentsService {
       status: 'refunded',
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
-    const [paidAgg, refundedAgg] = await Promise.all([
+    const allWhere: Prisma.PaymentWhereInput = {
+      communityId,
+      ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+    };
+    const [paidAgg, refundedAgg, allAgg] = await Promise.all([
       this.prisma.payment.aggregate({
         where: paidWhere,
         _sum: { amount: true, platformFee: true },
@@ -233,9 +237,11 @@ export class PaymentsService {
         where: refundedWhere,
         _sum: { amount: true, platformFee: true },
       }),
+      this.prisma.payment.aggregate({ where: allWhere, _sum: { amount: true } }),
     ]);
 
     let stripeBalance: { available: number; pending: number } | null = null;
+    let stripeFee = 0;
     if (this.stripeService.enabled && community.stripeAccountId) {
       try {
         const balance = await this.stripeService.client.balance.retrieve({
@@ -247,21 +253,40 @@ export class PaymentsService {
           available: pick(balance.available),
           pending: pick(balance.pending),
         };
+
+        const createdFilter = monthStart ? { gte: Math.floor(monthStart.getTime() / 1000) } : undefined;
+        const feeParams: Stripe.BalanceTransactionListParams = {
+          limit: 100,
+          currency: 'jpy',
+          created: createdFilter,
+        };
+
+        const txIterator = this.stripeService.client.balanceTransactions.list(feeParams, {
+          stripeAccount: community.stripeAccountId,
+        }).autoPagingIterator();
+
+        for await (const tx of txIterator) {
+          if (tx.currency !== 'jpy') continue;
+          stripeFee += Math.max(0, tx.fee ?? 0);
+        }
       } catch (err) {
         this.logger.warn(`Failed to fetch Stripe balance for community ${communityId}: ${err}`);
       }
     }
 
+    const transactionTotal = allAgg._sum.amount ?? 0;
     const grossPaid = paidAgg._sum.amount ?? 0;
     const platformFee = paidAgg._sum.platformFee ?? 0;
     const refunded = refundedAgg._sum.amount ?? 0;
-    const net = Math.max(0, grossPaid - platformFee - refunded);
+    const net = Math.max(0, grossPaid - platformFee - refunded - stripeFee);
 
     return {
       communityId,
       currency: 'jpy',
+      transactionTotal,
       grossPaid,
       platformFee,
+      stripeFee,
       refunded,
       net,
       stripeBalance,

@@ -214,6 +214,7 @@ model EventRegistration {
   refundRequest RefundRequest?
 
   @@unique([userId, lessonId])
+  @@unique([userId, eventId])
 }
 
 model EventCheckin {

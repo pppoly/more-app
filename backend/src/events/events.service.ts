@@ -264,11 +264,12 @@ export class EventsService {
       // 注册截止时间暂时不阻止用户报名，保持开放体验
       await this.ensureActiveMembership(event.communityId, userId, tx);
 
-      const existing = await tx.eventRegistration.findFirst({
+      const existing = await tx.eventRegistration.findUnique({
         where: {
-          eventId,
-          userId,
-          NOT: { status: 'cancelled' },
+          userId_eventId: {
+            userId,
+            eventId,
+          },
         },
         include: {
           event: {
@@ -289,19 +290,6 @@ export class EventsService {
           },
         },
       });
-
-      if (existing) {
-        return {
-          registrationId: existing.id,
-          status: existing.status,
-          paymentStatus: existing.paymentStatus ?? 'paid',
-          paymentRequired: existing.paymentStatus !== 'paid',
-          amount: existing.amount ?? 0,
-          eventId: existing.eventId,
-          ticketTypeId: existing.ticketTypeId ?? undefined,
-          event: existing.event,
-        };
-      }
 
       let eventTicketTypes = event.ticketTypes;
       if (!eventTicketTypes.length) {
@@ -341,41 +329,73 @@ export class EventsService {
           : 'approved';
       const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
 
-      const registration = await tx.eventRegistration.create({
-        data: {
-          eventId,
-          userId,
-          ticketTypeId: ticketType.id,
-          status: initialStatus,
-          formAnswers: dto.formAnswers ?? Prisma.JsonNull,
-          amount: ticketType.price ?? 0,
-          paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
-          paymentStatus: initialPaymentStatus,
-        },
-        select: {
-          id: true,
-          status: true,
-          ticketTypeId: true,
-          amount: true,
-          paymentStatus: true,
-          event: {
+      const baseData = {
+        eventId,
+        userId,
+        ticketTypeId: ticketType.id,
+        status: initialStatus,
+        formAnswers: dto.formAnswers ?? Prisma.JsonNull,
+        amount: ticketType.price ?? 0,
+        paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
+        paymentStatus: initialPaymentStatus,
+        attended: false,
+        noShow: false,
+      };
+
+      const registration = existing
+        ? await tx.eventRegistration.update({
+            where: { id: existing.id },
+            data: baseData,
             select: {
               id: true,
-              title: true,
-              startTime: true,
-              endTime: true,
-              locationText: true,
-              community: {
+              status: true,
+              ticketTypeId: true,
+              amount: true,
+              paymentStatus: true,
+              event: {
                 select: {
                   id: true,
-                  name: true,
-                  slug: true,
+                  title: true,
+                  startTime: true,
+                  endTime: true,
+                  locationText: true,
+                  community: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
+                  },
                 },
               },
             },
-          },
-        },
-      });
+          })
+        : await tx.eventRegistration.create({
+            data: baseData,
+            select: {
+              id: true,
+              status: true,
+              ticketTypeId: true,
+              amount: true,
+              paymentStatus: true,
+              event: {
+                select: {
+                  id: true,
+                  title: true,
+                  startTime: true,
+                  endTime: true,
+                  locationText: true,
+                  community: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
 
       return {
         registrationId: registration.id,

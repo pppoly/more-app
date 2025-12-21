@@ -285,7 +285,9 @@ export interface ConsolePaymentList {
 export interface ConsoleCommunityBalance {
   communityId: string;
   currency: string;
+  transactionTotal?: number;
   grossPaid: number;
+  stripeFee?: number;
   platformFee: number;
   refunded: number;
   net: number;

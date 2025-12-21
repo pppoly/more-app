@@ -65,7 +65,7 @@ const loadEventDetail = async () => {
 
 const goManage = () => {
   if (!eventId) return;
-  router.replace({ name: 'ConsoleEventManageMobile', params: { eventId } });
+  router.replace({ name: 'ConsoleMobileEventManage', params: { eventId } });
 };
 
 const goConsoleHome = () => {

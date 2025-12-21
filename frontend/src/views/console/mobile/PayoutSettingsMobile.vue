@@ -2,33 +2,44 @@
   <div class="payout-page">
     <ConsoleTopBar v-if="!isLiffClientMode" :title="pageTitle" @back="goBack" />
 
-    <section class="banner" :class="`banner--${status.type}`">
-      <div class="banner-icon">{{ status.icon }}</div>
-      <div>
-        <p class="banner-title">{{ status.title }}</p>
-        <p class="banner-text">入金や返金は Stripe のセキュア画面で管理します。</p>
+    <section class="summary" :class="`banner--${status.type}`">
+      <div class="summary-head">
+        <div class="banner-icon">{{ status.icon }}</div>
+        <div>
+          <p class="banner-title">{{ status.title }}</p>
+          <p class="banner-text">入金や返金は Stripe のセキュア画面で管理します。</p>
+        </div>
       </div>
-    </section>
-
-    <section class="hero">
-      <p class="hero-label">受け取り可能</p>
-      <p class="hero-value">{{ formatYen(balanceNet) }}</p>
-      <p class="hero-sub">待結算 {{ formatYen(pendingAmount) }}</p>
-    </section>
-
-    <section class="kpi-grid">
-      <article class="kpi">
-        <p class="kpi-label">総収入</p>
-        <p class="kpi-value">{{ formatYen(balanceGross) }}</p>
-      </article>
-      <article class="kpi">
-        <p class="kpi-label">返金済み</p>
-        <p class="kpi-value kpi-value--refund">-{{ formatYen(balanceRefunded) }}</p>
-      </article>
-      <article class="kpi">
-        <p class="kpi-label">プラットフォーム手数料</p>
-        <p class="kpi-value kpi-value--fee">-{{ formatYen(balanceFee) }}</p>
-      </article>
+      <div class="hero">
+        <p class="hero-label">受け取り可能（Stripe残高）</p>
+        <p class="hero-value">{{ formatYen(balanceNet) }}</p>
+        <p class="hero-sub">待結算 {{ formatYen(pendingAmount) }} ・ 確定収入 {{ formatYen(balanceGross) }}</p>
+      </div>
+      <div class="kpi-grid">
+        <article class="kpi">
+          <p class="kpi-label">取引総額（未確定含む）</p>
+          <p class="kpi-value">{{ formatYen(transactionTotal) }}</p>
+          <p class="kpi-hint">支払い待ちも含まれます</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">確定収入（支払い済み）</p>
+          <p class="kpi-value">{{ formatYen(balanceGross) }}</p>
+          <p class="kpi-hint">支払い待ちは含まれません</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">Stripe手数料</p>
+          <p class="kpi-value kpi-value--fee">{{ formatYen(stripeFee) }}</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">プラットフォーム手数料</p>
+          <p class="kpi-value kpi-value--fee">{{ formatYen(balanceFee) }}</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">返金済み</p>
+          <p class="kpi-value kpi-value--refund">{{ formatYen(balanceRefunded) }}</p>
+        </article>
+      </div>
+      <p class="note muted">※ 支払い待ちの取引は、確定収入・受け取り可能金額に含まれません。</p>
     </section>
 
     <section class="actions">
@@ -96,7 +107,9 @@ const balanceNet = computed(() => balance.value?.net ?? 0);
 const balanceGross = computed(() => balance.value?.grossPaid ?? 0);
 const balanceRefunded = computed(() => balance.value?.refunded ?? 0);
 const balanceFee = computed(() => balance.value?.platformFee ?? 0);
-const pendingAmount = computed(() => balance.value?.settling ?? 0); // TODO: 後端が未対応なら 0
+const stripeFee = computed(() => balance.value?.stripeFee ?? 0);
+const transactionTotal = computed(() => balance.value?.transactionTotal ?? balanceGross.value);
+const pendingAmount = computed(() => balance.value?.stripeBalance?.pending ?? 0);
 
 const communityId = computed(() => store.activeCommunityId.value);
 const isEmpty = computed(
@@ -189,14 +202,20 @@ onMounted(async () => {
   gap: 14px;
   box-sizing: border-box;
 }
-.banner {
+.summary {
+  padding: 12px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.summary-head {
   display: flex;
   gap: 10px;
-  padding: 12px;
-  border-radius: 14px;
   align-items: center;
-  background: #e0f2fe;
-  color: #0f172a;
 }
 .banner--pending {
   background: #fff7ed;
@@ -270,6 +289,16 @@ onMounted(async () => {
 }
 .kpi-value--fee {
   color: #ea580c;
+}
+.kpi-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
 }
 .actions {
   display: flex;

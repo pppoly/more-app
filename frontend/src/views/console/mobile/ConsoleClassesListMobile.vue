@@ -49,7 +49,6 @@
           <div class="row">
             <div>
               <h2 class="title">{{ displayTitle(cls.title) }}</h2>
-              <p class="meta">{{ displayDescription(cls) }}</p>
               <p class="meta small">¥{{ cls.priceYenPerLesson.toLocaleString() }} / 回</p>
               <div class="card-actions">
                 <button class="ghost small" type="button" @click.stop="openLessons(cls.id)">レッスン管理</button>
@@ -147,20 +146,6 @@ const displayTitle = (title: any) => {
   if (!title) return '（無題）';
   if (typeof title === 'string') return title;
   return title.ja || title['ja-JP'] || title.zh || title['zh-CN'] || title.original || '（無題）';
-};
-
-const displayDescription = (cls: any) => {
-  const desc = cls.description;
-  const text =
-    typeof desc === 'string'
-      ? desc
-      : desc?.ja || desc?.['ja-JP'] || desc?.zh || desc?.['zh-CN'] || desc?.original || '';
-  if (text && text.trim().length > 0) {
-    const t = text.trim();
-    return t.length > 80 ? `${t.slice(0, 80)}…` : t;
-  }
-  if (cls.locationName) return cls.locationName;
-  return '説明なし';
 };
 </script>
 

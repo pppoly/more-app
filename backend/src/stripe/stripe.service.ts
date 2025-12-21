@@ -7,6 +7,7 @@ export class StripeService {
   private readonly stripe: Stripe | null;
   readonly successUrlBase: string;
   readonly cancelUrlBase: string;
+  readonly returnUrlBase: string;
   readonly frontendBaseUrl: string;
   readonly publishableKey: string | null;
   readonly enabled: boolean;
@@ -58,6 +59,7 @@ export class StripeService {
     this.successUrlBase =
       process.env.STRIPE_SUCCESS_URL_BASE || `${sanitizedFrontend}/payments/success`;
     this.cancelUrlBase = process.env.STRIPE_CANCEL_URL_BASE || `${sanitizedFrontend}/payments/cancel`;
+    this.returnUrlBase = process.env.STRIPE_RETURN_URL_BASE || `${sanitizedFrontend}/payments/return`;
   }
 
   get client() {
