@@ -66,6 +66,11 @@ const pendingPayment = ref<PendingPaymentPayload | null>(null);
 
 const eventId = computed(() => props.eventId ?? (route.params.eventId as string));
 
+const normalizeQueryValue = (value: unknown) => {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+};
+
 const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   style: 'currency',
   currency: 'JPY',
@@ -175,10 +180,14 @@ const storePendingPayment = (payload: PendingPaymentPayload) => {
   sessionStorage.setItem(MOBILE_EVENT_PENDING_PAYMENT_KEY, JSON.stringify(data));
 };
 
-const loadPendingFromServer = async () => {
+const loadPendingFromServer = async (preferredRegistrationId?: string) => {
   try {
     const myEvents = await fetchMyEvents();
-    const matched = myEvents.find((item) => item.event?.id === eventId.value);
+    const matched =
+      (preferredRegistrationId
+        ? myEvents.find((item) => item.registrationId === preferredRegistrationId)
+        : null) ??
+      myEvents.find((item) => item.event?.id === eventId.value);
     if (!matched) return null;
     const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
     const paid = paidLike.includes(matched.paymentStatus || '') || paidLike.includes(matched.status);
@@ -195,6 +204,27 @@ const loadPendingFromServer = async () => {
     return null;
   }
   return null;
+};
+
+const hydratePendingPayment = async () => {
+  if (pendingPayment.value) return;
+  const registrationId = normalizeQueryValue(route.query.registrationId);
+  if (registrationId) {
+    const serverPending = await loadPendingFromServer(registrationId);
+    if (serverPending) {
+      pendingPayment.value = serverPending;
+      return;
+    }
+    pendingPayment.value = {
+      registrationId,
+      amount: null,
+      eventId: eventId.value,
+      source: 'mobile',
+    };
+    return;
+  }
+  const serverPending = await loadPendingFromServer();
+  if (serverPending) pendingPayment.value = serverPending;
 };
 
 const loadEvent = async () => {
@@ -219,6 +249,7 @@ onMounted(() => {
   // 未ログインの場合は後続の API で認証エラーとなるので、フロント側で適宜ログイン誘導を行う。
   loadEvent();
   pendingPayment.value = loadPendingPayment();
+  void hydratePendingPayment();
 });
 
 const handlePay = async () => {
@@ -229,10 +260,8 @@ const handlePay = async () => {
     if (!pendingPayment.value) {
       const draft = loadDraftPayload();
       if (!draft) {
-        const serverPending = await loadPendingFromServer();
-        if (serverPending) {
-          pendingPayment.value = serverPending;
-        } else {
+        await hydratePendingPayment();
+        if (!pendingPayment.value) {
           if (!registrationWindow.value.open) {
             registrationError.value =
               registrationWindow.value.reason ?? '申込受付は終了しました。';

@@ -1088,7 +1088,23 @@ const handleCtaClick = () => {
   if (!detail.value) return;
   if (legacyRefund.value || registrationStatus.value === 'cancel_requested') return;
   if (registrationStatus.value === 'pending_payment') {
-    router.push({ name: 'MobileEventCheckout', params: { eventId: detail.value.id } });
+    const registrationId = registrationItem.value?.registrationId;
+    if (registrationId) {
+      sessionStorage.setItem(
+        MOBILE_EVENT_PENDING_PAYMENT_KEY,
+        JSON.stringify({
+          registrationId,
+          amount: registrationItem.value?.amount ?? null,
+          eventId: detail.value.id,
+          source: 'mobile',
+        }),
+      );
+    }
+    router.push({
+      name: 'MobileEventCheckout',
+      params: { eventId: detail.value.id },
+      query: registrationId ? { registrationId } : undefined,
+    });
     return;
   }
   if (hasRegistration.value) {
