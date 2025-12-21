@@ -258,14 +258,14 @@ export class PaymentsService {
         const feeParams: Stripe.BalanceTransactionListParams = {
           limit: 100,
           currency: 'jpy',
-          created: createdFilter,
+          ...(createdFilter ? { created: createdFilter } : {}),
         };
 
-        const txIterator = this.stripeService.client.balanceTransactions.list(feeParams, {
+        const txList = this.stripeService.client.balanceTransactions.list(feeParams, {
           stripeAccount: community.stripeAccountId,
-        }).autoPagingIterator();
+        });
 
-        for await (const tx of txIterator) {
+        for await (const tx of txList) {
           if (tx.currency !== 'jpy') continue;
           stripeFee += Math.max(0, tx.fee ?? 0);
         }

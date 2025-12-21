@@ -264,12 +264,10 @@ export class EventsService {
       // 注册截止时间暂时不阻止用户报名，保持开放体验
       await this.ensureActiveMembership(event.communityId, userId, tx);
 
-      const existing = await tx.eventRegistration.findUnique({
+      const existing = await tx.eventRegistration.findFirst({
         where: {
-          userId_eventId: {
-            userId,
-            eventId,
-          },
+          userId,
+          eventId,
         },
         include: {
           event: {
