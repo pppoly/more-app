@@ -22,16 +22,35 @@ export class PaymentsController {
   @Post('stripe/webhook')
   @HttpCode(200)
   async handleStripeWebhook(@Req() req: Request) {
-    const signatureHeader =
-      (req.headers['stripe-signature'] as string | string[] | undefined) ??
-      (req.headers['Stripe-Signature'] as string | string[] | undefined);
-    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    // debug headers
-    console.log('[stripe webhook] headers keys:', Object.keys(req.headers));
-    console.log('[stripe webhook] stripe-signature:', signature);
+    const signatureFromGet = req.get('stripe-signature') ?? undefined;
+    const signatureHeader = req.headers['stripe-signature'] as string | string[] | undefined;
+    const signatureFromHeader = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    const signature = signatureFromGet ?? signatureFromHeader;
+    const stripeWebhookDebug = process.env.STRIPE_WEBHOOK_DEBUG === '1';
+    if (stripeWebhookDebug) {
+      const contentType = req.get('content-type');
+      const sigLength = signatureFromGet ? signatureFromGet.length : 0;
+      const isBuffer = Buffer.isBuffer(req.body);
+      const bodyLen = isBuffer ? req.body.length : 0;
+      console.log(
+        `[stripe webhook debug] method=${req.method} url=${req.originalUrl} content-type=${contentType ?? ''}`,
+      );
+      console.log('[stripe webhook debug] headers keys:', Object.keys(req.headers));
+      console.log(`[stripe webhook debug] stripe-signature length=${sigLength}`);
+      console.log(`[stripe webhook debug] isBuffer=${isBuffer} bodyLen=${bodyLen}`);
+    }
     if (!Buffer.isBuffer(req.body)) {
       console.warn('[stripe webhook] raw body is not a Buffer', { bodyType: typeof req.body });
       throw new BadRequestException('Invalid Stripe webhook payload');
+    }
+    if (!signature) {
+      const hasSigKeyInHeaders = Object.prototype.hasOwnProperty.call(req.headers, 'stripe-signature');
+      console.warn('[stripe webhook] signature missing', {
+        sig: 'missing',
+        bodyLen: req.body.length,
+        hasSigKeyInHeaders,
+      });
+      throw new BadRequestException('Missing Stripe signature');
     }
     await this.paymentsService.handleStripeWebhook(req.body, signature);
     return { received: true };
