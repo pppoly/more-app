@@ -54,6 +54,9 @@ export interface EventSummary {
   descriptionHtml?: string | null;
   startTime: string;
   endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   locationText: string;
   locationLat?: number | null;
   locationLng?: number | null;
@@ -123,10 +126,16 @@ export interface EventDetail {
 export interface CommunityPortalEvent {
   id: string;
   startTime: string;
+  endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   locationText: string;
   status: string;
   title?: LocalizedContent;
   coverImageUrl?: string | null;
+  maxParticipants?: number | null;
+  config?: Record<string, any> | null;
 }
 
 export interface CommunityPortal {
@@ -353,8 +362,13 @@ export interface ConsoleEventSummary {
   title: LocalizedContent;
   startTime: string;
   endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   status: string;
   visibility: string;
+  maxParticipants?: number | null;
+  config?: Record<string, any> | null;
   reviewStatus?: string | null;
   reviewReason?: string | null;
   coverImageUrl?: string | null;

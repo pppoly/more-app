@@ -16,7 +16,7 @@
         <div class="summary-header">
           <div>
             <h3>{{ summary.title }}</h3>
-            <span :class="['badge', summary.status]">{{ statusLabel(summary.status) }}</span>
+            <span :class="['badge', eventStatusClass]">{{ eventStatusLabel }}</span>
           </div>
           <div class="summary-actions">
             <button type="button" class="secondary" @click="downloadCsv" :disabled="downloading">
@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import type { RouteLocationRaw } from 'vue-router';
 import {
@@ -175,6 +175,7 @@ import type {
   EventRegistrationsSummary,
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { getEventStatusLabel, resolveEventStatusState } from '../../utils/eventStatus';
 import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
@@ -193,6 +194,25 @@ const downloading = ref(false);
 const actionLoading = ref<Record<string, boolean>>({});
 const cancelling = ref(false);
 const { confirm: confirmDialog } = useConfirm();
+
+const eventStatusState = computed(() => {
+  if (!eventDetail.value) return 'closed';
+  return resolveEventStatusState({
+    status: eventDetail.value.status,
+    startTime: eventDetail.value.startTime,
+    endTime: eventDetail.value.endTime,
+    regStartTime: eventDetail.value.regStartTime,
+    regEndTime: eventDetail.value.regEndTime,
+    regDeadline: eventDetail.value.regDeadline,
+    maxParticipants: eventDetail.value.maxParticipants ?? null,
+    config: {
+      ...(eventDetail.value.config ?? {}),
+      currentParticipants: summary.value?.totalRegistrations ?? undefined,
+    },
+  });
+});
+const eventStatusLabel = computed(() => getEventStatusLabel(eventStatusState.value));
+const eventStatusClass = computed(() => (eventStatusState.value === 'open' ? 'open' : 'closed'));
 
 const load = async () => {
   loading.value = true;
@@ -220,19 +240,6 @@ const formatDate = (value: string) =>
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    case 'cancelled':
-      return '取消';
-    default:
-      return status;
-  }
-};
 
 const paymentLabel = (status: string) => {
   switch (status) {

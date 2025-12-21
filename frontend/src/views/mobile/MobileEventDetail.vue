@@ -727,17 +727,17 @@ const isMultiDay = computed(() => {
 });
 
 const statusBadge = computed(() => {
-  const status = event.value?.status ?? 'draft';
-  const map: Record<string, { label: string; variant: string }> = {
-    open: { label: '受付中', variant: 'is-live' },
-    pending: { label: '受付前', variant: 'is-pending' },
-    soldout: { label: '満席', variant: 'is-soldout' },
-    closed: { label: '受付終了', variant: 'is-closed' },
-    ended: { label: '終了', variant: 'is-closed' },
-    draft: { label: '準備中', variant: 'is-pending' },
-    cancelled: { label: 'キャンセル', variant: 'is-closed' },
-  };
-  return map[status] ?? { label: 'ステータス未設定', variant: 'is-closed' };
+  if (!event.value) return { label: '読み込み中…', variant: 'is-closed' };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止', variant: 'is-closed' };
+  if (eventLifecycle.value === 'ended') return { label: '終了', variant: 'is-closed' };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付前' : '受付終了';
+    return { label, variant: 'is-closed' };
+  }
+  if (capacityState.value.isFull) {
+    return { label: '満席', variant: 'is-soldout' };
+  }
+  return { label: '受付中', variant: 'is-live' };
 });
 
 const viewCountLabel = computed(() => {

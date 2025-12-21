@@ -106,6 +106,7 @@ import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { getEventStatus } from '../../utils/eventStatus';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
@@ -239,7 +240,7 @@ const formattedEvents = computed(() =>
         : '';
     const { attendees, attendeesMore } = attendeeAvatars(event);
     const startAt = new Date(event.startTime).getTime();
-    const statusText = statusLabel(event.status, capacityText, participantsCount);
+    const { label: statusText } = getEventStatus(event);
     const category = (event.category ?? '').toLowerCase();
     const isSocial = isSocialCategory(category);
     return {
@@ -289,13 +290,6 @@ const formatDateTime = (start: string, end?: string | null) => {
   if (!e) return startText;
   const endText = `${pad(e.getHours())}:${pad(e.getMinutes())}`;
   return `${startText} – ${endText}`;
-};
-
-const statusLabel = (status: string, capacityText: string, participantsCount: number) => {
-  if (status === 'closed') return '受付終了';
-  if (status === 'draft') return '準備中';
-  if (participantsCount <= 0) return '募集中';
-  return `募集中（${capacityText}）`;
 };
 
 const isSocialCategory = (category: string) => {

@@ -9,6 +9,11 @@ export class CommunitiesService {
   constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   async findBySlug(slug: string, userId?: string) {
+    const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
+    };
+
     const community = await this.prisma.community.findUnique({
       where: { slug },
       select: {
@@ -54,9 +59,15 @@ export class CommunitiesService {
           select: {
             id: true,
             startTime: true,
+            endTime: true,
+            regStartTime: true,
+            regEndTime: true,
+            regDeadline: true,
             locationText: true,
             status: true,
             title: true,
+            maxParticipants: true,
+            config: true,
             galleries: {
               select: {
                 imageUrl: true,
@@ -64,6 +75,11 @@ export class CommunitiesService {
               },
               orderBy: { order: 'asc' },
               take: 1,
+            },
+            _count: {
+              select: {
+                registrations: { where: successRegistrationWhere },
+              },
             },
           },
         },
@@ -102,10 +118,21 @@ export class CommunitiesService {
     const coverImageUrl = buildAssetUrl(community.coverImageUrl);
 
     const events =
-      ((community as any).events || []).map((event: any) => ({
-        ...event,
-        coverImageUrl: buildAssetUrl(event.galleries?.[0]?.imageUrl),
-      })) ?? [];
+      ((community as any).events || []).map((event: any) => {
+        const { _count, ...rest } = event;
+        const currentParticipants = _count?.registrations ?? 0;
+        const baseConfig =
+          rest.config && typeof rest.config === 'object' ? { ...(rest.config as Record<string, any>) } : {};
+        const config = {
+          ...baseConfig,
+          currentParticipants,
+        };
+        return {
+          ...rest,
+          config,
+          coverImageUrl: buildAssetUrl(rest.galleries?.[0]?.imageUrl),
+        };
+      }) ?? [];
 
     const { _count, members, events: _discardEvents, ...rest } = community as any;
     const memberList: any[] = Array.isArray(members) ? members : [];

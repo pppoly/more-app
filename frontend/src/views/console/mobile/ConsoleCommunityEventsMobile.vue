@@ -21,8 +21,8 @@
         <figure class="event-cover" :style="item.coverStyle"></figure>
         <div class="event-body">
           <p class="event-date">
-            <span class="status-dot" :class="statusDotClass(item.status)"></span>
-            {{ statusLabel(item.status) }}
+            <span class="status-dot" :class="item.statusDotClass"></span>
+            {{ item.statusLabel }}
           </p>
           <p class="event-time">{{ item.dateTimeText }}</p>
           <h3 class="event-title">{{ item.title }}</h3>
@@ -51,6 +51,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { fetchConsoleCommunityEvents } from '../../../api/client';
 import type { ConsoleEventSummary } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import { getEventStatus } from '../../../utils/eventStatus';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useAuth } from '../../../composables/useAuth';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
@@ -87,6 +88,12 @@ const normalizedEvents = computed(() =>
       id: event.id,
       title: getLocalizedText(event.title),
       status: event.status,
+      ...(() => {
+        if (event.status === 'draft') return { statusState: 'draft', statusLabel: '下書き' };
+        if (event.status === 'pending_review') return { statusState: 'draft', statusLabel: '審査中' };
+        const { state, label } = getEventStatus(event);
+        return { statusState: state, statusLabel: label };
+      })(),
       dateTimeText: formatDate(event.startTime, event.endTime),
       entrySummary: event.visibility === 'public' ? '公開で募集しています' : '限定メンバー向けで募集しています',
       coverStyle: {
@@ -94,6 +101,11 @@ const normalizedEvents = computed(() =>
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       },
+      statusDotClass: (() => {
+        if (event.status === 'draft' || event.status === 'pending_review') return 'dot draft';
+        const state = getEventStatus(event).state;
+        return state === 'open' ? 'dot open' : 'dot closed';
+      })(),
     })),
 );
 
@@ -101,7 +113,11 @@ const filteredEvents = computed(() => {
   const base =
     activeFilter.value === 'all'
       ? normalizedEvents.value
-      : normalizedEvents.value.filter((event) => event.status === activeFilter.value);
+      : normalizedEvents.value.filter((event) => {
+          if (activeFilter.value === 'open') return event.statusState === 'open';
+          if (activeFilter.value === 'closed') return event.statusState !== 'open';
+          return event.status === activeFilter.value;
+        });
   if (activeFilter.value === 'open' && base.length === 0) {
     return normalizedEvents.value;
   }
@@ -163,31 +179,6 @@ const formatDate = (start: string, end?: string) => {
   return `${startText}〜${endText}`;
 };
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    case 'cancelled':
-      return '取消済み';
-    default:
-      return '下書き';
-  }
-};
-
-const statusDotClass = (status: string) => {
-  switch (status) {
-    case 'open':
-      return 'dot open';
-    case 'closed':
-      return 'dot closed';
-    case 'cancelled':
-      return 'dot cancelled';
-    default:
-      return 'dot draft';
-  }
-};
 
 onMounted(async () => {
   await communityStore.loadCommunities();

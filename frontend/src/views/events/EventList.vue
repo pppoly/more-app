@@ -65,6 +65,7 @@ import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventStatus } from '../../utils/eventStatus';
 import brandLogoUrl from '../../assets/images/logo1.svg';
 
 const router = useRouter();
@@ -117,12 +118,8 @@ const formatDate = (value: string) =>
   });
 
 const statusBadge = (event: EventSummary) => {
-  const now = new Date();
-  const start = new Date(event.startTime);
-  if (event.status === 'open' && start > now) {
-    return { text: '受付中', class: 'open' };
-  }
-  return { text: '終了', class: 'closed' };
+  const { state, label } = getEventStatus(event);
+  return { text: label, class: state === 'open' ? 'open' : 'closed' };
 };
 
 const coverInitial = (event: EventSummary) => (event.community.name?.charAt(0) ?? 'M').toUpperCase();

@@ -48,7 +48,9 @@
               }"
               :style="ticketCoverStyle(item)"
             >
-              <span v-if="isRefunding(item)" class="ticket-card__flag ticket-card__flag--refunding">キャンセル申請中</span>
+              <span v-if="refundFlagLabel(item)" class="ticket-card__flag ticket-card__flag--refunding">
+                {{ refundFlagLabel(item) }}
+              </span>
               <div v-if="item.attended && !isVoidTicket(item)" class="ticket-card__tear">
                 <span>検証済み</span>
               </div>
@@ -189,6 +191,12 @@ const getEndTime = (item: MyEventItem) => {
 
 const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && getStartTime(item) > new Date();
 const isExpired = (item: MyEventItem) => !item.attended && !isUpcoming(item) && !isVoidTicket(item);
+const isPaidStatus = (item: MyEventItem) => ['paid', 'approved'].includes(item.status);
+const isRefundingStatus = (item: MyEventItem) => ['cancel_requested', 'pending_refund'].includes(item.status);
+const isRefundedStatus = (item: MyEventItem) => item.status === 'refunded';
+const isCancelledStatus = (item: MyEventItem) => ['cancelled', 'rejected'].includes(item.status);
+const isPendingStatus = (item: MyEventItem) => item.status === 'pending';
+const isPendingPaymentStatus = (item: MyEventItem) => item.status === 'pending_payment';
 
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => getStartTime(b).getTime() - getStartTime(a).getTime()),
@@ -196,9 +204,7 @@ const sortedEvents = computed(() =>
 
 const isEligibleTicket = (item: MyEventItem) => {
   const amount = item.amount ?? 0;
-  const paymentOk =
-    ['paid', 'refunded', 'pending_refund', 'cancel_requested', 'cancelled'].includes(item.paymentStatus || '') ||
-    ['paid', 'refunded', 'pending_refund', 'cancel_requested', 'cancelled'].includes(item.status);
+  const paymentOk = isPaidStatus(item) || isRefundedStatus(item) || isRefundingStatus(item) || item.status === 'cancelled';
   if (amount > 0) return paymentOk;
   // 無料の場合は審査中/却下を除外
   return !['pending', 'rejected'].includes(item.status);
@@ -240,10 +246,9 @@ const groupOrder: Array<{ id: string; title: string }> = [
 ];
 
 const groupIdFor = (item: MyEventItem): string => {
-  const paidLike = item.paymentStatus === 'paid' || item.status === 'paid' || (item.amount ?? 0) === 0;
-  const refundedLike = item.status === 'refunded' || item.paymentStatus === 'refunded' || item.status === 'cancelled';
-  const refundingLike =
-    item.status === 'cancel_requested' || item.status === 'pending_refund' || item.status === 'pending_refund';
+  const paidLike = isPaidStatus(item);
+  const refundedLike = item.status === 'refunded' || item.status === 'cancelled';
+  const refundingLike = isRefundingStatus(item);
   if (refundingLike) return 'refunding';
   if (refundedLike) return 'refunded';
   if (item.attended) return 'attended';
@@ -281,22 +286,23 @@ const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
 const statusLabel = (item: MyEventItem) => {
   const map: Record<string, string> = {
     pending: '審査待ち',
+    pending_payment: '支払い待ち',
     approved: '確認済み',
     rejected: '却下',
     paid: '支払い完了',
     refunded: '返金済み',
     pending_refund: '返金処理中',
+    cancel_requested: 'キャンセル申請中',
     cancelled: 'キャンセル',
   };
   return map[item.status] ?? item.status;
 };
 
 const statusClass = (item: MyEventItem) => {
-  if (item.status === 'pending') return 'badge--pending';
-  if (item.status === 'approved' || item.status === 'paid') return 'badge--paid';
-  if (item.status === 'refunded') return 'badge--info';
-  if (item.status === 'pending_refund') return 'badge--pending';
-  if (item.status === 'cancelled' || item.status === 'rejected') return 'badge--void';
+  if (isPendingStatus(item) || isPendingPaymentStatus(item)) return 'badge--pending';
+  if (isPaidStatus(item)) return 'badge--paid';
+  if (isRefundedStatus(item) || isRefundingStatus(item)) return 'badge--info';
+  if (isCancelledStatus(item)) return 'badge--void';
   return 'badge--pending';
 };
 
@@ -312,16 +318,24 @@ const formatDate = (value: string) =>
     : '';
 
 const paymentLabel = (item: MyEventItem) => {
+  if (isRefundedStatus(item)) return '返金済み';
+  if (isRefundingStatus(item)) return '返金処理中';
+  if (isPendingPaymentStatus(item)) return '支払い待ち';
+  if (isPendingStatus(item)) return '審査待ち';
+  if (item.status === 'rejected') return '却下';
+  if (item.status === 'cancelled') return 'キャンセル';
+  if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? '無料' : '支払い完了';
   if ((item.amount ?? 0) === 0) return '無料';
-  if (item.paymentStatus === 'refunded') return '返金済み';
-  if (item.paymentStatus === 'paid') return '支払い完了';
-  return '支払い待ち';
+  return '支払い状況確認中';
 };
 
 const paymentClass = (item: MyEventItem) => {
+  if (isRefundedStatus(item) || isRefundingStatus(item)) return 'badge--info';
+  if (isCancelledStatus(item)) return 'badge--void';
+  if (isPendingStatus(item) || isPendingPaymentStatus(item)) return 'badge--pending';
+  if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? 'badge--free' : 'badge--paid';
   if ((item.amount ?? 0) === 0) return 'badge--free';
-  if (item.paymentStatus === 'refunded') return 'badge--info';
-  return item.paymentStatus === 'paid' ? 'badge--paid' : 'badge--pending';
+  return 'badge--pending';
 };
 
 const phaseLabel = (item: MyEventItem) => {
@@ -341,27 +355,33 @@ const phaseLabel = (item: MyEventItem) => {
 
 const stateSentence = (item: MyEventItem) => {
   if (item.status === 'cancel_requested') return 'キャンセル申請中です。主催者の確認をお待ちください。';
+  if (item.status === 'pending_refund') return '返金処理中です';
+  if (item.status === 'refunded') return '返金が完了しています';
   if (item.status === 'cancelled') return '参加はキャンセルされました';
   if (item.status === 'rejected') return '申込が却下されました';
-  if (item.status === 'pending_refund' || item.status === 'refunded') return '返金処理中です';
-  if (item.paymentStatus === 'refunded') return '返金が完了しています';
-  if (item.paymentStatus === 'paid') return '参加が確定しています';
+  if (item.status === 'pending_payment') return '支払い待ちです';
   if (item.status === 'pending') return '申込を審査中です';
+  if (isPaidStatus(item)) return '参加が確定しています';
   if (item.attended) return '参加済みです';
   if (item.noShow) return '欠席として記録されています';
   return '参加が進行中です';
 };
 
 const refundNotice = (item: MyEventItem) => {
+  if (item.status === 'cancel_requested') return 'キャンセル申請を受け付けました。主催者の確認中です。';
   if (item.status === 'pending_refund') return '返金リクエストを処理しています';
   if (item.status === 'refunded') return '返金が完了しました';
-  if (item.status === 'cancelled' && item.paymentStatus !== 'refunded') return 'キャンセル済みです。返金が必要な場合はご確認ください。';
+  if (item.status === 'cancelled') return 'キャンセル済みです。返金が必要な場合はご確認ください。';
   return '';
 };
 
 const attendanceLabel = (item: MyEventItem) => {
   if (item.status === 'cancelled') return 'キャンセル';
-  if (item.status === 'refunded' || item.status === 'pending_refund') return '返金処理中';
+  if (item.status === 'rejected') return '却下';
+  if (item.status === 'refunded') return '返金済み';
+  if (item.status === 'pending_refund' || item.status === 'cancel_requested') return '返金処理中';
+  if (item.status === 'pending_payment') return '支払い待ち';
+  if (item.status === 'pending') return '審査待ち';
   if (item.attended) return '出席済み';
   if (item.noShow) return '欠席';
   if (isExpired(item)) return '有効期限切れ';
@@ -370,8 +390,10 @@ const attendanceLabel = (item: MyEventItem) => {
 };
 
 const attendanceClass = (item: MyEventItem) => {
-  if (item.status === 'cancelled') return 'badge--void';
-  if (item.status === 'refunded' || item.status === 'pending_refund') return 'badge--info';
+  if (isCancelledStatus(item)) return 'badge--void';
+  if (item.status === 'refunded' || item.status === 'pending_refund' || item.status === 'cancel_requested')
+    return 'badge--info';
+  if (isPendingStatus(item) || isPendingPaymentStatus(item)) return 'badge--pending';
   if (item.attended) return 'badge--attended';
   if (item.noShow) return 'badge--noshow';
   if (isExpired(item)) return 'badge--void';
@@ -501,8 +523,13 @@ const ticketCoverStyle = (item: MyEventItem) => {
   };
 };
 
-const isRefunding = (item: MyEventItem) =>
-  item.status === 'cancel_requested' || item.status === 'pending_refund' || item.status === 'pending_refund';
+const refundFlagLabel = (item: MyEventItem) => {
+  if (item.status === 'cancel_requested') return 'キャンセル申請中';
+  if (item.status === 'pending_refund') return '返金処理中';
+  return '';
+};
+
+const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 </script>
 
 <style scoped>

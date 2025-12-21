@@ -650,7 +650,7 @@
                 <p class="copy-list-title">{{ item.title }}</p>
                 <p class="copy-list-meta">{{ item.dateRange }}</p>
               </div>
-              <span class="copy-list-status">{{ copyStatusLabel(item.status) }}</span>
+              <span class="copy-list-status">{{ item.statusLabel }}</span>
               <span
                 v-if="copySelectingId === item.id"
                 class="copy-spinner"
@@ -687,6 +687,7 @@ import {
   extractEventDraft,
 } from '../../api/client';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventStatus } from '../../utils/eventStatus';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
@@ -907,12 +908,21 @@ const copyError = ref<string | null>(null);
 const copySelectingId = ref<string | null>(null);
 const entryHandled = ref(false);
 const copyEventItems = computed(() =>
-  copyEvents.value.map((event) => ({
-    id: event.id,
-    title: getLocalizedText(event.title),
-    status: event.status,
-    dateRange: formatCopyRange(event.startTime, event.endTime),
-  })),
+  copyEvents.value.map((event) => {
+    const statusInfo =
+      event.status === 'draft'
+        ? { state: 'draft', label: '下書き' }
+        : event.status === 'pending_review'
+          ? { state: 'draft', label: '審査中' }
+          : getEventStatus(event);
+    return {
+      id: event.id,
+      title: getLocalizedText(event.title),
+      status: event.status,
+      statusLabel: statusInfo.label,
+      dateRange: formatCopyRange(event.startTime, event.endTime),
+    };
+  }),
 );
 const pastedDraft = ref('');
 const draftCheckMessage = ref('');
@@ -1744,17 +1754,6 @@ const formatCopyRange = (start: string, end?: string) => {
     minute: '2-digit',
   });
   return `${startText}〜${endText}`;
-};
-
-const copyStatusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    default:
-      return '下書き';
-  }
 };
 
 const extractFromPastedDraft = (text: string) => {

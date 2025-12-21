@@ -55,8 +55,8 @@
         </div>
         <div class="info-row">
           <span class="label">ステータス</span>
-          <span class="status-pill" :class="event.status === 'open' ? 'open' : 'closed'">
-            {{ event.status === 'open' ? '受付中' : '終了' }}
+          <span class="status-pill" :class="statusPill.variant">
+            {{ statusPill.label }}
           </span>
         </div>
       </div>
@@ -292,6 +292,20 @@ const registrationUnavailableReason = computed(() => {
       : '満席のため受付終了しました。';
   }
   return null;
+});
+
+const statusPill = computed(() => {
+  if (!event.value) return { label: '読み込み中…', variant: 'closed' };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止', variant: 'closed' };
+  if (eventLifecycle.value === 'ended') return { label: '終了', variant: 'closed' };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付前' : '受付終了';
+    return { label, variant: 'closed' };
+  }
+  if (capacityState.value.isFull) {
+    return { label: '満席', variant: 'closed' };
+  }
+  return { label: '受付中', variant: 'open' };
 });
 
 const loadEvent = async (id: string) => {

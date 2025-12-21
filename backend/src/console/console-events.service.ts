@@ -31,6 +31,10 @@ export class ConsoleEventsService {
 
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
+    const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
+    };
     const events = await this.prisma.event.findMany({
       where: { communityId },
       orderBy: { startTime: 'desc' },
@@ -40,24 +44,47 @@ export class ConsoleEventsService {
         title: true,
         startTime: true,
         endTime: true,
+        regStartTime: true,
+        regEndTime: true,
+        regDeadline: true,
         status: true,
         visibility: true,
+        maxParticipants: true,
+        config: true,
         galleries: {
           orderBy: { order: 'asc' },
           take: 1,
           select: { imageUrl: true },
         },
+        _count: {
+          select: {
+            registrations: { where: successRegistrationWhere },
+          },
+        },
       },
     });
     return events.map((event) => {
-      const coverImageUrl = buildAssetUrl(event.galleries[0]?.imageUrl);
+      const { _count, ...rest } = event;
+      const coverImageUrl = buildAssetUrl(rest.galleries[0]?.imageUrl);
+      const currentParticipants = _count?.registrations ?? 0;
+      const baseConfig =
+        rest.config && typeof rest.config === 'object' ? { ...(rest.config as Record<string, any>) } : {};
+      const config = {
+        ...baseConfig,
+        currentParticipants,
+      };
       return {
-        id: event.id,
-        title: event.title,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        status: event.status,
-        visibility: event.visibility,
+        id: rest.id,
+        title: rest.title,
+        startTime: rest.startTime,
+        endTime: rest.endTime,
+        regStartTime: rest.regStartTime,
+        regEndTime: rest.regEndTime,
+        regDeadline: rest.regDeadline,
+        status: rest.status,
+        visibility: rest.visibility,
+        maxParticipants: rest.maxParticipants,
+        config,
         coverImageUrl,
       };
     });

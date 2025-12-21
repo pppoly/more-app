@@ -45,8 +45,8 @@
       <section class="panel info-card">
         <div class="info-header">
           <div class="status-row">
-            <span class="status-dot" :class="statusDotClass(eventCard.status)"></span>
-            <span class="status-text">{{ statusLabel(eventCard.status) }}</span>
+            <span class="status-dot" :class="eventStatusDotClass"></span>
+            <span class="status-text">{{ eventStatusLabel }}</span>
           </div>
           <h1 class="info-title line-clamp-2">{{ eventCard.title }}</h1>
           <p class="info-meta">
@@ -255,6 +255,7 @@ import type {
   EventRegistrationsSummary,
 } from '../../../types/api';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import { getEventStatus } from '../../../utils/eventStatus';
 import { useResourceConfig } from '../../../composables/useResourceConfig';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import moreIcon from '../../../assets/icons/more-horizontal.svg';
@@ -299,6 +300,30 @@ const eventCard = computed(() => {
     dateTimeText: formatDate(eventDetail.value.startTime, eventDetail.value.endTime),
     locationText: eventDetail.value.locationText,
   };
+});
+
+const eventStatus = computed(() => {
+  if (!eventDetail.value) {
+    return { state: 'closed', label: '受付終了' };
+  }
+  if (eventDetail.value.status === 'draft') {
+    return { state: 'draft', label: '下書き' };
+  }
+  if (eventDetail.value.status === 'pending_review') {
+    return { state: 'draft', label: '審査中' };
+  }
+  const config = {
+    ...(eventDetail.value.config ?? {}),
+    currentParticipants: summary.value?.totalRegistrations ?? undefined,
+  };
+  return getEventStatus({ ...eventDetail.value, config });
+});
+const eventStatusLabel = computed(() => eventStatus.value.label);
+const eventStatusDotClass = computed(() => {
+  if (eventStatus.value.state === 'open') return 'dot open';
+  if (eventStatus.value.state === 'cancelled') return 'dot cancelled';
+  if (eventStatus.value.state === 'draft') return 'dot draft';
+  return 'dot closed';
 });
 
 const resourceConfig = useResourceConfig();
@@ -481,32 +506,6 @@ const cancelEvent = async () => {
     error.value = err instanceof Error ? err.message : 'キャンセルに失敗しました。時間をおいて再試行してください。';
   } finally {
     cancelling.value = false;
-  }
-};
-
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    case 'cancelled':
-      return '取消済み';
-    default:
-      return '下書き';
-  }
-};
-
-const statusDotClass = (status: string) => {
-  switch (status) {
-    case 'open':
-      return 'dot open';
-    case 'closed':
-      return 'dot closed';
-    case 'cancelled':
-      return 'dot cancelled';
-    default:
-      return 'dot draft';
   }
 };
 

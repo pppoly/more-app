@@ -162,7 +162,7 @@
               <p class="event-title">{{ event.title }}</p>
               <p class="event-meta">{{ event.dateTimeText }} · {{ event.entrySummary }}</p>
             </div>
-            <span class="event-status">{{ statusLabel(event.status) }}</span>
+            <span class="event-status">{{ event.statusLabel }}</span>
           </button>
         </div>
         <div v-else class="empty-card">
@@ -318,6 +318,7 @@ import {
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import { getEventStatus } from '../../../utils/eventStatus';
 import payoutIcon from '../../../assets/account.svg';
 import checkIcon from '../../../assets/check.svg';
 import eventManageIcon from '../../../assets/enventmanagement.svg';
@@ -424,18 +425,28 @@ const stats = computed(() => ({
 
 const activeCommunityVersion = computed(() => communityStore.activeCommunityVersion.value);
 
+const resolveConsoleStatus = (event: ConsoleEventSummary) => {
+  if (event.status === 'draft') return { state: 'draft', label: '下書き' };
+  if (event.status === 'pending_review') return { state: 'draft', label: '審査中' };
+  return getEventStatus(event);
+};
+
 const displayEvents = computed(() =>
   events.value
     .filter((event) => event.status !== 'cancelled')
     .slice(0, 5)
-    .map((event) => ({
-      id: event.id,
-      title: getLocalizedText(event.title),
-      status: event.status,
-      dateTimeText: formatDate(event.startTime, event.endTime),
-      entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-      coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
-    })),
+    .map((event) => {
+      const statusInfo = resolveConsoleStatus(event);
+      return {
+        id: event.id,
+        title: getLocalizedText(event.title),
+        status: event.status,
+        statusLabel: statusInfo.label,
+        dateTimeText: formatDate(event.startTime, event.endTime),
+        entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
+        coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
+      };
+    }),
 );
 
 const formatJPY = (amount: number) =>
@@ -653,19 +664,6 @@ const formatDate = (start: string, end?: string) => {
     minute: '2-digit',
   });
   return `${startText}〜${endText}`;
-};
-
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    case 'cancelled':
-      return '取消済み';
-    default:
-      return '下書き';
-  }
 };
 
 const statusBadgeClass = (status: string) => {

@@ -73,8 +73,8 @@
             <span class="timeline__dot"></span>
             <div class="timeline__body">
               <p class="timeline__title">
-                <span class="flag" :class="item.status === 'open' ? 'flag--open' : 'flag--closed'">
-                  {{ item.status === 'open' ? '受付中' : '終了' }}
+                <span class="flag" :class="item.statusState === 'open' ? 'flag--open' : 'flag--closed'">
+                  {{ item.statusLabel }}
                 </span>
                 {{ item.title }}
               </p>
@@ -121,6 +121,7 @@ import {
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventStatus } from '../../utils/eventStatus';
 import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
@@ -282,22 +283,26 @@ const showEvents = computed(() => layoutOrder.value.some((b) => ['upcoming', 'pa
 const heroLabels = computed(() => (community.value?.labels ?? []).slice(0, 5));
 
 const formattedEvents = computed(() =>
-  (community.value?.events ?? []).map((event) => ({
-    ...event,
-    title: getLocalizedText(event.title) || 'イベント',
-    date: new Date(event.startTime).toLocaleString('ja-JP', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-    statusLabel: event.status === 'open' ? '受付中' : '終了',
-    statusClass: event.status === 'open' ? 'open' : 'closed',
-  })),
+  (community.value?.events ?? []).map((event) => {
+    const { state, label } = getEventStatus(event);
+    return {
+      ...event,
+      title: getLocalizedText(event.title) || 'イベント',
+      date: new Date(event.startTime).toLocaleString('ja-JP', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      statusLabel: label,
+      statusState: state,
+      statusClass: state === 'open' ? 'open' : 'closed',
+    };
+  }),
 );
 
-const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.status === 'open'));
-const pastEvents = computed(() => formattedEvents.value.filter((event) => event.status !== 'open'));
+const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.statusState === 'open'));
+const pastEvents = computed(() => formattedEvents.value.filter((event) => event.statusState !== 'open'));
 const featuredEvents = computed(() => {
   const combined = [...upcomingEvents.value, ...pastEvents.value];
   return combined.slice(0, 3);
@@ -317,7 +322,8 @@ const newsItems = computed(() => {
   return events.slice(0, 4).map((event) => ({
     title: event.title,
     date: new Date(event.startTime).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
-    status: event.status as 'open' | 'closed',
+    statusState: event.statusState,
+    statusLabel: event.statusLabel,
   }));
 });
 const newsItemsLimited = computed(() => newsItems.value.slice(0, 4));
