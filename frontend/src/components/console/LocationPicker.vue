@@ -68,7 +68,7 @@ const loadGoogleMaps = () => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     mapStatus.value = '環境変数 VITE_GOOGLE_MAPS_API_KEY を設定すると地図を表示できます。';
-    return Promise.reject(new Error('无法加载地图，请稍后再试或联系管理员')); 
+    return Promise.reject(new Error('地図を読み込めませんでした。時間をおいて再試行するか管理者に連絡してください。')); 
   }
   googleMapsPromise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');

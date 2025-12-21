@@ -723,6 +723,18 @@ export async function rejectEventRegistration(eventId: string, registrationId: s
   return data;
 }
 
+export async function cancelEventRegistration(
+  eventId: string,
+  registrationId: string,
+  payload: { reason?: string } = {},
+) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/console/events/${eventId}/registrations/${registrationId}/cancel`,
+    payload,
+  );
+  return data;
+}
+
 export async function cancelConsoleEvent(eventId: string, payload: { reason?: string; notify?: boolean } = {}) {
   const { data } = await apiClient.post<{ eventId: string; status: string; refunds?: any }>(
     `/console/events/${eventId}/cancel`,

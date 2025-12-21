@@ -7,9 +7,6 @@
         <h1>受付・チェックイン</h1>
         <p>QR をかざすだけで受付できます。カメラ許可が必要です。</p>
       </div>
-      <button class="info-btn" type="button" @click="showInfo = true">
-        <span class="i-lucide-info"></span>
-      </button>
     </header>
 
     <section class="scanner-box">

@@ -13,17 +13,17 @@
 
       <div class="actions">
         <template v-if="status === 'success' && financeRoute">
-          <RouterLink class="btn primary" :to="financeRoute">社群財務を開く</RouterLink>
-          <RouterLink class="btn ghost" to="/console">コンソールホームへ</RouterLink>
+          <RouterLink class="btn primary" :to="financeRoute">コミュニティ財務を開く</RouterLink>
+          <RouterLink class="btn ghost" :to="backRoute">{{ backLabel }}</RouterLink>
         </template>
         <template v-else-if="status === 'error'">
           <button class="btn primary" type="button" :disabled="loading" @click="regenerate">
             {{ loading ? '再試行中…' : 'もう一度連携する' }}
           </button>
-          <RouterLink class="btn ghost" to="/console">コンソールホームへ</RouterLink>
+          <RouterLink class="btn ghost" :to="backRoute">{{ backLabel }}</RouterLink>
         </template>
         <template v-else>
-          <RouterLink class="btn ghost" to="/console">コンソールホームへ</RouterLink>
+          <RouterLink class="btn ghost" :to="backRoute">{{ backLabel }}</RouterLink>
         </template>
       </div>
     </div>
@@ -49,6 +49,9 @@ const financeRoute = computed(() => {
   if (!communityId.value) return null;
   return { name: 'ConsoleMobilePayments', params: { communityId: communityId.value } };
 });
+
+const backRoute = computed(() => financeRoute.value ?? { path: '/console' });
+const backLabel = computed(() => (financeRoute.value ? 'コミュニティ財務へ戻る' : 'コンソールホームへ'));
 
 const status = computed<'success' | 'error' | 'pending'>(() => {
   if (loading.value) return 'pending';
@@ -94,8 +97,8 @@ const regenerate = async () => {
   background: #f8fafc;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 48px 16px;
+  justify-content: flex-start;
+  padding: 20px 16px 32px;
 }
 .stripe-return.is-success {
   background: radial-gradient(circle at 20% 20%, #dbeafe, #f0f9ff 45%, #f8fafc 100%);
@@ -109,7 +112,7 @@ const regenerate = async () => {
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.98);
   border-radius: 18px;
-  /* 移除阴影，保持轻边框 */
+  /* 影を外して軽い枠線にする */
   padding: 28px 22px;
   text-align: center;
   border: 1px solid rgba(15, 23, 42, 0.06);
@@ -160,6 +163,7 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  box-sizing: border-box;
 }
 .btn.primary {
   background: linear-gradient(135deg, #2563eb, #22c55e);

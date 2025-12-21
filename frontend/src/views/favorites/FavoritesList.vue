@@ -27,7 +27,7 @@
                   fill="currentColor"
                 />
               </svg>
-              取消フォロー
+              フォロー解除
             </button>
           </div>
         </article>

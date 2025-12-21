@@ -33,7 +33,7 @@
 
       <div class="info-card">
         <div class="card-header">
-          <span v-if="event.category" class="category-chip">#{{ event.category }}</span>
+          <span v-if="eventCategoryLabel" class="category-chip">#{{ eventCategoryLabel }}</span>
           <p class="card-title">{{ title }}</p>
         </div>
         <div class="info-row">
@@ -196,6 +196,7 @@ import {
 } from '../../api/client';
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { getEventCategoryLabel } from '../../utils/eventCategory';
 import { useAuth } from '../../composables/useAuth';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
@@ -217,6 +218,9 @@ const isRedirecting = ref(false);
 const paymentMessage = ref<string | null>(null);
 const showFormModal = ref(false);
 const formAnswers = reactive<Record<string, any>>({});
+const eventCategoryLabel = computed(() =>
+  event.value?.category ? getEventCategoryLabel(event.value.category) : '',
+);
 
 const auth = useAuth();
 const isLoggedIn = computed(() => Boolean(auth.user.value));
@@ -325,7 +329,7 @@ const loadEvent = async (id: string) => {
     gallery.value = await fetchEventGallery(id);
     currentSlide.value = 0;
   } catch (err) {
-    error.value = '活动加载失败，请稍后再试';
+    error.value = 'イベントの読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -424,7 +428,7 @@ const submitRegistration = async (answers: Record<string, any>) => {
     const registration = await createRegistration(eventId.value!, { formAnswers: answers });
     handleRegistrationResult(registration);
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = '申込に失敗しました。時間をおいて再試行してください。';
   } finally {
     isRegistering.value = false;
   }
@@ -460,7 +464,7 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    registrationError.value = '支付失败，请稍后再试';
+    registrationError.value = '決済に失敗しました。時間をおいて再試行してください。';
   } finally {
     isPaying.value = false;
   }

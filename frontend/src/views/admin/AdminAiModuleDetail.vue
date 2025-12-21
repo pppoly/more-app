@@ -4,26 +4,26 @@
       <button type="button" class="ghost-button" @click="goBack">
         <span class="i-lucide-chevron-left"></span>
       </button>
-      <p class="hero-eyebrow">AI 模块</p>
-      <h1>{{ detail?.module.name ?? '加载中…' }}</h1>
-      <p class="hero-desc">{{ detail?.module.description ?? '正在获取最新数据' }}</p>
+      <p class="hero-eyebrow">AI モジュール</p>
+      <h1>{{ detail?.module.name ?? '読み込み中…' }}</h1>
+      <p class="hero-desc">{{ detail?.module.description ?? '最新データを取得中です' }}</p>
     </section>
 
     <section v-if="error" class="error-card">
       <p>{{ error }}</p>
-      <button type="button" @click="loadDetail">重试</button>
+      <button type="button" @click="loadDetail">再試行</button>
     </section>
 
     <section v-else-if="!detail" class="loading-card">
-      <p>数据加载中...</p>
+      <p>データを読み込み中…</p>
     </section>
 
     <section v-else class="content">
       <section class="metrics-card">
-        <h2>关键指标</h2>
+        <h2>主要指標</h2>
         <div class="metric-grid">
           <div class="metric">
-            <p>会话总数</p>
+            <p>総セッション数</p>
             <strong>{{ formatNumber(detail.metrics.totalLogs) }}</strong>
           </div>
           <div class="metric">
@@ -31,23 +31,23 @@
             <strong>{{ formatNumber(detail.metrics.last24h) }}</strong>
           </div>
           <div class="metric">
-            <p>7天</p>
+            <p>7日</p>
             <strong>{{ formatNumber(detail.metrics.last7d) }}</strong>
           </div>
           <div class="metric">
-            <p>活跃社群</p>
+            <p>アクティブコミュニティ</p>
             <strong>{{ formatNumber(detail.metrics.activeCommunities) }}</strong>
           </div>
           <div class="metric">
-            <p>活跃用户</p>
+            <p>アクティブユーザー</p>
             <strong>{{ formatNumber(detail.metrics.activeUsers) }}</strong>
           </div>
           <div class="metric">
-            <p>平均轮次</p>
+            <p>平均ターン数</p>
             <strong>{{ detail.metrics.avgTurns?.toFixed(1) ?? '-' }}</strong>
           </div>
           <div class="metric">
-            <p>最新记录</p>
+            <p>最新記録</p>
             <strong>{{ formatDate(detail.metrics.lastActivityAt) ?? '—' }}</strong>
           </div>
         </div>
@@ -56,7 +56,7 @@
       <section class="card breakdown-card">
         <header>
           <div>
-            <p class="section-eyebrow">阶段占比</p>
+            <p class="section-eyebrow">ステージ内訳</p>
             <h3>Coach / Editor / Writer</h3>
           </div>
         </header>
@@ -74,8 +74,8 @@
       <section class="card breakdown-card">
         <header>
           <div>
-            <p class="section-eyebrow">语言分布</p>
-            <h3>用户输入语言</h3>
+            <p class="section-eyebrow">言語分布</p>
+            <h3>ユーザー入力言語</h3>
           </div>
         </header>
         <div class="breakdown">
@@ -92,8 +92,8 @@
       <section class="card session-card">
         <header>
           <div>
-            <p class="section-eyebrow">最近会话</p>
-            <h3>最新 25 条</h3>
+            <p class="section-eyebrow">最近のセッション</p>
+            <h3>最新 25 件</h3>
           </div>
         </header>
         <div class="session-list">
@@ -102,11 +102,11 @@
               <p class="session-community">{{ session.communityName }}</p>
               <p class="session-user">{{ session.userName }}</p>
               <p class="session-meta">
-                {{ formatDate(session.createdAt) }} · {{ session.stage ?? '未知阶段' }} · {{ session.status ?? '状态未知' }}
+                {{ formatDate(session.createdAt) }} · {{ session.stage ?? '不明なステージ' }} · {{ session.status ?? 'ステータス不明' }}
               </p>
               <p v-if="session.summary" class="session-summary">{{ session.summary }}</p>
             </div>
-            <span class="session-turns">{{ session.turnCount ?? '-' }} 回合</span>
+            <span class="session-turns">{{ session.turnCount ?? '-' }} 回</span>
           </article>
         </div>
       </section>
@@ -172,7 +172,7 @@ const loadDetail = async () => {
     detail.value = await fetchAiUsageDetail(moduleId.value);
   } catch (err) {
     console.error(err);
-    error.value = '无法加载该模块的使用数据。';
+    error.value = 'このモジュールの利用データを読み込めませんでした。';
   } finally {
     loading.value = false;
   }

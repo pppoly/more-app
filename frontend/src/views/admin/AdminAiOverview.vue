@@ -2,9 +2,9 @@
   <main class="admin-ai-overview">
     <header class="page-head">
       <div>
-        <p class="eyebrow">AI 使用概览</p>
+        <p class="eyebrow">AI 利用概要</p>
         <h1>AI ダッシュボード</h1>
-        <p class="subhead">模块调用量与风险状态</p>
+        <p class="subhead">モジュール利用状況とリスク状態</p>
       </div>
       <button class="ghost" type="button" :disabled="loading" @click="load">
         <span class="i-lucide-refresh-cw"></span> 更新
@@ -27,20 +27,20 @@
           <p class="meta">{{ mod.description }}</p>
           <div class="metrics">
             <div class="metric">
-              <p class="metric-label">调用</p>
+              <p class="metric-label">呼び出し</p>
               <strong>{{ mod.metrics?.totalCalls ?? 0 }}</strong>
             </div>
             <div class="metric">
-              <p class="metric-label">失败</p>
+              <p class="metric-label">失敗</p>
               <strong>{{ mod.metrics?.failedCalls ?? 0 }}</strong>
             </div>
             <div class="metric">
-              <p class="metric-label">时长</p>
+              <p class="metric-label">時間</p>
               <strong>{{ mod.metrics?.avgDurationMs ?? 0 }} ms</strong>
             </div>
           </div>
           <div class="actions">
-            <button class="ghost" type="button" @click="goDetail(mod.id)">详情</button>
+            <button class="ghost" type="button" @click="goDetail(mod.id)">詳細</button>
           </div>
         </article>
       </div>

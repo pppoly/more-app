@@ -248,8 +248,8 @@ const restoreScrollPosition = (path: string) => {
 const localeLabelMap: Record<string, string> = {
   ja: '日本語',
   en: 'English',
-  zh: '简体中文',
-  'zh-tw': '繁體中文',
+  zh: '中国語(簡体字)',
+  'zh-tw': '中国語(繁体字)',
   vi: 'Tiếng Việt',
   ko: '한국어',
   tl: 'Tagalog',
@@ -301,7 +301,7 @@ const selectLocale = async (locale: string) => {
 
 onMounted(() => {
   contentEl.value = document.querySelector('.mobile-shell__content');
-  // 避免首屏闪出默认头部，等待路由就绪后再展示
+  // 初回表示でデフォルトヘッダーがちらつくのを避け、ルート準備完了後に表示
   router.isReady().then(() => {
     routeReady.value = true;
   });

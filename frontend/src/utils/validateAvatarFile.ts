@@ -9,7 +9,7 @@ export interface AvatarValidationOptions {
 const DEFAULT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const DEFAULT_MIN_SIZE = 128;
 const DEFAULT_MAX_BYTES = 500 * 1024;
-const DEFAULT_MAX_ASPECT_DELTA = 0.2; // 20% 偏差视为近似正方形
+const DEFAULT_MAX_ASPECT_DELTA = 0.2; // 20% の偏差を正方形相当とみなす
 
 export const validateAvatarFile = (file: File, options: AvatarValidationOptions = {}) =>
   new Promise<void>((resolve, reject) => {
@@ -22,11 +22,11 @@ export const validateAvatarFile = (file: File, options: AvatarValidationOptions 
     } = options;
 
     if (!allowedTypes.includes(file.type)) {
-      reject(new Error('请上传 jpg/png/webp 图片'));
+      reject(new Error('jpg/png/webp の画像をアップロードしてください'));
       return;
     }
     if (file.size > maxBytes) {
-      reject(new Error('图片体积过大，请压缩后再试'));
+      reject(new Error('画像サイズが大きすぎます。圧縮して再試行してください'));
       return;
     }
 
@@ -36,13 +36,13 @@ export const validateAvatarFile = (file: File, options: AvatarValidationOptions 
       URL.revokeObjectURL(url);
       const { naturalWidth, naturalHeight } = image;
       if (naturalWidth < minSize || naturalHeight < minSize) {
-        reject(new Error(`分辨率需至少 ${minSize}×${minSize}`));
+        reject(new Error(`解像度は ${minSize}×${minSize} 以上が必要です`));
         return;
       }
       if (requireSquare) {
         const ratio = naturalWidth / naturalHeight;
         if (Math.abs(1 - ratio) > maxAspectDelta) {
-          reject(new Error('请上传近似方形的头像'));
+          reject(new Error('正方形に近いプロフィール画像をアップロードしてください'));
           return;
         }
       }
@@ -50,7 +50,7 @@ export const validateAvatarFile = (file: File, options: AvatarValidationOptions 
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('图片读取失败，请重试'));
+      reject(new Error('画像の読み込みに失敗しました。再試行してください'));
     };
     image.src = url;
   });

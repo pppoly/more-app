@@ -10,7 +10,7 @@
     </header>
 
     <main class="content">
-      <!-- 分类 Chips -->
+      <!-- カテゴリーチップ -->
       <div class="chip-row">
         <button
           v-for="cat in categories"
@@ -108,6 +108,7 @@ import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { getEventStatus } from '../../utils/eventStatus';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { EVENT_CATEGORY_OPTIONS, normalizeEventCategory } from '../../utils/eventCategory';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { trackEvent } from '../../utils/analytics';
@@ -133,24 +134,6 @@ const fallbackCoverImages = computed(() => {
   return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
 });
 
-const labelFromCategory = (id: string) => {
-  const map: Record<string, string> = {
-    sport: 'スポーツ / アウトドア',
-    campus: '大学サークル',
-    social: '交流・趣味',
-    business: 'ビジネス / 起業',
-    tech: 'テック / AI',
-    art: 'アート / デザイン',
-    music: '音楽 / エンタメ',
-    food: 'グルメ',
-    family: 'ファミリー / 教育',
-    language: '言語 / 学習',
-    public: '公益 / 支援',
-    mind: '心と暮らし',
-    online: 'オンライン / ワークショップ',
-  };
-  return map[id] ?? id;
-};
 
 const defaultAvatarImage = computed(
   () =>
@@ -200,32 +183,16 @@ const coverUrlForEvent = (event: EventSummary) => {
 
 const visibleEvents = computed(() => events.value.filter((event) => event.status === 'open'));
 
-const categories = computed(() => {
-  const ids = [
-    'all',
-    'sport',
-    'campus',
-    'social',
-    'business',
-    'tech',
-    'art',
-    'music',
-    'food',
-    'family',
-    'language',
-    'public',
-    'mind',
-    'online',
-  ];
-  return ids.map((id) => ({
-    id,
-    label: id === 'all' ? 'すべて' : labelFromCategory(id),
-  }));
-});
+const categories = computed(() => [
+  { id: 'all', label: 'すべて' },
+  ...EVENT_CATEGORY_OPTIONS.map((cat) => ({ id: cat.value, label: cat.label })),
+]);
 
 const filteredEvents = computed(() => {
   if (activeCategoryId.value === 'all') return visibleEvents.value;
-  return visibleEvents.value.filter((ev) => (ev.category ?? '').toLowerCase() === activeCategoryId.value);
+  return visibleEvents.value.filter(
+    (ev) => normalizeEventCategory(ev.category) === activeCategoryId.value,
+  );
 });
 
 const formattedEvents = computed(() =>
@@ -241,7 +208,7 @@ const formattedEvents = computed(() =>
     const { attendees, attendeesMore } = attendeeAvatars(event);
     const startAt = new Date(event.startTime).getTime();
     const { label: statusText } = getEventStatus(event);
-    const category = (event.category ?? '').toLowerCase();
+    const category = normalizeEventCategory(event.category);
     const isSocial = isSocialCategory(category);
     return {
       id: event.id,
@@ -564,6 +531,18 @@ onMounted(loadEvents);
   margin: 0 0 2px;
   font-size: 11px;
   color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.byline::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  display: inline-block;
 }
 .skeleton {
   background: linear-gradient(90deg, #e5e7eb, #f1f5f9, #e5e7eb);

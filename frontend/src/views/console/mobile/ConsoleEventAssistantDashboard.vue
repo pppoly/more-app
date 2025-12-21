@@ -59,7 +59,7 @@
         <li v-for="log in dashboard.logs" :key="log.id" class="log-item">
           <div class="log-meta">
             <p class="log-title">
-              {{ log.summary || '名称未設定の草案' }}
+              {{ log.summary || '名称未設定の下書き' }}
             </p>
             <span class="log-status" :class="log.status">{{ log.status ?? 'collecting' }}</span>
           </div>

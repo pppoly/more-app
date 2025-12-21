@@ -10,7 +10,7 @@
           >
             <span class="i-lucide-camera"></span>
             <span>
-              {{ avatarUploading ? '上传中...' : hasAvatar ? '点击更换' : '点击添加头像' }}
+              {{ avatarUploading ? 'アップロード中…' : hasAvatar ? 'タップして変更' : 'タップして追加' }}
             </span>
           </div>
         </button>
@@ -19,21 +19,21 @@
 
       <div class="name-block">
         <p class="name-text" :class="{ 'name-text--placeholder': !displayName }" @click="handleNameTap">
-          {{ displayName || '请设置昵称' }}
+          {{ displayName || 'ニックネームを設定してください' }}
         </p>
         <button type="button" class="name-edit" @click="handleNameTap">
-          {{ displayName ? '修改昵称' : '设置昵称' }}
+          {{ displayName ? 'ニックネームを変更' : 'ニックネームを設定' }}
         </button>
         <p v-if="nameError" class="status name-status">{{ nameError }}</p>
       </div>
 
       <div v-if="userId" class="user-id-block">
-        <p class="user-id-label">你的编号</p>
+        <p class="user-id-label">あなたのID</p>
         <div class="user-id-chip">
           <span class="i-lucide-hash"></span>
           <span class="chip-text">{{ userId }}</span>
           <button type="button" @click="copyUserId">
-            {{ userIdCopied ? '已复制' : '复制' }}
+            {{ userIdCopied ? 'コピーしました' : 'コピー' }}
           </button>
         </div>
       </div>
@@ -41,9 +41,9 @@
 
     <div class="setup-actions">
       <button type="button" class="confirm-btn" :disabled="confirming" @click="confirmSetup">
-        {{ confirming ? '处理中...' : '我确定了' }}
+        {{ confirming ? '処理中…' : '完了' }}
       </button>
-      <button v-if="showSkip" type="button" class="skip-btn" @click="skipSetup">暂不设置</button>
+      <button v-if="showSkip" type="button" class="skip-btn" @click="skipSetup">後で設定</button>
     </div>
 
     <input
@@ -58,7 +58,7 @@
       <transition name="fade">
         <div v-if="showCropper" class="setup-overlay">
           <div class="setup-overlay__panel">
-            <p class="overlay-title">截取头像</p>
+            <p class="overlay-title">アバターを切り抜き</p>
             <div
               class="cropper-viewport"
               @pointerdown.prevent="startDrag"
@@ -89,9 +89,9 @@
               />
             </div>
             <div class="overlay-actions">
-              <button type="button" class="ghost" @click="cancelCropper">取消</button>
+              <button type="button" class="ghost" @click="cancelCropper">キャンセル</button>
               <button type="button" class="primary" :disabled="avatarUploading" @click="applyCropper">
-                {{ avatarUploading ? '上传中...' : '使用此头像' }}
+                {{ avatarUploading ? 'アップロード中…' : 'このアバターを使う' }}
               </button>
             </div>
           </div>
@@ -101,19 +101,19 @@
       <transition name="fade">
         <div v-if="nameEditorVisible" class="setup-overlay">
           <div class="setup-overlay__panel">
-            <p class="overlay-title">输入昵称</p>
+            <p class="overlay-title">ニックネームを入力</p>
             <input
               ref="nameInput"
               v-model="nameDraft"
               type="text"
               maxlength="40"
-              placeholder="请输入昵称"
+              placeholder="ニックネームを入力してください"
             />
             <p v-if="nameEditorError" class="status">{{ nameEditorError }}</p>
             <div class="overlay-actions">
-              <button type="button" class="ghost" @click="closeNameEditor">取消</button>
+              <button type="button" class="ghost" @click="closeNameEditor">キャンセル</button>
               <button type="button" class="primary" :disabled="nameSaving" @click="confirmNameEdit">
-                {{ nameSaving ? '保存中...' : '完成' }}
+                {{ nameSaving ? '保存中…' : '完了' }}
               </button>
             </div>
           </div>
@@ -238,7 +238,7 @@ const onAvatarFileSelected = async (event: Event) => {
   if (!file) return;
   try {
     avatarError.value = '';
-    // 尝试自动处理：验证并压缩裁剪，无需用户干预
+    // 自動処理：検証と圧縮裁剪でユーザー操作を省略
     await validateAvatarFile(file, { requireSquare: false });
     const processed = await processAvatarImage(file, { size: CROPPER_RESULT });
     const reader = new FileReader();
@@ -248,7 +248,10 @@ const onAvatarFileSelected = async (event: Event) => {
     };
     reader.readAsDataURL(processed);
   } catch (err) {
-    avatarError.value = err instanceof Error ? '这张头像不合适，换一张清晰的照片试试' : '头像上传失败，请换一张照片再试';
+    avatarError.value =
+      err instanceof Error
+        ? 'この写真は適していません。鮮明な写真に変えてお試しください。'
+        : 'アバターのアップロードに失敗しました。別の写真でお試しください。';
   } finally {
     if (target) target.value = '';
   }
@@ -314,7 +317,7 @@ const applyCropper = async () => {
   if (!cropImage.value) return;
   avatarUploading.value = true;
   try {
-    // 裁剪区域生成最终上传 Blob
+    // 裁剪エリアから最終アップロード用 Blob を生成
     const blob = await createCroppedBlob();
     const file = new File([blob], `avatar-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
     const profile = await uploadMyAvatar(file);
@@ -324,7 +327,7 @@ const applyCropper = async () => {
     cropSource.value = null;
     cropImage.value = null;
   } catch (err) {
-    avatarError.value = '头像上传失败，请换一张照片或稍后再试';
+    avatarError.value = 'アバターのアップロードに失敗しました。別の写真で試すか時間をおいてください。';
   } finally {
     avatarUploading.value = false;
   }
@@ -342,7 +345,7 @@ const createCroppedBlob = () => {
     canvas.height = CROPPER_RESULT;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      reject(new Error('无法创建画布'));
+      reject(new Error('キャンバスを作成できませんでした'));
       return;
     }
 
@@ -378,7 +381,7 @@ const createCroppedBlob = () => {
         if (blob) {
           resolve(blob);
         } else {
-          reject(new Error('截取失败'));
+          reject(new Error('切り抜きに失敗しました'));
         }
       },
       'image/jpeg',
@@ -410,7 +413,7 @@ const confirmNameEdit = async () => {
   }
   const trimmed = nameDraft.value.trim();
   if (!trimmed) {
-    nameEditorError.value = '请输入昵称';
+    nameEditorError.value = 'ニックネームを入力してください';
     return;
   }
   if (trimmed === displayName.value) {
@@ -425,7 +428,7 @@ const confirmNameEdit = async () => {
     nameError.value = '';
     closeNameEditor();
   } catch (err) {
-    nameEditorError.value = err instanceof Error ? err.message : '保存失败';
+    nameEditorError.value = err instanceof Error ? err.message : '保存に失敗しました';
   } finally {
     nameSaving.value = false;
   }
@@ -434,11 +437,11 @@ const confirmNameEdit = async () => {
 const confirmSetup = async () => {
   ensureLoggedIn();
   if (avatarRequired.value && !hasAvatar.value) {
-    avatarError.value = '请先添加头像';
+    avatarError.value = '先にアバターを追加してください';
     return;
   }
   if (requiresName.value && !displayName.value.trim()) {
-    nameError.value = '请输入昵称';
+    nameError.value = 'ニックネームを入力してください';
     handleNameTap();
     return;
   }
@@ -447,7 +450,7 @@ const confirmSetup = async () => {
     await fetchCurrentUser();
     await router.replace(redirectUrl.value);
   } catch (err) {
-    nameError.value = err instanceof Error ? err.message : '保存失败';
+    nameError.value = err instanceof Error ? err.message : '保存に失敗しました';
   } finally {
     confirming.value = false;
   }
@@ -478,7 +481,7 @@ const copyUserId = async () => {
 onMounted(() => {
   ensureLoggedIn();
   if (!displayName.value && requiresName.value) {
-    nameError.value = '请输入昵称';
+    nameError.value = 'ニックネームを入力してください';
   }
 });
 

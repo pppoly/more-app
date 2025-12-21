@@ -688,6 +688,7 @@ import {
 } from '../../api/client';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { getEventStatus } from '../../utils/eventStatus';
+import { EVENT_CATEGORY_OPTIONS, getEventCategoryLabel, normalizeEventCategory } from '../../utils/eventCategory';
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
@@ -969,7 +970,7 @@ const reviewStatus = ref<string | null>(null);
   const showAdvancedMobile = ref(false);
 
 const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
-  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+  if (/[ぁ-んァ-ン]/.test(text)) return 'ja';
   if (/[a-zA-Z]/.test(text)) return 'en';
   return 'ja';
 };
@@ -1059,21 +1060,12 @@ const currentFieldLabel = computed(() => currentFieldMeta.value?.label || '');
 const currentFieldType = computed<FieldMetaType>(() => currentFieldMeta.value?.type || 'text');
 const currentFieldPlaceholder = computed(() => currentFieldMeta.value?.placeholder || 'あとで設定できます');
 
-const categoryOptions = [
-  { label: 'アウトドア', value: 'hiking' },
-  { label: 'ランニング', value: 'running' },
-  { label: 'サイクリング', value: 'cycling' },
-  { label: 'キャンプ', value: 'camping' },
-  { label: '水上スポーツ', value: 'water' },
-  { label: '親子', value: 'kids' },
-  { label: '語学交流', value: 'language' },
-  { label: 'その他', value: 'other' },
-];
+const categoryOptions = EVENT_CATEGORY_OPTIONS;
 const showCategorySheet = ref(false);
 const categoryDraft = ref('');
 const categoryLabel = computed(() => {
-  const found = categoryOptions.find((cat) => cat.value === form.category);
-  return found?.label || '選択してください';
+  if (!form.category) return '選択してください';
+  return getEventCategoryLabel(form.category, form.category);
 });
 
 const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: string }>>> = {
@@ -1140,7 +1132,7 @@ const langLabel = (lang: ContentLang) => {
 const EMPTY_HINTS: Record<ContentLang, string> = {
   ja: '下書きを入れてから AI に最適化してもらってください。',
   en: 'Add a draft first, then ask AI to improve it.',
-  zh: '先写点草稿，再让 AI 优化。',
+  zh: '下書きを入れてから AI に最適化してもらってください。',
 };
 
 const getLocalizedAiHint = (key: 'empty') => {
@@ -1535,7 +1527,7 @@ const applyEventDetailToForm = (
   form.description = getLocalizedText(event.description);
   form.descriptionHtml = event.descriptionHtml ?? '';
   richNoteImages.value = extractNoteImagesFromHtml(form.descriptionHtml);
-  form.category = event.category ?? '';
+  form.category = normalizeEventCategory(event.category);
   form.locationText = event.locationText ?? '';
   form.locationLat = event.locationLat ?? null;
   form.locationLng = event.locationLng ?? null;
@@ -1853,7 +1845,7 @@ const applyParsedResult = async (result: Record<string, any>) => {
   }
   const category = pick<string>('category', 'category');
   if (category) {
-    form.category = category;
+    form.category = normalizeEventCategory(category);
     pasteFilledFields.value.push('カテゴリ');
   }
   const locationText = pick<string>('locationText', 'location_text');
@@ -2092,7 +2084,7 @@ const downscaleImageFile = (file: File) =>
           }
 
           if (blob.size > MAX_COVER_UPLOAD_SIZE) {
-            // 最终のフォールバック：さらに解像度を下げる
+            // 最終のフォールバック：さらに解像度を下げる
             targetWidth = Math.max(1, Math.floor(targetWidth * 0.75));
             targetHeight = Math.round(targetWidth / TARGET_ASPECT);
             blob = await compressOnce(targetWidth, targetHeight, COVER_FALLBACK_QUALITY);
@@ -2635,13 +2627,14 @@ const applyFormDraftFromStorage = async () => {
     if (Array.isArray(saved?.covers) && saved.covers.length) {
       await restoreCoverDraft(saved.covers);
     }
+    form.category = normalizeEventCategory(form.category);
   } catch (err) {
     console.warn('Failed to restore form draft', err);
   }
 };
 
 const openCategorySheet = () => {
-  categoryDraft.value = form.category || '';
+  categoryDraft.value = normalizeEventCategory(form.category);
   showCategorySheet.value = true;
 };
 
@@ -2650,7 +2643,7 @@ const closeCategorySheet = () => {
 };
 
 const confirmCategorySheet = () => {
-  form.category = categoryDraft.value;
+  form.category = normalizeEventCategory(categoryDraft.value);
   closeCategorySheet();
 };
 
@@ -3116,7 +3109,7 @@ const applyAssistantDraftFromStorage = () => {
       form.ticketPrice = Number.isFinite(parsed) ? parsed : form.ticketPrice;
     }
     if (stored?.category && !form.category) {
-      form.category = stored.category;
+      form.category = normalizeEventCategory(stored.category);
     }
     aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
     return true;
@@ -4322,6 +4315,11 @@ select {
   padding: 16px 20px;
   font-size: 14px;
   font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .field-sheet-head button {
@@ -4337,13 +4335,14 @@ select {
 }
 
 .field-sheet-body {
-  padding: 0 20px 20px;
+  padding: 12px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scroll-padding-top: 64px;
 }
 
 .field-sheet-body input,

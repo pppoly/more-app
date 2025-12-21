@@ -31,7 +31,7 @@ function isMobile() {
     return true;
   }
   const ua = navigator.userAgent || '';
-  // 更宽容的移动检测，适配 LIFF / WebView 等内嵌浏览器
+  // モバイル判定を緩め、LIFF / WebView などの内蔵ブラウザに対応
   return window.innerWidth < 1024 || /Mobile|Android|iPhone|iPod|iPad|Line/i.test(ua);
 }
 
@@ -65,13 +65,13 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: DesktopLanding,
-    meta: { desktopOnly: true, devPageName: '桌面首页' },
+    meta: { desktopOnly: true, devPageName: 'デスクトップホーム' },
   },
   {
     path: '/desktop-home',
     name: 'legacy-home',
     component: Home,
-    meta: { desktopOnly: true, devPageName: '旧版桌面' },
+    meta: { desktopOnly: true, devPageName: '旧デスクトップ' },
   },
   {
     path: '/events',
@@ -83,7 +83,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideShellActions: true,
       keepAlive: true,
-      devPageName: '活动列表',
+      devPageName: 'イベント一覧',
     },
   },
   {
@@ -99,7 +99,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '活动详情',
+      devPageName: 'イベント詳細',
     },
     props: true,
   },
@@ -114,7 +114,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '活动报名',
+      devPageName: 'イベント申込',
     },
     props: true,
   },
@@ -129,7 +129,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '活动报名确认',
+      devPageName: '申込確認',
     },
     props: true,
   },
@@ -144,7 +144,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '活动报名成功',
+      devPageName: '申込完了',
     },
     props: true,
   },
@@ -158,7 +158,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '登录',
+      devPageName: 'ログイン',
     },
   },
   {
@@ -187,7 +187,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
-      devPageName: '资料确认',
+      devPageName: 'プロフィール設定',
     },
   },
   {
@@ -195,11 +195,11 @@ const routes: RouteRecordRaw[] = [
     name: 'MobileStaff',
     component: () => import('../views/mobile/MobileStaff.vue'),
     meta: {
-      title: '员工管理',
+      title: 'スタッフ管理',
       layout: 'mobile-user',
       mobileOnly: true,
       requiresAdmin: true,
-      devPageName: '员工管理',
+      devPageName: 'スタッフ管理',
     },
   },
   {
@@ -226,7 +226,7 @@ const routes: RouteRecordRaw[] = [
       flushContent: true,
       fixedPage: true,
       hideShellHeader: true,
-      devPageName: '我的主页',
+      devPageName: 'マイページ',
     },
   },
   {
@@ -240,7 +240,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
-      devPageName: '设置',
+      devPageName: '設定',
     },
   },
   {
@@ -254,7 +254,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
-      devPageName: '社群广场',
+      devPageName: 'コミュニティ広場',
     },
   },
   {
@@ -264,7 +264,7 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresOrganizer: true,
       layout: 'console-mobile',
-      devPageName: 'Console 移动壳',
+      devPageName: 'Console モバイルシェル',
     },
     children: [
       {
@@ -273,7 +273,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
         meta: {
           title: 'コミュニティ管理',
-          devPageName: 'Console-首页',
+          devPageName: 'Console-ホーム',
           hideShellHeader: true,
           flushContent: true,
         },
@@ -285,7 +285,7 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: 'コミュニティイベント',
-          devPageName: 'Console-社区活动',
+          devPageName: 'Console-コミュニティイベント',
           hideShellHeader: true,
           flushContent: true,
         },
@@ -300,7 +300,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-教室列表',
+          devPageName: 'Console-教室一覧',
         },
       },
       {
@@ -313,7 +313,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-教室表单',
+          devPageName: 'Console-教室フォーム',
         },
       },
       {
@@ -354,7 +354,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-创建社群',
+          devPageName: 'Console-コミュニティ作成',
         },
       },
       {
@@ -368,7 +368,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           flushContent: true,
           layout: 'console-mobile',
-          devPageName: 'Console-粘贴草案',
+          devPageName: 'Console-下書き貼り付け',
         },
       },
       {
@@ -383,7 +383,7 @@ const routes: RouteRecordRaw[] = [
           fixedPage: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-活动助手',
+          devPageName: 'Console-イベントアシスタント',
         },
       },
       {
@@ -396,7 +396,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           flushContent: true,
-          devPageName: 'Console-助手面板',
+          devPageName: 'Console-アシスタントダッシュボード',
         },
       },
       {
@@ -409,7 +409,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           flushContent: true,
-          devPageName: 'Console-助手履歴',
+          devPageName: 'Console-アシスタント履歴',
         },
       },
       {
@@ -423,7 +423,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-活动表单',
+          devPageName: 'Console-イベントフォーム',
         },
       },
       {
@@ -436,7 +436,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-活动详情编辑',
+          devPageName: 'Console-イベント詳細編集',
         },
       },
       {
@@ -448,7 +448,7 @@ const routes: RouteRecordRaw[] = [
           title: 'コミュニティ設定',
           hideTabbar: true,
           hideShellHeader: true,
-          devPageName: 'Console-社群設定',
+          devPageName: 'Console-コミュニティ設定',
           flushContent: true,
         },
       },
@@ -461,7 +461,7 @@ const routes: RouteRecordRaw[] = [
           title: 'ポータル設定',
           hideTabbar: true,
           hideShellHeader: true,
-          devPageName: 'Console-门户模板',
+          devPageName: 'Console-ポータルテンプレート',
           flushContent: true,
           layout: 'console-mobile',
         },
@@ -472,7 +472,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
         meta: {
           title: 'イベント管理',
-          devPageName: 'Console-活动管理',
+          devPageName: 'Console-イベント管理',
           hideShellHeader: true,
           hideTabbar: true,
           flushContent: true,
@@ -488,7 +488,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-活动发布成功',
+          devPageName: 'Console-公開完了',
         },
       },
       {
@@ -497,7 +497,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/PayoutSettingsMobile.vue'),
         meta: {
           title: 'コミュニティ財務',
-          devPageName: 'Console-收款设置',
+          devPageName: 'Console-受け取り設定',
           flushContent: true,
           hideShellHeader: true,
           layout: 'console-mobile',
@@ -511,7 +511,7 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: '決済履歴',
-          devPageName: 'Console-收款流水',
+          devPageName: 'Console-決済履歴',
           hideTabbar: true,
           hideShellHeader: true,
           flushContent: true,
@@ -525,7 +525,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
         meta: {
           title: 'サブスクリプション',
-          devPageName: 'Console-订阅管理',
+          devPageName: 'Console-サブスク管理',
           hideShellHeader: true,
           hideTabbar: true,
           flushContent: true,
@@ -542,7 +542,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           layout: 'console-mobile',
           flushContent: true,
-          devPageName: 'Console-验票扫码',
+          devPageName: 'Console-チケットスキャン',
         },
       },
     ],
@@ -552,7 +552,7 @@ const routes: RouteRecordRaw[] = [
     name: 'ConsoleMobileSubscriptionStandalone',
     component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
     meta: {
-      devPageName: 'Console-订阅管理-独立',
+      devPageName: 'Console-サブスク管理（独立）',
       hideTabbar: true,
       hideShellHeader: true,
       layout: 'console-mobile',
@@ -562,7 +562,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/console-desktop',
     component: ConsoleAccessLayout,
-    meta: { requiresAuth: true, requiresOrganizer: true, devPageName: 'Console 桌面壳' },
+    meta: { requiresAuth: true, requiresOrganizer: true, devPageName: 'Console デスクトップシェル' },
     children: [
       {
         path: '',
@@ -582,19 +582,19 @@ const routes: RouteRecordRaw[] = [
           }
           return next();
         },
-        meta: { devPageName: 'Console 桌面首页' },
+        meta: { devPageName: 'Console デスクトップホーム' },
       },
       {
         path: 'communities',
         name: 'console-communities',
         component: CommunityList,
-        meta: { devPageName: 'Console-社群列表' },
+        meta: { devPageName: 'Console-コミュニティ一覧' },
       },
       {
         path: 'communities/new',
         name: 'console-community-create',
         component: CommunityForm,
-        meta: { devPageName: 'Console-创建社群' },
+        meta: { devPageName: 'Console-コミュニティ作成' },
       },
       {
         path: 'communities/:communityId/edit',
@@ -602,7 +602,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityForm,
         props: true,
         beforeEnter: communityRouteGuard,
-        meta: { devPageName: 'Console-编辑社群' },
+        meta: { devPageName: 'Console-コミュニティ編集' },
       },
       {
         path: 'communities/:communityId/events',
@@ -610,7 +610,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityEvents,
         props: true,
         beforeEnter: communityRouteGuard,
-        meta: { devPageName: 'Console-活动列表' },
+        meta: { devPageName: 'Console-イベント一覧' },
       },
       {
         path: 'communities/:communityId/finance',
@@ -618,7 +618,7 @@ const routes: RouteRecordRaw[] = [
         component: CommunityFinance,
         props: true,
         beforeEnter: communityRouteGuard,
-        meta: { devPageName: 'Console-财务' },
+        meta: { devPageName: 'Console-財務' },
       },
       {
         path: 'communities/:communityId/events/create',
@@ -626,21 +626,21 @@ const routes: RouteRecordRaw[] = [
         component: EventForm,
         props: true,
         beforeEnter: communityRouteGuard,
-        meta: { devPageName: 'Console-创建活动' },
+        meta: { devPageName: 'Console-イベント作成' },
       },
       {
         path: 'events/:eventId/edit',
         name: 'console-event-edit',
         component: EventForm,
         props: true,
-        meta: { devPageName: 'Console-编辑活动' },
+        meta: { devPageName: 'Console-イベント編集' },
       },
       {
         path: 'events/:eventId/registrations',
         name: 'console-event-registrations',
         component: EventRegistrations,
         props: true,
-        meta: { devPageName: 'Console-报名列表' },
+        meta: { devPageName: 'Console-申込一覧' },
       },
     ],
   },
@@ -653,7 +653,7 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       hideShellHeader: true,
       flushContent: true,
-      devPageName: '管理员后台',
+      devPageName: '管理者ホーム',
     },
   },
   {
@@ -665,7 +665,7 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       hideShellHeader: true,
       flushContent: true,
-      devPageName: '资源配置',
+      devPageName: 'リソース設定',
     },
   },
   {
@@ -676,7 +676,7 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       hideShellHeader: true,
-      devPageName: '资源配置详情',
+      devPageName: 'リソース設定詳細',
     },
     props: true,
   },
@@ -684,7 +684,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/ai',
     name: 'admin-ai-overview',
     component: () => import('../views/admin/AdminAiOverview.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 使用概览' },
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 利用概要' },
   },
   {
     path: '/admin/ai/console',
@@ -695,7 +695,7 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: true,
       hideShellHeader: true,
       flushContent: true,
-      devPageName: 'AI 控制台',
+      devPageName: 'AI コンソール',
     },
   },
   {
@@ -714,14 +714,14 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/ai/:moduleId',
     name: 'admin-ai-detail',
     component: () => import('../views/admin/AdminAiModuleDetail.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 使用详情' },
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 利用詳細' },
     props: true,
   },
   {
     path: '/admin/events/reviews',
     name: 'admin-event-reviews',
     component: () => import('../views/admin/AdminEventReviews.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '事件審査' },
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'イベント審査' },
   },
   {
     path: '/admin/payments',
@@ -758,7 +758,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       mobileOnly: true,
       flushContent: true,
-      devPageName: '社群门户',
+      devPageName: 'コミュニティポータル',
     },
   },
   {
@@ -771,7 +771,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       mobileOnly: true,
       flushContent: true,
-      devPageName: '社区教室列表',
+      devPageName: 'コミュニティ教室一覧',
     },
     props: true,
   },
@@ -785,7 +785,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       mobileOnly: true,
       flushContent: true,
-      devPageName: '社区教室详情',
+      devPageName: 'コミュニティ教室詳細',
     },
     props: true,
   },
@@ -795,7 +795,7 @@ const routes: RouteRecordRaw[] = [
     component: MyEvents,
     meta: {
       title: 'マイイベント',
-      devPageName: '我的活动',
+      devPageName: 'マイイベント',
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
@@ -823,7 +823,7 @@ const routes: RouteRecordRaw[] = [
     name: 'auth-callback',
     component: AuthCallback,
     meta: {
-      devPageName: '登录回调',
+      devPageName: 'ログインコールバック',
     },
   },
   {
@@ -831,7 +831,7 @@ const routes: RouteRecordRaw[] = [
     name: 'payment-success',
     component: PaymentSuccess,
     meta: {
-      devPageName: '支付成功',
+      devPageName: '決済成功',
       title: '申込完了',
     },
   },
@@ -840,7 +840,7 @@ const routes: RouteRecordRaw[] = [
     name: 'payment-cancel',
     component: PaymentCancel,
     meta: {
-      devPageName: '支付取消',
+      devPageName: '決済キャンセル',
       title: '申込未完了',
     },
   },
@@ -849,7 +849,7 @@ const routes: RouteRecordRaw[] = [
     name: 'payment-return',
     component: PaymentReturn,
     meta: {
-      devPageName: '支付返回',
+      devPageName: '決済結果',
       title: 'お支払い結果',
       hideShellHeader: true,
       hideTabbar: true,
@@ -862,7 +862,7 @@ const routes: RouteRecordRaw[] = [
     name: 'payment-return-liff',
     component: PaymentReturn,
     meta: {
-      devPageName: '支付返回(LIFF)',
+      devPageName: '決済結果(LIFF)',
       title: 'お支払い結果',
       hideShellHeader: true,
       hideTabbar: true,
@@ -875,7 +875,8 @@ const routes: RouteRecordRaw[] = [
     name: 'console-stripe-return',
     component: StripeReturn,
     meta: {
-      devPageName: 'Stripe 返回页',
+      devPageName: 'Stripe 戻りページ',
+      title: 'Stripe連携',
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
@@ -895,7 +896,7 @@ const resolvePageTitle = (to: any) => {
 const applyPageTitle = async (to: any) => {
   if (typeof document === 'undefined') return;
   const pageTitle = resolvePageTitle(to);
-  const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE !== 'false'; // 默认禁用，显式设置 false 才启用
+  const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE !== 'false'; // デフォルトは無効。明示的に false のときのみ有効。
   document.title = isLineInAppBrowser() ? pageTitle : `${pageTitle} | ${APP_NAME}`;
   if (disableLiffTitle) return;
   if (isLineInAppBrowser()) {

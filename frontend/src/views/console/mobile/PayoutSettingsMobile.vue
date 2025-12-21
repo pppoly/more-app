@@ -13,7 +13,7 @@
       <div class="hero">
         <p class="hero-label">受け取り可能（Stripe残高）</p>
         <p class="hero-value">{{ formatYen(balanceNet) }}</p>
-        <p class="hero-sub">待結算 {{ formatYen(pendingAmount) }} ・ 確定収入 {{ formatYen(balanceGross) }}</p>
+        <p class="hero-sub">保留中 {{ formatYen(pendingAmount) }} ・ 確定収入 {{ formatYen(balanceGross) }}</p>
       </div>
       <div class="kpi-grid">
         <article class="kpi">
@@ -46,6 +46,7 @@
       <button class="btn primary" type="button" :disabled="!communityId" @click="goPayments">
         取引履歴を見る
       </button>
+      <button class="btn outline" type="button" disabled>出金する（準備中）</button>
       <button class="btn ghost" type="button" :disabled="onboarding" @click="handleOnboarding">
         {{ onboarding ? '移動中…' : '受け取り情報を更新' }}
       </button>
@@ -94,7 +95,7 @@ const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrow
 const stripeReady = computed(
   () => !!community.value?.stripeAccountId && (community.value?.stripeAccountOnboarded ?? true),
 );
-const pageTitle = computed(() => '社群財務');
+const pageTitle = computed(() => 'コミュニティ財務');
 
 const status = computed(() => {
   if (stripeReady.value) {

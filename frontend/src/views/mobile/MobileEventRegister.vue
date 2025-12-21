@@ -215,10 +215,10 @@ const derivePriceText = (target: EventDetail | null) => {
 
 const resolveErrorMessage = (err: unknown, fallback: string) => {
   if (isAxiosError(err)) {
-    return '提交失败，请稍后再试';
+    return '送信に失敗しました。時間をおいて再試行してください。';
   }
   if (err instanceof Error) {
-    return '提交失败，请稍后再试';
+    return '送信に失敗しました。時間をおいて再試行してください。';
   }
   return fallback;
 };
@@ -326,7 +326,7 @@ const loadEvent = async () => {
     initializeFormValues();
     applyDraftAnswers();
   } catch (err) {
-    error.value = '活动信息加载失败，请稍后再试';
+    error.value = 'イベント情報の読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -429,7 +429,7 @@ const submitFreeRegistration = async () => {
       goToSuccessPage(payload);
     }
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = '申込に失敗しました。時間をおいて再試行してください。';
   } finally {
     submittingInline.value = false;
   }

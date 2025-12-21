@@ -236,6 +236,8 @@ const displayTitle = (title: any) => {
   padding: 12px;
   line-height: 1.5;
   text-align: left;
+  display: flex;
+  align-items: center;
 }
 .info-text {
   margin: 0;

@@ -79,7 +79,9 @@
                     <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item) }}</span>
                     <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
                     <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
-                    <span class="ticket-card__badge" :class="paymentClass(item)">{{ paymentLabel(item) }}</span>
+                    <span v-if="paymentBadgeLabel(item)" class="ticket-card__badge" :class="paymentClass(item)">
+                      {{ paymentBadgeLabel(item) }}
+                    </span>
                   </div>
                   <p v-if="refundNotice(item)" class="ticket-card__notice">{{ refundNotice(item) }}</p>
                 </div>
@@ -105,9 +107,7 @@
     <Transition name="qr-fade">
       <section v-if="qrVisible && qrTicket" class="ticket-qr-overlay" @click.self="closeTicketQr">
         <article class="ticket-qr-modal">
-          <button type="button" class="qr-close" @click="closeTicketQr">
-            <span class="i-lucide-x"></span>
-          </button>
+          <button type="button" class="qr-close" @click="closeTicketQr">X</button>
           <p class="qr-title">QRコードを表示</p>
           <p class="qr-subtitle">{{ getLocalizedText(qrTicket.event.title) }}</p>
           <canvas ref="qrCanvas" class="qr-canvas"></canvas>
@@ -399,6 +399,14 @@ const attendanceClass = (item: MyEventItem) => {
   if (isExpired(item)) return 'badge--void';
   if (isUpcoming(item)) return 'badge--upcoming';
   return 'badge--pending';
+};
+
+const paymentBadgeLabel = (item: MyEventItem) => {
+  const label = paymentLabel(item);
+  if (!label) return '';
+  if (label === statusLabel(item)) return '';
+  if (label === attendanceLabel(item)) return '';
+  return label;
 };
 
 const emptyStateTitle = computed(() => {

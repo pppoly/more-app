@@ -27,7 +27,7 @@
             </span>
           </div>
           <p class="meta">更新: {{ formatDate(item.updatedAt) }}</p>
-          <p class="meta">创建: {{ formatDate(item.createdAt) }}</p>
+          <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
           <div class="actions">
             <button class="ghost" type="button" @click="openPrompt(item.id)">詳細</button>
           </div>

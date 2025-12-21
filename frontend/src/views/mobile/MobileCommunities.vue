@@ -104,11 +104,11 @@ const classifyCommunities = (items: MyCommunityItem[]) => {
     const daysSinceActive = lastActive ? (now - lastActive) / (1000 * 60 * 60 * 24) : null;
     const target = daysSinceActive !== null && daysSinceActive <= 30 ? active : quiet;
     const imageUrl = resolveImage(
-      (item as any).imageUrl ||
+      (item as any).logoImageUrl ||
         item.avatarUrl ||
-        item.coverImage ||
+        (item as any).imageUrl ||
         (item as any).coverImageUrl ||
-        (item as any).logoImageUrl ||
+        item.coverImage ||
         runtimeDefaultAvatar,
     );
     target.push({
@@ -116,7 +116,7 @@ const classifyCommunities = (items: MyCommunityItem[]) => {
       name: item.name,
       slug: item.slug,
       avatarUrl: item.avatarUrl || null,
-      coverImage: item.coverImage || (item as any).coverImageUrl || (item as any).logoImageUrl || null,
+      coverImage: item.coverImage || (item as any).coverImageUrl || null,
       imageUrl: imageUrl || runtimeDefaultAvatar,
       statusLine:
         item.lastEventAt && new Date(item.lastEventAt).toString() !== 'Invalid Date'

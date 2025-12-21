@@ -66,6 +66,7 @@ import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { getEventStatus } from '../../utils/eventStatus';
+import { EVENT_CATEGORY_OPTIONS, normalizeEventCategory } from '../../utils/eventCategory';
 import brandLogoUrl from '../../assets/images/logo1.svg';
 
 const router = useRouter();
@@ -77,11 +78,7 @@ const error = ref<string | null>(null);
 const searchTerm = ref('');
 const categories = [
   { label: '全部', value: 'all' },
-  { label: '親子', value: 'kids' },
-  { label: 'スポーツ', value: 'sports' },
-  { label: '言語交換', value: 'language' },
-  { label: '新来日本', value: 'newlife' },
-  { label: '仕事・スキル', value: 'career' },
+  ...EVENT_CATEGORY_OPTIONS.map((cat) => ({ label: cat.label, value: cat.value })),
 ];
 const selectedCategory = ref('all');
 
@@ -91,7 +88,8 @@ const loadEvents = async () => {
   try {
     events.value = await fetchEvents();
   } catch (err) {
-    error.value = err instanceof Error ? '活动加载失败，请稍后重试' : '活动加载失败，请稍后重试';
+    error.value =
+      err instanceof Error ? 'イベントの読み込みに失敗しました。時間をおいて再試行してください。' : 'イベントの読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -100,8 +98,8 @@ const loadEvents = async () => {
 const filteredEvents = computed(() => {
   const keyword = searchTerm.value.toLowerCase();
   return events.value.filter((event) => {
-    const category = (event.category || 'other').toLowerCase();
-    const matchesCategory = selectedCategory.value === 'all' || category.includes(selectedCategory.value);
+    const category = normalizeEventCategory(event.category);
+    const matchesCategory = selectedCategory.value === 'all' || category === selectedCategory.value;
     const title = titleFor(event).toLowerCase();
     const matchesKeyword = !keyword || title.includes(keyword) || event.locationText.toLowerCase().includes(keyword);
     return matchesCategory && matchesKeyword;

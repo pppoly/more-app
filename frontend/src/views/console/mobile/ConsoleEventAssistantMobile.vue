@@ -364,7 +364,7 @@ const assistantStatusText = computed(() => {
 });
 
 const profileDefaults = ref<EventAssistantProfileDefaults['defaults']>({
-  baseLanguage: 'zh',
+  baseLanguage: 'ja',
   topic: 'コミュニティイベント',
   audience: '地域の仲間',
   style: 'family-friendly',
@@ -586,7 +586,7 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
 };
 
 const detectLanguage = (text: string) => {
-  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+  if (/[ぁ-んァ-ン]/.test(text)) return 'ja';
   if (/[a-zA-Z]/.test(text)) return 'en';
   return 'ja';
 };

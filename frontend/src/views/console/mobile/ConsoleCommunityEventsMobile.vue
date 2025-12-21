@@ -67,7 +67,7 @@ const { user } = useAuth();
 
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
-// 默认展示「受付中」的事件
+// デフォルトは「受付中」のイベントを表示
 const activeFilter = ref('open');
 const filters = [
   { value: 'all', label: 'すべて' },
@@ -83,7 +83,7 @@ const showTopBar = computed(() => !isLiffClientMode.value);
 
 const normalizedEvents = computed(() =>
   events.value
-    .filter((event) => event.status !== 'cancelled') // 取消済みは一覧に表示しない
+    .filter((event) => event.status !== 'cancelled') // キャンセル済みは一覧に表示しない
     .map((event) => ({
       id: event.id,
       title: getLocalizedText(event.title),

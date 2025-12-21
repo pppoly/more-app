@@ -930,7 +930,7 @@ watch(
 }
 .tag-group-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -954,7 +954,7 @@ watch(
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #f8fafc;
   color: #0f172a;
-  font-size: 13px;
+  font-size: 15px;
 }
 .tag-chip.is-selected {
   border-color: rgba(14, 165, 233, 0.7);
@@ -993,18 +993,18 @@ watch(
 }
 .visible-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
 }
 .visible-desc {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: 15px;
   color: #475569;
 }
 .visible-note {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: 14px;
   color: #64748b;
 }
 .visible-pill {
@@ -1154,7 +1154,7 @@ watch(
 .tag-label {
   flex: 1;
   text-align: left;
-  font-size: 14px;
+  font-size: 15px;
 }
 .form-card textarea {
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1196,7 +1196,7 @@ watch(
 }
 .sheet-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -1242,6 +1242,7 @@ watch(
 .sheet-actions .ghost-btn,
 .sheet-actions .primary-btn {
   border-radius: 12px;
+  font-size: 16px;
 }
 .sheet-panel--full {
   height: 90vh;

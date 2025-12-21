@@ -2,13 +2,13 @@
   <main class="admin-home">
     <header class="page-head">
       <div>
-        <p class="eyebrow">SOCIALMORE · 管理台</p>
+        <p class="eyebrow">SOCIALMORE · 管理コンソール</p>
         <h1>コントロールセンター</h1>
-        <p class="subhead">审核・运营・财务，一站式入口</p>
+        <p class="subhead">審査・運用・財務をまとめて管理</p>
       </div>
       <div class="meta">
         <div class="meta-item">
-          <p>宪法版本</p>
+          <p>憲法バージョン</p>
           <strong>{{ constitutionMeta.version }}</strong>
         </div>
         <div class="meta-item">
@@ -46,13 +46,13 @@
       <header class="section-head">
         <div>
           <p class="section-eyebrow">ルール</p>
-          <h2>AI 宪法</h2>
+          <h2>AI 憲法</h2>
         </div>
       </header>
       <div class="entry-list">
         <button class="entry" type="button" @click="openConstitutionSheet">
           <div>
-            <p class="entry-title">AI 宪法全文</p>
+            <p class="entry-title">AI 憲法全文</p>
             <p class="entry-desc">{{ constitutionSummary }}</p>
           </div>
           <span class="i-lucide-chevron-right"></span>
@@ -64,7 +64,7 @@
       <div class="sheet-body">
         <header class="sheet-head">
           <div>
-            <p class="section-eyebrow">SOCIALMORE AI 宪法</p>
+            <p class="section-eyebrow">SOCIALMORE AI 憲法</p>
             <h2>全文</h2>
           </div>
           <button type="button" class="icon-button" @click="closeConstitutionSheet">
@@ -103,21 +103,21 @@ const constitutionSummary = computed(() => {
 const sections = [
   {
     id: 'review',
-    eyebrow: '审核',
-    title: '内容与事件',
+    eyebrow: '審査',
+    title: 'コンテンツとイベント',
     items: [
-      { id: 'event-reviews', title: '事件審査', desc: 'pending / rejected 审核', route: { name: 'admin-event-reviews' } },
-      { id: 'events', title: '事件列表', desc: '状态筛选 · 关闭/取消', route: { name: 'admin-events' } },
+      { id: 'event-reviews', title: 'イベント審査', desc: 'pending / rejected の審査', route: { name: 'admin-event-reviews' } },
+      { id: 'events', title: 'イベント一覧', desc: 'ステータス絞り込み · 終了/キャンセル', route: { name: 'admin-events' } },
     ],
   },
   {
     id: 'ops',
-    eyebrow: '运营',
-    title: '用户 · 主理人 · 社群 · 活动',
+    eyebrow: '運用',
+    title: 'ユーザー・主催者・コミュニティ・イベント',
     items: [
-      { id: 'users', title: '用户管理', desc: '封禁 / 启用 / 角色', route: { name: 'admin-users' } },
-      { id: 'communities', title: '社群管理', desc: '状态 / 定价 / 禁用', route: { name: 'admin-communities' } },
-      { id: 'events', title: '活动管理', desc: '生命周期控制', route: { name: 'admin-events' } },
+      { id: 'users', title: 'ユーザー管理', desc: '停止 / 有効化 / 役割', route: { name: 'admin-users' } },
+      { id: 'communities', title: 'コミュニティ管理', desc: 'ステータス / 価格 / 無効化', route: { name: 'admin-communities' } },
+      { id: 'events', title: 'イベント管理', desc: 'ライフサイクル管理', route: { name: 'admin-events' } },
     ],
   },
   {
@@ -125,16 +125,16 @@ const sections = [
     eyebrow: 'AI',
     title: 'AI 管理',
     items: [
-      { id: 'ai-console', title: 'AI 控制台', desc: '渲染 / 翻译 / 评测', route: { name: 'admin-ai-console' } },
-      { id: 'ai-prompts', title: 'Prompt 管理', desc: '查看 / 发布 Prompt', route: { name: 'admin-ai-prompts' } },
-      { id: 'ai-usage', title: 'AI 使用概览', desc: '调用数据与日志', route: { name: 'admin-ai-overview' } },
+      { id: 'ai-console', title: 'AI コンソール', desc: 'レンダリング / 翻訳 / 評価', route: { name: 'admin-ai-console' } },
+      { id: 'ai-prompts', title: 'Prompt 管理', desc: '閲覧 / 公開', route: { name: 'admin-ai-prompts' } },
+      { id: 'ai-usage', title: 'AI 利用概要', desc: '利用データとログ', route: { name: 'admin-ai-overview' } },
     ],
   },
   {
     id: 'finance',
-    eyebrow: '财务',
-    title: '支付与收入',
-    items: [{ id: 'payments', title: '決済モニター', desc: '平台费率 / 状态 / 退款', route: { name: 'admin-payments' } }],
+    eyebrow: '財務',
+    title: '決済と収益',
+    items: [{ id: 'payments', title: '決済モニター', desc: 'プラットフォーム手数料 / ステータス / 返金', route: { name: 'admin-payments' } }],
   },
 ];
 

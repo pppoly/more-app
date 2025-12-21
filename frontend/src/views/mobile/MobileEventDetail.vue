@@ -221,7 +221,11 @@
         <section class="event-section">
           <h2 class="m-section-title">About</h2>
           <div class="m-event-card event-about">
-            <div class="m-text-body prose prose-sm max-w-none event-about__content" v-html="detail.descriptionHtml"></div>
+            <div
+              class="m-text-body prose prose-sm max-w-none event-about__content"
+              v-html="detail.descriptionHtml"
+              @click="handleAboutClick"
+            ></div>
           </div>
         </section>
 
@@ -245,6 +249,13 @@
         <p v-if="ctaHint" class="cta-hint">{{ ctaHint }}</p>
         <pre v-if="showDebug" class="debug-state">{{ debugText }}</pre>
       </footer>
+
+      <Transition name="fade">
+        <div v-if="previewImage" class="image-preview" @click.self="previewImage = null">
+          <button class="preview-close" type="button" @click="previewImage = null"><span class="i-lucide-x"></span></button>
+          <img :src="previewImage" alt="preview" />
+        </div>
+      </Transition>
     </template>
 
     <div v-if="showAllParticipants" class="participant-backdrop" @click.self="closeAllParticipants">
@@ -298,6 +309,7 @@ import type {
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventCategoryLabel } from '../../utils/eventCategory';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
@@ -350,6 +362,7 @@ const paymentMessage = ref<string | null>(null);
 const isPaying = ref(false);
 const isRedirecting = ref(false);
 const formValues = reactive<Record<string, any>>({});
+const previewImage = ref<string | null>(null);
 const selectedDateId = ref<string | null>(null);
 const activeSlide = ref(0);
 const registrationItem = ref<MyEventItem | null>(null);
@@ -598,7 +611,7 @@ const detail = computed(() => {
     startTime: event.value.startTime,
     endTime: event.value.endTime,
     title: getLocalizedText(event.value.title, preferredLangs.value),
-    categoryLabel: event.value.category ?? 'イベント',
+    categoryLabel: getEventCategoryLabel(event.value.category, 'イベント'),
     timeFullText: `${start} 〜 ${end}`,
     locationText: event.value.locationText,
     coverUrl:
@@ -875,7 +888,7 @@ const shareEvent = async () => {
 
   const payload = { title: shareTitle, url: shareUrl };
 
-  // 1) 原生分享（优先）
+  // 1) ネイティブ共有（優先）
   if (navigator.share) {
     try {
       await navigator.share(payload);
@@ -886,12 +899,12 @@ const shareEvent = async () => {
     }
   }
 
-  // 2) LINE 分享页面（Web）
+  // 2) LINE 共有ページ（Web）
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   window.open(lineShareUrl, '_blank');
   showUiMessage('LINE で開きました');
 
-  // 3) 额外兜底复制
+  // 3) 追加のフォールバックとしてコピー
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(payload.url);
@@ -984,7 +997,7 @@ const toggleFollow = async () => {
       showUiMessage('フォローしました');
     }
   } catch (err) {
-    showUiMessage(err instanceof Error ? err.message : '操作失败');
+    showUiMessage(err instanceof Error ? err.message : '操作に失敗しました');
   }
 };
 
@@ -1069,7 +1082,18 @@ const openMap = () => {
 const openActiveImage = () => {
   const url = activeSlideImage.value;
   if (!url) return;
-  window.open(url, '_blank');
+  previewImage.value = url;
+};
+
+const handleAboutClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  const img = target.closest('img');
+  if (img) {
+    event.preventDefault();
+    event.stopPropagation();
+    previewImage.value = (img as HTMLImageElement).currentSrc || img.getAttribute('src') || '';
+  }
 };
 
 const openBookingSheet = () => {
@@ -1174,7 +1198,7 @@ const handleMockPayment = async () => {
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
     await followIfNeeded();
   } catch (err) {
-    registrationError.value = '支付失败，请稍后再试';
+    registrationError.value = '決済に失敗しました。時間をおいて再試行してください。';
   } finally {
     isPaying.value = false;
   }
@@ -1521,6 +1545,9 @@ watch(
   font-weight: 600;
   color: #055160;
   background: #cffafe;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 
 .event-schedule__cta {
@@ -1874,16 +1901,6 @@ watch(
   max-width: 100%;
   height: auto;
   object-fit: contain;
-  border-radius: 12px;
-  background: #f4f5f7;
-  padding: 8px;
-  box-sizing: border-box;
-}
-.m-text-body a img {
-  border: none;
-  padding: 0;
-  background: transparent;
-  object-fit: contain;
 }
 
 .event-about {
@@ -1924,6 +1941,35 @@ watch(
   border: none;
   padding: 0;
   background: transparent;
+}
+
+.image-preview {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  padding: 24px;
+}
+.image-preview img {
+  max-width: 100%;
+  max-height: 90vh;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.preview-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
 }
 
 .group-name {

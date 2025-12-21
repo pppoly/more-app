@@ -41,7 +41,7 @@ const router = useRouter();
 const showTopBar = computed(() => !isLineInAppBrowser());
 
 onMounted(() => {
-  // 清理成功页数据，若无来源则回到列表
+  // 成功ページのデータをクリアし、参照元がなければ一覧へ戻る
   try {
     const raw = sessionStorage.getItem(MOBILE_EVENT_SUCCESS_KEY);
     if (!raw) {
@@ -62,8 +62,9 @@ onMounted(() => {
   background: #f8fafc;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px 16px calc(32px + env(safe-area-inset-bottom, 0px));
+  justify-content: flex-start;
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  gap: 12px;
   box-sizing: border-box;
 }
 

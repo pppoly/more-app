@@ -3,12 +3,13 @@ import { i18n, messages } from '../i18n';
 
 const STORAGE_KEY = 'app.locale';
 
-const supportedLocales = Object.keys(messages);
+const BLOCKED_LOCALES = new Set(['zh', 'zh-tw']);
+const supportedLocales = Object.keys(messages).filter((locale) => !BLOCKED_LOCALES.has(locale));
 const defaultLocale = 'ja';
 
 const buildPreferredLangs = (locale: string) => {
-  const fallbacks = [defaultLocale, 'en', 'zh'];
-  return Array.from(new Set([locale, ...fallbacks]));
+  const fallbacks = [defaultLocale, 'en'];
+  return Array.from(new Set([locale, ...fallbacks].filter((lang) => !BLOCKED_LOCALES.has(lang))));
 };
 
 function loadLocale() {

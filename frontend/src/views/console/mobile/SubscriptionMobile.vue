@@ -4,8 +4,8 @@
       <header class="beta-banner">
         <span class="badge">β</span>
         <div>
-          <p class="beta-title">βテスト中</p>
-          <p class="beta-desc">将来有料となる機能を、現在は無料で利用できます</p>
+          <p class="beta-title">現在は無料（βテスト中）</p>
+          <p class="beta-desc">安心してご利用ください。</p>
         </div>
       </header>
 
@@ -13,43 +13,34 @@
         <section class="status-card">
           <p class="eyebrow">現在の利用状況</p>
           <div class="status-pill">Free（βテスト）</div>
-          <p class="status-copy">
-            今は内測期間のため、通常は有料となる機能も無料で利用できます。事前にお知らせなく課金することはありません。
-          </p>
-          <p class="status-hint">安心してイベント運営を続けてください。</p>
+          <div class="plan-lines">
+            <p class="plan-line"><strong>プラン：</strong>Free（βテスト）</p>
+            <p class="plan-line"><strong>課金：</strong>なし</p>
+          </div>
+        </section>
+
+        <section class="assure-card">
+          <p class="assure-title">事前の通知なしに課金されることはありません</p>
+          <p class="assure-desc">β期間中は無料です。安心してお試しください。</p>
         </section>
 
         <section class="future-card">
           <div class="future-head">
-            <p class="eyebrow">将来予定のプラン（参考）</p>
+            <p class="eyebrow">正式リリースについて</p>
           </div>
-          <ul class="future-list">
-            <li>
-              <div class="future-name">Starter（予定）</div>
-              <div class="future-meta">月額 ¥2,480 / 小〜中規模向け</div>
-            </li>
-            <li>
-              <div class="future-name">Pro（予定）</div>
-              <div class="future-meta">月額 ¥9,800 / 本格運用・収益化向け</div>
-            </li>
-            <li>
-              <div class="future-name">Enterprise</div>
-              <div class="future-meta">お問い合わせ</div>
-            </li>
-          </ul>
-          <p class="fine-print">※ 正式リリース時に内容・価格が変更される可能性があります</p>
+          <p class="future-note">正式リリース時にご案内予定です。価格はまだ決まっていません。</p>
         </section>
 
         <section class="perk-card">
           <div class="perk-icon">⭐</div>
           <div>
-            <p class="perk-title">早期主催者特典</p>
-            <p class="perk-desc">βテスト参加者には、正式リリース時の優遇を予定しています。</p>
+            <p class="perk-title">早期主催者向けのご案内</p>
+            <p class="perk-desc">βにご参加いただいた方向けの優遇を検討しています。</p>
           </div>
         </section>
 
         <button class="secondary cta-continue" type="button" @click="router.back()">
-          このまま使う
+          無料で続ける
         </button>
       </main>
     </template>
@@ -763,6 +754,16 @@ const confirmPayment = async () => {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(15, 23, 42, 0.06);
 }
+.plan-lines {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.plan-line {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+}
 .status-pill {
   display: inline-flex;
   padding: 8px 14px;
@@ -783,6 +784,23 @@ const confirmPayment = async () => {
   color: #475569;
   font-size: 13px;
 }
+.assure-card {
+  background: #0f172a;
+  color: #fff;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
+}
+.assure-title {
+  margin: 0 0 4px;
+  font-weight: 800;
+  font-size: 15px;
+}
+.assure-desc {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.86);
+}
 .future-card {
   background: #f8fafc;
   border: 1px dashed rgba(15, 23, 42, 0.15);
@@ -794,20 +812,11 @@ const confirmPayment = async () => {
 .future-head .eyebrow {
   margin: 0 0 4px;
 }
-.future-list {
-  list-style: none;
+.future-note {
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-.future-name {
-  font-weight: 800;
-  color: #0f172a;
-}
-.future-meta {
-  color: #475569;
   font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
 }
 .fine-print {
   margin: 2px 0 0;

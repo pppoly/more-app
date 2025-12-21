@@ -7,7 +7,7 @@ interface LocalizedField {
 
 export function getLocalizedText(
   field: LocalizedField | null | undefined,
-  preferredLangs: string[] = ['ja', 'zh', 'en'],
+  preferredLangs: string[] = ['ja', 'en'],
 ): string {
   if (!field) {
     return '';

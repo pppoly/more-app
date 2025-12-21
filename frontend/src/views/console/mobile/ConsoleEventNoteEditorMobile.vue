@@ -225,6 +225,17 @@ const captureCaret = (blockId: string, event: Event) => {
   selectedImageId.value = null;
 };
 
+const openFilePicker = () => {
+  const input = fileInputRef.value;
+  if (!input) return;
+  const showPicker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+  if (typeof showPicker === 'function') {
+    showPicker.call(input);
+    return;
+  }
+  input.click();
+};
+
 const triggerImagePicker = (blockId: string | null, position: 'before' | 'after' = 'after') => {
   const firstText = blocks.value.find((b) => b.type === 'text');
   const targetId = blockId || lastFocusedTextId.value || firstText?.id || null;
@@ -233,7 +244,7 @@ const triggerImagePicker = (blockId: string | null, position: 'before' | 'after'
     statusMessage.value = '画像は最大9枚まで追加できます';
     return;
   }
-  fileInputRef.value?.click();
+  openFilePicker();
 };
 
 const readFileAsDataUrl = (file: File) =>
@@ -329,7 +340,7 @@ const insertImageAtCursor = (src: string, blockId: string | null, position: 'bef
   if (after && !after.startsWith('\n')) {
     after = `\n${after}`;
   }
-  // 先更新当前块为前半段（可为空）
+  // 先に現在のブロックを前半に更新（空でも可）
   blocks.value[index] = { ...target, value: before };
   const newId = createId();
   // 画像ブロックをその直後に入れる
@@ -634,7 +645,12 @@ const focusBody = () => {
 }
 
 .hidden-input {
-  display: none;
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
 .note-floating-actions {

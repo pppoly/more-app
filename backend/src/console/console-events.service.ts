@@ -281,6 +281,59 @@ export class ConsoleEventsService {
     return { registrationId, status: 'rejected' };
   }
 
+  async cancelRegistration(
+    userId: string,
+    eventId: string,
+    registrationId: string,
+    options?: { reason?: string },
+  ) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registration = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      include: { payment: true },
+    });
+    if (!registration || registration.eventId !== eventId) {
+      throw new NotFoundException('Registration not found');
+    }
+    if (['cancelled', 'refunded'].includes(registration.status)) {
+      return { registrationId, status: registration.status };
+    }
+    if (['pending_refund', 'cancel_requested'].includes(registration.status)) {
+      return { registrationId, status: registration.status };
+    }
+
+    const payment =
+      registration.payment ??
+      (await this.prisma.payment.findFirst({ where: { registrationId: registration.id } }));
+
+    if (registration.paymentStatus === 'paid' && (registration.amount ?? 0) > 0) {
+      if (!payment) {
+        throw new BadRequestException('支払い情報が見つかりません');
+      }
+      await this.paymentsService.refundStripePayment(userId, payment.id, options?.reason);
+      return { registrationId, status: 'refunded', paymentId: payment.id };
+    }
+
+    if (payment && !['paid', 'refunded', 'cancelled'].includes(payment.status)) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'cancelled' },
+      });
+    }
+
+    await this.prisma.eventRegistration.update({
+      where: { id: registration.id },
+      data: {
+        status: 'cancelled',
+        paymentStatus: 'cancelled',
+        paidAmount: 0,
+        attended: false,
+        noShow: false,
+      },
+    });
+    return { registrationId, status: 'cancelled' };
+  }
+
   async decideRefundRequest(
     userId: string,
     requestId: string,
@@ -731,7 +784,7 @@ export class ConsoleEventsService {
       data: {
         status: 'cancelled',
         config: {
-          ...(event.config as Record<string, any>),
+          ...(event.config && typeof event.config === 'object' ? (event.config as Record<string, any>) : {}),
           cancelledAt: new Date(),
           cancelledBy: userId,
           cancelReason: options?.reason ?? null,

@@ -72,7 +72,7 @@
               {{ downloading ? '生成中…' : 'CSV をエクスポート' }}
             </button>
             <button type="button" class="danger" :disabled="cancelling" @click="confirmCancel">
-              {{ cancelling ? '取消处理中…' : '取消活动' }}
+              {{ cancelling ? 'キャンセル処理中…' : 'イベントをキャンセル' }}
             </button>
           </div>
         </div>
@@ -82,7 +82,7 @@
               <th>参加者</th>
               <th>チケット</th>
               <th>支払い</th>
-              <th>状态</th>
+              <th>ステータス</th>
               <th>出席</th>
               <th>申込時間</th>
               <th></th>
@@ -332,7 +332,7 @@ const handleReject = async (registrationId: string) => {
       target.status = 'rejected';
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '拒绝失败，请重试';
+    error.value = err instanceof Error ? err.message : '拒否に失敗しました。再試行してください。';
   } finally {
     actionLoading.value = { ...actionLoading.value, [registrationId]: false };
   }
@@ -359,7 +359,9 @@ const downloadCsv = async () => {
 
 const confirmCancel = async () => {
   if (!eventDetail.value) return;
-  const sure = await confirmDialog('确认取消活动吗？收费报名将自动尝试退款，此操作不可逆。');
+  const sure = await confirmDialog(
+    'イベントをキャンセルしますか？有料の申込は自動で返金処理を試みます。この操作は元に戻せません。',
+  );
   if (!sure) return;
   cancelling.value = true;
   error.value = null;
@@ -367,7 +369,7 @@ const confirmCancel = async () => {
     await cancelConsoleEvent(eventId, { notify: false });
     await load();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '取消失败，请稍后再试';
+    error.value = err instanceof Error ? err.message : 'キャンセルに失敗しました。時間をおいて再試行してください。';
   } finally {
     cancelling.value = false;
   }

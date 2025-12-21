@@ -121,6 +121,16 @@ export class ConsoleEventsController {
     return this.consoleEventsService.rejectRegistration(req.user.id, eventId, registrationId);
   }
 
+  @Post(':eventId/registrations/:registrationId/cancel')
+  cancelRegistration(
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Body('reason') reason: string,
+    @Req() req: any,
+  ) {
+    return this.consoleEventsService.cancelRegistration(req.user.id, eventId, registrationId, { reason });
+  }
+
   @Post('refund-requests/:requestId/decision')
   decideRefund(
     @Param('requestId') requestId: string,

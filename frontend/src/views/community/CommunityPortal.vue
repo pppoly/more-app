@@ -264,7 +264,7 @@ const avatarStyle = computed(() => {
 const themeName = computed(() => {
   const configured = community.value?.portalConfig?.theme;
   const allowed = ['clean', 'immersive', 'warm', 'collage'];
-  // 默认保持 clean；如果配置是 immersive 但没有封面，会让背景过暗，这里只在有封面时才允许 immersive。
+  // デフォルトは clean を維持。immersive でもカバーが無いと背景が暗くなるため、カバーがある場合のみ許可する。
   if (configured === 'immersive' && !community.value?.coverImageUrl) {
     return 'clean';
   }

@@ -5,20 +5,20 @@
         <span class="i-lucide-chevron-left"></span>
       </button>
       <div class="hero-text">
-        <p class="hero-eyebrow">{{ isEdit ? '社群設定' : '新しい社群' }}</p>
-        <h1>{{ isEdit ? '社群資料を更新' : '社群を登録' }}</h1>
+        <p class="hero-eyebrow">{{ isEdit ? 'コミュニティ設定' : '新しいコミュニティ' }}</p>
+        <h1>{{ isEdit ? 'コミュニティ情報を更新' : 'コミュニティを登録' }}</h1>
         <p class="hero-subtext">
-          AI が社群情報を参照しながら活動助手を最適化します。ベーシックな情報から入力しましょう。
+          AI がコミュニティ情報を参照しながらイベントアシスタントを最適化します。ベーシックな情報から入力しましょう。
         </p>
       </div>
-      <span class="hero-status">{{ isEdit ? '編集中' : '草稿' }}</span>
+      <span class="hero-status">{{ isEdit ? '編集中' : '下書き' }}</span>
     </header>
 
     <form class="form-sections" @submit.prevent="handleSubmit">
       <section class="form-card">
         <p class="card-label">基本情報</p>
         <div class="ios-field">
-          <label>社群名称</label>
+          <label>コミュニティ名</label>
           <input v-model="form.name" type="text" placeholder="Tokyo Community..." required />
         </div>
         <div class="ios-field">
@@ -150,7 +150,7 @@ const error = ref<string | null>(null);
 
 const visibleOptions = [
   { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
-  { value: 'semi-public', label: '社群内公開', desc: 'Console / 既存メンバーのみ' },
+  { value: 'semi-public', label: 'コミュニティ内公開', desc: 'Console / 既存メンバーのみ' },
   { value: 'private', label: '非公開', desc: '運営メモ用・外部非公開' },
 ];
 

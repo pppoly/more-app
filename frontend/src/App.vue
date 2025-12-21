@@ -190,7 +190,7 @@ const currentPageName = computed(() => {
   const metaTitle = currentRoute.meta?.title as string | undefined;
   if (metaTitle) return metaTitle;
   if (typeof currentRoute.name === 'string') return currentRoute.name;
-  return '未命名页面';
+  return '未設定のページ';
 });
 
 const allowWebKey = 'allowWebInLine';
@@ -264,7 +264,7 @@ onMounted(() => {
     allowWebContinue.value = true;
     return;
   }
-  // 已经在 LINE 内置浏览器时，不再强制弹出“在 LINE 中打开”提示
+  // LINE 内蔵ブラウザの場合は「LINE で開く」提示を出さない
   if (uaLine.value && isLineBrowser()) {
     allowWebContinue.value = true;
     return;

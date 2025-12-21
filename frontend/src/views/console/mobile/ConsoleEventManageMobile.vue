@@ -135,7 +135,7 @@
             :disabled="cancelling"
             @click="openCancelSheet"
           >
-            {{ cancelling ? '取消中…' : 'イベントを取消' }}
+            {{ cancelling ? 'キャンセル中…' : 'イベントをキャンセル' }}
           </button>
           <button class="sheet-close" type="button" @click="closeMoreActions">閉じる</button>
         </div>
@@ -144,10 +144,10 @@
       <div v-if="showCancelSheet && !isEventCancelled" class="sheet-mask" @click.self="closeCancelSheet">
         <div class="sheet cancel-sheet">
           <div class="sheet-handle"></div>
-          <p class="sheet-title">イベントを取消しますか？</p>
-          <p class="cancel-desc">取消すると申込受付が停止され、元に戻せません。</p>
+          <p class="sheet-title">イベントをキャンセルしますか？</p>
+          <p class="cancel-desc">キャンセルすると申込受付が停止され、元に戻せません。</p>
           <div class="cancel-card">
-            <p class="cancel-card__title">取消の影響</p>
+            <p class="cancel-card__title">キャンセルの影響</p>
             <ul class="cancel-list">
               <li>有料の申込がある場合、まとめて返金処理を試みます。</li>
               <li>返金の反映には時間がかかることがあります。</li>
@@ -155,7 +155,7 @@
             <p v-if="paidRegistrationsCount" class="cancel-meta">有料の申込: {{ paidRegistrationsCount }} 件</p>
           </div>
           <button class="sheet-action danger" type="button" :disabled="cancelling" @click="confirmCancelEvent">
-            {{ cancelling ? '取消中…' : '取消を確定' }}
+            {{ cancelling ? 'キャンセル中…' : 'キャンセルを確定' }}
           </button>
           <button class="sheet-close" type="button" @click="closeCancelSheet">戻る</button>
         </div>
@@ -191,6 +191,14 @@
           >
             {{ entryActionLoading[activeEntry.id] ? '処理中…' : '返金してキャンセル' }}
           </button>
+          <button
+            v-if="canKickEntry(activeEntry)"
+            class="sheet-action danger"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="cancelEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '申込を取り消す' }}
+          </button>
           <button class="sheet-close" @click="closeEntryAction">閉じる</button>
         </div>
       </div>
@@ -216,10 +224,11 @@
       <Transition name="qr-fade">
         <div v-if="qrImageData" class="qr-preview-overlay" @click.self="qrImageData = null">
           <div class="qr-preview-card">
-            <button class="qr-close" type="button" @click="qrImageData = null"><span class="i-lucide-x"></span></button>
+            <button class="qr-close" type="button" @click="qrImageData = null">X</button>
             <p class="qr-title">イベント QR</p>
             <img :src="qrImageData" alt="イベント QR" class="qr-img" />
             <p class="qr-url">{{ publicEventUrl }}</p>
+            <button class="qr-save" type="button" @click="saveQrImage">端末に保存</button>
           </div>
         </div>
       </Transition>
@@ -227,7 +236,7 @@
       <Transition name="qr-fade">
         <div v-if="posterDataUrl" class="qr-preview-overlay" @click.self="posterDataUrl = null">
           <div class="qr-preview-card">
-            <button class="qr-close" type="button" @click="posterDataUrl = null"><span class="i-lucide-x"></span></button>
+            <button class="qr-close" type="button" @click="posterDataUrl = null">X</button>
             <p class="qr-title">共有ポスター</p>
             <img :src="posterDataUrl" alt="イベントポスター" class="poster-img" />
             <a class="poster-save" :href="posterDataUrl" download="event-poster.png">端末に保存</a>
@@ -246,6 +255,7 @@ import {
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
   rejectEventRegistration,
+  cancelEventRegistration,
   cancelConsoleEvent,
   refundPayment,
 } from '../../../api/client';
@@ -381,7 +391,7 @@ const entries = computed(() => {
         deduped.set(key, mapped);
         return;
       }
-      // 取最新的报名记录
+      // 最新の申込を採用
       if (new Date(mapped.createdAtIso) > new Date(existing.createdAtIso)) {
         deduped.set(key, mapped);
       }
@@ -619,6 +629,28 @@ const generateQrCode = async () => {
   }
 };
 
+const saveQrImage = async () => {
+  if (!qrImageData.value || typeof window === 'undefined') return;
+  try {
+    const response = await fetch(qrImageData.value);
+    const blob = await response.blob();
+    const file = new File([blob], 'event-qr.png', { type: blob.type || 'image/png' });
+    const shareData: ShareData = { files: [file], title: 'イベント QR' };
+    if (navigator.canShare?.(shareData)) {
+      await navigator.share(shareData);
+      return;
+    }
+  } catch {
+    // fallback below
+  }
+  const link = document.createElement('a');
+  link.href = qrImageData.value;
+  link.download = 'event-qr.png';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
 function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
   const chars = text.split('');
   let line = '';
@@ -725,6 +757,10 @@ const canRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
   entry.paymentStatus === 'paid' &&
   !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status);
 
+const canKickEntry = (entry: ReturnType<typeof mapEntry>) =>
+  !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
+  !canRefundEntry(entry);
+
 const refundEntry = async () => {
   if (!activeEntry.value || !activeEntry.value.paymentId) return;
   const amountText = activeEntry.value.amount ? ` (${formatYen(activeEntry.value.amount)})` : '';
@@ -737,6 +773,22 @@ const refundEntry = async () => {
     closeEntryAction();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '返金に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
+};
+
+const cancelEntry = async () => {
+  if (!activeEntry.value) return;
+  const sure = window.confirm('この参加者の申込を取り消しますか？');
+  if (!sure) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await cancelEventRegistration(eventId.value, activeEntry.value.id, { reason: 'console_kick' });
+    await reload();
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '申込のキャンセルに失敗しました';
   } finally {
     entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
   }
@@ -946,13 +998,13 @@ const reload = () => loadData();
 .sheet-mask { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: flex; align-items: flex-end; z-index: 50; }
 .sheet { background: #fff; border-radius: 18px 18px 0 0; padding: 12px 16px 18px; width: 100%; box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.16); }
 .sheet-handle { width: 48px; height: 5px; background: #e2e8f0; border-radius: 999px; margin: 0 auto 12px; }
-.sheet-name { margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; }
-.sheet-sub { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
-.sheet-action { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: #f8fafc; color: #0f172a; font-weight: 700; margin-top: 8px; }
+.sheet-name { margin: 0; font-size: 17px; font-weight: 700; color: #0f172a; }
+.sheet-sub { margin: 2px 0 0; font-size: 14px; color: #94a3b8; }
+.sheet-action { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: #f8fafc; color: #0f172a; font-weight: 700; font-size: 16px; margin-top: 8px; }
 .sheet-action.danger { color: #b91c1c; background: #fff1f2; border-color: #fecdd3; }
-.sheet-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px; text-align: center; }
+.sheet-title { font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 8px; text-align: center; }
 .sheet-error { font-size: 12px; color: #b91c1c; margin: 4px 0 8px; text-align: center; }
-.sheet-close { width: 100%; padding: 12px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; margin-top: 10px; }
+.sheet-close { width: 100%; padding: 12px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; font-size: 16px; margin-top: 10px; }
 .cancel-desc { margin: 0 0 10px; font-size: 13px; color: #475569; line-height: 1.6; text-align: center; }
 .cancel-card { border-radius: 12px; border: 1px solid #fed7aa; background: #fff7ed; padding: 12px; display: grid; gap: 6px; }
 .cancel-card__title { margin: 0; font-size: 12px; font-weight: 700; color: #c2410c; }
@@ -965,6 +1017,7 @@ const reload = () => loadData();
 .qr-title { font-weight: 700; margin: 8px 0 4px; }
 .qr-img { width: 240px; height: 240px; object-fit: contain; margin: 12px auto; display: block; }
 .qr-url { font-size: 12px; color: #475569; word-break: break-all; }
+.qr-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; margin-top: 10px; cursor: pointer; }
 .poster-img { width: 100%; border-radius: 12px; margin: 12px 0; }
 .poster-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border-radius: 12px; background: #0f172a; color: #fff; font-weight: 700; }
 

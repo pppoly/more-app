@@ -287,7 +287,7 @@
           @click="handleCopySelect(item.id)"
         >
           <div class="copy-meta">
-            <p class="copy-title">{{ getLocalizedText(item.title) || '历史活动' }}</p>
+            <p class="copy-title">{{ getLocalizedText(item.title) || '過去のイベント' }}</p>
             <p class="copy-time">{{ formatDate(item.startTime) }}</p>
           </div>
         </button>
@@ -324,7 +324,7 @@ import checkIcon from '../../../assets/check.svg';
 import eventManageIcon from '../../../assets/enventmanagement.svg';
 import classIcon from '../../../assets/class.svg';
 import { isLineInAppBrowser } from '../../../utils/liff';
-// Inline SVG data URIs to avoid network requests and首屏闪现
+// Inline SVG data URIs to avoid network requests and initial flicker
 const defaultCommunityAvatar =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='; // transparent pixel to avoid placeholder art
 const defaultEventCover =

@@ -126,7 +126,7 @@ const showHeader = computed(() => {
   return !route.meta?.hideShellHeader;
 });
 
-// Console 内部不再渲染第二层底部导航，避免与全局导航叠加
+  // Console 内では二重のボトムナビを描画しない（全体ナビとの重複防止）
 const showTabbar = computed(() => false);
 
 const showShellHeader = computed(() => false);

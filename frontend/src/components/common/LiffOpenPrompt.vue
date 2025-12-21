@@ -27,7 +27,7 @@ const shouldShow = () => {
   if (!hasWindow()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
   const onTargetHost = window.location.hostname === 'test.socialmore.jp';
-  // 在 LINE 内部（Line Browser/LIFF）时不再提示“在 LINE 里打开”
+  // LINE 内（Line Browser/LIFF）では「LINE で開く」提示を出さない
   if (isLineBrowser() || isLiffClient()) return false;
   return onTargetHost && !dismissed;
 };

@@ -138,7 +138,7 @@ function clearLiffLoginInflight() {
 
 function applyUserLocale(profile: UserProfile | null) {
   const locale = profile?.preferredLocale;
-  // UI 基础语言固定为日语，忽略非日语的偏好设置
+  // UI の基本言語は日本語に固定し、日本語以外の設定は無視する
   if (locale === 'ja' || !locale) {
     setLocale('ja');
   }
@@ -205,7 +205,7 @@ async function bootstrapLiffAuth(force = false) {
         emitLiffDebug('callback_enter');
         markLiffLoginInflight();
         const liff = await loadLiff(LIFF_ID);
-        // 等待 ready，最长 8 秒，超时视为失败但不再触发 login
+        // ready を待機（最大 8 秒）。タイムアウトは失敗扱いだが login は再実行しない
         try {
           emitLiffDebug('callback_wait_ready');
           const ready = (liff as any).ready;
@@ -317,7 +317,7 @@ async function bootstrapLiffAuth(force = false) {
       applyUserLocale(state.user);
       trackEvent('liff_login_success');
       clearLiffLoginInflight();
-      // 清理 URL 上的 code/state（如果有），避免后续重复判断
+      // URL の code/state を削除して、後続の重複判定を回避
       if (typeof window !== 'undefined' && window.location.search) {
         const cleanUrl = `${window.location.origin}${window.location.pathname}`;
         window.history.replaceState({}, document.title, cleanUrl);
