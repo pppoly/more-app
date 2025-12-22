@@ -4,7 +4,7 @@
       :class="{ 'console-section--mobile': isMobileLayout, 'sheet-open': sheetOpen }"
     >
     <ConsoleTopBar v-if="isMobileLayout && !isLiffClientMode" titleKey="console.eventForm.title" @back="goBack" />
-    <div v-if="reviewStatus" class="review-banner" :class="reviewStatus">
+    <div v-if="reviewStatus && reviewStatus !== 'draft'" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
         {{ reviewMessage }}
@@ -2715,10 +2715,11 @@ const persistEvent = async (status: 'draft' | 'open') => {
   submitting.value = true;
   actionLoading.value = status;
   error.value = null;
+  const isDraft = status === 'draft';
 
   const now = new Date();
-  const start = form.startTime ? new Date(form.startTime) : null;
-  const end = form.endTime ? new Date(form.endTime) : null;
+  let start = form.startTime ? new Date(form.startTime) : null;
+  let end = form.endTime ? new Date(form.endTime) : null;
   let regStart = form.regStartTime ? new Date(form.regStartTime) : null;
   let regEnd = form.regEndTime ? new Date(form.regEndTime) : null;
 
@@ -2729,13 +2730,24 @@ const persistEvent = async (status: 'draft' | 'open') => {
         return persistEvent(status);
       }
     }
-    error.value = '開始・終了時間を先に設定してください';
-    submitting.value = false;
-    actionLoading.value = null;
-    return;
+    if (!isDraft) {
+      error.value = '開始・終了時間を先に設定してください';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+    const baseStart = start ?? now;
+    const baseEnd =
+      end && end > baseStart
+        ? end
+        : new Date(baseStart.getTime() + 2 * 60 * 60 * 1000);
+    form.startTime = toLocalInput(baseStart);
+    form.endTime = toLocalInput(baseEnd);
+    start = new Date(form.startTime);
+    end = new Date(form.endTime);
   }
 
-  if (start.getTime() < now.getTime() - 5 * 60 * 1000) {
+  if (!isDraft && start.getTime() < now.getTime() - 5 * 60 * 1000) {
     error.value = '開始時間は現在時刻より後に設定してください';
     submitting.value = false;
     actionLoading.value = null;
@@ -2743,10 +2755,15 @@ const persistEvent = async (status: 'draft' | 'open') => {
   }
 
   if (end <= start) {
-    error.value = '終了時間は開始より後に設定してください';
-    submitting.value = false;
-    actionLoading.value = null;
-    return;
+    if (!isDraft) {
+      error.value = '終了時間は開始より後に設定してください';
+      submitting.value = false;
+      actionLoading.value = null;
+      return;
+    }
+    const fallbackEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    form.endTime = toLocalInput(fallbackEnd);
+    end = fallbackEnd;
   }
 
   if (!regStart) {
@@ -2760,14 +2777,14 @@ const persistEvent = async (status: 'draft' | 'open') => {
     form.regEndTime = toLocalInput(regEnd.toISOString());
   }
 
-  if (regStart && regStart > start) {
+  if (!isDraft && regStart && regStart > start) {
     error.value = '受付開始はイベント開始より前に設定してください';
     submitting.value = false;
     actionLoading.value = null;
     return;
   }
 
-  if (regEnd) {
+  if (!isDraft && regEnd) {
     if (regStart && regEnd < regStart) {
       error.value = '受付締切は受付開始より後に設定してください';
       submitting.value = false;
@@ -2788,7 +2805,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
 
   syncContentMap(activeContentLang.value);
   const descriptionText = stripHtml(form.descriptionHtml || '').trim() || form.description.trim();
-  if (!descriptionText) {
+  if (!isDraft && !descriptionText) {
     error.value = 'イベント詳細を入力してください';
     submitting.value = false;
     actionLoading.value = null;
@@ -2821,21 +2838,23 @@ const persistEvent = async (status: 'draft' | 'open') => {
     return;
   }
 
-  const minPeople = form.minParticipants;
-  const maxPeople = form.maxParticipants;
-  if (maxPeople != null) {
-    if (maxPeople < 1 || maxPeople > 100) {
-      error.value = '最大参加人数は 1〜100 の間で入力してください。';
+  if (!isDraft) {
+    const minPeople = form.minParticipants;
+    const maxPeople = form.maxParticipants;
+    if (maxPeople != null) {
+      if (maxPeople < 1 || maxPeople > 100) {
+        error.value = '最大参加人数は 1〜100 の間で入力してください。';
+        submitting.value = false;
+        actionLoading.value = null;
+        return;
+      }
+    }
+    if (minPeople != null && maxPeople != null && maxPeople < minPeople) {
+      error.value = '最大参加人数は最低人数以上に設定してください。';
       submitting.value = false;
       actionLoading.value = null;
       return;
     }
-  }
-  if (minPeople != null && maxPeople != null && maxPeople < minPeople) {
-    error.value = '最大参加人数は最低人数以上に設定してください。';
-    submitting.value = false;
-    actionLoading.value = null;
-    return;
   }
 
   const payload = {
@@ -2900,6 +2919,9 @@ const persistEvent = async (status: 'draft' | 'open') => {
         params: route.params,
         query: { ...route.query, eventId: event.id },
       });
+      if (status === 'draft') {
+        flashSaveStatus('保存しました');
+      }
       if (status === 'open') {
         goToPublishSuccess(event.id, 'edit');
       }

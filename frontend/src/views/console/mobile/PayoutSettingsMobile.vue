@@ -12,8 +12,10 @@
       </div>
       <div class="hero">
         <p class="hero-label">受け取り可能（Stripe残高）</p>
-        <p class="hero-value">{{ formatYen(balanceNet) }}</p>
-        <p class="hero-sub">保留中 {{ formatYen(pendingAmount) }} ・ 確定収入 {{ formatYen(balanceGross) }}</p>
+        <p class="hero-value">{{ formatYen(stripeAvailable) }}</p>
+        <p class="hero-sub">
+          保留中 {{ formatYen(stripePending) }} ・ Stripe残高合計 {{ formatYen(stripeTotal) }}
+        </p>
       </div>
       <div class="kpi-grid">
         <article class="kpi">
@@ -27,7 +29,7 @@
           <p class="kpi-hint">支払い待ちは含まれません</p>
         </article>
         <article class="kpi">
-          <p class="kpi-label">Stripe手数料</p>
+          <p class="kpi-label">Stripe手数料<span v-if="stripeFeeRateText">（{{ stripeFeeRateText }}）</span></p>
           <p class="kpi-value kpi-value--fee">{{ formatYen(stripeFee) }}</p>
         </article>
         <article class="kpi">
@@ -82,7 +84,7 @@ import type { ConsoleCommunityBalance, ConsoleCommunityDetail } from '../../../t
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
+import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -104,21 +106,36 @@ const status = computed(() => {
   return { type: 'pending', icon: '🟠', title: '連携を完了してください' };
 });
 
-const balanceNet = computed(() => balance.value?.net ?? 0);
 const balanceGross = computed(() => balance.value?.grossPaid ?? 0);
 const balanceRefunded = computed(() => balance.value?.refunded ?? 0);
 const balanceFee = computed(() => balance.value?.platformFee ?? 0);
 const stripeFee = computed(() => balance.value?.stripeFee ?? 0);
+const stripeAvailable = computed(() => balance.value?.stripeBalance?.available ?? 0);
+const stripePending = computed(() => balance.value?.stripeBalance?.pending ?? 0);
+const stripeTotal = computed(() => stripeAvailable.value + stripePending.value);
 const transactionTotal = computed(() => balance.value?.transactionTotal ?? balanceGross.value);
-const pendingAmount = computed(() => balance.value?.stripeBalance?.pending ?? 0);
 
 const communityId = computed(() => store.activeCommunityId.value);
+const hasStripeBalance = computed(() => stripeAvailable.value > 0 || stripePending.value > 0);
 const isEmpty = computed(
-  () => balanceGross.value === 0 && balanceNet.value === 0 && balanceRefunded.value === 0 && balanceFee.value === 0,
+  () =>
+    balanceGross.value === 0 &&
+    balanceRefunded.value === 0 &&
+    balanceFee.value === 0 &&
+    !hasStripeBalance.value,
 );
 
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+const stripeFeeRateText = computed(() => {
+  const percent = STRIPE_FEE_PERCENT;
+  if (!Number.isFinite(percent)) return '';
+  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+  }
+  return percentText;
+});
 
 const loadCommunity = async () => {
   error.value = null;

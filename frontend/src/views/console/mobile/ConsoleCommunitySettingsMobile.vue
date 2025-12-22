@@ -233,7 +233,16 @@ const { t } = useI18n();
 const toast = useToast();
 const isCreateMode = computed(() => !communityId.value || communityId.value === 'new');
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
-const showTopBar = computed(() => !isLiffClientMode.value);
+const isLiffEntry = computed(() => {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('liff.state') || params.has('liff.referrer')) return true;
+  const from = params.get('from') || params.get('src') || params.get('entrySource');
+  if (from && from.toLowerCase() === 'liff') return true;
+  if (typeof document !== 'undefined' && document.referrer.includes('liff.line.me')) return true;
+  return false;
+});
+const showTopBar = computed(() => !isLiffClientMode.value && !isLiffEntry.value);
 
 const form = reactive({
   name: '',
@@ -265,7 +274,7 @@ const showCropper = ref(false);
 const cropSource = ref<string | null>(null);
 const cropTarget = ref<'cover' | 'logo' | null>(null);
 const selectedTags = ref<string[]>([]);
-const pageTitle = computed(() => 'コミュニティ設定');
+const pageTitle = computed(() => (isCreateMode.value ? 'コミュニティ作成' : 'コミュニティ設定'));
 const goBack = () => {
   router.back();
 };

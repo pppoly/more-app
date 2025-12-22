@@ -19,6 +19,9 @@ const PAYMENT_PENDING_TIMEOUT_MS =
   Number.isFinite(PAYMENT_PENDING_TIMEOUT_MINUTES) && PAYMENT_PENDING_TIMEOUT_MINUTES > 0
     ? PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000
     : 30 * 60 * 1000;
+const PLATFORM_FEE_WAIVED = !['0', 'false', 'off'].includes(
+  (process.env.BETA_PLATFORM_FEE_WAIVED ?? '1').toLowerCase(),
+);
 
 @Injectable()
 export class PaymentsService {
@@ -31,6 +34,7 @@ export class PaymentsService {
   ) {}
 
   private resolvePlanFee(planId?: string | null) {
+    if (PLATFORM_FEE_WAIVED) return { percent: 0, fixed: 0, planId };
     const key = (planId || '').toLowerCase();
     if (key.includes('pro')) return { percent: 0, fixed: 0, planId };
     if (key.includes('starter')) return { percent: 2, fixed: 0, planId };

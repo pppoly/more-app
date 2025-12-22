@@ -76,7 +76,8 @@
             />
             <div>
               <h4>{{ plan.name }}</h4>
-              <p>月額 ¥{{ plan.monthlyFee }} ｜ 手数料 {{ plan.transactionFeePercent }}% + ¥{{ plan.transactionFeeFixed }}</p>
+              <p>月額 ¥{{ plan.monthlyFee }} ｜ プラットフォーム手数料 {{ formatPlatformFee(plan) }}</p>
+              <small>{{ t('subscription.stripeFee') }} {{ stripeFeeDisplay }}</small>
               <small>入金頻度: {{ plan.payoutSchedule }}</small>
               <ul class="feature-list" v-if="Array.isArray(plan.features?.items)">
                 <li v-for="item in plan.features.items" :key="item">· {{ item }}</li>
@@ -102,6 +103,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import {
   fetchConsoleCommunity,
@@ -110,6 +112,7 @@ import {
   subscribeCommunityPlan,
 } from '../../api/client';
 import type { ConsoleCommunityDetail, PricingPlan } from '../../types/api';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../config';
 
 const route = useRoute();
 const communityId = route.params.communityId as string;
@@ -121,6 +124,7 @@ const savedPlanId = ref<string>('');
 const onboarding = ref(false);
 const planUpdating = ref(false);
 const error = ref<string | null>(null);
+const { t } = useI18n();
 
 const load = async () => {
   error.value = null;
@@ -138,6 +142,26 @@ const load = async () => {
 const stripeReady = computed(() => Boolean(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded));
 const planChanged = computed(() => selectedPlanId.value !== savedPlanId.value);
 const activePlan = computed(() => pricingPlans.value.find((plan) => plan.id === savedPlanId.value) || null);
+const formatYen = (value: number) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+const stripeFeeRateText = computed(() => {
+  const percent = STRIPE_FEE_PERCENT;
+  if (!Number.isFinite(percent)) return '';
+  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+  }
+  return percentText;
+});
+const stripeFeeDisplay = computed(
+  () => stripeFeeRateText.value || t('subscription.plans.free.stripeFee'),
+);
+const formatPlatformFee = (plan: PricingPlan) => {
+  if (PLATFORM_FEE_WAIVED) return t('subscription.betaPlatformFeeValue');
+  const fixed = plan.transactionFeeFixed ?? 0;
+  const fixedText = fixed > 0 ? ` + ${formatYen(fixed)}` : '';
+  return `${plan.transactionFeePercent}%${fixedText}`;
+};
 
 const handleOnboarding = async () => {
   onboarding.value = true;

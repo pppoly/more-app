@@ -16,6 +16,8 @@
           <div class="plan-lines">
             <p class="plan-line"><strong>プラン：</strong>Free（βテスト）</p>
             <p class="plan-line"><strong>課金：</strong>なし</p>
+            <p class="plan-line"><strong>{{ t('subscription.platformFee') }}</strong>{{ platformFeeValue }}</p>
+            <p class="plan-line"><strong>{{ t('subscription.stripeFee') }}</strong>{{ stripeFeeDisplay }}</p>
           </div>
         </section>
 
@@ -88,6 +90,7 @@ import type { ConsoleCommunityDetail, PricingPlan } from '../../../types/api';
 import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
 import { useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const { t, tm } = useI18n();
 const communityStore = useConsoleCommunityStore();
@@ -112,6 +115,26 @@ let paymentElement: StripePaymentElement | null = null;
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const activeCommunity = computed(() => communityStore.getActiveCommunity());
 
+const formatYen = (value: number) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+
+const stripeFeeRateText = computed(() => {
+  const percent = STRIPE_FEE_PERCENT;
+  if (!Number.isFinite(percent)) return '';
+  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+  }
+  return percentText;
+});
+
+const stripeFeeDisplay = computed(
+  () => stripeFeeRateText.value || t('subscription.plans.free.stripeFee'),
+);
+
+const resolvePlatformFee = (fallback: string) =>
+  PLATFORM_FEE_WAIVED ? t('subscription.betaPlatformFeeValue') : fallback;
+
 const resolvePlanKey = (planId?: string | null) => {
   const id = (planId || '').toLowerCase();
   if (id.includes('pro')) return 'pro';
@@ -126,8 +149,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.free.name'),
     price: t('subscription.plans.free.price'),
     audience: t('subscription.plans.free.audience'),
-    platformFee: '5%',
-    stripeFee: t('subscription.plans.free.stripeFee'),
+    platformFee: resolvePlatformFee('5%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.free.features') as string[]) || [],
     cardClass: 'plan-free',
   },
@@ -136,8 +159,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.starter.name'),
     price: t('subscription.plans.starter.price'),
     audience: t('subscription.plans.starter.audience'),
-    platformFee: '2%',
-    stripeFee: t('subscription.plans.starter.stripeFee'),
+    platformFee: resolvePlatformFee('2%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.starter.features') as string[]) || [],
     cardClass: 'plan-starter',
   },
@@ -146,8 +169,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.pro.name'),
     price: t('subscription.plans.pro.price'),
     audience: t('subscription.plans.pro.audience'),
-    platformFee: '0%',
-    stripeFee: t('subscription.plans.pro.stripeFee'),
+    platformFee: resolvePlatformFee('0%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.pro.features') as string[]) || [],
     cardClass: 'plan-pro',
   },
@@ -156,8 +179,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.enterprise.name'),
     price: t('subscription.plans.enterprise.price'),
     audience: t('subscription.plans.enterprise.audience'),
-    platformFee: t('subscription.plans.enterprise.platformFee'),
-    stripeFee: t('subscription.plans.enterprise.stripeFee'),
+    platformFee: resolvePlatformFee(t('subscription.plans.enterprise.platformFee')),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.enterprise.features') as string[]) || [],
     cardClass: 'plan-enterprise',
   },
@@ -180,20 +203,23 @@ const displayPlans = computed(() => {
   }, {});
 
   return Object.values(guides).map((guide) => {
-  const matchedPlan = planMap[guide.key];
-  const price =
-      matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}` : guide.price;
-    const platformFee =
-      matchedPlan && matchedPlan.transactionFeePercent != null
+    const matchedPlan = planMap[guide.key];
+    const price =
+      matchedPlan && matchedPlan.monthlyFee > 0
+        ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}`
+        : guide.price;
+    const platformFee = PLATFORM_FEE_WAIVED
+      ? t('subscription.betaPlatformFeeValue')
+      : matchedPlan && matchedPlan.transactionFeePercent != null
         ? `${matchedPlan.transactionFeePercent}%`
         : guide.platformFee;
-  return {
-    id: matchedPlan?.id ?? guide.key,
-    guide: {
-      ...guide,
-      price,
-      platformFee,
-    },
+    return {
+      id: matchedPlan?.id ?? guide.key,
+      guide: {
+        ...guide,
+        price,
+        platformFee,
+      },
       selectable: guide.key !== 'enterprise',
       cardClass: guide.cardClass,
       available: Boolean(matchedPlan || !hasApiPlans),
@@ -206,17 +232,20 @@ const activePlanName = computed(() => {
   const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
   return matched?.guide.name ?? t('subscription.plans.free.name');
 });
-const activePlanFee = computed(() => {
+const platformFeeValue = computed(() => {
+  if (PLATFORM_FEE_WAIVED) return t('subscription.betaPlatformFeeValue');
   const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
-  const fee = matched?.guide.platformFee || '5%';
-  const stripe = matched?.guide.stripeFee || t('subscription.plans.free.stripeFee');
-  return `${t('subscription.platformFee')} ${fee} · ${t('subscription.stripeFee')} ${stripe}`;
+  return matched?.guide.platformFee || '5%';
+});
+const activePlanFee = computed(() => {
+  return `${t('subscription.platformFee')} ${platformFeeValue.value} · ${t('subscription.stripeFee')} ${stripeFeeDisplay.value}`;
 });
 const upgradeSuccessName = computed(() => {
   const key = resolvePlanKey(upgradeSuccessPlanId.value);
   return planGuide.value[key as keyof typeof planGuide.value]?.name ?? 'プラン';
 });
 const upgradeSuccessFee = computed(() => {
+  if (PLATFORM_FEE_WAIVED) return '0%';
   const key = resolvePlanKey(upgradeSuccessPlanId.value);
   if (key === 'pro') return '0%';
   if (key === 'starter') return '2%';

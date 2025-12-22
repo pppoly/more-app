@@ -94,18 +94,24 @@ export class ConsoleEventsService {
     await this.permissions.assertOrganizer(userId);
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
+    const isDraft = rest?.status === 'draft';
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
-    // 跳过审核，直接通过
-    const moderation = await this.moderateEventText(rest);
-    this.applyModerationToEventData(eventData, moderation, false);
-    eventData.status = 'open';
-    eventData.reviewStatus = 'approved';
-    eventData.reviewReason = null;
+    if (!isDraft) {
+      const moderation = await this.moderateEventText(rest);
+      this.applyModerationToEventData(eventData, moderation, false);
+      eventData.status = 'open';
+      eventData.reviewStatus = 'approved';
+      eventData.reviewReason = null;
+    } else {
+      eventData.status = 'draft';
+      eventData.reviewStatus = 'draft';
+      eventData.reviewReason = null;
+    }
     const created = await this.prisma.event.create({
       data: {
         ...eventData,
         community: { connect: { id: communityId } },
-        reviewStatus: eventData.reviewStatus ?? 'approved',
+        reviewStatus: eventData.reviewStatus ?? (isDraft ? 'draft' : 'approved'),
         reviewReason: eventData.reviewReason ?? null,
         ticketTypes: {
           create: ticketTypes.map((ticket: any) => ({
@@ -118,22 +124,24 @@ export class ConsoleEventsService {
       },
       include: { ticketTypes: true },
     });
-    await this.prisma.event.update({
-      where: { id: created.id },
-      data: {
-        config: this.mergeReviewConfig(created.config, {
-          status: 'approved',
-          reviewerId: 'system',
-          reason: eventData.reviewReason ?? null,
-          reviewedAt: new Date(),
-        }),
-      },
-    });
-    this.queueEventTranslation(created.id, created.originalLanguage, {
-      title: created.title,
-      description: created.description,
-      descriptionHtml: created.descriptionHtml,
-    });
+    if (!isDraft) {
+      await this.prisma.event.update({
+        where: { id: created.id },
+        data: {
+          config: this.mergeReviewConfig(created.config, {
+            status: 'approved',
+            reviewerId: 'system',
+            reason: eventData.reviewReason ?? null,
+            reviewedAt: new Date(),
+          }),
+        },
+      });
+      this.queueEventTranslation(created.id, created.originalLanguage, {
+        title: created.title,
+        description: created.description,
+        descriptionHtml: created.descriptionHtml,
+      });
+    }
     return this.prisma.event.findUnique({ where: { id: created.id }, include: { ticketTypes: true } });
   }
 
@@ -158,19 +166,23 @@ export class ConsoleEventsService {
       select: { status: true, config: true, reviewStatus: true },
     });
     const { ticketTypes = [], ...rest } = data;
+    const isDraft = rest?.status === 'draft';
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
-    const moderation = await this.moderateEventText(rest);
-    this.applyModerationToEventData(eventData, moderation, true);
+    if (!isDraft) {
+      const moderation = await this.moderateEventText(rest);
+      this.applyModerationToEventData(eventData, moderation, true);
+    }
     const baseConfig = eventData.config ?? existing?.config ?? null;
+    const reviewStatus = isDraft ? 'draft' : 'approved';
     eventData.config = this.mergeReviewConfig(baseConfig as any, {
-      status: 'approved',
-      reviewerId: 'system',
+      status: reviewStatus,
+      reviewerId: isDraft ? null : 'system',
       reason: (eventData as any).reviewReason ?? null,
-      reviewedAt: new Date(),
+      reviewedAt: isDraft ? null : new Date(),
     });
-    eventData.reviewStatus = 'approved';
+    eventData.reviewStatus = reviewStatus;
     eventData.reviewReason = null;
-    eventData.status = 'open';
+    eventData.status = isDraft ? 'draft' : 'open';
     const updated = await this.prisma.event.update({
       where: { id: eventId },
       data: eventData,
@@ -200,11 +212,13 @@ export class ConsoleEventsService {
       }
     }
 
-    this.queueEventTranslation(eventId, updated.originalLanguage, {
-      title: updated.title,
-      description: updated.description,
-      descriptionHtml: updated.descriptionHtml,
-    });
+    if (!isDraft) {
+      this.queueEventTranslation(eventId, updated.originalLanguage, {
+        title: updated.title,
+        description: updated.description,
+        descriptionHtml: updated.descriptionHtml,
+      });
+    }
 
     return this.prisma.event.findUnique({ where: { id: eventId }, include: { ticketTypes: true } });
   }

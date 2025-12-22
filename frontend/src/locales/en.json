@@ -46,6 +46,7 @@
     "currentCommunity": "Community",
     "currentPlan": "Current plan",
     "platformFee": "Platform fee:",
+    "betaPlatformFeeValue": "0% (beta)",
     "stripeFee": "Stripe fees:",
     "perMonth": "month",
     "loading": "Loading…",

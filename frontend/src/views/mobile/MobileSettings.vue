@@ -207,6 +207,7 @@ const selectLocale = async (locale: string) => {
   justify-content: space-between;
   text-align: left;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
 }
 
 .settings-item--danger {
