@@ -50,7 +50,7 @@
       </button>
       <button class="btn outline" type="button" disabled>出金する（準備中）</button>
       <button class="btn ghost" type="button" :disabled="onboarding" @click="handleOnboarding">
-        {{ onboarding ? '移動中…' : '受け取り情報を更新' }}
+        {{ onboarding ? '移動中…' : stripeActionLabel }}
       </button>
       <p class="actions-hint">Stripe セキュア画面で口座・入金設定を行います。</p>
     </section>
@@ -83,9 +83,10 @@ import {
   fetchConsoleCommunity,
   fetchCommunityBalance,
   fetchOrganizerPayoutPolicyStatus,
+  refreshCommunityStripeStatus,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
-import type { ConsoleCommunityBalance, ConsoleCommunityDetail } from '../../../types/api';
+import type { ConsoleCommunityBalance, ConsoleCommunityDetail, StripeAccountStatus } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
@@ -98,18 +99,37 @@ const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
 const error = ref<string | null>(null);
 const balance = ref<ConsoleCommunityBalance | null>(null);
+const stripeStatus = ref<StripeAccountStatus | null>(null);
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 
-const stripeReady = computed(
-  () => !!community.value?.stripeAccountId && (community.value?.stripeAccountOnboarded ?? true),
-);
+const hasStripeAccount = computed(() => Boolean(community.value?.stripeAccountId));
+const stripeReady = computed(() => Boolean(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded));
+const stripeRestricted = computed(() => {
+  if (!hasStripeAccount.value || !stripeReady.value) return false;
+  if (stripeStatus.value?.disabledReason) return true;
+  if (stripeStatus.value?.payoutsEnabled === false) return true;
+  if (stripeStatus.value?.chargesEnabled === false) return true;
+  return false;
+});
+const stripeActionLabel = computed(() => {
+  if (!hasStripeAccount.value) return 'Stripe 受け取りを開始';
+  if (stripeRestricted.value) return 'Stripeで確認';
+  if (!stripeReady.value) return '連携を完了する';
+  return '受け取り情報を更新';
+});
 const pageTitle = computed(() => 'コミュニティ財務');
 
 const status = computed(() => {
+  if (stripeRestricted.value) {
+    return { type: 'error', icon: '🔴', title: '受け取りが制限されています' };
+  }
   if (stripeReady.value) {
     return { type: 'enabled', icon: '🟢', title: '受け取りは有効です' };
   }
-  return { type: 'pending', icon: '🟠', title: '連携を完了してください' };
+  if (hasStripeAccount.value) {
+    return { type: 'pending', icon: '🟠', title: '連携を完了してください' };
+  }
+  return { type: 'pending', icon: '🟠', title: 'Stripe口座が未開設です' };
 });
 
 const balanceGross = computed(() => balance.value?.grossPaid ?? 0);
@@ -176,6 +196,25 @@ const loadCommunity = async () => {
   }
 };
 
+const loadStripeStatus = async () => {
+  if (!community.value?.id || !community.value?.stripeAccountId) {
+    stripeStatus.value = null;
+    return;
+  }
+  try {
+    const status = await refreshCommunityStripeStatus(community.value.id);
+    stripeStatus.value = status.stripeAccountStatus ?? null;
+    if (community.value) {
+      community.value.stripeAccountId = status.stripeAccountId ?? community.value.stripeAccountId;
+      if (status.stripeAccountOnboarded !== undefined) {
+        community.value.stripeAccountOnboarded = status.stripeAccountOnboarded;
+      }
+    }
+  } catch {
+    stripeStatus.value = null;
+  }
+};
+
 const loadBalance = async () => {
   if (!community.value?.id || !stripeReady.value) return;
   try {
@@ -228,6 +267,7 @@ const goBack = () => {
 
 onMounted(async () => {
   await loadCommunity();
+  await loadStripeStatus();
   await loadBalance();
 });
 </script>

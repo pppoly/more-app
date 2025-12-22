@@ -36,6 +36,7 @@ import type {
   PromptDefinition,
   ConsolePaymentList,
   ConsoleCommunityBalance,
+  CommunityStripeStatusResponse,
   AdminEventReviewItem,
   ConsolePaymentItem,
   SupportedLanguagesResponse,
@@ -436,6 +437,13 @@ export async function fetchCommunityBalance(
   const { data } = await apiClient.get<ConsoleCommunityBalance>(`/console/communities/${communityId}/balance`, {
     params,
   });
+  return data;
+}
+
+export async function refreshCommunityStripeStatus(communityId: string): Promise<CommunityStripeStatusResponse> {
+  const { data } = await apiClient.post<CommunityStripeStatusResponse>(
+    `/console/communities/${communityId}/stripe/sync`,
+  );
   return data;
 }
 

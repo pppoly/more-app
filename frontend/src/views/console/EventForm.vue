@@ -5338,6 +5338,7 @@ select {
 .nav-btn.primary {
   background: linear-gradient(135deg, #0090d9, #0ccbaf);
   color: #fff;
+  box-shadow: none;
 }
 
 .advanced-toggle {

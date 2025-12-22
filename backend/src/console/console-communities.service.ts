@@ -178,8 +178,39 @@ export class ConsoleCommunitiesService {
     if (!community) {
       throw new NotFoundException('Community not found');
     }
-    const updated = await this.syncStripeAccountStatus(community);
-    return { stripeAccountId: updated.stripeAccountId, stripeAccountOnboarded: updated.stripeAccountOnboarded };
+    if (!this.stripeService.enabled || !community.stripeAccountId) {
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
+        stripeAccountStatus: null,
+      };
+    }
+    try {
+      const account = await this.stripeService.client.accounts.retrieve(community.stripeAccountId);
+      const onboarded = account.details_submitted ?? false;
+      if (onboarded !== community.stripeAccountOnboarded) {
+        await this.prisma.community.update({
+          where: { id: communityId },
+          data: { stripeAccountOnboarded: onboarded },
+        });
+      }
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: onboarded,
+        stripeAccountStatus: {
+          payoutsEnabled: account.payouts_enabled ?? null,
+          chargesEnabled: account.charges_enabled ?? null,
+          disabledReason: account.requirements?.disabled_reason ?? null,
+        },
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to refresh Stripe account status for community ${communityId}: ${error}`);
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
+        stripeAccountStatus: null,
+      };
+    }
   }
 
   private decorateCommunity(community: Community) {

@@ -357,6 +357,18 @@ export interface ConsoleCommunityDetail extends ManagedCommunity {
   stripeCustomerId?: string | null;
 }
 
+export interface StripeAccountStatus {
+  payoutsEnabled?: boolean | null;
+  chargesEnabled?: boolean | null;
+  disabledReason?: string | null;
+}
+
+export interface CommunityStripeStatusResponse {
+  stripeAccountId?: string | null;
+  stripeAccountOnboarded?: boolean;
+  stripeAccountStatus?: StripeAccountStatus | null;
+}
+
 export interface ConsoleEventSummary {
   id: string;
   title: LocalizedContent;

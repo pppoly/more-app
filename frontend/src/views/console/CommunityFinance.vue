@@ -3,28 +3,22 @@
     <header class="hero">
       <div class="hero-text">
         <p class="eyebrow">受け取り設定 · {{ community.slug }}</p>
-        <h2>{{ stripeReady ? '受け取り準備完了' : '受け取りを有効にしましょう' }}</h2>
-        <p class="sub">
-          {{
-            stripeReady
-              ? '情報が正しければ入金できます。変更があればいつでも更新できます。'
-              : 'Stripe の案内に沿って入力すれば、すぐに受け取りを開始できます。'
-          }}
-        </p>
+        <h2>{{ heroTitle }}</h2>
+        <p class="sub">{{ heroSubText }}</p>
         <div class="hero-actions">
           <button class="primary" @click="handleOnboarding" :disabled="onboarding">
-            {{ onboarding ? '移動中…' : stripeReady ? '受け取り情報を更新' : 'Stripe 受け取りを開始' }}
+            {{ onboarding ? '移動中…' : stripeActionLabel }}
           </button>
           <button class="secondary" type="button" disabled>出金する（準備中）</button>
-          <span :class="stripeReady ? 'pill success' : 'pill warn'">
-            {{ stripeReady ? '準備完了' : '未設定' }}
+          <span :class="`pill ${stripeAccountBadgeClass}`">
+            {{ stripeAccountBadgeLabel }}
           </span>
         </div>
       </div>
       <div class="hero-meta">
         <p>Stripe アカウント</p>
         <strong>{{ community.stripeAccountId || '未作成' }}</strong>
-        <small>{{ stripeReady ? '受け取り可能' : '情報の入力が必要' }}</small>
+        <small>{{ stripeAccountMetaLabel }}</small>
       </div>
     </header>
 
@@ -32,8 +26,8 @@
       <article class="card">
         <header>
           <h3>アカウント状態</h3>
-          <span :class="stripeReady ? 'status success' : 'status warn'">
-            {{ stripeReady ? '連携済み' : '未連携' }}
+          <span :class="`status ${stripeAccountBadgeClass}`">
+            {{ stripeAccountBadgeLabel }}
           </span>
         </header>
         <p class="muted">アカウントを整えると、イベント収益を受け取れます。</p>
@@ -44,11 +38,11 @@
           </li>
           <li>
             <span>ステータス</span>
-            <strong>{{ stripeReady ? '審査済み' : '未提出 / 審査中' }}</strong>
+            <strong>{{ stripeAccountStatusDetail }}</strong>
           </li>
         </ul>
         <button class="primary" @click="handleOnboarding" :disabled="onboarding">
-          {{ onboarding ? '移動中…' : stripeReady ? '情報を更新' : '受け取りを開始' }}
+          {{ onboarding ? '移動中…' : stripeActionLabelShort }}
         </button>
         <p class="hint">Stripe で情報入力を完了すると、受け取りを開始できます。</p>
       </article>
@@ -109,10 +103,11 @@ import {
   fetchConsoleCommunity,
   fetchOrganizerPayoutPolicyStatus,
   fetchPricingPlans,
+  refreshCommunityStripeStatus,
   startCommunityStripeOnboarding,
   subscribeCommunityPlan,
 } from '../../api/client';
-import type { ConsoleCommunityDetail, PricingPlan } from '../../types/api';
+import type { ConsoleCommunityDetail, PricingPlan, StripeAccountStatus } from '../../types/api';
 import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../config';
 
 const route = useRoute();
@@ -121,6 +116,7 @@ const communityId = route.params.communityId as string;
 
 const community = ref<ConsoleCommunityDetail | null>(null);
 const pricingPlans = ref<PricingPlan[]>([]);
+const stripeStatus = ref<StripeAccountStatus | null>(null);
 const selectedPlanId = ref<string>('');
 const savedPlanId = ref<string>('');
 const onboarding = ref(false);
@@ -136,12 +132,85 @@ const load = async () => {
     pricingPlans.value = plans;
     savedPlanId.value = community.value?.pricingPlanId || plans[0]?.id || '';
     selectedPlanId.value = savedPlanId.value;
+    await loadStripeStatus();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '設定情報の取得に失敗しました';
   }
 };
 
+const loadStripeStatus = async () => {
+  if (!community.value?.id || !community.value?.stripeAccountId) {
+    stripeStatus.value = null;
+    return;
+  }
+  try {
+    const status = await refreshCommunityStripeStatus(community.value.id);
+    stripeStatus.value = status.stripeAccountStatus ?? null;
+    if (community.value) {
+      community.value.stripeAccountId = status.stripeAccountId ?? community.value.stripeAccountId;
+      if (status.stripeAccountOnboarded !== undefined) {
+        community.value.stripeAccountOnboarded = status.stripeAccountOnboarded;
+      }
+    }
+  } catch (err) {
+    stripeStatus.value = null;
+  }
+};
+
+const hasStripeAccount = computed(() => Boolean(community.value?.stripeAccountId));
 const stripeReady = computed(() => Boolean(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded));
+const stripeRestricted = computed(() => {
+  if (!hasStripeAccount.value || !stripeReady.value) return false;
+  if (stripeStatus.value?.disabledReason) return true;
+  if (stripeStatus.value?.payoutsEnabled === false) return true;
+  if (stripeStatus.value?.chargesEnabled === false) return true;
+  return false;
+});
+const stripeActionLabel = computed(() => {
+  if (!hasStripeAccount.value) return 'Stripe 受け取りを開始';
+  if (stripeRestricted.value) return 'Stripeで確認';
+  if (!stripeReady.value) return '連携を完了する';
+  return '受け取り情報を更新';
+});
+const stripeActionLabelShort = computed(() => {
+  if (!hasStripeAccount.value) return '受け取りを開始';
+  if (stripeRestricted.value) return 'Stripeで確認';
+  if (!stripeReady.value) return '連携を完了する';
+  return '情報を更新';
+});
+const stripeAccountBadgeLabel = computed(() => {
+  if (!hasStripeAccount.value) return '未開設';
+  if (stripeRestricted.value) return '受け取り制限';
+  if (!stripeReady.value) return '連携中';
+  return '準備完了';
+});
+const stripeAccountBadgeClass = computed(() => {
+  if (stripeRestricted.value) return 'danger';
+  return stripeReady.value ? 'success' : 'warn';
+});
+const stripeAccountStatusDetail = computed(() => {
+  if (!hasStripeAccount.value) return '未開設';
+  if (stripeRestricted.value) return '受け取り制限中';
+  if (!stripeReady.value) return '未提出 / 審査中';
+  return '審査済み';
+});
+const stripeAccountMetaLabel = computed(() => stripeAccountStatusDetail.value);
+const heroTitle = computed(() => {
+  if (stripeRestricted.value) return '受け取りが制限されています';
+  return stripeReady.value ? '受け取り準備完了' : '受け取りを有効にしましょう';
+});
+const heroSubText = computed(() => {
+  if (stripeRestricted.value) {
+    return 'Stripe 側で追加情報の提出が必要です。';
+  }
+  if (stripeReady.value) {
+    return '情報が正しければ入金できます。変更があればいつでも更新できます。';
+  }
+  if (hasStripeAccount.value) {
+    return 'Stripe の案内に沿って入力を完了してください。';
+  }
+  return 'Stripe の案内に沿って入力すれば、すぐに受け取りを開始できます。';
+});
 const planChanged = computed(() => selectedPlanId.value !== savedPlanId.value);
 const activePlan = computed(() => pricingPlans.value.find((plan) => plan.id === savedPlanId.value) || null);
 const formatYen = (value: number) =>
@@ -292,6 +361,11 @@ onMounted(load);
   color: #fef3c7;
 }
 
+.pill.danger {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fee2e2;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -330,6 +404,11 @@ onMounted(load);
 .status.warn {
   background: #fef3c7;
   color: #b45309;
+}
+
+.status.danger {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .status.info {
