@@ -2008,8 +2008,8 @@ watch(
 :deep(.event-about__content figure img),
 :deep(.event-about__content img) {
   display: block !important;
-  width: calc(100% + 32px) !important;
-  max-width: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
   height: auto !important;
   object-fit: cover !important;
   border-radius: 16px !important;
@@ -2156,7 +2156,7 @@ watch(
 }
 
 .event-content--with-footer {
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 30px);
 }
 
 .participant-wall {
@@ -2322,7 +2322,7 @@ watch(
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 10px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px calc(8px + env(safe-area-inset-bottom, 0px) + 30px);
   background: var(--m-color-surface);
   display: grid;
   grid-template-columns: 1fr 1.2fr;
@@ -2389,7 +2389,7 @@ watch(
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px) + 30px);
   font-size: 12px;
   color: rgba(15, 23, 42, 0.75);
   background: rgba(255, 255, 255, 0.96);
