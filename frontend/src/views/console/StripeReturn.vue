@@ -32,10 +32,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import { startCommunityStripeOnboarding } from '../../api/client';
+import { useRoute, useRouter } from 'vue-router';
+import { fetchOrganizerPayoutPolicyStatus, startCommunityStripeOnboarding } from '../../api/client';
 
 const route = useRoute();
+const router = useRouter();
 const communityId = computed(() => (route.query.communityId as string) || '');
 const loading = ref(false);
 const error = ref(
@@ -76,8 +77,23 @@ const stateClass = computed(() => ({
   'is-error': status.value === 'error',
 }));
 
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (err) {
+    console.warn('Failed to load payout policy status', err);
+  }
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId: communityId.value },
+  });
+  return false;
+};
+
 const regenerate = async () => {
   if (!communityId.value) return;
+  if (!(await ensurePayoutPolicyAccepted())) return;
   loading.value = true;
   error.value = '';
   try {

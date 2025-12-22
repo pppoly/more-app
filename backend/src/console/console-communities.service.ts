@@ -410,6 +410,7 @@ export class ConsoleCommunitiesService {
   async startStripeOnboarding(userId: string, communityId: string) {
     this.logger.log('[ConsoleCommunities] *** startStripeOnboarding HIT', { communityId, userId });
     await this.permissions.assertCommunityManager(userId, communityId);
+    await this.permissions.assertOrganizerPayoutPolicyAccepted(userId);
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       include: { owner: { select: { email: true, name: true } } },

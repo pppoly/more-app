@@ -15,6 +15,19 @@ export class PermissionsService {
     }
   }
 
+  async assertOrganizerPayoutPolicyAccepted(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizerPayoutPolicyAcceptedAt: true },
+    });
+    if (!user?.organizerPayoutPolicyAcceptedAt) {
+      throw new ForbiddenException({
+        error: 'PAYOUT_POLICY_NOT_ACCEPTED',
+        message: '資金と返金の仕組みへの同意が必要です。',
+      });
+    }
+  }
+
   async assertAdmin(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } });
     if (!user?.isAdmin) {

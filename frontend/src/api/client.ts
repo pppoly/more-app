@@ -31,6 +31,7 @@ import type {
   MockPaymentResponse,
   MyEventItem,
   OrganizerApplicationStatus,
+  OrganizerPayoutPolicyStatus,
   PricingPlan,
   PromptDefinition,
   ConsolePaymentList,
@@ -750,6 +751,16 @@ export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicatio
 
 export async function submitOrganizerApplication(payload: { reason: string; experience?: string }) {
   const { data } = await apiClient.post('/organizers/apply', payload);
+  return data;
+}
+
+export async function fetchOrganizerPayoutPolicyStatus(): Promise<OrganizerPayoutPolicyStatus> {
+  const { data } = await apiClient.get<OrganizerPayoutPolicyStatus>('/organizer/payout-policy');
+  return data;
+}
+
+export async function acceptOrganizerPayoutPolicy(): Promise<OrganizerPayoutPolicyStatus> {
+  const { data } = await apiClient.post<OrganizerPayoutPolicyStatus>('/organizer/payout-policy/accept');
   return data;
 }
 

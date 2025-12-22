@@ -1,5 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface OrganizerApplicationDto {
@@ -67,6 +66,36 @@ export class OrganizersService {
       isOrganizer: user.isOrganizer,
       application,
     };
+  }
+
+  async getPayoutPolicyStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizerPayoutPolicyAcceptedAt: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return { acceptedAt: user.organizerPayoutPolicyAcceptedAt };
+  }
+
+  async acceptPayoutPolicy(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizerPayoutPolicyAcceptedAt: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.organizerPayoutPolicyAcceptedAt) {
+      return { acceptedAt: user.organizerPayoutPolicyAcceptedAt };
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { organizerPayoutPolicyAcceptedAt: new Date() },
+      select: { organizerPayoutPolicyAcceptedAt: true },
+    });
+    return { acceptedAt: updated.organizerPayoutPolicyAcceptedAt };
   }
 
   private latestApplication(userId: string) {

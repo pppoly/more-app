@@ -255,5 +255,72 @@
     "active": "Active",
     "saved": "Language updated",
     "saveFailed": "Failed to save language. Please try again."
+  },
+  "organizerPayoutPolicy": {
+    "title": "Payment flow & refunds (Organizer must read)",
+    "readTime": "About 3 minutes to read",
+    "lede": "Please review this to avoid misunderstandings and disputes.",
+    "sections": {
+      "flow": {
+        "title": "Payment & payout flow",
+        "items": [
+          "Participants pay by credit card (Stripe)",
+          "Funds go through payment processing and settlement first",
+          "Payouts are not instant and follow a review/settlement cycle"
+        ]
+      },
+      "refund": {
+        "title": "About refunds",
+        "items": [
+          "Participants receive a full refund",
+          "Card processing fees are usually not returned (industry standard)",
+          "Those fees are borne by the organizer"
+        ]
+      },
+      "negative": {
+        "title": "When balance can go negative",
+        "items": [
+          "If refunds or disputes happen before settlement",
+          "Your balance may temporarily go negative",
+          "Negative amounts are deducted from future revenue"
+        ]
+      },
+      "responsibility": {
+        "title": "Responsibility boundaries",
+        "items": [
+          "MORE does not advance or front funds",
+          "Refund/dispute costs are borne by the organizer",
+          "This prevents abuse and protects serious organizers"
+        ]
+      },
+      "why": {
+        "title": "Why these rules exist",
+        "items": [
+          "Prevent abuse and sudden cancellations",
+          "Protect trust across the platform and other organizers",
+          "Keep the platform stable long-term"
+        ]
+      }
+    },
+    "example": {
+      "title": "Example",
+      "body": "Refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned and are borne by the organizer."
+    },
+    "accept": {
+      "title": "Confirmation",
+      "flow": "I understand and agree to the payment/refund mechanism above",
+      "fee": "I understand card fees may not be returned on refunds"
+    },
+    "actions": {
+      "accept": "Agree and continue",
+      "later": "Read later",
+      "loading": "Checking..."
+    },
+    "toast": {
+      "requireAccept": "You must agree before continuing onboarding.",
+      "loadFailed": "Failed to load the content. Please try again.",
+      "acceptFailed": "Failed to save your agreement. Please try again."
+    },
+    "help": "If you have questions, contact platform support."
   }
 }

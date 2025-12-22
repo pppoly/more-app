@@ -104,9 +104,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import {
   fetchConsoleCommunity,
+  fetchOrganizerPayoutPolicyStatus,
   fetchPricingPlans,
   startCommunityStripeOnboarding,
   subscribeCommunityPlan,
@@ -115,6 +116,7 @@ import type { ConsoleCommunityDetail, PricingPlan } from '../../types/api';
 import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../config';
 
 const route = useRoute();
+const router = useRouter();
 const communityId = route.params.communityId as string;
 
 const community = ref<ConsoleCommunityDetail | null>(null);
@@ -163,7 +165,22 @@ const formatPlatformFee = (plan: PricingPlan) => {
   return `${plan.transactionFeePercent}%${fixedText}`;
 };
 
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId },
+  });
+  return false;
+};
+
 const handleOnboarding = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
   onboarding.value = true;
   error.value = null;
   try {

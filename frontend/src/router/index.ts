@@ -25,6 +25,7 @@ import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
 import { useAuthSheets } from '../composables/useAuthSheets';
+import { fetchOrganizerPayoutPolicyStatus } from '../api/client';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -58,6 +59,18 @@ async function communityRouteGuard(to: any, from: any, next: any) {
   }
   store.setActiveCommunity(communityId);
   return next();
+}
+
+async function payoutPolicyGuard(to: any, from: any, next: any) {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) {
+      return next();
+    }
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  return next({ path: '/organizer/payout-policy', query: { returnTo: to.fullPath } });
 }
 
 const routes: RouteRecordRaw[] = [
@@ -213,6 +226,22 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
+    },
+  },
+  {
+    path: '/organizer/payout-policy',
+    name: 'organizer-payout-policy',
+    component: () => import('../views/organizer/OrganizerPayoutPolicyPage.vue'),
+    meta: {
+      title: '資金の流れと返金のしくみ',
+      requiresAuth: true,
+      requiresOrganizer: true,
+      organizerOnly: true,
+      layout: 'mobile-user',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: '主催者-資金説明',
     },
   },
   {
@@ -495,6 +524,7 @@ const routes: RouteRecordRaw[] = [
         path: 'settings/payout',
         name: 'ConsoleMobilePayout',
         component: () => import('../views/console/mobile/PayoutSettingsMobile.vue'),
+        beforeEnter: payoutPolicyGuard,
         meta: {
           title: 'コミュニティ財務',
           devPageName: 'Console-受け取り設定',
@@ -617,7 +647,7 @@ const routes: RouteRecordRaw[] = [
         name: 'console-community-finance',
         component: CommunityFinance,
         props: true,
-        beforeEnter: communityRouteGuard,
+        beforeEnter: [communityRouteGuard, payoutPolicyGuard],
         meta: { devPageName: 'Console-財務' },
       },
       {
@@ -962,6 +992,12 @@ router.beforeEach(async (to, from, next) => {
 
   if (to.meta.requiresAdmin && !auth.user.value?.isAdmin) {
     const showed = sheets.showForbiddenSheet({ reason: 'NOT_ADMIN', returnTo: to.fullPath });
+    if (showed) return next(false);
+    return next({ name: 'home' });
+  }
+
+  if (to.meta.organizerOnly && !auth.user.value?.isOrganizer && !auth.user.value?.isAdmin) {
+    const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
     if (showed) return next(false);
     return next({ name: 'home' });
   }

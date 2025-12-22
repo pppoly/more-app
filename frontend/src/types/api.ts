@@ -515,6 +515,10 @@ export interface OrganizerApplicationStatus {
   application: OrganizerApplicationInfo | null;
 }
 
+export interface OrganizerPayoutPolicyStatus {
+  acceptedAt: string | null;
+}
+
 export interface CommunityAnalytics {
   communityId: string;
   totalEvents: number;

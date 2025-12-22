@@ -246,7 +246,7 @@
         <button class="rails-cta" type="button" :disabled="isCtaDisabled" @click="handleCtaClick">
           <span>{{ ctaLabel }}</span>
         </button>
-        <p v-if="ctaHint" class="cta-hint">{{ ctaHint }}</p>
+        <p v-if="ctaHint && isCtaHintVisible" class="cta-hint">{{ ctaHint }}</p>
         <pre v-if="showDebug" class="debug-state">{{ debugText }}</pre>
       </footer>
 
@@ -767,6 +767,21 @@ const hasMoreParticipants = computed(() => participantsList.value.length > parti
 const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
 
 const ctaHint = computed(() => ctaState.value.hint ?? '');
+const isCtaHintVisible = ref(false);
+
+watch(ctaHint, (value, _prev, onInvalidate) => {
+  if (!value) {
+    isCtaHintVisible.value = false;
+    return;
+  }
+
+  isCtaHintVisible.value = true;
+  const timer = window.setTimeout(() => {
+    isCtaHintVisible.value = false;
+  }, 3000);
+
+  onInvalidate(() => window.clearTimeout(timer));
+});
 const participantsTotalLabel = computed(() =>
   participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
 );

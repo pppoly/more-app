@@ -306,7 +306,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
   fetchConsoleCommunity,
@@ -314,6 +314,7 @@ import {
   fetchCommunityBalance,
   fetchCommunityAiUsage,
   fetchCommunityAnalytics,
+  fetchOrganizerPayoutPolicyStatus,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
@@ -332,6 +333,7 @@ const defaultEventCover =
 import type { ConsoleCommunityDetail, ConsoleEventSummary, CommunityAnalytics } from '../../../types/api';
 
 const router = useRouter();
+const route = useRoute();
 const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
@@ -680,8 +682,22 @@ const statusBadgeClass = (status: string) => {
 };
 
 const stripeOnboardLoading = ref(false);
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId: communityId.value || '' },
+  });
+  return false;
+};
 const startStripeOnboard = async () => {
   if (!communityId.value || stripeOnboardLoading.value) return;
+  if (!(await ensurePayoutPolicyAccepted())) return;
   stripeOnboardLoading.value = true;
   try {
     const { url } = await startCommunityStripeOnboarding(communityId.value);

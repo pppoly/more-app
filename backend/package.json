@@ -20,7 +20,8 @@
     "postinstall": "npm run prisma:generate",
     "verify:payments-replay": "ts-node scripts/verify-payments-replay.ts",
     "verify:payments-out-of-order": "ts-node scripts/verify-payments-out-of-order.ts",
-    "verify:payments-partial-refund": "ts-node scripts/verify-payments-partial-refund.ts"
+    "verify:payments-partial-refund": "ts-node scripts/verify-payments-partial-refund.ts",
+    "test:payout-policy": "node --test -r ts-node/register tests/organizer-payout-policy.test.ts"
   },
   "dependencies": {
     "@google-cloud/aiplatform": "^5.13.0",

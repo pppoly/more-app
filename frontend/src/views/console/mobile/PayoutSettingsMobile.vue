@@ -77,9 +77,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import { fetchConsoleCommunity, fetchCommunityBalance, startCommunityStripeOnboarding } from '../../../api/client';
+import {
+  fetchConsoleCommunity,
+  fetchCommunityBalance,
+  fetchOrganizerPayoutPolicyStatus,
+  startCommunityStripeOnboarding,
+} from '../../../api/client';
 import type { ConsoleCommunityBalance, ConsoleCommunityDetail } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
@@ -88,6 +93,7 @@ import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../c
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
+const route = useRoute();
 const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
 const error = ref<string | null>(null);
@@ -137,6 +143,21 @@ const stripeFeeRateText = computed(() => {
   return percentText;
 });
 
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  const id = community.value?.id || store.activeCommunityId.value || '';
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId: id },
+  });
+  return false;
+};
+
 const loadCommunity = async () => {
   error.value = null;
   if (!store.activeCommunityId.value) {
@@ -165,6 +186,7 @@ const loadBalance = async () => {
 };
 
 const handleOnboarding = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
   if (!community.value?.id) return;
   onboarding.value = true;
   error.value = null;
