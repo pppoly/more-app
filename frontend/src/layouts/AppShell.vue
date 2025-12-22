@@ -143,7 +143,7 @@ watch(
 
 .app-shell__content {
   min-height: 100vh;
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 0;
   overflow: auto;
 }
 

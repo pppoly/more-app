@@ -185,122 +185,124 @@
       </article>
     </section>
 
-    <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
-      <div class="picker-sheet">
-        <header class="picker-head">
-          <p class="picker-title">コミュニティを切り替え</p>
-          <button type="button" class="picker-close" @click="closeCommunityPicker">
-            <span class="i-lucide-x"></span>
-          </button>
-        </header>
-        <div class="picker-list">
-          <div v-if="pickerLoading" class="picker-empty">読み込み中…</div>
-          <template v-else>
-            <button
-              v-for="item in managedCommunities"
-              :key="item.id"
-              class="picker-item"
-              :class="{ 'is-active': item.id === activeCommunityId }"
-              type="button"
-              @click="selectCommunity(item.id)"
-            >
-              <div class="picker-avatar">
-                <img
-                  v-if="item.logoImageUrl"
-                  :src="normalizeLogoUrl(item.logoImageUrl)"
-                  alt="logo"
-                  loading="lazy"
-                />
-                <span v-else>{{ item.name.slice(0, 1) }}</span>
-              </div>
-              <div class="picker-meta">
-                <p class="picker-name">{{ item.name }}</p>
-                <p class="picker-slug">@{{ item.slug }}</p>
-              </div>
-              <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
+    <teleport to="body">
+      <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
+        <div class="picker-sheet">
+          <header class="picker-head">
+            <p class="picker-title">コミュニティを切り替え</p>
+            <button type="button" class="picker-close" @click="closeCommunityPicker">
+              <span class="i-lucide-x"></span>
             </button>
-            <p v-if="!managedCommunities.length" class="picker-empty">まだコミュニティがありません。</p>
-            <button
-              type="button"
-              class="picker-add"
-              :class="{ 'is-disabled': !canCreateCommunity }"
-              @click="handleCreateClick"
-            >
-              <span class="i-lucide-plus"></span>
-              {{ canCreateCommunity ? '新しいコミュニティを登録' : 'プランをアップグレード' }}
-            </button>
-            <p v-if="!canCreateCommunity" class="picker-hint">Free プランではコミュニティは 1 つまでです。アップグレードで増やせます。</p>
-          </template>
+          </header>
+          <div class="picker-list">
+            <div v-if="pickerLoading" class="picker-empty">読み込み中…</div>
+            <template v-else>
+              <button
+                v-for="item in managedCommunities"
+                :key="item.id"
+                class="picker-item"
+                :class="{ 'is-active': item.id === activeCommunityId }"
+                type="button"
+                @click="selectCommunity(item.id)"
+              >
+                <div class="picker-avatar">
+                  <img
+                    v-if="item.logoImageUrl"
+                    :src="normalizeLogoUrl(item.logoImageUrl)"
+                    alt="logo"
+                    loading="lazy"
+                  />
+                  <span v-else>{{ item.name.slice(0, 1) }}</span>
+                </div>
+                <div class="picker-meta">
+                  <p class="picker-name">{{ item.name }}</p>
+                  <p class="picker-slug">@{{ item.slug }}</p>
+                </div>
+                <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
+              </button>
+              <p v-if="!managedCommunities.length" class="picker-empty">まだコミュニティがありません。</p>
+              <button
+                type="button"
+                class="picker-add"
+                :class="{ 'is-disabled': !canCreateCommunity }"
+                @click="handleCreateClick"
+              >
+                <span class="i-lucide-plus"></span>
+                {{ canCreateCommunity ? '新しいコミュニティを登録' : 'プランをアップグレード' }}
+              </button>
+              <p v-if="!canCreateCommunity" class="picker-hint">Free プランではコミュニティは 1 つまでです。アップグレードで増やせます。</p>
+            </template>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
-      <div class="create-sheet">
-        <header class="create-head">
-          <p class="create-title">今回は、考えなくて大丈夫です</p>
-          <p class="create-subtitle">AIと一緒に、いちばん楽な方法から始められます</p>
-        </header>
-        <div class="create-list">
-          <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('assistant')">
-            <div class="create-badge">おすすめ</div>
-            <div class="create-icon create-icon--accent">🤖</div>
-            <div class="create-body">
-              <p class="create-item-title">AIと一緒に作る</p>
-              <p class="create-item-desc">質問に答えるだけで、イベントの中身がほぼ完成します</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('paste')">
-            <div class="create-icon">🧾</div>
-            <div class="create-body">
-              <p class="create-item-title">下書きを貼って相談する</p>
-              <p class="create-item-desc">すでにメモや文章がある人向け</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('copy')">
-            <div class="create-icon">📄</div>
-            <div class="create-body">
-              <p class="create-item-title">過去のイベントをコピー</p>
-              <p class="create-item-desc">以前とほぼ同じ内容なら</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('basic')">
-            <div class="create-icon">✍️</div>
-            <div class="create-body">
-              <p class="create-item-title">ゼロから作成</p>
-              <p class="create-item-desc">フォームに沿って、すべて自分で入力します</p>
-            </div>
-          </button>
-        </div>
-  </div>
-</div>
-
-<div v-if="showCopyPicker" class="create-overlay" @click.self="closeCopyPicker">
-  <div class="create-sheet copy-sheet">
-    <div class="copy-list">
-      <template v-if="copyEvents.length">
-        <button
-          v-for="item in copyEvents"
-          :key="item.id"
-          type="button"
-          class="copy-item"
-          @click="handleCopySelect(item.id)"
-        >
-          <div class="copy-meta">
-            <p class="copy-title">{{ getLocalizedText(item.title) || '過去のイベント' }}</p>
-            <p class="copy-time">{{ formatDate(item.startTime) }}</p>
+      <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
+        <div class="create-sheet">
+          <header class="create-head">
+            <p class="create-title">今回は、考えなくて大丈夫です</p>
+            <p class="create-subtitle">AIと一緒に、いちばん楽な方法から始められます</p>
+          </header>
+          <div class="create-list">
+            <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('assistant')">
+              <div class="create-badge">おすすめ</div>
+              <div class="create-icon create-icon--accent">🤖</div>
+              <div class="create-body">
+                <p class="create-item-title">AIと一緒に作る</p>
+                <p class="create-item-desc">質問に答えるだけで、イベントの中身がほぼ完成します</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('paste')">
+              <div class="create-icon">🧾</div>
+              <div class="create-body">
+                <p class="create-item-title">下書きを貼って相談する</p>
+                <p class="create-item-desc">すでにメモや文章がある人向け</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('copy')">
+              <div class="create-icon">📄</div>
+              <div class="create-body">
+                <p class="create-item-title">過去のイベントをコピー</p>
+                <p class="create-item-desc">以前とほぼ同じ内容なら</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('basic')">
+              <div class="create-icon">✍️</div>
+              <div class="create-body">
+                <p class="create-item-title">ゼロから作成</p>
+                <p class="create-item-desc">フォームに沿って、すべて自分で入力します</p>
+              </div>
+            </button>
           </div>
-        </button>
-      </template>
-      <p v-else-if="!copyLoading && !copyError" class="empty-text">過去のイベントはまだありません</p>
-      <p v-if="copyError" class="empty-text">{{ copyError }}</p>
-      <p v-if="copyLoading" class="empty-text">読み込み中…</p>
-    </div>
-    <div class="copy-actions">
-      <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">もっと見る</button>
-    </div>
-  </div>
-</div>
+        </div>
+      </div>
+
+      <div v-if="showCopyPicker" class="create-overlay" @click.self="closeCopyPicker">
+        <div class="create-sheet copy-sheet">
+          <div class="copy-list">
+            <template v-if="copyEvents.length">
+              <button
+                v-for="item in copyEvents"
+                :key="item.id"
+                type="button"
+                class="copy-item"
+                @click="handleCopySelect(item.id)"
+              >
+                <div class="copy-meta">
+                  <p class="copy-title">{{ getLocalizedText(item.title) || '過去のイベント' }}</p>
+                  <p class="copy-time">{{ formatDate(item.startTime) }}</p>
+                </div>
+              </button>
+            </template>
+            <p v-else-if="!copyLoading && !copyError" class="empty-text">過去のイベントはまだありません</p>
+            <p v-if="copyError" class="empty-text">{{ copyError }}</p>
+            <p v-if="copyLoading" class="empty-text">読み込み中…</p>
+          </div>
+          <div class="copy-actions">
+            <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">もっと見る</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 

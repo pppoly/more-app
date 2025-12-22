@@ -15,7 +15,7 @@
       </label>
 
       <label>
-        Slug
+        ホームページ名
         <input v-model="form.slug" type="text" :disabled="isEdit" required />
       </label>
 
@@ -40,7 +40,7 @@
 
       <label>
         紹介文
-        <textarea v-model="form.description" rows="6" placeholder="コミュニティ紹介"></textarea>
+        <textarea v-model="form.description" rows="12" placeholder="コミュニティ紹介"></textarea>
       </label>
 
       <div class="actions">

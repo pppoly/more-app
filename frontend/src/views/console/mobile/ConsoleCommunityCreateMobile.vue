@@ -22,7 +22,7 @@
           <input v-model="form.name" type="text" placeholder="Tokyo Community..." required />
         </div>
         <div class="ios-field">
-          <label>Slug</label>
+          <label>ホームページ名</label>
           <input v-model="form.slug" type="text" :disabled="isEdit" placeholder="tokyo-community" required />
         </div>
       </section>
@@ -74,7 +74,7 @@
             </div>
           </div>
           <div class="upload-card">
-            <p class="upload-title">カバー画像</p>
+            <p class="upload-title">カバー画像（任意）</p>
             <div class="upload-drop" @click="triggerCoverUpload">
               <input ref="coverInput" type="file" accept="image/*" class="hidden-input" @change="handleCoverUpload" />
               <div v-if="coverPreview" class="upload-preview">
@@ -96,7 +96,7 @@
         </div>
         <textarea
           v-model="form.description"
-          rows="6"
+          rows="12"
           placeholder="例：Tokyo Community Organizations Group は..."
         ></textarea>
       </section>
@@ -149,9 +149,21 @@ const submitting = ref(false);
 const error = ref<string | null>(null);
 
 const visibleOptions = [
-  { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
-  { value: 'semi-public', label: 'コミュニティ内公開', desc: 'Console / 既存メンバーのみ' },
-  { value: 'private', label: '非公開', desc: '運営メモ用・外部非公開' },
+  {
+    value: 'public',
+    label: '公開（誰でも見える）',
+    desc: 'ログイン不要。ポータル・検索・共有リンクから表示されます。',
+  },
+  {
+    value: 'semi-public',
+    label: 'メンバー限定',
+    desc: 'ログイン済みのフォロー/参加メンバーと運営だけが閲覧できます。',
+  },
+  {
+    value: 'private',
+    label: '運営のみ（非公開）',
+    desc: '運営・管理者だけが閲覧可能。メンバーにも表示しません。',
+  },
 ];
 
 const labelChips = computed(() =>

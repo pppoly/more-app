@@ -28,33 +28,20 @@
       </article>
 
       <article class="info-card">
-        <h1 class="community-name">{{ community.name }}</h1>
-        <div class="info-tags" v-if="heroLabels.length">
-          <span v-for="label in heroLabels" :key="label">#{{ label }}</span>
-        </div>
-        <div v-if="showClassesEntry" class="portal-actions">
-          <button class="portal-action-btn" type="button" @click="goClasses">
-            <div class="portal-action__icon">
-              <img :src="classIcon" alt="" loading="lazy" class="portal-action__icon-image" />
-            </div>
-            <div class="portal-action__body">
-              <p class="portal-action__title">教室 / Classes</p>
-              <p class="portal-action__desc">毎週の教室・講座の一覧</p>
-            </div>
-            <span v-if="classesCount !== null" class="badge">{{ classesCount }}</span>
-            <span class="i-lucide-chevron-right"></span>
+        <div class="community-name-row">
+          <h1 class="community-name">{{ community.name }}</h1>
+          <button
+            class="follow-tag"
+            :class="{ 'is-following': following }"
+            type="button"
+            :disabled="followBusy"
+            @click="toggleFollow"
+          >
+            {{ following ? 'フォロー中' : 'フォロー' }}
           </button>
         </div>
-        <button class="follow-btn" :class="{ 'is-following': following }" type="button" :disabled="followBusy" @click="toggleFollow">
-          {{ following ? 'フォロー中' : 'フォロー' }}
-        </button>
-        <div class="member-row" v-if="memberAvatars.length">
-          <div class="member-track">
-            <div v-for="member in memberAvatars" :key="member.id" class="member-avatar">
-              <AppAvatar :src="member.avatarUrl" :name="member.name" :size="36" />
-            </div>
-          </div>
-          <span class="member-count">{{ memberCount }} 人</span>
+        <div class="info-tags" v-if="heroLabels.length">
+          <span v-for="label in heroLabels" :key="label">#{{ label }}</span>
         </div>
         <p class="desc" :class="{ truncated: !descriptionExpanded }">
           {{ descriptionText }}
@@ -64,24 +51,69 @@
         </button>
       </article>
 
-      <article v-if="newsItemsLimited.length" class="news-card">
-        <div class="section-head">
-          <h2>最近の動き</h2>
+      <article v-if="memberAvatars.length" class="member-card">
+        <div class="member-row">
+          <div class="member-track">
+            <div v-for="member in memberAvatars" :key="member.id" class="member-avatar">
+              <AppAvatar :src="member.avatarUrl" :name="member.name" :size="36" />
+            </div>
+          </div>
+          <span class="member-count">{{ memberCount }} 人</span>
         </div>
-        <ul class="timeline">
-          <li v-for="(item, idx) in newsItemsLimited" :key="`news-${idx}`" class="timeline__item">
+      </article>
+
+      <article v-if="showClassesEntry" class="portal-entry-card">
+        <button class="portal-action-btn portal-action-btn--solo" type="button" @click="goClasses">
+          <div class="portal-action__icon">
+            <img :src="classIcon" alt="" loading="lazy" class="portal-action__icon-image" />
+          </div>
+          <div class="portal-action__body">
+            <p class="portal-action__title">教室 / Classes</p>
+            <p class="portal-action__desc">毎週の教室・講座の一覧</p>
+          </div>
+          <span v-if="classesCount !== null" class="badge">{{ classesCount }}</span>
+          <span class="i-lucide-chevron-right"></span>
+        </button>
+      </article>
+
+      <article class="news-card">
+        <div class="section-head">
+          <h2>ニュース</h2>
+        </div>
+        <ul v-if="interestedItems.length" class="timeline">
+          <li
+            v-for="(item, idx) in interestedItems"
+            :key="`news-${idx}`"
+            class="timeline__item"
+            :class="{ 'is-clickable': Boolean(item.id) }"
+            :role="item.id ? 'button' : undefined"
+            :tabindex="item.id ? 0 : -1"
+            @click="goEventById(item.id)"
+            @keydown.enter.prevent="goEventById(item.id)"
+            @keydown.space.prevent="goEventById(item.id)"
+          >
             <span class="timeline__dot"></span>
             <div class="timeline__body">
               <p class="timeline__title">
-                <span class="flag" :class="item.statusState === 'open' ? 'flag--open' : 'flag--closed'">
+                <span
+                  class="flag"
+                  :class="
+                    item.statusState === 'open'
+                      ? 'flag--open'
+                      : item.statusState === 'closed'
+                        ? 'flag--closed'
+                        : 'flag--interest'
+                  "
+                >
                   {{ item.statusLabel }}
                 </span>
                 {{ item.title }}
               </p>
-              <p class="timeline__meta">{{ item.date }}</p>
+              <p class="timeline__meta">{{ item.meta }}</p>
             </div>
           </li>
         </ul>
+        <p v-else class="news-empty">気になるイベントをフォローすると、ここに表示されます。</p>
       </article>
 
       <section v-if="showEvents" class="event-gallery">
@@ -89,13 +121,23 @@
           <h2>イベント</h2>
           <span class="count" v-if="formattedEvents.length">{{ formattedEvents.length }} 件</span>
         </div>
-        <div class="event-list" v-if="featuredEvents.length">
-          <article v-for="event in featuredEvents" :key="event.id" class="event-card">
+        <div class="event-list event-list--scroll" v-if="featuredEvents.length">
+          <article
+            v-for="event in featuredEvents"
+            :key="event.id"
+            class="event-card event-card--compact"
+            :class="{ 'is-clickable': Boolean(event.id) }"
+            :role="event.id ? 'button' : undefined"
+            :tabindex="event.id ? 0 : -1"
+            @click="goEvent(event)"
+            @keydown.enter.prevent="goEvent(event)"
+            @keydown.space.prevent="goEvent(event)"
+          >
             <div class="event-card__cover" :style="eventCoverStyle(event)"></div>
             <div class="event-card__body">
               <span class="event-card__status" :class="event.statusClass">{{ event.statusLabel }}</span>
-              <h3 class="event-card__title">{{ event.title }}</h3>
-              <p class="event-card__meta">{{ event.date }} ・ {{ event.locationText || '場所未定' }}</p>
+              <p class="event-card__date">{{ event.date }}</p>
+              <p class="event-card__meta">{{ event.locationText || '場所未定' }}</p>
             </div>
           </article>
         </div>
@@ -126,6 +168,7 @@ import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
+import { useFavorites } from '../../composables/useFavorites';
 import AppAvatar from '../../components/common/AppAvatar.vue';
 import backIcon from '../../assets/icons/arrow-back.svg';
 import classIcon from '../../assets/class.svg';
@@ -142,6 +185,7 @@ const classesCount = ref<number | null>(null);
 const resourceConfig = useResourceConfig();
 const { slotMap } = resourceConfig;
 const toast = useToast();
+const { favorites } = useFavorites();
 
 const heroFallbackImage = computed(
   () =>
@@ -151,12 +195,12 @@ const heroFallbackImage = computed(
 );
 const heroOverlay = computed(() => {
   if (themeName.value === 'clean') {
-    return 'linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.9))';
+    return 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.35))';
   }
   if (themeName.value === 'warm') {
-    return 'linear-gradient(180deg, rgba(255,247,237,0.55), rgba(254,215,170,0.9))';
+    return 'linear-gradient(180deg, rgba(255,247,237,0.18), rgba(254,215,170,0.45))';
   }
-  return 'linear-gradient(180deg, rgba(15, 23, 42, 0.35), rgba(3, 7, 18, 0.75))';
+  return 'linear-gradient(180deg, rgba(15, 23, 42, 0.12), rgba(3, 7, 18, 0.35))';
 });
 
 const composeHeroBackground = (source: string, fallback: string) => {
@@ -316,17 +360,20 @@ const memberAvatars = computed(() =>
   })),
 );
 const memberCount = computed(() => community.value?.memberCount ?? memberAvatars.value.length);
-const newsItems = computed(() => {
-  const events = formattedEvents.value;
-  if (!events.length) return [];
-  return events.slice(0, 4).map((event) => ({
-    title: event.title,
-    date: new Date(event.startTime).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
-    statusState: event.statusState,
-    statusLabel: event.statusLabel,
-  }));
+const interestedItems = computed(() => {
+  if (!favorites.value.length) return [];
+  const items = favorites.value.map((fav) => {
+    const matched = formattedEvents.value.find((event) => event.id === fav.id);
+    return {
+      id: fav.id,
+      title: fav.title,
+      meta: fav.timeText || matched?.date || '日時未定',
+      statusLabel: matched?.statusLabel ?? '気になる',
+      statusState: matched?.statusState ?? 'interest',
+    };
+  });
+  return items.slice(0, 4);
 });
-const newsItemsLimited = computed(() => newsItems.value.slice(0, 4));
 const eventCoverStyle = (event: any) => {
   const cover = event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl as string) : heroFallbackImage.value;
   return {
@@ -359,6 +406,16 @@ const goBack = () => {
   } else {
     router.replace({ name: 'events' });
   }
+};
+
+const goEvent = (event: { id?: string | number }) => {
+  if (!event?.id) return;
+  router.push({ name: 'event-detail', params: { eventId: String(event.id) } });
+};
+
+const goEventById = (id?: string | null) => {
+  if (!id) return;
+  router.push({ name: 'event-detail', params: { eventId: String(id) } });
 };
 
 const loadFollow = async () => {
@@ -422,6 +479,8 @@ const toggleFollow = async () => {
   --hero-overlay-to: rgba(15, 23, 42, 0.55);
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 48%, #f8fafc 100%);
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   color: #0f172a;
   overflow-x: hidden;
   box-sizing: border-box;
@@ -434,7 +493,7 @@ const toggleFollow = async () => {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 0 12px 32px;
+  padding: 0 12px calc(32px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -554,7 +613,7 @@ const toggleFollow = async () => {
 
 .portal-hero {
   position: relative;
-  min-height: 180px;
+  min-height: 240px;
   border-radius: 0 0 20px 20px;
   overflow: hidden;
   background-size: cover;
@@ -566,8 +625,8 @@ const toggleFollow = async () => {
 .portal-hero__overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.28), rgba(15, 23, 42, 0.62));
-  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.05), rgba(15, 23, 42, 0.18));
+  backdrop-filter: blur(2px);
   z-index: 0;
 }
 .portal-hero__content {
@@ -635,8 +694,8 @@ const toggleFollow = async () => {
   flex-direction: column;
   gap: 12px;
 }
-.portal-actions {
-  margin: 4px 0 8px;
+.portal-entry-card {
+  margin-top: 12px;
 }
 .portal-action-btn {
   width: 100%;
@@ -649,6 +708,11 @@ const toggleFollow = async () => {
   gap: 10px;
   align-items: center;
   font-weight: 700;
+}
+.portal-action-btn--solo {
+  background: #fff;
+  border-color: #e2e8f0;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.1);
 }
 .portal-action__icon {
   width: 80px;
@@ -676,12 +740,40 @@ const toggleFollow = async () => {
   font-size: 12px;
   color: #6b7280;
 }
+.community-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: center;
+}
 .community-name {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
   text-align: center;
   letter-spacing: -0.01em;
+}
+.follow-tag {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.follow-tag.is-following {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+.follow-tag:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .info-tags {
   display: flex;
@@ -697,20 +789,12 @@ const toggleFollow = async () => {
   font-weight: 600;
   font-size: 12px;
 }
-.follow-btn {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #0f172a;
-  font-weight: 700;
-  border-radius: 12px;
-  padding: 11px 12px;
-  box-shadow: none;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-.follow-btn.is-following {
-  background: #eef2f7;
-  border-color: #e2e8f0;
-  color: #0f172a;
+.member-card {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
 }
 .member-row {
   display: flex;
@@ -755,12 +839,15 @@ const toggleFollow = async () => {
   color: #475569;
   line-height: 1.6;
   text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .desc.truncated {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: normal;
 }
 .toggle {
   border: none;
@@ -806,6 +893,12 @@ const toggleFollow = async () => {
   gap: 10px;
   align-items: flex-start;
 }
+.timeline__item.is-clickable {
+  cursor: pointer;
+}
+.timeline__item.is-clickable:active .timeline__body {
+  transform: translateY(1px);
+}
 .timeline__dot {
   width: 12px;
   height: 12px;
@@ -834,6 +927,11 @@ const toggleFollow = async () => {
   color: #64748b;
   font-size: 13px;
 }
+.news-empty {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
 .flag {
   display: inline-flex;
   align-items: center;
@@ -852,6 +950,10 @@ const toggleFollow = async () => {
 .flag--closed {
   background: #f1f5f9;
   color: #0f172a;
+}
+.flag--interest {
+  background: #eef2ff;
+  color: #3730a3;
 }
 .empty-panel {
   border: 1px dashed #cbd5f5;
@@ -885,6 +987,17 @@ const toggleFollow = async () => {
   flex-direction: column;
   gap: 12px;
 }
+.event-list--scroll {
+  flex-direction: row;
+  overflow-x: auto;
+  padding: 2px 12px 8px;
+  margin: 0 -12px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.event-list--scroll::-webkit-scrollbar {
+  display: none;
+}
 .event-card {
   background: #fff;
   border-radius: 16px;
@@ -894,17 +1007,34 @@ const toggleFollow = async () => {
   display: flex;
   flex-direction: column;
 }
+.event-card--compact {
+  flex: 0 0 220px;
+  scroll-snap-align: start;
+}
+.event-card.is-clickable {
+  cursor: pointer;
+}
+.event-card.is-clickable:active {
+  transform: translateY(1px);
+}
 .event-card__cover {
   width: 100%;
-  padding-top: 56%;
+  padding-top: 42%;
   background-size: cover;
   background-position: center;
+}
+.event-card--compact .event-card__cover {
+  padding-top: 0;
+  height: 120px;
 }
 .event-card__body {
   padding: 14px 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.event-card--compact .event-card__body {
+  gap: 6px;
 }
 .event-card__status {
   align-self: flex-start;
@@ -925,10 +1055,22 @@ const toggleFollow = async () => {
   font-weight: 800;
   color: #0f172a;
 }
+.event-card__date {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .event-card__meta {
   margin: 0;
   font-size: 13px;
   color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (min-width: 960px) {
@@ -936,7 +1078,7 @@ const toggleFollow = async () => {
     padding: 0 28px 32px;
   }
   .portal-hero {
-    min-height: 240px;
+    min-height: 320px;
     margin: 0 auto;
     width: 100%;
     border-radius: 0 0 24px 24px;

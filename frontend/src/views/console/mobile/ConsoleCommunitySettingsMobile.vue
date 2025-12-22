@@ -6,26 +6,43 @@
       </template>
     </ConsoleTopBar>
     <form class="form-sections" @submit.prevent="handleSave">
-      <p class="section-eyebrow">必須項目</p>
       <section class="form-card sheet">
         <p class="card-label">基本情報</p>
-        <div class="list-row list-row--field">
-          <div class="list-meta">
-            <p class="list-title">コミュニティ名</p>
-            <p class="list-desc">タップして編集</p>
+        <div class="ios-input-block">
+          <div class="ios-input-group">
+            <div class="ios-row ios-row--input">
+              <span class="ios-label">コミュニティ名</span>
+              <div class="ios-value ios-value--inline-input">
+                <input v-model="form.name" type="text" placeholder="Tokyo Community..." />
+              </div>
+            </div>
+            <div class="ios-row ios-row--input" :class="{ 'ios-row--disabled': !isCreateMode }">
+              <span class="ios-label">ホームページ名</span>
+              <div class="ios-value ios-value--inline-input">
+                <input v-model="form.slug" type="text" :disabled="!isCreateMode" />
+                <span v-if="isCreateMode" class="ios-suffix">設定</span>
+              </div>
+            </div>
           </div>
-          <input v-model="form.name" type="text" class="list-input" placeholder="Tokyo Community..." />
-          <span class="edit-hint"><span class="i-lucide-pencil"></span>編集</span>
-        </div>
-        <div class="list-row list-row--field is-disabled">
-          <div class="list-meta">
-            <p class="list-title">Slug</p>
-            <p class="list-desc">URL 識別子（ポータルのアドレスに使用）</p>
+          <div v-if="slugPreviewUrl" class="slug-preview" :class="{ 'is-expanded': isSlugPreviewExpanded }">
+            <span
+              class="slug-url"
+              :class="{ 'is-expanded': isSlugPreviewExpanded }"
+              :title="slugPreviewUrl"
+              role="button"
+              tabindex="0"
+              :aria-expanded="isSlugPreviewExpanded ? 'true' : 'false'"
+              @click="toggleSlugPreview"
+              @keydown.enter.prevent="toggleSlugPreview"
+              @keydown.space.prevent="toggleSlugPreview"
+            >
+              {{ slugPreviewUrl }}
+            </span>
+            <button v-if="canCopySlug" type="button" class="slug-copy" @click="copySlugUrl">
+              コピー
+            </button>
           </div>
-          <input v-model="form.slug" type="text" class="list-input" :disabled="!isCreateMode" />
-          <span class="edit-hint" :class="{ disabled: !isCreateMode }">
-            <span class="i-lucide-link"></span>{{ isCreateMode ? '設定' : '固定' }}
-          </span>
+          <p class="slug-note">この名前であなたのホームページが作られます。</p>
         </div>
         <button type="button" class="list-row" @click="triggerLogoUpload()">
           <div class="list-meta">
@@ -40,7 +57,7 @@
         </button>
         <button type="button" class="list-row" @click="triggerCoverUpload()">
           <div class="list-meta">
-            <p class="list-title">カバー画像</p>
+            <p class="list-title">カバー画像（任意）</p>
             <p class="list-desc">16:9 横長、1MB 以内</p>
           </div>
           <div class="list-thumb list-thumb--wide">
@@ -51,16 +68,11 @@
         </button>
       </section>
 
-      <p class="section-eyebrow">表示・ブランディング</p>
       <section class="form-card sheet">
-        <div class="card-head">
-          <p class="card-label">ラベル</p>
-          <p class="card-hint">最大 5 つまで選択</p>
-        </div>
         <button type="button" class="list-row" @click="openTagSheet">
           <div class="list-meta">
             <p class="list-title">コミュニティのタグ</p>
-            <p class="list-desc">タップして選択</p>
+            <p class="list-desc">最大 5 つまで</p>
           </div>
           <div class="tag-badge-group">
             <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
@@ -70,34 +82,25 @@
         </button>
       </section>
 
-      <p class="section-eyebrow">公開 / リスク</p>
       <section class="form-card sheet">
         <button type="button" class="list-row" @click="visibilitySheetOpen = true">
           <div class="list-meta">
             <p class="list-title">公開範囲</p>
-            <p class="list-desc">ユーザーにどこまで見せるか</p>
           </div>
           <div class="visible-pill">
             <span class="visible-label">{{ currentVisibleOption.label }}</span>
           </div>
           <span class="i-lucide-chevron-right list-chevron"></span>
         </button>
-        <div class="risk-hint">
-          <span class="i-lucide-alert-triangle"></span>
-          公開設定はポータルや検索結果に影響します。機密情報は非公開にしてください。
-        </div>
       </section>
 
       <section class="form-card sheet">
         <div class="card-head">
           <p class="card-label">コミュニティ紹介</p>
-          <div class="card-head__right">
-            <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
-          </div>
         </div>
         <textarea
           v-model="form.description"
-          rows="6"
+          rows="12"
           placeholder="コミュニティのビジョン・活動内容・歓迎する人などを記載してください。"
         ></textarea>
       </section>
@@ -266,6 +269,7 @@ const tagCategories = ref<CommunityTagCategory[]>([]);
 const tagLoading = ref(false);
 const tagLoaded = ref(false);
 const visibilitySheetOpen = ref(false);
+const isSlugPreviewExpanded = ref(false);
 
 const saving = ref(false);
 const creatingFromUpload = ref(false);
@@ -277,6 +281,21 @@ const selectedTags = ref<string[]>([]);
 const pageTitle = computed(() => (isCreateMode.value ? 'コミュニティ作成' : 'コミュニティ設定'));
 const goBack = () => {
   router.back();
+};
+
+const copySlugUrl = async () => {
+  if (!slugPreviewUrl.value) return;
+  if (!navigator?.clipboard?.writeText) {
+    toast.show('コピーに失敗しました。手動でコピーしてください。', 'error');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(slugPreviewUrl.value);
+    toast.show('リンクをコピーしました', 'success');
+  } catch (err) {
+    console.warn('Failed to copy slug url', err);
+    toast.show('コピーに失敗しました。時間をおいて再試行してください。', 'error');
+  }
 };
 
 const toggleTag = (tag: string) => {
@@ -296,19 +315,21 @@ const toggleTag = (tag: string) => {
 const visibleOptions = [
   {
     value: 'public',
-    label: '公開',
-    desc: '誰でも閲覧できる。ポータルや外部リンクからも表示されます。',
+    label: '公開（誰でも見える）',
+    desc: 'ログイン不要。ポータル・検索・共有リンクから表示されます。',
+    note: '外部向けに広く見せたい場合におすすめ。',
   },
   {
     value: 'semi-public',
-    label: 'コミュニティ限定',
-    desc: 'Console 内とフォロー/参加済みのユーザーだけが閲覧可能。',
-    note: 'メンバー = このコミュニティをフォロー（参加）しているユーザー。',
+    label: 'メンバー限定',
+    desc: 'ログイン済みのフォロー/参加メンバーと運営だけが閲覧できます。',
+    note: '非メンバーは閲覧できません。',
   },
   {
     value: 'private',
-    label: '非公開',
-    desc: '運営メモ用。外部/メンバーにも表示しません。',
+    label: '運営のみ（非公開）',
+    desc: '運営・管理者だけが閲覧可能。メンバーにも表示しません。',
+    note: '準備中や内部メモ向け。',
   },
 ];
 
@@ -316,6 +337,23 @@ const labelChips = computed(() => selectedTags.value.slice(0, 5));
 const currentVisibleOption = computed(
   () => visibleOptions.find((o) => o.value === form.visibleLevel) ?? visibleOptions[0],
 );
+const portalBaseUrl = computed(() => {
+  if (typeof window === 'undefined') return '/community/';
+  return `${window.location.origin}/community/`;
+});
+const slugPreviewUrl = computed(() => {
+  const slug = form.slug.trim();
+  if (!slug) return '';
+  return `${portalBaseUrl.value}${slug}`;
+});
+const canCopySlug = computed(() => Boolean(slugPreviewUrl.value) && !isCreateMode.value);
+const toggleSlugPreview = () => {
+  isSlugPreviewExpanded.value = !isSlugPreviewExpanded.value;
+};
+
+watch(slugPreviewUrl, () => {
+  isSlugPreviewExpanded.value = false;
+});
 
 const loadCommunity = async () => {
   if (isCreateMode.value || !communityId.value) return;
@@ -529,7 +567,7 @@ const handleSave = async () => {
     return;
   }
   if (!form.name.trim() || !form.slug.trim()) {
-    error.value = 'コミュニティ名とSlugは必須です';
+    error.value = 'コミュニティ名とホームページ名は必須です';
     saving.value = false;
     return;
   }
@@ -726,7 +764,7 @@ watch(
   font-size: 12px;
 }
 .form-sections {
-  padding: 0 16px 24px;
+  padding: 12px 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -780,23 +818,6 @@ watch(
 .list-row + .list-row {
   margin-top: 10px;
 }
-.list-row--field {
-  padding-left: 14px;
-  padding-right: 14px;
-}
-.edit-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #475569;
-}
-.edit-hint.disabled {
-  color: #cbd5e1;
-}
-.list-row.is-disabled {
-  opacity: 0.7;
-}
 .list-meta {
   flex: 1;
   min-width: 0;
@@ -812,23 +833,114 @@ watch(
   font-size: 12px;
   color: #94a3b8;
 }
-.list-input {
+.ios-input-group {
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.98);
+}
+.ios-input-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ios-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ios-row + .ios-row {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+.ios-row--disabled {
+  opacity: 0.7;
+}
+.ios-label {
+  flex: 0 0 32%;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.ios-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ios-value--inline-input input {
+  width: 100%;
   border: none;
   background: transparent;
-  border-radius: 0;
-  padding: 4px 0;
-  font-size: 15px;
-  min-width: 120px;
-  max-width: 48%;
+  padding: 0;
+  font-size: 16px;
   text-align: right;
-  margin-left: auto;
-  flex-shrink: 1;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.list-input:focus {
+.ios-value--inline-input input:focus {
   outline: none;
-  box-shadow: none;
-  border-bottom-color: rgba(14, 165, 233, 0.7);
+}
+.ios-value--inline-input input:disabled {
+  color: #94a3b8;
+}
+.ios-suffix {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+.slug-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+}
+.slug-preview.is-expanded {
+  align-items: flex-start;
+}
+.slug-note {
+  margin: 6px 2px 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.slug-url {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+.slug-url.is-expanded {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-all;
+}
+.slug-copy {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.slug-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .card-head__right {
   display: flex;
@@ -901,17 +1013,6 @@ watch(
 .tag-placeholder {
   font-size: 12px;
   color: #94a3b8;
-}
-.risk-hint {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #fff7ed;
-  color: #c2410c;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 .thumb-placeholder {
   font-size: 20px;
