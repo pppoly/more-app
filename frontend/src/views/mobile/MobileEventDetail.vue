@@ -83,7 +83,6 @@
             <div class="event-hero-meta">
               <div class="event-hero-meta__left">
                 <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
-                <span class="view-count">{{ viewCountLabel }}</span>
               </div>
               <div v-if="showHeaderActions" class="event-hero-actions">
                 <button class="event-action-icon" type="button" @click="shareEvent">
@@ -118,42 +117,40 @@
         <section class="m-event-card event-meta-card">
           <div class="event-schedule-block">
             <div class="event-meta-row event-meta-row--schedule">
-              <div class="event-meta-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <rect x="3" y="4" width="18" height="17" rx="3" stroke="currentColor" stroke-width="1.5" />
-                  <path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <div class="event-meta-icon event-meta-icon--date" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <rect x="2.5" y="3.5" width="15" height="13.5" rx="2.6" stroke="currentColor" stroke-width="2" />
+                  <path d="M2.5 7.5h15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  <path d="M6 2.5v3.5M14 2.5v3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                 </svg>
               </div>
-              <div class="event-schedule">
-                <p class="event-schedule__day">{{ selectedDateMeta?.label ?? detail.timeFullText }}</p>
-                <p class="event-schedule__time">{{ selectedDateMeta?.meta ?? detail.timeFullText }}</p>
+              <div
+                class="event-schedule"
+                :class="{ 'is-clickable': Boolean(calendarLink) }"
+                :role="calendarLink ? 'button' : undefined"
+                :tabindex="calendarLink ? 0 : -1"
+                @click="openCalendar"
+                @keydown.enter.prevent="openCalendar"
+                @keydown.space.prevent="openCalendar"
+              >
+                <p class="event-schedule__line" :title="scheduleLine">
+                  {{ scheduleLine }}
+                </p>
               </div>
               <span v-if="isMultiDay" class="event-schedule__badge">複数日程</span>
             </div>
-            <div class="event-secondary-actions">
-              <button v-if="calendarLink" class="event-schedule__cta subtle" type="button" @click="openCalendar">
-                <span class="i-lucide-calendar-plus"></span>
-                カレンダーに追加
-              </button>
-              <button class="event-schedule__cta subtle" type="button" @click="openMap">
-                <span class="i-lucide-map-pin"></span>
-                ルートを見る
-              </button>
-            </div>
           </div>
           <div class="m-divider"></div>
-          <div class="event-meta-row event-meta-row--location">
-            <div class="event-meta-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                />
-                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-            </div>
+          <div
+            class="event-meta-row event-meta-row--location"
+            :class="{ 'is-clickable': Boolean(detail.mapUrl) }"
+            :role="detail.mapUrl ? 'button' : undefined"
+            :tabindex="detail.mapUrl ? 0 : -1"
+            @click="openMap"
+            @keydown.enter.prevent="openMap"
+            @keydown.space.prevent="openMap"
+          >
+            <div class="event-meta-icon event-meta-icon--address" aria-hidden="true">〒</div>
             <div class="event-meta-text">
               <div class="event-location-title">{{ detail.locationText }}</div>
             </div>
@@ -161,12 +158,10 @@
         </section>
 
         <section class="event-section" v-if="shouldShowParticipants">
-          <h2 class="m-section-title">参加状況</h2>
           <div class="m-event-card">
-            <div class="event-progress-head">
-              <span>{{ detail.regSummary }}</span>
+          <div class="event-progress-head">
               <span>{{ detail.capacityText }}</span>
-            </div>
+          </div>
             <div class="event-progress">
               <div class="event-progress__bar" :style="{ width: `${detail.regProgress}%` }"></div>
             </div>
@@ -191,14 +186,12 @@
                   +{{ remainingParticipants }}
                 </button>
               </div>
-              <p class="participants-hint">最近の参加者（{{ participantsTotalLabel }}）</p>
             </div>
             <p v-else class="participants-empty">まだ参加者はいません。最初の参加者になりませんか？</p>
           </div>
         </section>
 
         <section class="event-section">
-          <h2 class="m-section-title">主催コミュニティ</h2>
           <div class="m-event-card event-group-card">
             <div class="group-main">
               <button class="group-info" type="button" @click="openCommunityPortal" :disabled="!detail.communitySlug">
@@ -208,19 +201,26 @@
                   <div class="m-text-meta">最新ニュースとイベント情報</div>
                 </div>
               </button>
-              <button class="group-follow" :class="{ 'is-active': isFollowingCommunity }" type="button" @click="toggleFollow">
-                <span v-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
+              <button
+                class="group-follow"
+                :class="{ 'is-active': isFollowingCommunity, 'is-locked': followLocked }"
+                type="button"
+                :disabled="followLocked"
+                @click="toggleFollow"
+              >
+                <span v-if="followLocked" class="i-lucide-lock"></span>
+                <span v-else-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
                 <span v-else class="i-lucide-bell-plus"></span>
-                {{ isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+                {{ followLocked ? 'メンバー' : isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
               </button>
             </div>
-            <p class="group-hint">このコミュニティをフォローすると最新イベントやアナウンスを受け取れます。</p>
           </div>
         </section>
 
         <section class="event-section">
-          <h2 class="m-section-title">About</h2>
           <div class="m-event-card event-about">
+            <div class="event-about__header">About</div>
+            <div class="event-about__divider" aria-hidden="true"></div>
             <div
               class="m-text-body prose prose-sm max-w-none event-about__content"
               v-html="detail.descriptionHtml"
@@ -567,10 +567,6 @@ const detail = computed(() => {
     Number(config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0),
   );
   const capacity = typeof event.value.maxParticipants === 'number' ? event.value.maxParticipants : config.capacity ?? null;
-  const regSummary =
-    typeof config.regSummary === 'string' && config.regSummary.trim().length
-      ? config.regSummary
-      : `${currentParticipants}名が参加予定`;
   const regProgress =
     capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : 0;
   const attendeeAvatars: string[] = Array.isArray(config.attendeeAvatars) ? config.attendeeAvatars : [];
@@ -618,7 +614,6 @@ const detail = computed(() => {
       gallery.value[0]?.imageUrl ||
       (event.value.coverImageUrl ? resolveAssetUrl(event.value.coverImageUrl) : null) ||
       fallbackCover.value,
-    regSummary,
     capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
     regProgress,
     priceText: event.value.config?.priceText ?? derivePriceText(),
@@ -698,14 +693,22 @@ const dateOptions = computed(() => {
     id: event.value.id,
     label: formatLongDate(event.value.startTime),
     meta: formatTimeRange(event.value.startTime, event.value.endTime),
+    start: event.value.startTime,
+    end: event.value.endTime ?? undefined,
   };
   const occurrences = ((event.value as any).occurrences ?? event.value.config?.occurrences) || [];
   const extra = Array.isArray(occurrences)
-    ? occurrences.map((occ: any, index: number) => ({
-        id: `occ-${index}`,
-        label: formatLongDate(occ.start ?? occ.startTime ?? event.value?.startTime),
-        meta: formatTimeRange(occ.start ?? occ.startTime, occ.end ?? occ.endTime),
-      }))
+    ? occurrences.map((occ: any, index: number) => {
+        const start = occ.start ?? occ.startTime ?? event.value?.startTime;
+        const end = occ.end ?? occ.endTime ?? event.value?.endTime ?? undefined;
+        return {
+          id: `occ-${index}`,
+          label: formatLongDate(start),
+          meta: formatTimeRange(start, end),
+          start,
+          end,
+        };
+      })
     : [];
   return [baseOption, ...extra];
 });
@@ -720,7 +723,17 @@ watch(
   { immediate: true },
 ) ;
 
-const selectedDateMeta = computed(() => dateOptions.value.find((opt) => opt.id === selectedDateId.value) ?? dateOptions.value[0]);
+const selectedDateMeta = computed(
+  () => dateOptions.value.find((opt) => opt.id === selectedDateId.value) ?? dateOptions.value[0],
+);
+const scheduleLine = computed(() => {
+  const start = selectedDateMeta.value?.start ?? event.value?.startTime;
+  if (!start) {
+    return detail.value?.timeFullText ?? '';
+  }
+  const end = selectedDateMeta.value?.end ?? event.value?.endTime;
+  return formatScheduleLine(start, end);
+});
 const favoritePayload = computed(() => {
   if (!detail.value) return null;
   return {
@@ -753,12 +766,6 @@ const statusBadge = computed(() => {
   return { label: '受付中', variant: 'is-live' };
 });
 
-const viewCountLabel = computed(() => {
-  const raw = detail.value?.config?.viewCount ?? detail.value?.config?.views ?? 0;
-  const value = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
-  return `${value}人が参加予定`;
-});
-
 const shouldShowParticipants = computed(() => Boolean(detail.value?.showParticipants));
 const participantsList = computed(() => detail.value?.participants ?? []);
 const participantsTotal = computed(() => detail.value?.participantCount ?? participantsList.value.length ?? 0);
@@ -782,9 +789,6 @@ watch(ctaHint, (value, _prev, onInvalidate) => {
 
   onInvalidate(() => window.clearTimeout(timer));
 });
-const participantsTotalLabel = computed(() =>
-  participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
-);
 const showAllParticipants = ref(false);
 
 const loadEvent = async () => {
@@ -833,13 +837,6 @@ watch(
   () => heroSlides.value.length,
   () => {
     activeSlide.value = 0;
-  },
-);
-
-watch(
-  () => detail.value?.community?.id,
-  () => {
-    loadFollowState();
   },
 );
 
@@ -983,32 +980,62 @@ const openCalendar = () => {
   window.open(calendarLink.value, '_blank');
 };
 
-const communityIdForFollow = computed(() => detail.value?.community?.id || (detail.value as any)?.communityId || null);
+const communityIdForFollow = computed(
+  () => event.value?.community?.id || detail.value?.community?.id || (detail.value as any)?.communityId || null,
+);
 const isFollowingCommunity = ref(false);
+const followLocked = ref(false);
 const loadFollowState = async () => {
   if (!communityIdForFollow.value) return;
+  if (!user.value) {
+    isFollowingCommunity.value = false;
+    followLocked.value = false;
+    return;
+  }
   try {
     const status = await fetchCommunityFollowStatus(communityIdForFollow.value);
     isFollowingCommunity.value = !!status.following;
+    followLocked.value = !!status.locked;
   } catch {
     isFollowingCommunity.value = false;
+    followLocked.value = false;
   }
 };
 
+watch(
+  () => [user.value?.id, communityIdForFollow.value],
+  () => {
+    loadFollowState();
+  },
+  { immediate: true },
+);
+
 const toggleFollow = async () => {
   if (!communityIdForFollow.value) return;
+  if (followLocked.value) {
+    showUiMessage('フォロー解除はできません');
+    return;
+  }
   if (!user.value) {
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
     return;
   }
   try {
     if (isFollowingCommunity.value) {
-      await unfollowCommunity(communityIdForFollow.value);
-      isFollowingCommunity.value = false;
+      const res = await unfollowCommunity(communityIdForFollow.value);
+      if (res.locked) {
+        isFollowingCommunity.value = true;
+        followLocked.value = true;
+        showUiMessage('フォローを解除できませんでした');
+        return;
+      }
+      isFollowingCommunity.value = !!res.following;
+      followLocked.value = !!res.locked;
       showUiMessage('フォローを解除しました');
     } else {
-      await followCommunity(communityIdForFollow.value);
-      isFollowingCommunity.value = true;
+      const res = await followCommunity(communityIdForFollow.value);
+      isFollowingCommunity.value = !!res.following;
+      followLocked.value = !!res.locked;
       showUiMessage('フォローしました');
     }
   } catch (err) {
@@ -1017,7 +1044,7 @@ const toggleFollow = async () => {
 };
 
 const followIfNeeded = async () => {
-  if (!communityIdForFollow.value || isFollowingCommunity.value) return;
+  if (!communityIdForFollow.value || isFollowingCommunity.value || followLocked.value) return;
   if (!user.value) return;
   try {
     await followCommunity(communityIdForFollow.value);
@@ -1311,20 +1338,51 @@ const formatLongDate = (value?: string) => {
   });
 };
 
+const formatDayWithWeekday = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString('ja-JP', {
+    day: 'numeric',
+    weekday: 'short',
+  });
+};
+
+const formatTime = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+};
+
 const formatTimeRange = (start?: string, end?: string) => {
   if (!start) return '';
   const startDate = new Date(start);
-  const startTime = startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const startTime = formatTime(start);
   if (!end) {
     return `${formatLongDate(start)} ${startTime} 開始`;
   }
   const endDate = new Date(end);
-  const endTime = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const endTime = formatTime(end);
   const sameDay = startDate.toDateString() === endDate.toDateString();
   if (sameDay) {
     return `${startTime} - ${endTime}`;
   }
   return `${formatLongDate(start)} ${startTime} 〜 ${formatLongDate(end)} ${endTime}`;
+};
+
+const formatScheduleLine = (start?: string, end?: string) => {
+  if (!start) return '';
+  const startDate = new Date(start);
+  const startText = `${formatLongDate(start)} ${formatTime(start)}`;
+  if (!end) {
+    return startText;
+  }
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) {
+    return `${formatLongDate(start)} ${formatTime(start)}〜${formatTime(end)}`;
+  }
+  const sameMonth =
+    startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth();
+  const endDateText = sameMonth ? formatDayWithWeekday(end) : formatLongDate(end);
+  return `${formatLongDate(start)} ${formatTime(start)}〜${endDateText} ${formatTime(end)}`;
 };
 
 const showHeaderActions = computed(() => APP_TARGET !== 'liff');
@@ -1389,13 +1447,19 @@ watch(
 
 <style scoped>
 .event-detail-page {
-  background-color: var(--m-color-bg);
+  background-color: #f7f7fb;
   min-height: 100vh;
   width: 100%;
   max-width: 100vw;
   margin: 0;
-  padding: 0 0 calc(60px + env(safe-area-inset-bottom, 0px));
+  padding: 0;
   overflow-x: hidden;
+}
+
+.event-detail-page .m-event-content {
+  padding-bottom: 0;
+  background-color: inherit;
+  min-height: 100vh;
 }
 
 .event-state {
@@ -1480,16 +1544,34 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--m-color-text-secondary);
+  color: var(--m-color-primary);
+}
+.event-meta-icon--address {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+.event-meta-icon--date {
+  align-self: center;
+  line-height: 1;
+}
+.event-meta-icon--date svg {
+  display: block;
 }
 
 .event-meta-row--location {
   align-items: center;
   gap: 12px;
 }
+.event-meta-row--location.is-clickable {
+  cursor: pointer;
+}
+.event-meta-row--location.is-clickable:active .event-location-title {
+  opacity: 0.7;
+}
 
 .event-meta-row--schedule {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .event-schedule-block {
@@ -1528,28 +1610,38 @@ watch(
 .event-schedule {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+.event-schedule.is-clickable {
+  cursor: pointer;
+}
+.event-schedule.is-clickable:active {
+  opacity: 0.7;
 }
 
-.event-schedule__day {
+
+.event-schedule__line {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
+  font-size: clamp(12px, 4vw, 18px);
+  font-weight: 500;
+  color: var(--m-color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .event-location-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
-}
-
-.event-schedule__time {
-  margin: 0;
-  font-size: 16px;
+  font-size: clamp(12px, 4vw, 18px);
   font-weight: 500;
   color: var(--m-color-text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
+
 
 .event-schedule__badge {
   margin-left: auto;
@@ -1565,37 +1657,6 @@ watch(
   align-items: center;
 }
 
-.event-schedule__cta {
-  width: 100%;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: #fff;
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-  box-shadow: 0 8px 20px rgba(0, 144, 217, 0.25);
-}
-.event-schedule__cta.subtle {
-  width: auto;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #475569;
-  box-shadow: none;
-  padding: 8px 10px;
-  font-weight: 600;
-  border-radius: 8px;
-}
-.event-secondary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
 
 .event-hero__overlay {
   position: absolute;
@@ -1766,6 +1827,9 @@ watch(
 
 .event-hero-info .m-text-event-title-main {
   margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(17, 17, 17, 0.9);
   line-height: 1.2;
 }
 
@@ -1919,29 +1983,36 @@ watch(
 }
 
 .event-about {
-  background: #f4f5f7;
-  border-radius: 12px;
-  padding: 12px;
   overflow: visible;
+}
+.event-about__header {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+.event-about__divider {
+  height: 1px;
+  margin: 10px 0 12px;
+  background: rgba(15, 23, 42, 0.08);
 }
 .event-about__content {
   width: 100%;
 }
 :deep(.event-about__content figure) {
-  margin: 12px -12px;
+  margin: 12px -16px;
   padding: 0;
   background: transparent;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
 }
 :deep(.event-about__content figure img),
 :deep(.event-about__content img) {
   display: block !important;
-  width: calc(100% + 24px) !important;
+  width: calc(100% + 32px) !important;
   max-width: none !important;
   height: auto !important;
   object-fit: cover !important;
-  border-radius: 14px !important;
+  border-radius: 16px !important;
   padding: 0 !important;
   background: #f4f5f7 !important;
   box-sizing: border-box !important;
@@ -2008,6 +2079,10 @@ watch(
   pointer-events: auto;
   position: relative;
   z-index: 1;
+}
+.group-follow.is-locked {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .group-follow.is-active {
@@ -2081,7 +2156,7 @@ watch(
 }
 
 .event-content--with-footer {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .participant-wall {
@@ -2125,7 +2200,6 @@ watch(
   background: rgba(15, 23, 42, 0.08);
 }
 
-.participants-hint,
 .participants-empty {
   margin-top: 6px;
   font-size: 12px;
@@ -2248,7 +2322,7 @@ watch(
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--m-color-surface);
   display: grid;
   grid-template-columns: 1fr 1.2fr;
@@ -2264,11 +2338,13 @@ watch(
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  padding-left: 16px;
+  box-sizing: border-box;
 }
 .price-block .price {
   font-size: 18px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--color-primary);
   letter-spacing: -0.01em;
 }
 
@@ -2313,7 +2389,7 @@ watch(
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   font-size: 12px;
   color: rgba(15, 23, 42, 0.75);
   background: rgba(255, 255, 255, 0.96);

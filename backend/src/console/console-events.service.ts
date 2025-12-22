@@ -530,11 +530,66 @@ export class ConsoleEventsService {
     const fullEvent = await this.prisma.event.findUnique({ where: { id: event.id } });
     if (!fullEvent) throw new NotFoundException('Event not found');
 
+    const formatPaymentStatus = (status?: string | null) => {
+      switch (status) {
+        case 'paid':
+          return '支払済み';
+        case 'unpaid':
+          return '未払い';
+        case 'refunded':
+          return '返金済み';
+        case 'pending_refund':
+          return '返金待ち';
+        case 'pending':
+          return '処理中';
+        case 'cancelled':
+          return 'キャンセル';
+        default:
+          return status ? '不明' : '';
+      }
+    };
+
+    const formatRegistrationStatus = (status?: string | null) => {
+      switch (status) {
+        case 'pending':
+          return '審査待ち';
+        case 'approved':
+          return '承認済み';
+        case 'cancel_requested':
+          return '返金申請中';
+        case 'rejected':
+          return '拒否';
+        case 'paid':
+          return '支払済み';
+        case 'refunded':
+          return '返金済み';
+        case 'pending_refund':
+          return '返金待ち';
+        case 'cancelled':
+          return 'キャンセル';
+        case 'checked_in':
+          return '受付済み';
+        default:
+          return status ? '不明' : '';
+      }
+    };
+
+    const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ');
+    const formatAmount = (value?: number | null) => (value == null ? '' : value.toString());
+    const dateFormatter = new Intl.DateTimeFormat('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
     const formSchema = Array.isArray(fullEvent.registrationFormSchema)
       ? (fullEvent.registrationFormSchema as Array<Record<string, any>>)
       : [];
     const dynamicColumns = formSchema.map((field, index) => {
-      const label = field?.label ? String(field.label) : `Field ${index + 1}`;
+      const label = field?.label ? String(field.label) : `項目${index + 1}`;
       const key = field?.id ? String(field.id) : `${field?.label ?? 'field'}-${index}`;
       return { key, label };
     });
@@ -549,16 +604,16 @@ export class ConsoleEventsService {
     });
 
     const baseHeaders = [
-      'User Name',
-      'User ID',
-      'Ticket Name',
-      'Ticket Price',
-      'Amount',
-      'Payment Status',
-      'Status',
-      'Attended',
-      'No Show',
-      'Created At',
+      '参加者名',
+      '参加者ID',
+      'チケット名',
+      'チケット金額(円)',
+      '支払金額(円)',
+      '支払い状況',
+      '申込ステータス',
+      '出席',
+      '無断欠席',
+      '申込日時',
     ];
     const headerRow = [...baseHeaders, ...dynamicColumns.map((col) => col.label)];
 
@@ -568,21 +623,26 @@ export class ConsoleEventsService {
         reg.user?.name ?? 'ゲスト',
         reg.user?.id ?? '',
         ticketName,
-        (reg.ticketType?.price ?? '').toString(),
-        reg.amount?.toString() ?? '',
-        reg.paymentStatus,
-        reg.status,
-        reg.attended ? 'yes' : 'no',
-        reg.noShow ? 'yes' : 'no',
-        reg.createdAt.toISOString(),
+        formatAmount(reg.ticketType?.price ?? null),
+        formatAmount(reg.amount ?? null),
+        formatPaymentStatus(reg.paymentStatus),
+        formatRegistrationStatus(reg.status),
+        formatBoolean(reg.attended),
+        formatBoolean(reg.noShow),
+        dateFormatter.format(reg.createdAt),
       ];
 
       const answers = (reg.formAnswers ?? {}) as Record<string, any>;
       const dynamicValues = dynamicColumns.map((col) => {
         const raw = answers[col.key] ?? answers[col.label];
         if (raw === undefined || raw === null) return '';
-        if (Array.isArray(raw)) return raw.join('; ');
-        if (typeof raw === 'object') return JSON.stringify(raw);
+        if (Array.isArray(raw)) return raw.join('、');
+        if (typeof raw === 'object') {
+          const record = raw as Record<string, unknown>;
+          if (typeof record.label === 'string' && record.label.trim()) return record.label;
+          if (typeof record.value === 'string' && record.value.trim()) return record.value;
+          return JSON.stringify(raw);
+        }
         return String(raw);
       });
 

@@ -227,12 +227,12 @@ export async function createClassRegistration(classId: string, lessonId: string)
 }
 
 export async function followCommunity(communityId: string) {
-  const { data } = await apiClient.post<{ following: boolean }>(`/communities/${communityId}/follow`);
+  const { data } = await apiClient.post<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
   return data;
 }
 
 export async function unfollowCommunity(communityId: string) {
-  const { data } = await apiClient.delete<{ following: boolean }>(`/communities/${communityId}/follow`);
+  const { data } = await apiClient.delete<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
   return data;
 }
 
