@@ -416,7 +416,7 @@ const emptyStateTitle = computed(() => {
 });
 
 const emptyStateMessage = computed(() => {
-  if (activeTab.value === 'upcoming') return 'イベントに申し込むとここで状態を追跡できます。';
+  if (activeTab.value === 'upcoming') return '申し込みイベントの最新状況を追跡できます。';
   if (activeTab.value === 'past') return '参加済みのイベントがここに表示されます。';
   return '気になるイベントを探してみましょう。';
 });

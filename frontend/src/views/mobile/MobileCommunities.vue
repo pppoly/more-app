@@ -33,7 +33,7 @@
         </article>
       </div>
       <div v-else class="state-card">
-        <p class="state-title">コミュニティに参加すると、ここで活動やお知らせをまとめて確認できます。</p>
+        <p class="state-title">参加コミュニティの活動やニュース、お知らせなどが、確認できます。</p>
         <p class="state-text">興味のあるコミュニティに参加して、イベント情報を受け取りましょう。</p>
       </div>
     </section>
