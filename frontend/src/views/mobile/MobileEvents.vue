@@ -1,5 +1,5 @@
 <template>
-  <div class="events-page">
+  <div class="events-page" data-scroll="main">
     <!-- App Bar -->
     <header v-if="!showBrandBar" class="app-bar">
       <div class="app-bar__left">
@@ -101,7 +101,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'MobileEvents' });
-import { computed, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
@@ -121,6 +121,8 @@ const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const retrying = ref(false);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 const activeCategoryId = ref('all');
 const { preferredLangs } = useLocale();
 const logoImage = logo1;
@@ -147,6 +149,7 @@ const loadEvents = async () => {
   try {
     events.value = await fetchEvents();
     trackEvent('view_events_list', { count: events.value.length });
+    lastFetchedAt.value = Date.now();
   } catch (err) {
     console.warn('fetchEvents failed', err);
     events.value = [];
@@ -319,6 +322,12 @@ const attendeeAvatars = (event: EventSummary) => {
 };
 
 onMounted(loadEvents);
+
+onActivated(() => {
+  if (!lastFetchedAt.value || loading.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void loadEvents();
+});
 </script>
 
 <style scoped>

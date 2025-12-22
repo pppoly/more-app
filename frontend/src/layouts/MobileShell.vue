@@ -28,9 +28,26 @@
       :style="contentTopPaddingStyle"
     >
       <div :class="['mobile-shell__view', isFixedPage ? 'mobile-shell__view--fixed' : '']">
-        <Transition name="tab-slide" mode="out-in">
-          <slot :key="route.path" />
-        </Transition>
+        <RouterView v-slot="{ Component, route: viewRoute }">
+          <Transition :name="getTransitionName(viewRoute)">
+            <div
+              :key="viewRoute.fullPath"
+              ref="pageStageRef"
+              class="page-stage"
+            >
+              <KeepAlive v-if="shouldKeepAlive(viewRoute)">
+                <component :is="Component" :key="viewRoute.fullPath" v-bind="resolveRouteProps(viewRoute)" />
+              </KeepAlive>
+              <component v-else :is="Component" :key="viewRoute.fullPath" v-bind="resolveRouteProps(viewRoute)" />
+            </div>
+          </Transition>
+        </RouterView>
+        <div v-if="navPending" class="nav-loading" role="status" aria-live="polite" aria-busy="true">
+          <div class="entry-loading">
+            <span class="entry-loading__spinner" aria-hidden="true"></span>
+            <p class="entry-loading__text">読み込み中…</p>
+          </div>
+        </div>
       </div>
     </main>
     <nav v-if="showTabbar" class="mobile-shell__tabbar" :style="tabbarSafeAreaStyle">
@@ -91,8 +108,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useResourceConfig } from '../composables/useResourceConfig';
 import { useLocale } from '../composables/useLocale';
@@ -101,6 +119,7 @@ import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
 import { APP_TARGET } from '../config';
 import { isLineInAppBrowser } from '../utils/liff';
+import { getTransitionName, restoreScroll, saveScroll, useNavPending } from '../composables/useNavStack';
 
 const props = defineProps<{
   forceHideHeader?: boolean;
@@ -117,8 +136,9 @@ const resourceConfig = useResourceConfig();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
-const scrollPositions = new Map<string, number>();
-const contentEl = ref<HTMLElement | null>(null);
+const pageStageRef = ref<HTMLElement | null>(null);
+const lastRouteSnapshot = ref<{ fullPath: string; meta?: Record<string, unknown> } | null>(null);
+const navPending = useNavPending();
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 const contentTopPaddingStyle = computed(() => ({}));
@@ -231,18 +251,47 @@ const tabbarSafeAreaStyle = computed(() => ({
   paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))',
 }));
 
-const saveScrollPosition = (path: string) => {
-  if (!path) return;
-  const top = contentEl.value ? contentEl.value.scrollTop : window.scrollY;
-  scrollPositions.set(path, top);
+const shouldKeepAlive = (viewRoute: { meta?: Record<string, unknown> }) => viewRoute.meta?.keepAlive === true;
+
+const resolveRouteProps = (viewRoute: RouteLocationNormalizedLoaded) => {
+  const matched = viewRoute.matched[viewRoute.matched.length - 1];
+  if (!matched || !matched.props || !matched.props.default) {
+    return {};
+  }
+  const config = matched.props.default;
+  if (config === true) {
+    return viewRoute.params;
+  }
+  if (typeof config === 'function') {
+    return config(viewRoute);
+  }
+  return config ?? {};
 };
 
-const restoreScrollPosition = (path: string) => {
-  const saved = scrollPositions.get(path) ?? 0;
-  if (contentEl.value) {
-    contentEl.value.scrollTo({ top: saved, behavior: 'auto' });
-  }
-  window.scrollTo({ top: saved, behavior: 'auto' });
+const getScrollContainer = () => {
+  // Only restore scroll for explicitly-marked containers.
+  const stage = pageStageRef.value;
+  if (!stage) return null;
+  return stage.querySelector('[data-scroll="main"]') as HTMLElement | null;
+};
+
+const snapshotRoute = (viewRoute: RouteLocationNormalizedLoaded) => ({
+  fullPath: viewRoute.fullPath,
+  meta: viewRoute.meta ?? {},
+});
+
+const saveScrollForRoute = (snapshot: { fullPath: string; meta?: Record<string, unknown> } | null) => {
+  if (!snapshot || !shouldKeepAlive(snapshot)) return;
+  const scroller = getScrollContainer();
+  if (!scroller) return;
+  saveScroll(snapshot, scroller);
+};
+
+const restoreScrollForRoute = (snapshot: { fullPath: string; meta?: Record<string, unknown> } | null) => {
+  if (!snapshot || !shouldKeepAlive(snapshot)) return;
+  const scroller = getScrollContainer();
+  if (!scroller) return;
+  restoreScroll(snapshot, scroller);
 };
 
 const localeLabelMap: Record<string, string> = {
@@ -300,26 +349,39 @@ const selectLocale = async (locale: string) => {
 };
 
 onMounted(() => {
-  contentEl.value = document.querySelector('.mobile-shell__content');
   // 初回表示でデフォルトヘッダーがちらつくのを避け、ルート準備完了後に表示
   router.isReady().then(() => {
     routeReady.value = true;
   });
+  const currentSnapshot = snapshotRoute(route);
+  lastRouteSnapshot.value = currentSnapshot;
+  nextTick(() => {
+    restoreScrollForRoute(currentSnapshot);
+  });
+});
+
+onActivated(() => {
+  // Restore cached list scroll when returning via KeepAlive.
+  restoreScrollForRoute(snapshotRoute(route));
+});
+
+onDeactivated(() => {
+  saveScrollForRoute(snapshotRoute(route));
 });
 
 watch(
   () => route.fullPath,
-  async (to, from) => {
-    if (from) {
-      saveScrollPosition(from);
-    }
+  async () => {
+    saveScrollForRoute(lastRouteSnapshot.value);
+    const currentSnapshot = snapshotRoute(route);
+    lastRouteSnapshot.value = currentSnapshot;
     await nextTick();
+    restoreScrollForRoute(currentSnapshot);
     routeReady.value = true;
-    restoreScrollPosition(to);
     const active = document.activeElement as HTMLElement | null;
     if (active?.blur) active.blur();
   },
-  { flush: 'post' },
+  { flush: 'pre' },
 );
 </script>
 
@@ -448,8 +510,8 @@ watch(
   padding: 0;
 }
 .mobile-shell__view {
-  min-height: 100%;
-  height: auto;
+  min-height: 0;
+  height: 100%;
   overflow-x: hidden;
   overflow-y: visible;
   width: 100%;

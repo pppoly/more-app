@@ -46,33 +46,14 @@
         :ua-line="uaLine"
         :is-liff-entry="isLiffEntry"
       >
-        <RouterView v-slot="{ Component, route }">
-          <MobileShell
-            :force-hide-header="hideLegacyHeader"
-            :show-brand-top-bar="brandBarForRoute"
-            :show-brand-debug="showBrandDebug"
-            :brand-debug-text="brandDebugText"
-            :root-nav-route="isRootNavRoute"
-            :is-liff="isLiffClientMode"
-          >
-            <template v-if="route.meta?.keepAlive">
-              <KeepAlive :include="keepAliveRoutes">
-                <component
-                  :is="Component"
-                  v-bind="resolveRouteProps(route)"
-                  :key="(route.name as string) || 'keepalive'"
-                />
-              </KeepAlive>
-            </template>
-            <template v-else>
-              <component
-                :is="Component"
-                v-bind="resolveRouteProps(route)"
-                :key="route.fullPath"
-              />
-            </template>
-          </MobileShell>
-        </RouterView>
+        <MobileShell
+          :force-hide-header="hideLegacyHeader"
+          :show-brand-top-bar="brandBarForRoute"
+          :show-brand-debug="showBrandDebug"
+          :brand-debug-text="brandDebugText"
+          :root-nav-route="isRootNavRoute"
+          :is-liff="isLiffClientMode"
+        />
       </AppShell>
     </template>
     <template v-else>
@@ -136,8 +117,8 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
+import { setupPopstateListener } from './composables/useNavStack';
 import { useAuth } from './composables/useAuth';
 import AppToast from './components/common/AppToast.vue';
 import AppConfirm from './components/common/AppConfirm.vue';
@@ -183,7 +164,6 @@ injectAuthSheetsContext(router, currentRoute);
 const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const authSheets = useAuthSheets();
-const keepAliveRoutes = ['MobileEvents'];
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;
@@ -249,6 +229,7 @@ const continueWeb = () => {
 };
 
 onMounted(() => {
+  setupPopstateListener();
   handleViewportChange();
   mediaQuery?.addEventListener('change', handleViewportChange);
   if (debugParam.value) {
@@ -313,20 +294,6 @@ const openInLine = () => {
   window.location.href = `https://liff.line.me/2008600730-qxlPrj5Q?to=${encodeURIComponent(current)}`;
 };
 
-const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
-  const matched = route.matched[route.matched.length - 1];
-  if (!matched || !matched.props || !matched.props.default) {
-    return {};
-  }
-  const config = matched.props.default;
-  if (config === true) {
-    return route.params;
-  }
-  if (typeof config === 'function') {
-    return config(route);
-  }
-  return config ?? {};
-};
 </script>
 
 <style scoped>

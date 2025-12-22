@@ -26,6 +26,7 @@ import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
 import { useAuthSheets } from '../composables/useAuthSheets';
 import { fetchOrganizerPayoutPolicyStatus } from '../api/client';
+import { beginNav, beginNavPending, endNavPending } from '../composables/useNavStack';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -93,6 +94,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'イベント',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideShellActions: true,
       keepAlive: true,
@@ -109,6 +111,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'イベント詳細',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
@@ -123,6 +126,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'イベント申込',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -138,6 +142,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '申込確認',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -153,6 +158,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '参加完了',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -167,6 +173,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/auth/Login.vue'),
     meta: {
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -181,6 +188,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'ご案内',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
@@ -196,6 +204,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '受け取り設定',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -210,6 +219,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'スタッフ管理',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       requiresAdmin: true,
       devPageName: 'スタッフ管理',
@@ -222,6 +232,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       devPageName: '主催者申請',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideShellHeader: true,
       hideTabbar: true,
@@ -238,6 +249,7 @@ const routes: RouteRecordRaw[] = [
       requiresOrganizer: true,
       organizerOnly: true,
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       flushContent: true,
@@ -251,6 +263,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'マイページ',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       flushContent: true,
       fixedPage: true,
@@ -265,6 +278,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '設定',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideTabbar: true,
       hideShellHeader: true,
@@ -279,10 +293,12 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'コミュニティ',
       layout: 'mobile-user',
+      stackKey: 'mobile',
       mobileOnly: true,
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
+      keepAlive: true,
       devPageName: 'コミュニティ広場',
     },
   },
@@ -293,6 +309,7 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresOrganizer: true,
       layout: 'console-mobile',
+      stackKey: 'mobile',
       devPageName: 'Console モバイルシェル',
     },
     children: [
@@ -302,6 +319,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
         meta: {
           title: 'コミュニティ管理',
+          stackKey: 'mobile',
+          keepAlive: true,
           devPageName: 'Console-ホーム',
           hideShellHeader: true,
           flushContent: true,
@@ -314,6 +333,8 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: 'コミュニティイベント',
+          stackKey: 'mobile',
+          keepAlive: true,
           devPageName: 'Console-コミュニティイベント',
           hideShellHeader: true,
           flushContent: true,
@@ -328,7 +349,9 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           hideTabbar: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
+          keepAlive: true,
           devPageName: 'Console-教室一覧',
         },
       },
@@ -341,6 +364,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           hideTabbar: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-教室フォーム',
         },
@@ -354,6 +378,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           hideTabbar: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-レッスン管理',
         },
@@ -368,6 +393,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           hideTabbar: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-レッスン申込',
         },
@@ -382,6 +408,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-コミュニティ作成',
         },
@@ -397,6 +424,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           flushContent: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           devPageName: 'Console-下書き貼り付け',
         },
       },
@@ -411,6 +439,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           fixedPage: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-イベントアシスタント',
         },
@@ -422,6 +451,7 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: 'アシスタントダッシュボード',
+          stackKey: 'mobile',
           hideTabbar: true,
           hideShellHeader: true,
           flushContent: true,
@@ -435,6 +465,7 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: 'アシスタント履歴',
+          stackKey: 'mobile',
           hideTabbar: true,
           hideShellHeader: true,
           flushContent: true,
@@ -451,6 +482,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-イベントフォーム',
         },
@@ -464,6 +496,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-イベント詳細編集',
         },
@@ -475,6 +508,7 @@ const routes: RouteRecordRaw[] = [
         beforeEnter: communityRouteGuard,
         meta: {
           title: 'コミュニティ設定',
+          stackKey: 'mobile',
           hideTabbar: true,
           hideShellHeader: true,
           devPageName: 'Console-コミュニティ設定',
@@ -493,6 +527,7 @@ const routes: RouteRecordRaw[] = [
           devPageName: 'Console-ポータルテンプレート',
           flushContent: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
         },
       },
       {
@@ -501,6 +536,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
         meta: {
           title: 'イベント管理',
+          stackKey: 'mobile',
           devPageName: 'Console-イベント管理',
           hideShellHeader: true,
           hideTabbar: true,
@@ -516,6 +552,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-公開完了',
         },
@@ -531,6 +568,7 @@ const routes: RouteRecordRaw[] = [
           flushContent: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           hideTabbar: true,
         },
       },
@@ -546,6 +584,7 @@ const routes: RouteRecordRaw[] = [
           hideShellHeader: true,
           flushContent: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
         },
       },
       {
@@ -560,6 +599,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           flushContent: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
         },
       },
       {
@@ -571,6 +611,7 @@ const routes: RouteRecordRaw[] = [
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
+          stackKey: 'mobile',
           flushContent: true,
           devPageName: 'Console-チケットスキャン',
         },
@@ -586,6 +627,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       hideShellHeader: true,
       layout: 'console-mobile',
+      stackKey: 'mobile',
       flushContent: true,
     },
   },
@@ -784,6 +826,7 @@ const routes: RouteRecordRaw[] = [
     props: true,
     meta: {
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       mobileOnly: true,
@@ -797,6 +840,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/community/CommunityClassesList.vue'),
     meta: {
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       mobileOnly: true,
@@ -811,6 +855,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/community/ClassDetail.vue'),
     meta: {
       layout: 'mobile-user',
+      stackKey: 'mobile',
       hideShellHeader: true,
       hideTabbar: true,
       mobileOnly: true,
@@ -826,6 +871,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'マイイベント',
       devPageName: 'マイイベント',
+      stackKey: 'mobile',
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
@@ -838,6 +884,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '支払い履歴',
       devPageName: '支払い履歴',
+      stackKey: 'mobile',
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
@@ -885,6 +932,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       flushContent: true,
       layout: 'mobile-user',
+      stackKey: 'mobile',
     },
   },
   {
@@ -898,6 +946,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       flushContent: true,
       layout: 'mobile-user',
+      stackKey: 'mobile',
     },
   },
   {
@@ -945,10 +994,33 @@ const router = createRouter({
   routes,
 });
 
+let replacePending = false;
+const originalReplace = router.replace.bind(router);
+router.replace = ((to) => {
+  replacePending = true;
+  return originalReplace(to);
+}) as typeof router.replace;
+const originalPush = router.push.bind(router);
+router.push = ((to) => {
+  if (typeof to === 'object' && to && 'replace' in to && (to as any).replace) {
+    replacePending = true;
+  }
+  return originalPush(to);
+}) as typeof router.push;
+
 router.beforeEach(async (to, from, next) => {
+  // Reset pending overlay if a previous navigation was aborted.
+  endNavPending();
   const auth = useAuth();
   const sheets = useAuthSheets();
   const mobile = isMobile();
+  const isReplaceNav = replacePending;
+  replacePending = false;
+  if (mobile) {
+    // Track direction for mobile page transitions.
+    beginNav(to, from, { replaced: isReplaceNav });
+    beginNavPending();
+  }
   const isTestHost = typeof window !== 'undefined' && window.location.hostname.includes('test.socialmore.jp');
   const isTestMode = import.meta.env.MODE === 'test' || isTestHost;
   if (isTestMode && !mobile && to.path !== '/promo' && !to.meta?.desktopAllowed) {
@@ -986,19 +1058,28 @@ router.beforeEach(async (to, from, next) => {
       return next({ path: '/promo', query: { from: to.fullPath } });
     }
     const showed = sheets.showLoginSheet({ returnTo: to.fullPath });
-    if (showed) return next(false);
+    if (showed) {
+      endNavPending();
+      return next(false);
+    }
     return next({ name: 'auth-login', query: { redirect: to.fullPath } });
   }
 
   if (to.meta.requiresAdmin && !auth.user.value?.isAdmin) {
     const showed = sheets.showForbiddenSheet({ reason: 'NOT_ADMIN', returnTo: to.fullPath });
-    if (showed) return next(false);
+    if (showed) {
+      endNavPending();
+      return next(false);
+    }
     return next({ name: 'home' });
   }
 
   if (to.meta.organizerOnly && !auth.user.value?.isOrganizer && !auth.user.value?.isAdmin) {
     const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
-    if (showed) return next(false);
+    if (showed) {
+      endNavPending();
+      return next(false);
+    }
     return next({ name: 'home' });
   }
 
@@ -1006,7 +1087,10 @@ router.beforeEach(async (to, from, next) => {
     // コンソール配下のみ主理人チェックを強制。ユーザー側動線は通す。
     if (to.path.startsWith('/console')) {
       const showed = sheets.showForbiddenSheet({ reason: 'NOT_ORGANIZER', returnTo: to.fullPath });
-      if (showed) return next(false);
+      if (showed) {
+        endNavPending();
+        return next(false);
+      }
       return next({ name: 'home' });
     }
     return next();
@@ -1015,19 +1099,21 @@ router.beforeEach(async (to, from, next) => {
   return next();
 });
 
-router.afterEach((to, from) => {
-  const enableDebug = () => {
-    if (typeof localStorage === 'undefined') return false;
-    return localStorage.getItem('router_debug') === '1';
-  };
-  if (import.meta.env.DEV && enableDebug()) {
-    // eslint-disable-next-line no-console
-    console.log('[router] nav', { from: from.fullPath, to: to.fullPath, name: to.name });
-  }
+router.beforeResolve(() => {
+  // Components resolved; hide loading overlay before transition starts.
+  endNavPending();
+});
+
+router.afterEach(() => {
+  endNavPending();
 });
 
 router.afterEach((to) => {
   void applyPageTitle(to);
+});
+
+router.onError(() => {
+  endNavPending();
 });
 
 export default router;

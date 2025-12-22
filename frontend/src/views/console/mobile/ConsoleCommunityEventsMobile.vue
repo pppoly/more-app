@@ -1,5 +1,5 @@
 <template>
-  <div class="events-page">
+  <div class="events-page" data-scroll="main">
     <ConsoleTopBar v-if="showTopBar" titleKey="console.communityEvents.title" @back="goBack" />
 
     <div class="filter-row">
@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchConsoleCommunityEvents } from '../../../api/client';
 import type { ConsoleEventSummary } from '../../../types/api';
@@ -67,6 +67,8 @@ const { user } = useAuth();
 
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 // デフォルトは「受付中」のイベントを表示
 const activeFilter = ref('open');
 const filters = [
@@ -129,6 +131,7 @@ const loadEvents = async () => {
   loading.value = true;
   try {
     events.value = await fetchConsoleCommunityEvents(communityId.value);
+    lastFetchedAt.value = Date.now();
   } catch (err) {
     console.error('Failed to load community events', err);
   } finally {
@@ -185,6 +188,12 @@ onMounted(async () => {
   if (communityId.value) {
     loadEvents();
   }
+});
+
+onActivated(() => {
+  if (!lastFetchedAt.value || loading.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void loadEvents();
 });
 </script>
 

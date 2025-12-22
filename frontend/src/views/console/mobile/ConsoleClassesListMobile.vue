@@ -1,5 +1,5 @@
 <template>
-  <div class="classes-admin">
+  <div class="classes-admin" data-scroll="main">
     <ConsoleTopBar v-if="showTopBar" title="教室管理" @back="goBack" />
     <div v-if="loading" class="skeleton">
       <div class="sk-card" v-for="n in 3" :key="n">
@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { deleteConsoleClass, fetchConsoleClasses } from '../../../api/client';
 import type { ClassSummary } from '../../../types/api';
@@ -88,6 +88,8 @@ import { isLineInAppBrowser } from '../../../utils/liff';
 const classes = ref<(ClassSummary & { futureLessonCount?: number })[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 const router = useRouter();
 const toast = useToast();
 const showTopBar = computed(() => !isLineInAppBrowser());
@@ -99,6 +101,7 @@ const load = async () => {
     loading.value = true;
     error.value = null;
     classes.value = await fetchConsoleClasses();
+    lastFetchedAt.value = Date.now();
   } catch (err: any) {
     error.value = err?.message ?? '読み込みに失敗しました';
   } finally {
@@ -136,6 +139,12 @@ const confirmDelete = async (classId: string) => {
 
 onMounted(() => {
   load().catch((err) => toast.show(err?.message ?? 'エラーが発生しました'));
+});
+
+onActivated(() => {
+  if (!lastFetchedAt.value || loading.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void load();
 });
 
 const toggleMenu = (id: string) => {

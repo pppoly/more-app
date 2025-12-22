@@ -1,5 +1,5 @@
 <template>
-  <div class="console-home">
+  <div class="console-home" data-scroll="main">
     <div v-if="!dataReady" class="console-skeleton">
       <div class="sk-header"></div>
       <div class="sk-stats">
@@ -305,7 +305,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
@@ -337,6 +337,9 @@ const route = useRoute();
 const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
+const refreshInFlight = ref(false);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 const analytics = ref<CommunityAnalytics | null>(null);
 const showCommunityPicker = ref(false);
 const showCreateSheet = ref(false);
@@ -502,6 +505,20 @@ const loadAnalytics = async () => {
   } catch (err) {
     analytics.value = null;
   }
+};
+
+const refreshHome = async () => {
+  if (!communityId.value || refreshInFlight.value) return;
+  refreshInFlight.value = true;
+  await Promise.allSettled([
+    loadEvents(),
+    loadActiveCommunityDetail(),
+    fetchMonthBalance(),
+    fetchAiUsage(),
+    loadAnalytics(),
+  ]);
+  lastFetchedAt.value = Date.now();
+  refreshInFlight.value = false;
 };
 
 const openCommunityPicker = async () => {
@@ -716,29 +733,28 @@ onMounted(async () => {
     communityStore.ensureActiveCommunity();
   }
   if (communityId.value) {
-    loadEvents();
-    loadActiveCommunityDetail();
-    fetchMonthBalance();
-    fetchAiUsage();
-    loadAnalytics();
+    await refreshHome();
   }
+});
+
+onActivated(() => {
+  if (!lastFetchedAt.value || refreshInFlight.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void refreshHome();
 });
 
 watch(
   () => communityId.value,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
-      loadEvents();
-      loadActiveCommunityDetail();
-      fetchMonthBalance();
-      fetchAiUsage();
-      loadAnalytics();
+      void refreshHome();
     }
     if (!newId) {
       heroLogoUrl.value = null;
       monthRevenueText.value = '¥0';
       aiMinutesSaved.value = null;
       analytics.value = null;
+      lastFetchedAt.value = 0;
     }
   },
 );
@@ -747,8 +763,7 @@ watch(
   () => activeCommunityVersion.value,
   () => {
     if (communityId.value) {
-      loadActiveCommunityDetail();
-      loadAnalytics();
+      void refreshHome();
     }
   },
 );

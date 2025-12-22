@@ -1,5 +1,5 @@
 <template>
-  <div class="communities-page">
+  <div class="communities-page" data-scroll="main">
     <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイコミュニティ" @back="goBack" />
 
     <section class="section">
@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
@@ -69,6 +69,8 @@ const quietCommunities = ref<CommunityCardItem[]>([]);
 const quietOpen = ref(false);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 // できるだけネットワーク経由で取得されるデフォルト画像（無い場合は後段のフォールバックへ）
 const runtimeDefaultAvatar =
   typeof window !== 'undefined'
@@ -138,6 +140,7 @@ const loadCommunities = async () => {
   try {
     const data = await fetchMyCommunities();
     classifyCommunities(data);
+    lastFetchedAt.value = Date.now();
   } catch (err) {
     error.value =
       (err as any)?.response?.data?.message || (err instanceof Error ? err.message : 'コミュニティ取得に失敗しました');
@@ -146,7 +149,15 @@ const loadCommunities = async () => {
   }
 };
 
-loadCommunities();
+onMounted(() => {
+  void loadCommunities();
+});
+
+onActivated(() => {
+  if (!lastFetchedAt.value || loading.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void loadCommunities();
+});
 
 const goToCommunity = (item: CommunityCardItem) => {
   if (item.slug) {
