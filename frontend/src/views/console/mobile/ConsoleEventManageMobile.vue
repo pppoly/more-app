@@ -128,6 +128,9 @@
           <button class="sheet-action" type="button" :disabled="!communityId" @click="handlePayments">
             支払い・取引
           </button>
+          <button class="sheet-action" type="button" :disabled="exportingCsv" @click="exportRegistrationsCsv">
+            {{ exportingCsv ? 'CSV出力中…' : 'フォーム回答をCSVで出力' }}
+          </button>
           <button
             v-if="!isEventCancelled"
             class="sheet-action danger"
@@ -162,7 +165,7 @@
       </div>
 
       <div v-if="activeEntry" class="sheet-mask" @click.self="closeEntryAction">
-        <div class="sheet">
+        <div class="sheet sheet--entry">
           <div class="sheet-handle"></div>
           <div class="flex items-center mb-3">
             <div class="avatar-shell">
@@ -174,6 +177,18 @@
                 {{ activeEntry.ticketName }} · {{ entryStatusLabel(activeEntry) }}
               </p>
             </div>
+          </div>
+          <div class="sheet-section">
+            <p class="sheet-section__title">フォーム回答</p>
+            <div v-if="formAnswerRows.length" class="answer-list">
+              <div v-for="row in formAnswerRows" :key="row.label" class="answer-row">
+                <span class="answer-label">{{ row.label }}</span>
+                <span class="answer-value">{{ formatAnswer(row.value) }}</span>
+              </div>
+            </div>
+            <p v-else class="answer-empty">
+              {{ hasRegistrationForm ? '回答はありません。' : '申込フォームは未設定です。' }}
+            </p>
           </div>
           <button
             v-if="activeEntry.status === 'pending'"
@@ -254,6 +269,7 @@ import {
   fetchConsoleEvent,
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
+  exportEventRegistrationsCsv,
   rejectEventRegistration,
   cancelEventRegistration,
   cancelConsoleEvent,
@@ -299,6 +315,7 @@ const memberListRef = ref<HTMLElement | null>(null);
 const showMoreSheet = ref(false);
 const showCancelSheet = ref(false);
 const entryActionLoading = ref<Record<string, boolean>>({});
+const exportingCsv = ref(false);
 const isEventCancelled = computed(() => eventDetail.value?.status === 'cancelled');
 
 const eventCard = computed(() => {
@@ -397,6 +414,27 @@ const entries = computed(() => {
       }
     });
   return Array.from(deduped.values());
+});
+
+const activeRegistration = computed(
+  () => registrations.value.find((reg) => reg.registrationId === activeEntry.value?.id) ?? null,
+);
+const hasRegistrationForm = computed(() => Boolean(eventDetail.value?.registrationFormSchema?.length));
+const formAnswerRows = computed(() => {
+  const reg = activeRegistration.value;
+  if (!reg) return [];
+  const answers = (reg.formAnswers ?? {}) as Record<string, unknown>;
+  const schema = eventDetail.value?.registrationFormSchema ?? [];
+  const labelMap = new Map<string, string>();
+  schema.forEach((field) => {
+    const label = field.label ? String(field.label) : '';
+    if (field.id) labelMap.set(String(field.id), label || String(field.id));
+    if (label) labelMap.set(label, label);
+  });
+  return Object.entries(answers).map(([key, value]) => ({
+    label: labelMap.get(key) ?? key,
+    value,
+  }));
 });
 
 function mapEntry(reg: ConsoleEventRegistrationItem) {
@@ -498,6 +536,26 @@ const handleEditEvent = () => {
 const handlePayments = () => {
   openPayments();
   closeMoreActions();
+};
+
+const exportRegistrationsCsv = async () => {
+  if (!eventId.value || exportingCsv.value) return;
+  exportingCsv.value = true;
+  try {
+    const blob = await exportEventRegistrationsCsv(eventId.value);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `event-${eventId.value}-registrations.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    window.alert('CSVのエクスポートに失敗しました');
+  } finally {
+    exportingCsv.value = false;
+  }
 };
 const confirmCancelEvent = async () => {
   closeCancelSheet();
@@ -752,6 +810,17 @@ const rejectEntry = async () => {
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
 
+const formatAnswer = (value: unknown) => {
+  if (value == null) return '—';
+  if (Array.isArray(value)) return value.length ? value.join('、') : '—';
+  if (typeof value === 'object') {
+    const text = JSON.stringify(value);
+    return text === '{}' ? '—' : text;
+  }
+  const text = String(value).trim();
+  return text ? text : '—';
+};
+
 const canRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
   Boolean(entry.paymentId) &&
   entry.paymentStatus === 'paid' &&
@@ -1005,6 +1074,14 @@ const reload = () => loadData();
 .sheet-title { font-size: 17px; font-weight: 700; color: #0f172a; margin-bottom: 8px; text-align: center; }
 .sheet-error { font-size: 12px; color: #b91c1c; margin: 4px 0 8px; text-align: center; }
 .sheet-close { width: 100%; padding: 12px; border-radius: 12px; border: none; background: #0f172a; color: #fff; font-weight: 700; font-size: 16px; margin-top: 10px; }
+.sheet--entry { max-height: calc(100vh - 80px); overflow-y: auto; }
+.sheet-section { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: #f8fafc; }
+.sheet-section__title { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+.answer-list { display: grid; gap: 8px; }
+.answer-row { display: grid; gap: 4px; }
+.answer-label { font-size: 12px; color: #64748b; }
+.answer-value { font-size: 14px; color: #0f172a; white-space: pre-wrap; word-break: break-word; }
+.answer-empty { margin: 0; font-size: 12px; color: #94a3b8; }
 .cancel-desc { margin: 0 0 10px; font-size: 13px; color: #475569; line-height: 1.6; text-align: center; }
 .cancel-card { border-radius: 12px; border: 1px solid #fed7aa; background: #fff7ed; padding: 12px; display: grid; gap: 6px; }
 .cancel-card__title { margin: 0; font-size: 12px; font-weight: 700; color: #c2410c; }

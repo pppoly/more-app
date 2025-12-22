@@ -15,7 +15,7 @@
       </div>
     </div>
 
-    <section class="note-editor__blocks" @click="focusBody">
+    <section class="note-editor__blocks" @click.self="focusBody">
       <div v-for="(block, index) in blocks" :key="block.id" class="note-block">
         <textarea
           v-if="block.type === 'text'"
