@@ -373,8 +373,6 @@ export class AiService {
       'Do not invent new information. Keep tone natural and concise for mobile UI. ' +
       'If the text is too short or not translatable, return it as-is.';
 
-    const preserveFormats = Array.from(new Set(items.map((item) => item.preserveFormat ?? 'plain')));
-
     const cachedTranslations: TranslateTextResult['translations'] = [];
     const missingItems: TranslateTextDto['items'] = [];
     for (const item of items) {
@@ -398,59 +396,96 @@ export class AiService {
         return { translations: cachedTranslations };
       }
 
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        temperature: 0.2,
-        response_format: { type: 'json_schema', json_schema: jsonSchema },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: JSON.stringify({
-              source_language: sourceLang,
-              target_languages: targetLangs,
-              preserve_format: preserveFormats,
-              instructions:
-                'Keep placeholders such as {name}, {{count}}, <br>, markdown links intact. ' +
-                'Do not translate brand names, URLs, or variables. ' +
-                'Return a JSON array with translations for each target language.',
-              items: items.map((item) => ({
-                key: item.key,
-                text: item.text,
-                format: item.preserveFormat ?? 'plain',
-              })),
-            }),
-          },
-        ],
-      });
-
-      const raw = this.extractMessageContent(completion);
-      if (!raw) {
-        throw new Error('Empty response from AI');
-      }
-      const parsed = JSON.parse(raw) as TranslateTextResult;
-
-      // write-through cache
-      for (const item of parsed.translations ?? []) {
-        for (const target of Object.keys(item.translated ?? {})) {
-          const translatedText = item.translated?.[target];
-          if (!translatedText) continue;
-          const cacheKey = this.buildTranslationCacheKey(sourceLang, target, item.source);
-          const existing = this.translationCache.get(cacheKey) ?? {};
-          existing[target] = translatedText;
-          this.translationCache.set(cacheKey, existing);
+      const parseJson = <T>(raw: string): T => {
+        try {
+          return JSON.parse(raw) as T;
+        } catch (err) {
+          const trimmed = raw.trim();
+          const start = trimmed.indexOf('{');
+          const end = trimmed.lastIndexOf('}');
+          if (start !== -1 && end !== -1 && end > start) {
+            return JSON.parse(trimmed.slice(start, end + 1)) as T;
+          }
+          throw err;
         }
-      }
+      };
 
-      // merge cached + new
+      const mergeTranslations = (
+        base: TranslateTextResult['translations'],
+        incoming: TranslateTextResult['translations'] = [],
+      ) => {
+        for (const item of incoming) {
+          const cached = base.find((m) => m.key === item.key);
+          if (cached) {
+            cached.translated = { ...cached.translated, ...(item.translated ?? {}) };
+          } else {
+            base.push(item);
+          }
+        }
+      };
+
+      const writeThroughCache = (translations: TranslateTextResult['translations'] = []) => {
+        for (const item of translations) {
+          for (const target of Object.keys(item.translated ?? {})) {
+            const translatedText = item.translated?.[target];
+            if (!translatedText) continue;
+            const cacheKey = this.buildTranslationCacheKey(sourceLang, target, item.source);
+            const existing = this.translationCache.get(cacheKey) ?? {};
+            existing[target] = translatedText;
+            this.translationCache.set(cacheKey, existing);
+          }
+        }
+      };
+
+      const requestTranslations = async (targets: string[], chunkItems: TranslateTextDto['items']) => {
+        const completion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0.2,
+          response_format: { type: 'json_schema', json_schema: jsonSchema },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                source_language: sourceLang,
+                target_languages: targets,
+                preserve_format: Array.from(new Set(chunkItems.map((item) => item.preserveFormat ?? 'plain'))),
+                instructions:
+                  'Keep placeholders such as {name}, {{count}}, <br>, markdown links intact. ' +
+                  'Do not translate brand names, URLs, or variables. ' +
+                  'Return a JSON array with translations for each target language.',
+                items: chunkItems.map((item) => ({
+                  key: item.key,
+                  text: item.text,
+                  format: item.preserveFormat ?? 'plain',
+                })),
+              }),
+            },
+          ],
+        });
+
+        const raw = this.extractMessageContent(completion);
+        if (!raw) {
+          throw new Error('Empty response from AI');
+        }
+        return parseJson<TranslateTextResult>(raw);
+      };
+
       const merged: TranslateTextResult['translations'] = [...cachedTranslations];
-      for (const item of parsed.translations ?? []) {
-        const cached = merged.find((m) => m.key === item.key);
-        if (cached) {
-          cached.translated = { ...cached.translated, ...(item.translated ?? {}) };
-        } else {
-          merged.push(item);
-        }
+      const maxTargetsPerRequest = 3;
+
+      for (let i = 0; i < targetLangs.length; i += maxTargetsPerRequest) {
+        const targets = targetLangs.slice(i, i + maxTargetsPerRequest);
+        const chunkItems = missingItems.filter((item) =>
+          targets.some((target) => {
+            const cacheKey = this.buildTranslationCacheKey(sourceLang, target, item.text);
+            return !this.translationCache.get(cacheKey)?.[target];
+          }),
+        );
+        if (!chunkItems.length) continue;
+        const parsed = await requestTranslations(targets, chunkItems);
+        writeThroughCache(parsed.translations);
+        mergeTranslations(merged, parsed.translations);
       }
 
       return { translations: merged };
