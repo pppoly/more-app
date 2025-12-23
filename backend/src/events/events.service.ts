@@ -111,6 +111,7 @@ export class EventsService {
         locationLng: event.locationLng,
         title: event.title,
         description: event.description,
+        category: event.category,
         community: {
           id: event.community.id,
           name: event.community.name,
