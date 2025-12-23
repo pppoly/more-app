@@ -248,7 +248,7 @@ const headerSafeAreaStyle = computed(() => ({
 }));
 
 const tabbarSafeAreaStyle = computed(() => ({
-  paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))',
+  paddingBottom: 'env(safe-area-inset-bottom, 0px)',
 }));
 
 const shouldKeepAlive = (viewRoute: { meta?: Record<string, unknown> }) => viewRoute.meta?.keepAlive === true;
@@ -493,7 +493,7 @@ watch(
 }
 
 .mobile-shell__content--tabbed {
-  padding: 0 0 5.25rem;
+  padding: 0 0 calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .mobile-shell__content--plain {
@@ -541,8 +541,7 @@ watch(
   right: 0;
   bottom: 0;
   z-index: 20;
-  padding: 0 calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px))
-    calc(10px + env(safe-area-inset-left, 0px));
+  padding: 0 calc(10px + env(safe-area-inset-right, 0px)) 0 calc(10px + env(safe-area-inset-left, 0px));
   background: #ffffff;
   border-top: none;
   box-shadow: none;
@@ -558,7 +557,7 @@ watch(
   display: flex;
   gap: 8px;
   background: #ffffff;
-  padding: 10px 0;
+  padding: 6px 0;
   border-radius: 0;
   box-sizing: border-box;
 }
@@ -571,8 +570,8 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
+  gap: 3px;
+  padding: 6px 4px;
   font-size: 12px;
   font-weight: 600;
   color: #9ca3af;
