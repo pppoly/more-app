@@ -2444,9 +2444,9 @@ const handleInlineFocus = (event: Event) => {
 
 const focusRefundPolicy = () => {
   nextTick(() => {
-    if (refundPolicyRef.value) {
-      refundPolicyRef.value.focus();
-      setCaretToEnd(refundPolicyRef.value);
+    if (refundPolicyInputRef.value) {
+      refundPolicyInputRef.value.focus();
+      setCaretToEnd(refundPolicyInputRef.value);
     }
   });
 };
@@ -3689,6 +3689,30 @@ select {
 .ios-panel--builder .ios-row::after {
   left: 0;
   right: 0;
+}
+
+.ios-panel--builder .ios-inline-select,
+.ios-panel--builder .ios-toggle {
+  margin-left: auto;
+}
+
+.ios-panel--builder .ios-inline-select {
+  min-width: 140px;
+  max-width: 60%;
+  padding: 6px 28px 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 8px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.ios-panel--builder .ios-inline-select:focus {
+  border-color: rgba(14, 165, 233, 0.6);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
 }
 
 .ios-row--builder-line {
