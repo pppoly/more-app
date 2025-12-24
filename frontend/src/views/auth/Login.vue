@@ -4,7 +4,6 @@
     <h2>LINEでログイン</h2>
     <p>本番利用に推奨。LINE認証後に自動ログインします。</p>
     <button type="button" class="line-button" @click="handleLineLogin">
-      <span class="i-simple-icons-line"></span>
       LINEログイン
     </button>
   </section>

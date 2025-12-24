@@ -48,7 +48,9 @@
       <button class="btn primary" type="button" :disabled="!communityId" @click="goPayments">
         取引履歴を見る
       </button>
-      <button class="btn outline" type="button" disabled>出金する（準備中）</button>
+      <button class="btn outline" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
+        {{ payoutLoading ? '移動中…' : withdrawLabel }}
+      </button>
       <button class="btn ghost" type="button" :disabled="onboarding" @click="handleOnboarding">
         {{ onboarding ? '移動中…' : stripeActionLabel }}
       </button>
@@ -80,6 +82,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
+  createCommunityStripeLoginLink,
   fetchConsoleCommunity,
   fetchCommunityBalance,
   fetchOrganizerPayoutPolicyStatus,
@@ -97,6 +100,7 @@ const router = useRouter();
 const route = useRoute();
 const community = ref<ConsoleCommunityDetail | null>(null);
 const onboarding = ref(false);
+const payoutLoading = ref(false);
 const error = ref<string | null>(null);
 const balance = ref<ConsoleCommunityBalance | null>(null);
 const stripeStatus = ref<StripeAccountStatus | null>(null);
@@ -116,6 +120,13 @@ const stripeActionLabel = computed(() => {
   if (stripeRestricted.value) return 'Stripeで確認';
   if (!stripeReady.value) return '連携を完了する';
   return '受け取り情報を更新';
+});
+const canWithdraw = computed(() => hasStripeAccount.value && stripeReady.value && !stripeRestricted.value);
+const withdrawLabel = computed(() => {
+  if (!hasStripeAccount.value) return '出金する';
+  if (!stripeReady.value) return '出金する（連携未完了）';
+  if (stripeRestricted.value) return '出金する（制限中）';
+  return '出金する';
 });
 const pageTitle = computed(() => 'コミュニティ財務');
 
@@ -238,6 +249,27 @@ const handleOnboarding = async () => {
       (err instanceof Error ? err.message : '受け取りリンクの生成に失敗しました');
   } finally {
     onboarding.value = false;
+  }
+};
+
+const handleWithdraw = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
+  if (!community.value?.id) return;
+  if (!hasStripeAccount.value) {
+    error.value = 'Stripe 口座が未開設です。先に連携を完了してください。';
+    return;
+  }
+  payoutLoading.value = true;
+  error.value = null;
+  try {
+    const { url } = await createCommunityStripeLoginLink(community.value.id);
+    window.location.href = url;
+  } catch (err: any) {
+    error.value =
+      err?.response?.data?.message ||
+      (err instanceof Error ? err.message : 'Stripe画面の起動に失敗しました');
+  } finally {
+    payoutLoading.value = false;
   }
 };
 

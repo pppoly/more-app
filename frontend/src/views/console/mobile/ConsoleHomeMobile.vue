@@ -117,7 +117,7 @@
         <div class="action-icon">
           <img :src="payoutIcon" alt="" loading="lazy" />
         </div>
-        <p class="action-title">入金・振込</p>
+        <p class="action-title">決済・受け取り</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
         <div class="action-icon">

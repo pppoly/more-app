@@ -36,7 +36,8 @@
 
         <div class="qr-block">
           <div class="qr-box">
-            <div class="qr-placeholder">QR生成は後で差し替え</div>
+            <img v-if="qrDataUrl" :src="qrDataUrl" alt="QRコード" class="qr-img" />
+            <div v-else class="qr-placeholder">{{ qrGenerating ? 'QR生成中…' : 'QRを生成できません' }}</div>
           </div>
           <div class="qr-text">
             <p class="qr-title">QRコード</p>
@@ -58,15 +59,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useToast } from '../../composables/useToast';
+import QRCode from 'qrcode';
 
 const route = useRoute();
 const toast = useToast();
 const copyInput = ref<HTMLInputElement | null>(null);
 const copying = ref(false);
 const showGuide = ref(false);
+const qrDataUrl = ref('');
+const qrGenerating = ref(false);
 
 const fromPath = computed(() => {
   const raw = (route.query.from as string) || '';
@@ -79,6 +83,22 @@ const copyLink = computed(() => {
   const target = fromPath.value || '/';
   return `${window.location.origin}${target}`;
 });
+
+const refreshQr = async (url: string) => {
+  if (!url) {
+    qrDataUrl.value = '';
+    return;
+  }
+  qrGenerating.value = true;
+  try {
+    qrDataUrl.value = await QRCode.toDataURL(url, { margin: 1, width: 240 });
+  } catch (error) {
+    console.warn('Failed to generate promo QR', error);
+    qrDataUrl.value = '';
+  } finally {
+    qrGenerating.value = false;
+  }
+};
 
 const copy = async () => {
   if (!copyLink.value) return;
@@ -107,9 +127,9 @@ const goBack = () => {
   }
 };
 
-onMounted(() => {
-  // noop; ensure copyLink computed after mount
-});
+watch(copyLink, (val) => {
+  void refreshQr(val);
+}, { immediate: true });
 </script>
 
 <style scoped>
@@ -236,6 +256,11 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background: #f8fafc;
+}
+.qr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .qr-placeholder {
   font-size: 12px;

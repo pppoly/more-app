@@ -51,3 +51,15 @@
   - Event ID now tracked via query/params; after first create, route is replaced with ?eventId so subsequent saves update same event.
 - Paste flow (ConsoleEventPasteMobile): removed textarea hint; added loading state on “下一步”; calls extractEventDraft before navigating and stores result for the form.
 - Event list/management (mobile): tapping a draft in ConsoleCommunityEventsMobile opens the mobile form with eventId to continue editing; manage page edit button also routes to mobile form with eventId.
+
+### Compliance Review Queue (No Changes Applied)
+- LINE 品牌使用合规性：仅文字引用是否符合品牌规范、是否需要额外声明（refs: frontend/src/views/auth/Login.vue, frontend/src/components/common/LiffOpenPrompt.vue, frontend/src/components/common/LineRedirectOverlay.vue, frontend/src/views/mobile/MobileEventDetail.vue）
+- 支付“测试环境”提示一致性：支付入口/结果页是否有明确“测试不收费”提示（refs: frontend/src/views/events/EventDetail.vue, frontend/src/views/mobile/MobileEventDetail.vue, frontend/src/views/mobile/MobileEventCheckout.vue, frontend/src/views/payments/PaymentSuccess.vue, frontend/src/views/payments/PaymentCancel.vue）
+- 第三方处理方披露（OpenAI/Google Cloud/Stripe/LINE）：隐私政策是否明确列出处理方与用途（refs: frontend/public/legal/privacy/index.html, backend/src/ai/ai.service.ts, backend/src/common/moderation/content-moderation.service.ts, backend/src/stripe, backend/src/auth）
+- 法律文本单一来源与同步：`/legal` 与 `frontend/public/legal` 是否一致（refs: legal/privacy/*.md, legal/terms/*.md, frontend/public/legal/privacy/index.html, frontend/public/legal/terms/index.html）
+- OSS 依赖许可与归档：是否需要 `LICENSE` 与 `THIRD_PARTY_NOTICES`（refs: frontend/package.json, frontend/package-lock.json, backend/package.json, backend/package-lock.json）
+- 用户数据收集范围与最小化披露：报名表/头像/位置/上传是否在隐私中明确（refs: frontend/src/views/mobile/MobileEventRegister.vue, frontend/src/views/auth/SetupProfile.vue, frontend/src/components/console/LocationPicker.vue）
+- 测试登录/快速登录风险说明：测试登录是否会在非测试环境暴露（refs: frontend/src/views/auth/Login.vue, frontend/src/router/index.ts）
+
+### Compliance Review Queue (UGC Organizer Terms)
+- 主理人协议需补充：权利与授权保证、平台中立与通报处置、申诉/下架协作、赔偿补偿义务（refs: legal/organizer/ja/organizer_tos_v1.0.md）

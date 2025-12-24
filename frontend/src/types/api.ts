@@ -515,6 +515,7 @@ export interface OrganizerApplicationInfo {
   status: string;
   reason?: string | null;
   experience?: string | null;
+  contact?: string | null;
   note?: string | null;
   createdAt: string;
   reviewedAt?: string | null;

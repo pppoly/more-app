@@ -88,6 +88,24 @@ const routes: RouteRecordRaw[] = [
     meta: { desktopOnly: true, devPageName: '旧デスクトップ' },
   },
   {
+    path: '/experience',
+    name: 'experience-entry',
+    component: () => import('../views/mobile/ExperienceEntryMobile.vue'),
+    meta: {
+      title: 'テスト体験 | MORE',
+      layout: 'mobile-user',
+      stackKey: 'mobile',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
+      devPageName: 'テスト体験エントリー',
+    },
+  },
+  {
+    path: '/try',
+    redirect: { name: 'experience-entry' },
+  },
+  {
     path: '/events',
     name: 'events',
     component: () => import('../views/mobile/MobileEvents.vue'),

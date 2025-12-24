@@ -9,7 +9,9 @@
           <button class="primary" @click="handleOnboarding" :disabled="onboarding">
             {{ onboarding ? '移動中…' : stripeActionLabel }}
           </button>
-          <button class="secondary" type="button" disabled>出金する（準備中）</button>
+          <button class="secondary" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
+            {{ payoutLoading ? '移動中…' : withdrawLabel }}
+          </button>
           <span :class="`pill ${stripeAccountBadgeClass}`">
             {{ stripeAccountBadgeLabel }}
           </span>
@@ -101,6 +103,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {
   fetchConsoleCommunity,
+  createCommunityStripeLoginLink,
   fetchOrganizerPayoutPolicyStatus,
   fetchPricingPlans,
   refreshCommunityStripeStatus,
@@ -120,6 +123,7 @@ const stripeStatus = ref<StripeAccountStatus | null>(null);
 const selectedPlanId = ref<string>('');
 const savedPlanId = ref<string>('');
 const onboarding = ref(false);
+const payoutLoading = ref(false);
 const planUpdating = ref(false);
 const error = ref<string | null>(null);
 const { t } = useI18n();
@@ -211,6 +215,13 @@ const heroSubText = computed(() => {
   }
   return 'Stripe の案内に沿って入力すれば、すぐに受け取りを開始できます。';
 });
+const canWithdraw = computed(() => hasStripeAccount.value && stripeReady.value && !stripeRestricted.value);
+const withdrawLabel = computed(() => {
+  if (!hasStripeAccount.value) return '出金する';
+  if (!stripeReady.value) return '出金する（連携未完了）';
+  if (stripeRestricted.value) return '出金する（制限中）';
+  return '出金する';
+});
 const planChanged = computed(() => selectedPlanId.value !== savedPlanId.value);
 const activePlan = computed(() => pricingPlans.value.find((plan) => plan.id === savedPlanId.value) || null);
 const formatYen = (value: number) =>
@@ -259,6 +270,24 @@ const handleOnboarding = async () => {
     error.value = err instanceof Error ? err.message : 'Stripe連携リンクの生成に失敗しました';
   } finally {
     onboarding.value = false;
+  }
+};
+
+const handleWithdraw = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
+  if (!hasStripeAccount.value) {
+    error.value = 'Stripe 口座が未開設です。先に連携を完了してください。';
+    return;
+  }
+  payoutLoading.value = true;
+  error.value = null;
+  try {
+    const { url } = await createCommunityStripeLoginLink(communityId);
+    window.location.href = url;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Stripe画面の起動に失敗しました';
+  } finally {
+    payoutLoading.value = false;
   }
 };
 

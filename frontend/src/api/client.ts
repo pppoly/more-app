@@ -277,6 +277,11 @@ export async function startCommunityStripeOnboarding(communityId: string): Promi
   return data;
 }
 
+export async function createCommunityStripeLoginLink(communityId: string): Promise<StripeOnboardResponse> {
+  const { data } = await apiClient.post<StripeOnboardResponse>(`/console/communities/${communityId}/stripe/login`, {});
+  return data;
+}
+
 export async function devLogin(name: string, language?: string): Promise<DevLoginResponse> {
   const payload: { name: string; language?: string; secret?: string } = { name };
   if (language) {
@@ -757,7 +762,7 @@ export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicatio
   return data;
 }
 
-export async function submitOrganizerApplication(payload: { reason: string; experience?: string }) {
+export async function submitOrganizerApplication(payload: { reason: string; contact: string; experience?: string }) {
   const { data } = await apiClient.post('/organizers/apply', payload);
   return data;
 }

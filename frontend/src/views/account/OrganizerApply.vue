@@ -55,6 +55,15 @@
             ></textarea>
           </label>
           <label class="apply-field">
+            <span class="apply-field__label">{{ t('organizerApply.form.contact') }} <span class="required">*</span></span>
+            <input
+              v-model="form.contact"
+              type="text"
+              required
+              :placeholder="t('organizerApply.form.contactPlaceholder')"
+            />
+          </label>
+          <label class="apply-field">
             <span class="apply-field__label">{{ t('organizerApply.form.experience') }}</span>
             <textarea
               v-model="form.experience"
@@ -116,6 +125,7 @@ const message = ref('');
 const showForm = ref(false);
 const form = reactive({
   reason: '',
+  contact: '',
   experience: '',
 });
 const isApproved = computed(() => Boolean(status.value?.isOrganizer || status.value?.application?.status === 'approved'));
@@ -184,12 +194,12 @@ watch(
 
 const handleApplyAction = () => {
   if (isApproved.value) {
-    router.push({ name: 'console-communities' });
     return;
   }
   showForm.value = true;
   message.value = '';
   form.reason = '';
+  form.contact = '';
   form.experience = '';
 };
 
@@ -253,7 +263,7 @@ const submit = async () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem(
         'organizerApply:draft',
-        JSON.stringify({ reason: form.reason ?? '', experience: form.experience ?? '' }),
+        JSON.stringify({ reason: form.reason ?? '', contact: form.contact ?? '', experience: form.experience ?? '' }),
       );
     }
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
@@ -263,11 +273,16 @@ const submit = async () => {
     message.value = t('organizerApply.form.reasonRequired');
     return;
   }
+  if (!form.contact.trim()) {
+    message.value = t('organizerApply.form.contactRequired');
+    return;
+  }
   submitting.value = true;
   message.value = '';
   try {
     await submitOrganizerApplication({
       reason: form.reason.trim(),
+      contact: form.contact.trim(),
       experience: form.experience.trim() || undefined,
     });
     message.value = t('organizerApply.form.success');
@@ -291,8 +306,9 @@ onMounted(() => {
     const raw = localStorage.getItem('organizerApply:draft');
     if (raw) {
       try {
-        const parsed = JSON.parse(raw) as { reason?: string; experience?: string };
+        const parsed = JSON.parse(raw) as { reason?: string; contact?: string; experience?: string };
         form.reason = parsed.reason || '';
+        form.contact = parsed.contact || '';
         form.experience = parsed.experience || '';
         showForm.value = true;
       } catch {
@@ -572,6 +588,17 @@ onUnmounted(() => {
   font-size: 14px;
   background: #f8fafc;
   min-height: 96px;
+  box-sizing: border-box;
+  list-style: none;
+  list-style-type: none;
+}
+.apply-field input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  padding: 12px;
+  font-size: 14px;
+  background: #f8fafc;
   box-sizing: border-box;
   list-style: none;
   list-style-type: none;
