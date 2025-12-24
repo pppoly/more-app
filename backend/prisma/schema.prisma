@@ -460,6 +460,7 @@ model OrganizerApplication {
   status     String    @default("pending")
   reason     String?
   experience String?
+  contact    String?
   note       String?
   createdAt  DateTime  @default(now())
   reviewedAt DateTime?

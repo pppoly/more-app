@@ -486,6 +486,20 @@ export class ConsoleCommunitiesService {
     return { url };
   }
 
+  async createStripeLoginLink(userId: string, communityId: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    await this.permissions.assertOrganizerPayoutPolicyAccepted(userId);
+    const community = await this.prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+    if (!community.stripeAccountId) {
+      throw new BadRequestException('Stripe account is not set up');
+    }
+    const url = await this.stripeOnboarding.createLoginLink(community.stripeAccountId);
+    return { url };
+  }
+
   async subscribeCommunityPlan(userId: string, communityId: string, planId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
     const plan = await this.prisma.pricingPlan.findUnique({ where: { id: planId } });

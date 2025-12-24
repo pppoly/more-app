@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 interface OrganizerApplyDto {
   reason?: string;
   experience?: string;
+  contact?: string;
 }
 
 @Controller('organizers')

@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 interface OrganizerApplicationDto {
   reason?: string;
   experience?: string;
+  contact?: string;
 }
 
 @Injectable()
@@ -32,6 +33,7 @@ export class OrganizersService {
           status: 'pending',
           reason: payload.reason?.trim() || null,
           experience: payload.experience?.trim() || null,
+          contact: payload.contact?.trim() || null,
         },
       });
 
