@@ -25,6 +25,19 @@ const readHistoryPos = () => {
   return typeof raw === 'number' ? raw : null;
 };
 
+const readHistoryBack = () => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.history.state?.back;
+  return typeof raw === 'string' ? raw : null;
+};
+
+const isBackTarget = (to: RouteLike) => {
+  const back = readHistoryBack();
+  if (!back) return false;
+  if (back === to.fullPath) return true;
+  return back.split('?')[0] === to.fullPath.split('?')[0];
+};
+
 export const setupPopstateListener = () => {
   if (popstateBound || typeof window === 'undefined') return;
   window.addEventListener('popstate', () => {
@@ -40,9 +53,10 @@ export const beginNav = (
   info: { replaced?: boolean } = {},
 ) => {
   const replaced = Boolean(info.replaced);
+  const redirected = Boolean(to.redirectedFrom);
   const toPos = readHistoryPos();
 
-  if (replaced) {
+  if (replaced || redirected) {
     dir = 'replace';
     lastPos = toPos ?? lastPos;
     popstateBackPending = false;
@@ -52,7 +66,7 @@ export const beginNav = (
   if (typeof toPos === 'number' && typeof lastPos === 'number') {
     if (toPos > lastPos) dir = 'forward';
     else if (toPos < lastPos) dir = 'back';
-    else if (popstateBackPending) {
+    else if (popstateBackPending || isBackTarget(to)) {
       // Some WebViews keep position constant on pop; honor explicit back intent.
       dir = 'back';
     } else if (from && to.fullPath !== from.fullPath) {
@@ -66,7 +80,7 @@ export const beginNav = (
     return;
   }
 
-  if (popstateBackPending) {
+  if (popstateBackPending || isBackTarget(to)) {
     dir = 'back';
     popstateBackPending = false;
   } else {
@@ -101,6 +115,13 @@ export const endNavPending = () => {
 };
 
 export const useNavPending = () => navPending;
+
+export const syncHistoryPos = () => {
+  const pos = readHistoryPos();
+  if (typeof pos === 'number') {
+    lastPos = pos;
+  }
+};
 
 export const getTransitionName = (route: RouteLike) => {
   if (route.meta?.navType === 'modal') return 'modal-up';

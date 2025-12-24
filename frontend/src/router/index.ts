@@ -26,7 +26,7 @@ import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
 import { useAuthSheets } from '../composables/useAuthSheets';
 import { fetchOrganizerPayoutPolicyStatus } from '../api/client';
-import { beginNav, beginNavPending, endNavPending } from '../composables/useNavStack';
+import { beginNav, beginNavPending, endNavPending, syncHistoryPos } from '../composables/useNavStack';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -1123,6 +1123,7 @@ router.beforeResolve(() => {
 });
 
 router.afterEach(() => {
+  syncHistoryPos();
   endNavPending();
 });
 
