@@ -323,97 +323,8 @@
         </div>
       </section>
 
-      <div
-        class="advanced-toggle"
-        v-if="isMobileLayout"
-        role="button"
-        tabindex="0"
-        @click="showAdvancedMobile = !showAdvancedMobile"
-        @keydown.enter.prevent="showAdvancedMobile = !showAdvancedMobile"
-      >
-        <span>{{ showAdvancedMobile ? '詳細設定を閉じる' : '詳細設定（後でOK）' }}</span>
-        <span class="i-lucide-chevron-down" :class="{ rotate: showAdvancedMobile }"></span>
-      </div>
-
-      <!-- Config -->
-      <section class="ios-panel" v-if="!isMobileLayout || showAdvancedMobile" ref="sectionConfig">
-        <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action ios-row--builder-line" @click="openCategorySheet">
-            <span class="ios-label">カテゴリ</span>
-            <span class="ios-value ios-value--secondary" :class="{ 'ios-value--placeholder': !form.category }">
-              {{ categoryLabel }}
-            </span>
-          </button>
-          <button type="button" class="ios-row ios-row--action" @click="form.requireApproval = !form.requireApproval">
-            <span class="ios-label">参加承認</span>
-            <span class="ios-value ios-value--switch">
-              <input type="checkbox" v-model="form.requireApproval" class="ios-switch" @click.stop />
-            </span>
-          </button>
-          <button
-            type="button"
-            class="ios-row ios-row--action"
-            @click="form.config.requireCheckin = !form.config.requireCheckin"
-          >
-            <span class="ios-label">強制チェックイン</span>
-            <span class="ios-value ios-value--switch">
-              <input type="checkbox" v-model="form.config.requireCheckin" class="ios-switch" @click.stop />
-            </span>
-          </button>
-          <button
-            type="button"
-            class="ios-row ios-row--action"
-            @click="form.config.enableWaitlist = !form.config.enableWaitlist"
-          >
-            <span class="ios-label">キャンセル待ち</span>
-            <span class="ios-value ios-value--switch">
-              <input type="checkbox" v-model="form.config.enableWaitlist" class="ios-switch" @click.stop />
-            </span>
-          </button>
-          <button
-            type="button"
-            class="ios-row ios-row--action"
-            @click="form.config.riskNoticeEnabled = !form.config.riskNoticeEnabled"
-          >
-            <span class="ios-label">免責事項</span>
-            <span class="ios-value ios-value--switch">
-              <input type="checkbox" v-model="form.config.riskNoticeEnabled" class="ios-switch" @click.stop />
-            </span>
-          </button>
-        </div>
-        <div class="ios-form">
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('visibility')">
-            <span class="ios-label">公開範囲</span>
-            <span class="ios-value">{{ getSelectLabel('visibility', form.visibility) }}</span>
-          </button>
-          <button type="button" class="ios-row ios-row--action" @click="openFieldEditor('visibleRange')">
-            <span class="ios-label">Console 可視範囲</span>
-            <span class="ios-value">{{ getSelectLabel('visibleRange', form.config.visibleRange) }}</span>
-          </button>
-          <div class="ios-row ios-row--builder-line ios-row--textarea" @click="focusRefundPolicy">
-            <span class="ios-label">返金ポリシー</span>
-            <textarea
-              class="ios-inline-input ios-inline-input--textarea"
-              placeholder="入力してください"
-              ref="refundPolicyInputRef"
-              v-model="form.config.refundPolicy"
-              rows="2"
-            ></textarea>
-          </div>
-          <div class="ios-row ios-row--builder-line ios-row--textarea">
-            <span class="ios-label">注意事項 · {{ langLabel(activeContentLang) }}</span>
-            <textarea
-              class="ios-inline-input ios-inline-input--textarea"
-              placeholder="例：安全上の注意・持ち物・集合ルール"
-              v-model="form.config.riskNoticeText"
-              rows="2"
-            ></textarea>
-          </div>
-        </div>
-      </section>
-
-      <!-- Dynamic form -->
-      <section class="ios-panel ios-panel--builder" v-if="!isMobileLayout || showAdvancedMobile" ref="sectionForm">
+      <!-- Registration form -->
+      <section class="ios-panel ios-panel--builder" ref="sectionForm">
         <div class="ios-builder-head">
           <div class="builder-title">
             <p class="builder-eyebrow">申込フォーム</p>
@@ -509,6 +420,193 @@
         </button>
         <div v-else class="hint">項目がありません。「項目を追加」から設定してください。</div>
       </section>
+
+      <section class="ios-panel ios-panel--advanced-entry">
+        <div class="ios-form">
+          <button
+            type="button"
+            class="ios-row ios-row--action ios-row--advanced-entry"
+            @click="openAdvancedPage"
+          >
+            <div class="advanced-entry__text">
+              <span class="ios-label">詳細設定（任意）</span>
+              <span class="advanced-entry__hint">公開範囲・参加承認・返金ポリシー</span>
+            </div>
+            <div class="advanced-entry__meta">
+              <span class="advanced-entry__summary" :class="{ 'is-placeholder': !advancedSummary }">
+                {{ advancedSummary || '公開や承認のルールをまとめて設定' }}
+              </span>
+              <span class="i-lucide-chevron-right advanced-entry__chevron"></span>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <Teleport to="body">
+        <div v-if="showAdvancedPage" class="advanced-page-overlay">
+          <section
+            class="console-section advanced-page"
+            :class="{ 'console-section--mobile': isMobileLayout }"
+            ref="sectionConfig"
+          >
+            <ConsoleTopBar
+              v-if="isMobileLayout && !isLiffClientMode"
+              title="詳細設定"
+              @back="closeAdvancedPage"
+            >
+              <template #right>
+                <button type="button" class="link-btn" @click="closeAdvancedPage">完了</button>
+              </template>
+            </ConsoleTopBar>
+
+            <div class="advanced-head">
+              <div>
+                <p class="advanced-title">詳細設定</p>
+                <p class="advanced-subtitle">公開範囲・申込ルール・返金ポリシーをまとめて管理</p>
+              </div>
+              <button
+                v-if="!isMobileLayout"
+                type="button"
+                class="ghost advanced-close"
+                @click="closeAdvancedPage"
+              >
+                閉じる
+              </button>
+            </div>
+
+            <div class="advanced-body">
+              <section class="ios-panel advanced-card">
+                <p class="advanced-section-title">公開・表示</p>
+                <div class="ios-form">
+                  <button type="button" class="ios-row ios-row--action" @click="openCategorySheet">
+                    <span class="ios-label">カテゴリ</span>
+                    <span class="ios-value ios-value--secondary" :class="{ 'ios-value--placeholder': !form.category }">
+                      {{ categoryLabel }}
+                    </span>
+                  </button>
+                  <button type="button" class="ios-row ios-row--action advanced-row" @click="openFieldEditor('visibility')">
+                    <div class="advanced-row__text">
+                      <span class="ios-label">公開範囲</span>
+                      <span class="advanced-row__hint">誰がイベントを見られるか</span>
+                    </div>
+                    <span class="ios-value">{{ getSelectLabel('visibility', form.visibility) }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="openFieldEditor('visibleRange')"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">Console 可視範囲</span>
+                      <span class="advanced-row__hint">運営メンバーへの表示権限</span>
+                    </div>
+                    <span class="ios-value">{{ getSelectLabel('visibleRange', form.config.visibleRange) }}</span>
+                  </button>
+                </div>
+              </section>
+
+              <section class="ios-panel advanced-card">
+                <p class="advanced-section-title">申込・受付</p>
+                <div class="ios-form">
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="form.requireApproval = !form.requireApproval"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">参加承認</span>
+                      <span class="advanced-row__hint">承認後に参加を確定</span>
+                    </div>
+                    <span class="ios-value ios-value--switch">
+                      <input type="checkbox" v-model="form.requireApproval" class="ios-switch" @click.stop />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="form.config.enableWaitlist = !form.config.enableWaitlist"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">キャンセル待ち</span>
+                      <span class="advanced-row__hint">満員時に待機リストを有効化</span>
+                    </div>
+                    <span class="ios-value ios-value--switch">
+                      <input type="checkbox" v-model="form.config.enableWaitlist" class="ios-switch" @click.stop />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="form.config.requireCheckin = !form.config.requireCheckin"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">チェックイン必須</span>
+                      <span class="advanced-row__hint">当日の受付時にチェックインを求める</span>
+                    </div>
+                    <span class="ios-value ios-value--switch">
+                      <input type="checkbox" v-model="form.config.requireCheckin" class="ios-switch" @click.stop />
+                    </span>
+                  </button>
+                </div>
+              </section>
+
+              <section class="ios-panel advanced-card">
+                <p class="advanced-section-title">安全・注意事項</p>
+                <div class="ios-form">
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="form.config.riskNoticeEnabled = !form.config.riskNoticeEnabled"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">免責事項</span>
+                      <span class="advanced-row__hint">同意チェックや注意事項を表示</span>
+                    </div>
+                    <span class="ios-value ios-value--switch">
+                      <input type="checkbox" v-model="form.config.riskNoticeEnabled" class="ios-switch" @click.stop />
+                    </span>
+                  </button>
+                  <div
+                    class="ios-row ios-row--builder-line ios-row--textarea advanced-row"
+                    :class="{ 'is-disabled': !form.config.riskNoticeEnabled }"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">注意事項 · {{ langLabel(activeContentLang) }}</span>
+                      <span class="advanced-row__hint">安全上の注意・持ち物・集合ルール</span>
+                    </div>
+                    <textarea
+                      class="ios-inline-input ios-inline-input--textarea"
+                      placeholder="例：安全上の注意・持ち物・集合ルール"
+                      v-model="form.config.riskNoticeText"
+                      :disabled="!form.config.riskNoticeEnabled"
+                      rows="3"
+                    ></textarea>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ios-panel advanced-card">
+                <p class="advanced-section-title">料金・返金</p>
+                <div class="ios-form">
+                  <div class="ios-row ios-row--builder-line ios-row--textarea advanced-row" @click="focusRefundPolicy">
+                    <div class="advanced-row__text">
+                      <span class="ios-label">返金ポリシー</span>
+                      <span class="advanced-row__hint">例：イベント3日前まで全額返金</span>
+                    </div>
+                    <textarea
+                      class="ios-inline-input ios-inline-input--textarea"
+                      placeholder="入力してください"
+                      ref="refundPolicyInputRef"
+                      v-model="form.config.refundPolicy"
+                      rows="3"
+                    ></textarea>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </Teleport>
 
       <div class="actions" v-if="!isMobileLayout">
         <button type="button" class="ghost" :disabled="submitting || sheetOpen" @click="handleSaveDraft">
@@ -708,6 +806,7 @@ import {
   LEGACY_EVENT_LANG_KEY,
   CONSOLE_EVENT_NOTE_CONTEXT_KEY,
   CONSOLE_EVENT_NOTE_RESULT_KEY,
+  CONSOLE_EVENT_NOTE_RETURN_KEY,
   CONSOLE_EVENT_FORM_DRAFT_KEY,
 } from '../../constants/console';
 import { APP_TARGET } from '../../config';
@@ -846,6 +945,7 @@ const builderHintText = 'フォームに欲しい項目を並べてください�
 const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const showMobileNotice = ref(false);
+const showAdvancedPage = ref(false);
 const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 12 * 1024 * 1024; // 12MB（入口上限を緩和）
 const MAX_COVER_UPLOAD_SIZE = 10 * 1024 * 1024; // 圧縮後の目安を緩和
@@ -961,13 +1061,12 @@ const reviewStatus = ref<string | null>(null);
       return '';
   }
 });
-  const reviewMessage = computed(() => {
-    if (reviewStatus.value === 'rejected') return '修正して再度送信してください。';
-    if (reviewStatus.value === 'pending_review') return '審査中です。公開までお待ちください。';
-    if (reviewStatus.value === 'approved') return '審査済みです。更新しても自動で再審査されます。';
-    return '';
-  });
-  const showAdvancedMobile = ref(false);
+const reviewMessage = computed(() => {
+  if (reviewStatus.value === 'rejected') return '修正して再度送信してください。';
+  if (reviewStatus.value === 'pending_review') return '審査中です。公開までお待ちください。';
+  if (reviewStatus.value === 'approved') return '審査済みです。更新しても自動で再審査されます。';
+  return '';
+});
 
 const detectLang = (text: string): 'ja' | 'en' | 'zh' => {
   if (/[ぁ-んァ-ン]/.test(text)) return 'ja';
@@ -1088,7 +1187,8 @@ const sheetOpen = computed(
         showCategorySheet.value ||
         showPastePanel.value ||
         showPasteResult.value ||
-        showLocationPicker.value,
+        showLocationPicker.value ||
+        showAdvancedPage.value,
     ),
 );
 
@@ -1110,6 +1210,17 @@ const getSelectLabel = (key: 'visibility' | 'visibleRange', value?: string | nul
   const target = list.find((item) => item.value === value);
   return target?.label || '選択してください';
 };
+const advancedSummary = computed(() => {
+  const items: string[] = [];
+  const visibilityLabel = getSelectLabel('visibility', form.visibility);
+  if (visibilityLabel && visibilityLabel !== '選択してください') {
+    items.push(visibilityLabel.replace('公開 (public)', '公開'));
+  }
+  if (form.requireApproval) items.push('承認あり');
+  if (form.config.enableWaitlist) items.push('キャンセル待ち');
+  if (form.config.requireCheckin) items.push('チェックイン必須');
+  return items.slice(0, 3).join(' · ');
+});
 
 const stripHtml = (value: string) => value.replace(/<[^>]*>/g, '');
 const richTextPreview = computed(() => {
@@ -1564,18 +1675,22 @@ const applyEventDetailToForm = (
     subtitle.value = titleText;
   }
   if (options.includeGalleries) {
-    const normalizedFromGallery = normalizeGalleryItems(event.galleries);
-    if (normalizedFromGallery.length) {
-      galleries.value = normalizedFromGallery;
-    } else if (event.coverImageUrl) {
-      galleries.value = [{ id: 'cover', imageUrl: resolveAssetUrl(event.coverImageUrl), order: 0 }];
-    } else {
-      galleries.value = [];
-    }
+    applyEventGalleries(event);
   }
 };
 
-const load = async () => {
+const applyEventGalleries = (event: ConsoleEventDetail) => {
+  const normalizedFromGallery = normalizeGalleryItems(event.galleries);
+  if (normalizedFromGallery.length) {
+    galleries.value = normalizedFromGallery;
+  } else if (event.coverImageUrl) {
+    galleries.value = [{ id: 'cover', imageUrl: resolveAssetUrl(event.coverImageUrl), order: 0 }];
+  } else {
+    galleries.value = [];
+  }
+};
+
+const load = async (options?: { skipFormHydration?: boolean }) => {
   if (communityId && !eventId.value) {
     const community = await fetchConsoleCommunity(communityId);
     subtitle.value = `コミュニティ: ${community.name}`;
@@ -1589,8 +1704,23 @@ const load = async () => {
     const event = await fetchConsoleEvent(eventId.value);
     reviewStatus.value = (event as any).reviewStatus || null;
     reviewReason.value = (event as any).reviewReason || null;
-    applyEventDetailToForm(event, { syncCommunity: true, setSubtitle: true, includeGalleries: true });
-    if (!event.galleries?.length) {
+    if (event.communityId && !eventCommunityId.value) {
+      eventCommunityId.value = event.communityId;
+    }
+    if (!options?.skipFormHydration) {
+      applyEventDetailToForm(event, { syncCommunity: true, setSubtitle: true, includeGalleries: true });
+      if (!event.galleries?.length) {
+        await reloadGallery();
+      }
+      return;
+    }
+    if (form.title) {
+      subtitle.value = form.title;
+    }
+    if (!galleries.value.length) {
+      applyEventGalleries(event);
+    }
+    if (!event.galleries?.length && !galleries.value.length) {
       await reloadGallery();
     }
   } catch (err) {
@@ -1760,6 +1890,15 @@ const extractFromPastedDraft = (text: string) => {
   };
 };
 
+const openAdvancedPage = () => {
+  showAdvancedPage.value = true;
+  window.scrollTo({ top: 0 });
+};
+
+const closeAdvancedPage = () => {
+  showAdvancedPage.value = false;
+};
+
 const checkPastedDraft = async (auto = false) => {
   draftCheckMessage.value = '';
   pastedPreview.value = null;
@@ -1910,7 +2049,7 @@ const applyParsedResult = async (result: Record<string, any>) => {
   }
   const regForm = pick<any[]>('registrationForm', 'registration_form');
   if (Array.isArray(regForm) && regForm.length) {
-    form.registrationForm = regForm as any;
+    registrationFields.value = buildBuilderFields(regForm as any);
     pasteFilledFields.value.push('申込フォーム');
   }
   pasteAdvice.value = (pick<string[]>('advice', 'advice') || []).filter(Boolean);
@@ -2552,7 +2691,18 @@ const openRichTextEditor = async () => {
   };
   const covers = await buildCoverDraft();
   try {
-    const draftPayload = covers.length ? { form, covers } : { form };
+    const draftPayload: {
+      form: typeof form;
+      covers?: Array<{ id: string; imageUrl: string; order?: number }>;
+      galleries?: EventGalleryItem[];
+      source?: 'note-editor';
+    } = { form, source: 'note-editor' };
+    if (covers.length) {
+      draftPayload.covers = covers;
+    }
+    if (eventId.value && galleries.value.length) {
+      draftPayload.galleries = galleries.value;
+    }
     sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify(draftPayload));
   } catch (err) {
     console.warn('Failed to persist form draft', err);
@@ -2566,6 +2716,11 @@ const openRichTextEditor = async () => {
     sessionStorage.setItem(CONSOLE_EVENT_NOTE_CONTEXT_KEY, JSON.stringify(payload));
   } catch (err) {
     console.warn('Failed to persist note context', err);
+  }
+  try {
+    sessionStorage.setItem(CONSOLE_EVENT_NOTE_RETURN_KEY, 'back');
+  } catch (err) {
+    console.warn('Failed to persist note return state', err);
   }
   const paramsCommunity = eventCommunityId.value || communityId;
   if (!paramsCommunity) return;
@@ -2606,14 +2761,14 @@ const applyNoteResultFromStorage = async () => {
   }
 };
 
-const applyFormDraftFromStorage = async () => {
+const applyFormDraftFromStorage = async (): Promise<boolean> => {
   try {
     const raw = sessionStorage.getItem(CONSOLE_EVENT_FORM_DRAFT_KEY);
-    if (!raw) return;
+    if (!raw) return false;
     sessionStorage.removeItem(CONSOLE_EVENT_FORM_DRAFT_KEY);
     const saved = JSON.parse(raw);
     const savedForm = saved?.form;
-    if (!savedForm) return;
+    if (!savedForm) return false;
     Object.assign(form, savedForm);
     if (savedForm.config) {
       Object.assign(form.config, savedForm.config);
@@ -2622,14 +2777,19 @@ const applyFormDraftFromStorage = async () => {
       form.ticketTypes = savedForm.ticketTypes;
     }
     if (Array.isArray(savedForm.registrationForm)) {
-      form.registrationForm = savedForm.registrationForm;
+      registrationFields.value = buildBuilderFields(savedForm.registrationForm as RegistrationFormField[]);
+    }
+    if (Array.isArray(saved?.galleries) && eventId.value) {
+      galleries.value = saved.galleries as EventGalleryItem[];
     }
     if (Array.isArray(saved?.covers) && saved.covers.length) {
       await restoreCoverDraft(saved.covers);
     }
     form.category = normalizeEventCategory(form.category);
+    return true;
   } catch (err) {
     console.warn('Failed to restore form draft', err);
+    return false;
   }
 };
 
@@ -3146,14 +3306,18 @@ const applyAssistantDraftFromStorage = () => {
 onMounted(async () => {
   setupMobileMediaQuery();
   loadStoredLang();
-  await load();
+  const draftApplied = await applyFormDraftFromStorage();
+  // Use the draft first to avoid re-hydrating the whole form on return from note editor.
+  await load({ skipFormHydration: draftApplied });
   await handleEntryFromQuery(); // handle entry after load to ensure refs ready
-    if (!aiPrefillNotice.value) {
-      applyAssistantDraftFromStorage();
-    }
+  if (!aiPrefillNotice.value && !draftApplied) {
+    applyAssistantDraftFromStorage();
+  }
   // prevent auto scroll/restore on mobile initial load
   window.scrollTo({ top: 0 });
-  await applyFormDraftFromStorage();
+  if (!draftApplied) {
+    await applyFormDraftFromStorage();
+  }
   await applyNoteResultFromStorage();
 });
 
@@ -3197,6 +3361,9 @@ onUnmounted(() => {
   if (saveStatusTimer) {
     window.clearTimeout(saveStatusTimer);
     saveStatusTimer = null;
+  }
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = '';
   }
 });
 
@@ -5365,35 +5532,121 @@ select {
   box-shadow: none;
 }
 
-.advanced-toggle {
-  margin: 12px 12px 0;
-  padding: 12px;
-  border-radius: 14px;
-  background: #f8fafc;
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 700;
+.ios-panel--advanced-entry .ios-form {
+  margin-bottom: 0;
+}
+.ios-row--advanced-entry {
+  align-items: flex-start;
+  gap: 10px;
+}
+.advanced-entry__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+.advanced-entry__hint {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.advanced-entry__meta {
   display: flex;
   align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  text-align: right;
+  max-width: 220px;
+}
+.advanced-entry__summary {
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 1.4;
+}
+.advanced-entry__summary.is-placeholder {
+  color: #94a3b8;
+}
+.advanced-entry__chevron {
+  color: #94a3b8;
+}
+.advanced-page-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #f8fafc;
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+.advanced-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 6px 12px 20px;
+}
+.advanced-page.console-section--mobile {
+  padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 28px);
+}
+.advanced-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  cursor: pointer;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+  gap: 12px;
+  padding: 8px 6px 4px;
 }
-.advanced-toggle span:first-child {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.advanced-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
 }
-.advanced-toggle .i-lucide-chevron-down {
-  transition: transform 0.2s ease;
-  width: 16px;
-  height: 16px;
-  color: #64748b;
+.advanced-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #475569;
+  max-width: 640px;
+  line-height: 1.5;
 }
-.advanced-toggle .rotate {
-  transform: rotate(180deg);
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 12px;
+}
+.advanced-card {
+  padding-top: 12px;
+  padding-bottom: 10px;
+}
+.advanced-section-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+.advanced-row {
+  gap: 12px;
+}
+.advanced-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.advanced-row__hint {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+.advanced-row.is-disabled textarea {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+.advanced-close {
+  height: 36px;
+  padding: 0 12px;
+}
+.advanced-page-overlay .console-topbar {
+  position: sticky;
+  top: 0;
 }
 
 @media (max-width: 768px) {

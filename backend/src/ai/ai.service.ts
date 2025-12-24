@@ -312,6 +312,7 @@ export class AiService {
     if (!this.client) {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
     }
+    const client = this.client;
 
     const sourceLang = payload.sourceLang?.trim();
     const targetLangs = Array.isArray(payload.targetLangs)
@@ -438,7 +439,7 @@ export class AiService {
       };
 
       const requestTranslations = async (targets: string[], chunkItems: TranslateTextDto['items']) => {
-        const completion = await this.client.chat.completions.create({
+        const completion = await client.chat.completions.create({
           model: this.model,
           temperature: 0.2,
           response_format: { type: 'json_schema', json_schema: jsonSchema },
