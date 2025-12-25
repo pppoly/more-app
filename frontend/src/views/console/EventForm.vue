@@ -3,7 +3,11 @@
       class="console-section"
       :class="{ 'console-section--mobile': isMobileLayout, 'sheet-open': sheetOpen }"
     >
-    <ConsoleTopBar v-if="isMobileLayout && !isLiffClientMode" titleKey="console.eventForm.title" @back="goBack" />
+    <ConsoleTopBar
+      v-if="isMobileLayout && !isLiffClientMode && !isMoreSettingsRoute"
+      titleKey="console.eventForm.title"
+      @back="goBack"
+    />
     <div v-if="reviewStatus && reviewStatus !== 'draft'" class="review-banner" :class="reviewStatus">
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
@@ -429,7 +433,7 @@
             @click="openAdvancedPage"
           >
             <div class="advanced-entry__text">
-              <span class="ios-label">詳細設定（任意）</span>
+              <span class="ios-label">追加設定（任意）</span>
               <span class="advanced-entry__hint">公開範囲・参加承認・返金ポリシー</span>
             </div>
             <div class="advanced-entry__meta">
@@ -443,25 +447,22 @@
       </section>
 
       <Teleport to="body">
-        <div v-if="showAdvancedPage" class="advanced-page-overlay">
+        <div v-if="showAdvancedView" class="advanced-page-overlay">
           <section
             class="console-section advanced-page"
             :class="{ 'console-section--mobile': isMobileLayout }"
             ref="sectionConfig"
           >
             <ConsoleTopBar
-              v-if="isMobileLayout && !isLiffClientMode"
-              title="詳細設定"
+              v-if="isMobileLayout"
+              title="追加設定"
               @back="closeAdvancedPage"
             >
-              <template #right>
-                <button type="button" class="link-btn" @click="closeAdvancedPage">完了</button>
-              </template>
             </ConsoleTopBar>
 
             <div class="advanced-head">
               <div>
-                <p class="advanced-title">詳細設定</p>
+                <p class="advanced-title">追加設定</p>
                 <p class="advanced-subtitle">公開範囲・申込ルール・返金ポリシーをまとめて管理</p>
               </div>
               <button
@@ -649,9 +650,12 @@
         <div class="field-sheet-body">
           <template v-if="currentFieldType === 'text' || currentFieldType === 'number'">
             <input
+              ref="fieldInputRef"
               v-model="fieldDraft"
               :type="currentFieldType === 'number' ? 'number' : 'text'"
               :placeholder="currentFieldPlaceholder"
+              @compositionstart="onFieldCompositionStart"
+              @compositionend="onFieldCompositionEnd"
             />
             <p
               v-if="['minParticipants', 'maxParticipants'].includes(editingField as string)"
@@ -662,9 +666,12 @@
           </template>
           <textarea
             v-else-if="currentFieldType === 'textarea'"
+            ref="fieldInputRef"
             v-model="fieldDraft"
             rows="5"
             :placeholder="currentFieldPlaceholder"
+            @compositionstart="onFieldCompositionStart"
+            @compositionend="onFieldCompositionEnd"
           ></textarea>
           <div
             v-else-if="currentFieldType === 'select'"
@@ -688,9 +695,12 @@
           />
           <input
             v-else
+            ref="fieldInputRef"
             v-model="fieldDraft"
             type="text"
             :placeholder="currentFieldPlaceholder"
+            @compositionstart="onFieldCompositionStart"
+            @compositionend="onFieldCompositionEnd"
           />
         </div>
       </div>
@@ -769,7 +779,7 @@ declare const google: typeof import('google.maps');
 
 import { computed, reactive, ref, onMounted, onUnmounted, onActivated, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import type { RouteLocationRaw } from 'vue-router';
 import {
   createConsoleEvent,
@@ -839,6 +849,7 @@ const toast = useToast();
 const isLiffClientMode = computed(
   () => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient() || isLineBrowser(),
 );
+const isMoreSettingsRoute = computed(() => route.name === 'ConsoleMobileEventMoreSettings');
 const goBack = () => router.back();
 const showLocationPicker = ref(false);
 const mapLoading = ref(false);
@@ -946,6 +957,7 @@ const localCoverPreviews = ref<EventGalleryItem[]>([]);
 const pendingCoverFiles = ref<Array<{ id: string; file: File }>>([]);
 const showMobileNotice = ref(false);
 const showAdvancedPage = ref(false);
+const showAdvancedView = computed(() => showAdvancedPage.value || (isMobileLayout.value && isMoreSettingsRoute.value));
 const MAX_COVERS = 9;
 const MAX_COVER_SIZE = 12 * 1024 * 1024; // 12MB（入口上限を緩和）
 const MAX_COVER_UPLOAD_SIZE = 10 * 1024 * 1024; // 圧縮後の目安を緩和
@@ -992,6 +1004,26 @@ const participantsDisplay = computed(() => {
 });
 const editingField = ref<FieldKey | null>(null);
 const fieldDraft = ref('');
+const fieldInputRef = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
+const isFieldComposing = ref(false);
+const pendingFieldConfirm = ref(false);
+
+const syncFieldDraftFromInput = () => {
+  const el = fieldInputRef.value;
+  if (!el) return;
+  fieldDraft.value = el.value;
+};
+const onFieldCompositionStart = () => {
+  isFieldComposing.value = true;
+};
+const onFieldCompositionEnd = () => {
+  isFieldComposing.value = false;
+  syncFieldDraftFromInput();
+  if (pendingFieldConfirm.value) {
+    pendingFieldConfirm.value = false;
+    confirmFieldEditor();
+  }
+};
 const richNoteImages = ref<Array<{ id: string; src: string }>>([]);
 const actionLoading = ref<'draft' | 'open' | null>(null);
 const saveStatus = ref<string | null>(null);
@@ -1188,7 +1220,7 @@ const sheetOpen = computed(
         showPastePanel.value ||
         showPasteResult.value ||
         showLocationPicker.value ||
-        showAdvancedPage.value,
+        showAdvancedView.value,
     ),
 );
 
@@ -1214,7 +1246,7 @@ const advancedSummary = computed(() => {
   const items: string[] = [];
   const visibilityLabel = getSelectLabel('visibility', form.visibility);
   if (visibilityLabel && visibilityLabel !== '選択してください') {
-    items.push(visibilityLabel.replace('公開 (public)', '公開'));
+    items.push(visibilityLabel.replace('公開 (public)', '設定'));
   }
   if (form.requireApproval) items.push('承認あり');
   if (form.config.enableWaitlist) items.push('キャンセル待ち');
@@ -1462,6 +1494,9 @@ const openFieldEditor = (key: FieldKey) => {
 const closeFieldEditor = () => {
   editingField.value = null;
   fieldDraft.value = '';
+  fieldInputRef.value = null;
+  isFieldComposing.value = false;
+  pendingFieldConfirm.value = false;
   pendingEndRange.value = false;
   pendingRegRange.value = false;
   pendingMaxParticipants.value = false;
@@ -1469,6 +1504,12 @@ const closeFieldEditor = () => {
 
 const confirmFieldEditor = () => {
   if (!editingField.value) return;
+  syncFieldDraftFromInput();
+  if (isFieldComposing.value) {
+    pendingFieldConfirm.value = true;
+    fieldInputRef.value?.blur();
+    return;
+  }
   const meta = fieldMeta[editingField.value];
   if (meta.type === 'number') {
     const rawValue = fieldDraft.value;
@@ -1890,14 +1931,83 @@ const extractFromPastedDraft = (text: string) => {
   };
 };
 
-const openAdvancedPage = () => {
+const canHistoryBack = () => {
+  if (typeof window === 'undefined') return false;
+  const historyState = router.options?.history?.state as { back?: string } | undefined;
+  return Boolean((historyState && historyState.back) || window.history.length > 1);
+};
+
+const buildMoreSettingsQuery = () => {
+  const query = { ...route.query } as Record<string, any>;
+  return query;
+};
+
+const persistFormDraftToStorage = async (source: 'note-editor' | 'more-settings' = 'more-settings') => {
+  const covers = await buildCoverDraft();
+  try {
+    const draftPayload: {
+      form: typeof form;
+      covers?: Array<{ id: string; imageUrl: string; order?: number }>;
+      galleries?: EventGalleryItem[];
+      source?: string;
+    } = { form, source };
+    if (covers.length) {
+      draftPayload.covers = covers;
+    }
+    if (eventId.value && galleries.value.length) {
+      draftPayload.galleries = galleries.value;
+    }
+    sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify(draftPayload));
+  } catch (err) {
+    console.warn('Failed to persist form draft', err);
+    try {
+      sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
+    } catch (fallbackErr) {
+      console.warn('Failed to persist fallback form draft', fallbackErr);
+    }
+  }
+};
+
+const openAdvancedPage = async () => {
+  if (isMobileLayout.value) {
+    await persistFormDraftToStorage('more-settings');
+    const paramsCommunity = eventCommunityId.value || communityId;
+    if (!paramsCommunity) return;
+    router.push({
+      name: 'ConsoleMobileEventMoreSettings',
+      params: { communityId: paramsCommunity },
+      query: buildMoreSettingsQuery(),
+    });
+    return;
+  }
   showAdvancedPage.value = true;
   window.scrollTo({ top: 0 });
 };
 
-const closeAdvancedPage = () => {
+const closeAdvancedPage = async () => {
+  if (isMobileLayout.value && isMoreSettingsRoute.value) {
+    await persistFormDraftToStorage('more-settings');
+    if (canHistoryBack()) {
+      router.back();
+      return;
+    }
+    const paramsCommunity = eventCommunityId.value || communityId;
+    if (!paramsCommunity) return;
+    router.replace({
+      name: 'ConsoleMobileEventForm',
+      params: { communityId: paramsCommunity },
+      query: buildMoreSettingsQuery(),
+    });
+    return;
+  }
   showAdvancedPage.value = false;
 };
+
+onBeforeRouteLeave(async () => {
+  if (isMobileLayout.value && isMoreSettingsRoute.value) {
+    await persistFormDraftToStorage('more-settings');
+  }
+});
 
 const checkPastedDraft = async (auto = false) => {
   draftCheckMessage.value = '';
@@ -2689,29 +2799,7 @@ const openRichTextEditor = async () => {
     html: form.descriptionHtml,
     images: [...richNoteImages.value],
   };
-  const covers = await buildCoverDraft();
-  try {
-    const draftPayload: {
-      form: typeof form;
-      covers?: Array<{ id: string; imageUrl: string; order?: number }>;
-      galleries?: EventGalleryItem[];
-      source?: 'note-editor';
-    } = { form, source: 'note-editor' };
-    if (covers.length) {
-      draftPayload.covers = covers;
-    }
-    if (eventId.value && galleries.value.length) {
-      draftPayload.galleries = galleries.value;
-    }
-    sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify(draftPayload));
-  } catch (err) {
-    console.warn('Failed to persist form draft', err);
-    try {
-      sessionStorage.setItem(CONSOLE_EVENT_FORM_DRAFT_KEY, JSON.stringify({ form }));
-    } catch (fallbackErr) {
-      console.warn('Failed to persist fallback form draft', fallbackErr);
-    }
-  }
+  await persistFormDraftToStorage('note-editor');
   try {
     sessionStorage.setItem(CONSOLE_EVENT_NOTE_CONTEXT_KEY, JSON.stringify(payload));
   } catch (err) {

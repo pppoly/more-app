@@ -506,11 +506,27 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'communities/:communityId/events/more-settings',
+        name: 'ConsoleMobileEventMoreSettings',
+        component: () => import('../views/console/EventForm.vue'),
+        beforeEnter: communityRouteGuard,
+        meta: {
+          title: '追加設定',
+          hideTabbar: true,
+          hideShellHeader: true,
+          layout: 'console-mobile',
+          stackKey: 'mobile',
+          flushContent: true,
+          devPageName: 'Console-追加設定',
+        },
+      },
+      {
         path: 'communities/:communityId/events/note-editor',
         name: 'ConsoleMobileEventNoteEditor',
         component: () => import('../views/console/mobile/ConsoleEventNoteEditorMobile.vue'),
         beforeEnter: communityRouteGuard,
         meta: {
+          title: 'イベント詳細編集',
           hideTabbar: true,
           hideShellHeader: true,
           layout: 'console-mobile',
