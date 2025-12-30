@@ -837,9 +837,10 @@ const normalizeLogoUrl = (raw?: string | null) => {
   align-items: stretch;
   gap: 12px;
   background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
-  border-radius: 14px;
-  padding: 14px 12px 12px;
-  box-shadow: 0 10px 22px rgba(34, 210, 255, 0.12);
+  border-radius: 0;
+  margin: calc(-0.4rem - env(safe-area-inset-top, 0px)) -0.6rem 0;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 0.6rem 12px;
+  box-shadow: none;
   position: relative;
 }
 

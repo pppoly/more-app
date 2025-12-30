@@ -102,9 +102,10 @@ const nextActionHint = computed(() => '次のイベントのタイトルと日�
 .hero-card {
   background: linear-gradient(135deg, #0ea5e9, #6366f1);
   color: #f8fafc;
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 18px 40px rgba(99, 102, 241, 0.25);
+  border-radius: 0;
+  margin: -20px -20px 0;
+  padding: 22px 20px 18px;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 12px;
