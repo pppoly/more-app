@@ -589,6 +589,75 @@
               <section class="ios-panel advanced-card">
                 <p class="advanced-section-title">料金・返金</p>
                 <div class="ios-form">
+                  <div class="ios-row ios-row--builder-line advanced-row">
+                    <div class="advanced-row__text">
+                      <span class="ios-label">返金ルール</span>
+                      <span class="advanced-row__hint">テンプレートから選択</span>
+                    </div>
+                    <select v-model="form.config.refundPolicyTemplate" class="ios-inline-select">
+                      <option v-for="template in refundPolicyTemplates" :key="template.id" :value="template.id">
+                        {{ template.label }}
+                      </option>
+                    </select>
+                  </div>
+                  <div v-if="refundPolicyMode === 'tiered'" class="refund-rule-grid">
+                    <div class="refund-rule-row">
+                      <span class="refund-rule-label">開始前</span>
+                      <input
+                        type="number"
+                        min="0"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.tiers[0].daysBefore"
+                      />
+                      <span class="refund-rule-suffix">日（含む）</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.tiers[0].percent"
+                      />
+                      <span class="refund-rule-suffix">%</span>
+                    </div>
+                    <div class="refund-rule-row">
+                      <span class="refund-rule-label">開始前</span>
+                      <input
+                        type="number"
+                        min="0"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.tiers[1].daysBefore"
+                      />
+                      <span class="refund-rule-suffix">日（含む）</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.tiers[1].percent"
+                      />
+                      <span class="refund-rule-suffix">%</span>
+                    </div>
+                  </div>
+                  <div v-else-if="refundPolicyMode === 'single'" class="refund-rule-grid">
+                    <div class="refund-rule-row">
+                      <span class="refund-rule-label">開始前</span>
+                      <input
+                        type="number"
+                        min="0"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.single.daysBefore"
+                      />
+                      <span class="refund-rule-suffix">日（含む）</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        class="ios-inline-input refund-rule-input"
+                        v-model.number="form.config.refundPolicyRules.single.percent"
+                      />
+                      <span class="refund-rule-suffix">%</span>
+                    </div>
+                  </div>
                   <div class="ios-row ios-row--builder-line ios-row--textarea advanced-row" @click="focusRefundPolicy">
                     <div class="advanced-row__text">
                       <span class="ios-label">返金ポリシー</span>
@@ -800,6 +869,7 @@ import { EVENT_CATEGORY_OPTIONS, getEventCategoryLabel, normalizeEventCategory }
 import { useToast } from '../../composables/useToast';
 import IosDateTimePicker from '../../components/common/IosDateTimePicker.vue';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { buildRefundPolicyText, normalizeRefundPolicyRules, type RefundPolicyRules } from '../../utils/refundPolicy';
 import type {
   RegistrationFormField,
   EventGalleryItem,
@@ -878,11 +948,63 @@ const isMobileLayout = computed(() => {
 let mobileMediaQuery: MediaQueryList | null = null;
 let handleMobileMediaChange: ((event: MediaQueryListEvent) => void) | null = null;
 
+type RefundPolicyTemplateId = 'standard' | 'full_before' | 'no_refund' | 'custom';
+
+const cloneRefundPolicyRules = (rules: RefundPolicyRules): RefundPolicyRules => JSON.parse(JSON.stringify(rules));
+
+const refundPolicyTemplates: Array<{
+  id: RefundPolicyTemplateId;
+  label: string;
+  rules: RefundPolicyRules;
+}> = [
+  {
+    id: 'standard',
+    label: '標準分段階',
+    rules: {
+      mode: 'tiered',
+      tiers: [
+        { daysBefore: 7, percent: 100 },
+        { daysBefore: 3, percent: 50 },
+      ],
+    },
+  },
+  {
+    id: 'full_before',
+    label: '期限内全額',
+    rules: {
+      mode: 'single',
+      single: { daysBefore: 3, percent: 50 },
+    },
+  },
+  {
+    id: 'no_refund',
+    label: '返金不可',
+    rules: {
+      mode: 'none',
+    },
+  },
+  {
+    id: 'custom',
+    label: 'カスタム',
+    rules: {
+      mode: 'tiered',
+      tiers: [
+        { daysBefore: 7, percent: 100 },
+        { daysBefore: 3, percent: 50 },
+      ],
+    },
+  },
+];
+
+const defaultRefundRules = normalizeRefundPolicyRules(refundPolicyTemplates[0].rules);
+
 const defaultConfig = () => ({
   requireCheckin: false,
   enableWaitlist: false,
   visibleRange: 'public',
-  refundPolicy: '',
+  refundPolicyTemplate: 'standard' as RefundPolicyTemplateId,
+  refundPolicyRules: cloneRefundPolicyRules(defaultRefundRules),
+  refundPolicy: buildRefundPolicyText(defaultRefundRules),
   riskNoticeEnabled: true,
   notes: '',
   riskNoticeText: '',
@@ -941,6 +1063,66 @@ const aiLoading = reactive<Record<AiTargetKey, boolean>>({
 const aiPreview = ref<{ target: AiTargetKey; text: string; lang: ContentLang } | null>(null);
 const aiError = ref('');
 
+const refundTemplateMap = new Map(refundPolicyTemplates.map((template) => [template.id, template]));
+
+const isTieredRule = (rules: RefundPolicyRules, target: RefundPolicyRules) => {
+  if (rules.mode !== 'tiered' || target.mode !== 'tiered') return false;
+  const tiers = rules.tiers ?? [];
+  const targetTiers = target.tiers ?? [];
+  return (
+    tiers.length >= 2 &&
+    targetTiers.length >= 2 &&
+    tiers[0].daysBefore === targetTiers[0].daysBefore &&
+    tiers[0].percent === targetTiers[0].percent &&
+    tiers[1].daysBefore === targetTiers[1].daysBefore &&
+    tiers[1].percent === targetTiers[1].percent
+  );
+};
+
+const isSingleRule = (rules: RefundPolicyRules, target: RefundPolicyRules) => {
+  if (rules.mode !== 'single' || target.mode !== 'single') return false;
+  if (!rules.single || !target.single) return false;
+  return rules.single.daysBefore === target.single.daysBefore && rules.single.percent === target.single.percent;
+};
+
+const inferRefundTemplateId = (rules: RefundPolicyRules, fallback?: RefundPolicyTemplateId): RefundPolicyTemplateId => {
+  if (fallback && refundTemplateMap.has(fallback)) return fallback;
+  const normalized = normalizeRefundPolicyRules(rules);
+  if (normalized.mode === 'none') return 'no_refund';
+  if (isSingleRule(normalized, refundPolicyTemplates[1].rules)) return 'full_before';
+  if (isTieredRule(normalized, refundPolicyTemplates[0].rules)) return 'standard';
+  return 'custom';
+};
+
+const normalizeRefundPolicyConfig = (config: Record<string, any>) => {
+  const normalizedRules = normalizeRefundPolicyRules(config.refundPolicyRules as RefundPolicyRules);
+  config.refundPolicyRules = normalizedRules;
+  config.refundPolicyTemplate = inferRefundTemplateId(normalizedRules, config.refundPolicyTemplate as RefundPolicyTemplateId);
+  if (!config.refundPolicy || typeof config.refundPolicy !== 'string') {
+    config.refundPolicy = buildRefundPolicyText(normalizedRules);
+  }
+};
+
+const applyRefundTemplate = (templateId: RefundPolicyTemplateId) => {
+  const template = refundTemplateMap.get(templateId);
+  if (!template) return;
+  if (templateId !== 'custom') {
+    const normalized = normalizeRefundPolicyRules(template.rules);
+    form.config.refundPolicyRules = cloneRefundPolicyRules(normalized);
+    form.config.refundPolicy = buildRefundPolicyText(normalized);
+    return;
+  }
+  const normalized = normalizeRefundPolicyRules(form.config.refundPolicyRules as RefundPolicyRules);
+  form.config.refundPolicyRules = cloneRefundPolicyRules(normalized);
+  if (!form.config.refundPolicy || typeof form.config.refundPolicy !== 'string') {
+    form.config.refundPolicy = buildRefundPolicyText(normalized);
+  }
+};
+
+const refundPolicyMode = computed<RefundPolicyRules['mode']>(() => {
+  return (form.config.refundPolicyRules as RefundPolicyRules | undefined)?.mode ?? 'tiered';
+});
+
 const submitting = ref(false);
 const error = ref<string | null>(null);
 const subtitle = ref('');
@@ -978,6 +1160,24 @@ const canAddMoreCovers = computed(() => currentCoverCount.value < MAX_COVERS);
 const showCoverActionSheet = ref(false);
 const activeCoverAction = ref<EventGalleryItem | null>(null);
 const activeCoverIndex = ref<number | null>(null);
+
+watch(
+  () => form.config.refundPolicyTemplate as RefundPolicyTemplateId | undefined,
+  (next) => {
+    if (!next) return;
+    applyRefundTemplate(next);
+  },
+);
+
+watch(
+  () => form.config.refundPolicyRules,
+  (rules) => {
+    if (!rules) return;
+    const normalized = normalizeRefundPolicyRules(rules as RefundPolicyRules);
+    form.config.refundPolicy = buildRefundPolicyText(normalized);
+  },
+  { deep: true },
+);
 const pendingEndRange = ref(false);
 const pendingRegRange = ref(false);
 const pendingMaxParticipants = ref(false);
@@ -1694,6 +1894,7 @@ const applyEventDetailToForm = (
   const firstTicket = event.ticketTypes?.[0];
   form.ticketPrice = typeof firstTicket?.price === 'number' ? firstTicket.price : null;
   form.config = { ...defaultConfig(), ...sanitizedConfig };
+  normalizeRefundPolicyConfig(form.config as Record<string, any>);
   const schema = Array.isArray(event.registrationFormSchema)
     ? (event.registrationFormSchema as RegistrationFormField[])
     : [];
@@ -2860,6 +3061,7 @@ const applyFormDraftFromStorage = async (): Promise<boolean> => {
     Object.assign(form, savedForm);
     if (savedForm.config) {
       Object.assign(form.config, savedForm.config);
+      normalizeRefundPolicyConfig(form.config as Record<string, any>);
     }
     if (Array.isArray(savedForm.ticketTypes)) {
       form.ticketTypes = savedForm.ticketTypes;
@@ -4052,6 +4254,36 @@ select {
   text-align-last: right;
   min-width: 120px;
   max-width: 70%;
+}
+
+.refund-rule-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.refund-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.refund-rule-label {
+  min-width: 48px;
+  color: #64748b;
+}
+
+.refund-rule-input {
+  max-width: 72px;
+  text-align: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.refund-rule-suffix {
+  color: #64748b;
 }
 
 .ios-toggle {

@@ -360,7 +360,7 @@ const downloadCsv = async () => {
 const confirmCancel = async () => {
   if (!eventDetail.value) return;
   const sure = await confirmDialog(
-    'イベントをキャンセルしますか？有料の申込は自動で返金処理を試みます。この操作は元に戻せません。',
+    'イベントをキャンセルしますか？有料の申込は全額自動で返金処理を試みます。この操作は元に戻せません。',
   );
   if (!sure) return;
   cancelling.value = true;

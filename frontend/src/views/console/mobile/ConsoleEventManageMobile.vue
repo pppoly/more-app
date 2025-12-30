@@ -152,7 +152,7 @@
           <div class="cancel-card">
             <p class="cancel-card__title">キャンセルの影響</p>
             <ul class="cancel-list">
-              <li>有料の申込がある場合、まとめて返金処理を試みます。</li>
+              <li>有料の申込がある場合、全額返金をまとめて実行します。</li>
               <li>返金の反映には時間がかかることがあります。</li>
             </ul>
             <p v-if="paidRegistrationsCount" class="cancel-meta">有料の申込: {{ paidRegistrationsCount }} 件</p>

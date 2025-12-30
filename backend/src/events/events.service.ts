@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notifications/notification.service';
 import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 
 interface CreateRegistrationDto {
@@ -12,7 +13,11 @@ type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(EventsService.name);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   async listPublicOpenEvents() {
     const successRegistrationWhere = this.successfulRegistrationWhere();
@@ -457,6 +462,13 @@ export class EventsService {
         },
       };
     });
+
+    if (result.status === 'paid' && (result.paymentStatus === 'paid' || result.amount === 0)) {
+      void this.notifications.notifyRegistrationSuccess(result.registrationId).catch((error) => {
+        // best-effort; do not block registration
+        this.logger.warn(`Failed to send registration notification: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
 
     return result;
   }

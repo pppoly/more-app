@@ -3,9 +3,10 @@ import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { StripeModule } from '../stripe/stripe.module';
 import { PermissionsService } from '../auth/permissions.service';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
-  imports: [StripeModule],
+  imports: [StripeModule, NotificationModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PermissionsService],
   exports: [PaymentsService],

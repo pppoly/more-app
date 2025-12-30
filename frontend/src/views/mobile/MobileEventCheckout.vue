@@ -15,6 +15,11 @@
         <p class="summary-amount">{{ amountText }}</p>
       </div>
 
+      <div v-if="refundPolicyText" class="summary summary--refund">
+        <p class="summary-label">返金ルール</p>
+        <p class="summary-line summary-line--wrap">{{ refundPolicyText }}</p>
+      </div>
+
       <div class="actions">
         <button type="button" class="btn primary" :disabled="ctaDisabled" @click="handlePay">
           {{ ctaLabel }}
@@ -32,6 +37,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { createRegistration, createStripeCheckout, fetchEventById, fetchMyEvents } from '../../api/client';
 import type { EventDetail } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_REGISTRATION_DRAFT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
@@ -88,6 +94,10 @@ const detail = computed(() => {
     timeText: `${start} 〜 ${end}`,
   };
 });
+
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
 
 const amountText = computed(() => {
   if (!pendingPayment.value) {
@@ -396,6 +406,15 @@ const formatDate = (value: string) => {
   margin: 0;
   font-size: 13px;
   color: #475569;
+}
+
+.summary-line--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.summary--refund {
+  background: #f8fafc;
 }
 
 .summary-amount {

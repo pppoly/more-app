@@ -38,6 +38,13 @@
         </div>
       </article>
 
+      <article v-if="refundPolicyText" class="ticket-line ticket-line--refund">
+        <div>
+          <p class="line-label">返金ルール</p>
+          <p class="line-value line-value--wrap">{{ refundPolicyText }}</p>
+        </div>
+      </article>
+
       <p v-if="registrationUnavailableReason" class="ios-notice">
         {{ registrationUnavailableReason }}
       </p>
@@ -169,6 +176,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { createRegistration, fetchEventById } from '../../api/client';
 import type { EventDetail, RegistrationFormField } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import {
   MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
@@ -235,6 +243,10 @@ const detail = computed(() => {
     priceText: event.value.config?.priceText ?? derivePriceText(event.value),
   };
 });
+
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
 
 const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
 const defaultTicketId = computed(() => {
@@ -625,6 +637,16 @@ const formatDate = (value: string) => {
   margin: 2px 0 0;
   font-weight: 600;
   color: #0f172a;
+}
+
+.ticket-line--refund .line-value {
+  font-size: 13px;
+  color: #475569;
+}
+
+.line-value--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .form-panel {

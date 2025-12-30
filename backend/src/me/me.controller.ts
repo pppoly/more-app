@@ -65,4 +65,14 @@ export class MeController {
     }
     return this.meService.requestCancelRegistration(req.user.id, registrationId, reason);
   }
+
+  @Get('notifications/preferences')
+  getNotificationPreferences(@Req() req: any) {
+    return this.meService.getNotificationPreferences(req.user.id);
+  }
+
+  @Post('notifications/preferences')
+  updateNotificationPreferences(@Body() body: any, @Req() req: any) {
+    return this.meService.updateNotificationPreference(req.user.id, body ?? {});
+  }
 }

@@ -34,6 +34,8 @@ model User {
   promptDefinitionsApproved PromptDefinition[]     @relation("PromptApprovedBy")
   promptDefinitionsCreated  PromptDefinition[]     @relation("PromptCreatedBy")
   promptDefinitionsUpdated  PromptDefinition[]     @relation("PromptUpdatedBy")
+  notificationPreferences   NotificationPreference[]
+  notificationDeliveries    NotificationDelivery[]
 }
 
 model Community {
@@ -216,6 +218,40 @@ model EventRegistration {
 
   @@unique([userId, lessonId])
   @@unique([userId, eventId])
+}
+
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  channel   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, channel])
+  @@index([userId])
+}
+
+model NotificationDelivery {
+  id               String   @id @default(cuid())
+  idempotencyKey   String   @unique
+  userId           String?
+  role             String
+  type             String
+  category         String
+  channel          String
+  status           String
+  providerMessageId String?
+  errorMessage     String?
+  meta             Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
 }
 
 model EventCheckin {

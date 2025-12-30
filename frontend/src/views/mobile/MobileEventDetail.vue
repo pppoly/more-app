@@ -229,6 +229,14 @@
           </div>
         </section>
 
+        <section class="event-section" v-if="refundPolicyText">
+          <div class="m-event-card event-about">
+            <div class="event-about__header">返金ルール</div>
+            <div class="event-about__divider" aria-hidden="true"></div>
+            <p class="m-text-body">{{ refundPolicyText }}</p>
+          </div>
+        </section>
+
         <section class="event-section" v-if="formFields.length">
           <h2 class="m-section-title">申込時の必須情報</h2>
           <div class="m-event-card">
@@ -310,6 +318,7 @@ import type {
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { getEventCategoryLabel } from '../../utils/eventCategory';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
@@ -641,6 +650,10 @@ const detail = computed(() => {
     participants: normalizedParticipants,
   };
 });
+
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
 
 const slideKey = (slide: { id?: string; imageUrl?: string }, index: number) =>
   slide.id || slide.imageUrl || `slide-${index}`;

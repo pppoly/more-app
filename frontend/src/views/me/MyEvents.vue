@@ -127,6 +127,7 @@ import { cancelMyRegistration, fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { calculateRefundAmount, calculateRefundPercent, resolveRefundPolicyText } from '../../utils/refundPolicy';
 import QRCode from 'qrcode';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useConfirm } from '../../composables/useConfirm';
@@ -197,6 +198,36 @@ const isRefundedStatus = (item: MyEventItem) => item.status === 'refunded';
 const isCancelledStatus = (item: MyEventItem) => ['cancelled', 'rejected'].includes(item.status);
 const isPendingStatus = (item: MyEventItem) => item.status === 'pending';
 const isPendingPaymentStatus = (item: MyEventItem) => item.status === 'pending_payment';
+
+const currencyFormatter = new Intl.NumberFormat('ja-JP', {
+  maximumFractionDigits: 0,
+});
+
+const formatYen = (value: number) => currencyFormatter.format(Math.max(0, Math.round(value)));
+
+const buildCancelPrompt = (item: MyEventItem) => {
+  const base = 'この参加をキャンセルしてもよろしいですか？';
+  const amount = item.amount ?? 0;
+  if (!amount || amount <= 0) return base;
+  const policyText = resolveRefundPolicyText((item.event?.config as Record<string, any>) ?? null);
+  const percent = calculateRefundPercent(
+    (item.event?.config as Record<string, any>)?.refundPolicyRules ?? null,
+    item.event?.startTime ?? null,
+  );
+  if (percent === null) {
+    return policyText
+      ? `${base}\n\n返金ルール: ${policyText}\n返金は主催者の確認後に処理されます。`
+      : `${base}\n\n返金は主催者の確認後に処理されます。`;
+  }
+  if (percent <= 0) {
+    return policyText
+      ? `${base}\n\n返金ルール: ${policyText}\nこのキャンセルは返金対象外です。`
+      : `${base}\n\nこのキャンセルは返金対象外です。`;
+  }
+  const refundAmount = calculateRefundAmount(amount, percent);
+  const refundLine = `返金額の目安: ¥${formatYen(refundAmount)}（${percent}%）`;
+  return policyText ? `${base}\n\n返金ルール: ${policyText}\n${refundLine}` : `${base}\n\n${refundLine}`;
+};
 
 const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => getStartTime(b).getTime() - getStartTime(a).getTime()),
@@ -470,7 +501,7 @@ watch([qrVisible, qrTicket], async ([visible, ticket]) => {
 
 const cancelRegistration = async (item: MyEventItem) => {
   if (cancelingId.value) return;
-  const sure = await confirmDialog('この参加をキャンセルしてもよろしいですか？');
+  const sure = await confirmDialog(buildCancelPrompt(item));
   if (!sure) return;
   cancelingId.value = item.registrationId;
   try {
@@ -481,6 +512,10 @@ const cancelRegistration = async (item: MyEventItem) => {
     );
     if (nextStatus === 'cancel_requested') {
       showBanner('info', 'キャンセル申請を受け付けました。有料イベントは主催者確認後に処理されます。');
+    } else if (nextStatus === 'pending_refund') {
+      showBanner('info', 'キャンセルしました。返金処理中です。');
+    } else if (nextStatus === 'refunded') {
+      showBanner('success', 'キャンセルしました。返金を実行しました。');
     } else {
       showBanner('success', 'キャンセルしました。');
     }

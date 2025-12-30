@@ -12,17 +12,6 @@
       <button class="ghost" type="button" @click="load">再読み込み</button>
     </div>
     <div v-else>
-      <div
-        v-if="classes.length && hasUnscheduled"
-        class="guide light"
-      >
-        <div>
-          <p class="guide-title">レッスン日程が未設定の教室があります。</p>
-          <p class="guide-desc">教室を選んで日程を追加しましょう。</p>
-        </div>
-        <button class="ghost" type="button" @click="goFirstEmptyLessons">レッスンを追加する</button>
-      </div>
-
       <div v-if="!classes.length" class="state empty">
         <div class="empty-card">
           <div class="info-banner">
@@ -33,7 +22,7 @@
           <div class="empty-body">
             <p class="state-title">教室を作成して、定期講座を始めましょう</p>
             <p class="state-sub">まず教室を作成し、あとでレッスンの日程を追加できます</p>
-            <button class="primary large" type="button" @click="goCreate">教室を作成</button>
+                <button class="primary large" type="button" @click="goCreate">教室を作成</button>
             <p class="hint">作成後に、レッスンの日程を追加できます</p>
           </div>
         </div>
@@ -62,8 +51,8 @@
               <button class="ghost icon" type="button" @click.stop="toggleMenu(cls.id)">
                 <span class="i-lucide-more-horizontal"></span>
               </button>
-              <div v-if="menuOpenId === cls.id" class="menu">
-                <button type="button" class="danger" @click="confirmDelete(cls.id)">削除</button>
+              <div v-if="menuOpenId === cls.id" class="menu" @click.stop>
+                <button type="button" class="danger" @click.stop="confirmDelete(cls.id)">削除</button>
               </div>
             </div>
           </div>
@@ -95,6 +84,7 @@ const toast = useToast();
 const showTopBar = computed(() => !isLineInAppBrowser());
 const menuOpenId = ref<string | null>(null);
 const hasUnscheduled = computed(() => classes.value.some((c) => (c.futureLessonCount ?? 0) === 0));
+const REFRESH_FLAG = 'console_classes_refresh';
 
 const load = async () => {
   try {
@@ -142,6 +132,16 @@ onMounted(() => {
 });
 
 onActivated(() => {
+  try {
+    const shouldRefresh = sessionStorage.getItem(REFRESH_FLAG) === '1';
+    if (shouldRefresh) {
+      sessionStorage.removeItem(REFRESH_FLAG);
+      void load();
+      return;
+    }
+  } catch {
+    // ignore storage errors
+  }
   if (!lastFetchedAt.value || loading.value) return;
   if (Date.now() - lastFetchedAt.value < STALE_MS) return;
   void load();
@@ -203,6 +203,7 @@ const displayTitle = (title: any) => {
   display: inline-flex;
   justify-content: center;
   align-items: center;
+  font-size: 16px;
 }
 .state {
   padding: 16px;
@@ -214,7 +215,7 @@ const displayTitle = (title: any) => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 24px 16px 32px;
+  padding: 24px 0 32px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -246,13 +247,17 @@ const displayTitle = (title: any) => {
   line-height: 1.5;
   text-align: left;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  box-sizing: border-box;
 }
 .info-text {
   margin: 0;
   font-size: 14px;
+  flex: 1;
+  min-width: 0;
   word-break: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  line-break: loose;
 }
 .empty-body {
   display: flex;

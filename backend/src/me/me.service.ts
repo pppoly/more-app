@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { Express } from 'express';
 import { buildAssetUrl } from '../common/storage/asset-path';
 import { AssetService } from '../asset/asset.service';
+import { NotificationService } from '../notifications/notification.service';
+import { PaymentsService } from '../payments/payments.service';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
 const DEFAULT_COMMUNITY_AVATAR = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
 
@@ -24,6 +26,8 @@ export class MeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assetService: AssetService,
+    private readonly notifications: NotificationService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async getMyCommunities(userId: string, includeInactive = false) {
@@ -127,6 +131,7 @@ export class MeService {
             endTime: true,
             locationText: true,
             title: true,
+            config: true,
             community: {
               select: {
                 id: true,
@@ -306,33 +311,106 @@ export class MeService {
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
-      if (!this.isRefundAllowed(registration.event)) {
-        throw new BadRequestException('Refunds are not allowed for this event');
+      const refundPercent = this.resolveRefundPercent(registration.event);
+      if (refundPercent === null) {
+        const refundRequest = await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'requested',
+            decision: null,
+            approvedAmount: null,
+            refundedAmount: null,
+            reason: null,
+            paymentId: registration.payment?.id ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'requested',
+            requestedAmount: registration.amount ?? 0,
+            reason: null,
+            lessonId: registration.lessonId ?? null,
+          },
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'cancel_requested' },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'cancel_requested', refundRequest };
       }
-      const refundRequest = await this.prisma.refundRequest.upsert({
-        where: { registrationId },
-        update: {
-          status: 'requested',
-          decision: null,
-          approvedAmount: null,
-          refundedAmount: null,
-          reason: null,
-          paymentId: registration.payment?.id ?? null,
-        },
-        create: {
+
+      const refundAmount = this.calculateRefundAmount(registration.amount ?? 0, refundPercent);
+      if (refundAmount <= 0) {
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'cancelled' },
+        });
+        await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'cancelled', refundedAmount: 0 };
+      }
+
+      try {
+        const result = await this.paymentsService.refundStripePaymentForRegistration(
+          userId,
           registrationId,
-          paymentId: registration.payment?.id ?? null,
-          status: 'requested',
-          requestedAmount: registration.amount ?? 0,
-          reason: null,
-          lessonId: registration.lessonId ?? null,
-        },
-      });
-      await this.prisma.eventRegistration.update({
-        where: { id: registrationId },
-        data: { status: 'cancel_requested' },
-      });
-      return { registrationId, status: 'cancel_requested', refundRequest };
+          refundAmount,
+        );
+        const refundRequest = await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'completed',
+            decision: 'approve_auto',
+            approvedAmount: refundAmount,
+            refundedAmount: refundAmount,
+            reason: null,
+            paymentId: registration.payment?.id ?? null,
+            gatewayRefundId: result.refundId ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'completed',
+            decision: 'approve_auto',
+            requestedAmount: registration.amount ?? 0,
+            approvedAmount: refundAmount,
+            refundedAmount: refundAmount,
+            reason: null,
+            lessonId: registration.lessonId ?? null,
+            gatewayRefundId: result.refundId ?? null,
+          },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'refunded', refundRequest };
+      } catch (error) {
+        await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'processing',
+            decision: null,
+            approvedAmount: refundAmount,
+            refundedAmount: null,
+            reason: error instanceof Error ? error.message : 'Refund failed',
+            paymentId: registration.payment?.id ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'processing',
+            requestedAmount: registration.amount ?? 0,
+            approvedAmount: refundAmount,
+            reason: error instanceof Error ? error.message : 'Refund failed',
+            lessonId: registration.lessonId ?? null,
+          },
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'pending_refund' },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'pending_refund' };
+      }
     }
 
     await this.prisma.eventRegistration.update({
@@ -340,6 +418,7 @@ export class MeService {
       data: { status: 'cancelled' },
     });
     await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
+    void this.notifications.notifyRegistrationCancelled(registrationId, 'free').catch(() => null);
 
     return { registrationId, status: 'cancelled' };
   }
@@ -379,37 +458,112 @@ export class MeService {
         data: { status: 'cancelled', paymentStatus: 'cancelled' },
       });
       await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
+      void this.notifications.notifyRegistrationCancelled(registrationId, 'free').catch(() => null);
       return { registrationId, status: 'cancelled' };
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
-      if (!this.isRefundAllowed(registration.event)) {
-        throw new BadRequestException('Refunds are not allowed for this event');
+      const refundPercent = this.resolveRefundPercent(registration.event);
+      if (refundPercent === null) {
+        const refundRequest = await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'requested',
+            decision: null,
+            approvedAmount: null,
+            refundedAmount: null,
+            reason: reason ?? null,
+            paymentId: registration.payment?.id ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'requested',
+            requestedAmount: registration.amount ?? 0,
+            reason: reason ?? null,
+            lessonId: registration.lessonId ?? null,
+          },
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'cancel_requested' },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'cancel_requested', refundRequest };
       }
-      const refundRequest = await this.prisma.refundRequest.upsert({
-        where: { registrationId },
-        update: {
-          status: 'requested',
-          decision: null,
-          approvedAmount: null,
-          refundedAmount: null,
-          reason: reason ?? null,
-          paymentId: registration.payment?.id ?? null,
-        },
-        create: {
+
+      const refundAmount = this.calculateRefundAmount(registration.amount ?? 0, refundPercent);
+      if (refundAmount <= 0) {
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'cancelled' },
+        });
+        await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'cancelled', refundedAmount: 0 };
+      }
+
+      try {
+        const result = await this.paymentsService.refundStripePaymentForRegistration(
+          userId,
           registrationId,
-          paymentId: registration.payment?.id ?? null,
-          status: 'requested',
-          requestedAmount: registration.amount ?? 0,
-          reason: reason ?? null,
-          lessonId: registration.lessonId ?? null,
-        },
-      });
-      await this.prisma.eventRegistration.update({
-        where: { id: registrationId },
-        data: { status: 'cancel_requested' },
-      });
-      return { registrationId, status: 'cancel_requested', refundRequest };
+          refundAmount,
+          reason,
+        );
+        const refundRequest = await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'completed',
+            decision: 'approve_auto',
+            approvedAmount: refundAmount,
+            refundedAmount: refundAmount,
+            reason: reason ?? null,
+            paymentId: registration.payment?.id ?? null,
+            gatewayRefundId: result.refundId ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'completed',
+            decision: 'approve_auto',
+            requestedAmount: registration.amount ?? 0,
+            approvedAmount: refundAmount,
+            refundedAmount: refundAmount,
+            reason: reason ?? null,
+            lessonId: registration.lessonId ?? null,
+            gatewayRefundId: result.refundId ?? null,
+          },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'refunded', refundRequest };
+      } catch (error) {
+        await this.prisma.refundRequest.upsert({
+          where: { registrationId },
+          update: {
+            status: 'processing',
+            decision: null,
+            approvedAmount: refundAmount,
+            refundedAmount: null,
+            reason: error instanceof Error ? error.message : 'Refund failed',
+            paymentId: registration.payment?.id ?? null,
+          },
+          create: {
+            registrationId,
+            paymentId: registration.payment?.id ?? null,
+            status: 'processing',
+            requestedAmount: registration.amount ?? 0,
+            approvedAmount: refundAmount,
+            reason: error instanceof Error ? error.message : 'Refund failed',
+            lessonId: registration.lessonId ?? null,
+          },
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: registrationId },
+          data: { status: 'pending_refund' },
+        });
+        void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
+        return { registrationId, status: 'pending_refund' };
+      }
     }
 
     await this.prisma.eventRegistration.update({
@@ -417,8 +571,46 @@ export class MeService {
       data: { status: 'cancelled' },
     });
     await this.ensureZeroLedgerEntry(registrationId, `zero:cancel:${registrationId}`);
+    void this.notifications.notifyRegistrationCancelled(registrationId, 'free').catch(() => null);
 
     return { registrationId, status: 'cancelled' };
+  }
+
+  async getNotificationPreferences(userId: string) {
+    const prefs = await this.prisma.notificationPreference.findMany({
+      where: { userId, category: 'marketing' },
+    });
+    const map = new Map<string, boolean>();
+    for (const pref of prefs) {
+      map.set(pref.channel, pref.enabled);
+    }
+    return {
+      marketing: {
+        line: map.get('line') ?? true,
+        email: map.get('email') ?? true,
+      },
+    };
+  }
+
+  async updateNotificationPreference(userId: string, payload: { channel?: string; enabled?: boolean; category?: string }) {
+    const channel = payload.channel;
+    const enabled = payload.enabled;
+    const category = payload.category ?? 'marketing';
+    if (!channel || !['line', 'email'].includes(channel)) {
+      throw new BadRequestException('channel is required');
+    }
+    if (typeof enabled !== 'boolean') {
+      throw new BadRequestException('enabled is required');
+    }
+    if (category !== 'marketing') {
+      throw new BadRequestException('Only marketing preferences are supported');
+    }
+    await this.prisma.notificationPreference.upsert({
+      where: { userId_category_channel: { userId, category, channel } },
+      update: { enabled },
+      create: { userId, category, channel, enabled },
+    });
+    return this.getNotificationPreferences(userId);
   }
 
   private async ensureZeroLedgerEntry(registrationId: string, idempotencyKey: string) {
@@ -444,23 +636,74 @@ export class MeService {
     }
   }
 
-  private isRefundAllowed(event?: { config?: unknown | null; refundPolicy?: unknown | null } | null) {
-    if (!event) return true;
-    const rawPolicy = event.refundPolicy ?? (event.config as any)?.refundPolicy;
-    if (rawPolicy === false) return false;
-    if (typeof rawPolicy === 'object' && rawPolicy !== null) {
-      const policy = rawPolicy as Record<string, any>;
-      if (policy.enabled === false) return false;
-      if (policy.allow === false) return false;
-      if (policy.type === 'no_refund') return false;
+  private normalizeRefundPolicyRules(raw: any): {
+    mode: 'none' | 'single' | 'tiered';
+    tiers?: Array<{ daysBefore: number; percent: number }>;
+    single?: { daysBefore: number; percent: number };
+  } | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const mode = raw.mode;
+    if (mode === 'none') return { mode: 'none' };
+    if (mode === 'single') {
+      const single = raw.single;
+      if (!single) return { mode: 'single', single: { daysBefore: 3, percent: 50 } };
+      return {
+        mode: 'single',
+        single: {
+          daysBefore: Number.isFinite(Number(single.daysBefore)) ? Math.max(0, Number(single.daysBefore)) : 3,
+          percent: Number.isFinite(Number(single.percent)) ? Math.max(0, Math.min(100, Number(single.percent))) : 50,
+        },
+      };
     }
-    if (typeof rawPolicy === 'string') {
-      const normalized = rawPolicy.trim().toLowerCase();
-      if (['no_refund', 'no-refund', 'no refund', 'no refunds'].includes(normalized)) {
-        return false;
+    if (mode === 'tiered') {
+      const tiers = Array.isArray(raw.tiers) ? raw.tiers : [];
+      const tier1 = tiers[0] ?? { daysBefore: 7, percent: 100 };
+      const tier2 = tiers[1] ?? { daysBefore: 3, percent: 50 };
+      return {
+        mode: 'tiered',
+        tiers: [
+          {
+            daysBefore: Number.isFinite(Number(tier1.daysBefore)) ? Math.max(0, Number(tier1.daysBefore)) : 7,
+            percent: Number.isFinite(Number(tier1.percent)) ? Math.max(0, Math.min(100, Number(tier1.percent))) : 100,
+          },
+          {
+            daysBefore: Number.isFinite(Number(tier2.daysBefore)) ? Math.max(0, Number(tier2.daysBefore)) : 3,
+            percent: Number.isFinite(Number(tier2.percent)) ? Math.max(0, Math.min(100, Number(tier2.percent))) : 50,
+          },
+        ],
+      };
+    }
+    return null;
+  }
+
+  private resolveRefundPercent(event?: { startTime?: Date; config?: unknown | null } | null): number | null {
+    if (!event?.config) return null;
+    const rules = this.normalizeRefundPolicyRules((event.config as any)?.refundPolicyRules);
+    if (!rules) return null;
+    if (rules.mode === 'none') return 0;
+    const startTime = event.startTime ? new Date(event.startTime) : null;
+    if (!startTime || Number.isNaN(startTime.getTime())) return null;
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+    if (rules.mode === 'single' && rules.single) {
+      const cutoff = new Date(startTime.getTime() - rules.single.daysBefore * dayMs);
+      return now <= cutoff ? rules.single.percent : 0;
+    }
+    if (rules.mode === 'tiered' && rules.tiers?.length) {
+      const tiers = [...rules.tiers].sort((a, b) => b.daysBefore - a.daysBefore);
+      for (const tier of tiers) {
+        const cutoff = new Date(startTime.getTime() - tier.daysBefore * dayMs);
+        if (now <= cutoff) return tier.percent;
       }
+      return 0;
     }
-    return true;
+    return null;
+  }
+
+  private calculateRefundAmount(amount: number, percent: number) {
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    if (!Number.isFinite(percent) || percent <= 0) return 0;
+    return Math.round((amount * percent) / 100);
   }
 
   private getSupportedLocales() {

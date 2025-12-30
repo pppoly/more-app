@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StripeService } from '../stripe/stripe.service';
 import { PermissionsService } from '../auth/permissions.service';
+import { NotificationService } from '../notifications/notification.service';
 import { Prisma, Payment } from '@prisma/client';
 import Stripe from 'stripe';
 import { buildIdempotencyKey } from './idempotency.util';
@@ -31,6 +32,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly stripeService: StripeService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationService,
   ) {}
 
   private resolvePlanFee(planId?: string | null) {
@@ -450,6 +452,10 @@ export class PaymentsService {
       payload: { amount: result.amount },
     });
 
+    void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
+      this.logger.warn(`Failed to notify mock payment registration: ${error instanceof Error ? error.message : String(error)}`);
+    });
+
     return {
       paymentId: result.payment.id,
       status: result.payment.status,
@@ -559,6 +565,13 @@ export class PaymentsService {
           this.logger.log(
             `Existing Stripe session already paid: session=${existingSession.id}, paymentId=${activePending.id}, payment_intent=${existingPaymentIntentId ?? 'null'}`,
           );
+          if (registrationId) {
+            void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
+              this.logger.warn(
+                `Failed to notify resumed Stripe payment: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
+          }
           return { checkoutUrl: this.stripeService.successUrlBase, resume: false };
         }
       } catch (error) {
@@ -848,6 +861,29 @@ export class PaymentsService {
       throw err;
     }
 
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const registrationId = session.metadata?.registrationId;
+      if (registrationId) {
+        void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
+          this.logger.warn(`Failed to notify Stripe payment success: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+    }
+
+    if (event.type === 'charge.refunded') {
+      const charge = event.data.object as Stripe.Charge;
+      const paymentIntentId =
+        typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id ?? null;
+      const refundId = charge.refunds?.data?.[0]?.id ?? null;
+      const refundAmount = charge.amount_refunded ?? null;
+      void this.notifications
+        .notifyRefundByStripeCharge(charge.id, paymentIntentId, refundId, refundAmount)
+        .catch((error) => {
+          this.logger.warn(`Failed to notify Stripe refund: ${error instanceof Error ? error.message : String(error)}`);
+        });
+    }
+
     return { received: true };
   }
 
@@ -911,6 +947,9 @@ export class PaymentsService {
           data: { paymentStatus: 'refunded', status: 'cancelled' },
         });
       }
+      void this.notifications.notifyRefundByPayment(payment.id, payment.stripeRefundId ?? null, amount ?? payment.amount).catch((error) => {
+        this.logger.warn(`Failed to notify refund (manual): ${error instanceof Error ? error.message : String(error)}`);
+      });
       return { refundId: null, status: 'refunded' };
     }
 
@@ -933,7 +972,11 @@ export class PaymentsService {
       },
     });
 
-    await this.markPaymentRefunded(payment, refund.id);
+    await this.markPaymentRefunded(payment, refund.id, this.prisma, amount ?? payment.amount);
+
+    void this.notifications.notifyRefundByPayment(payment.id, refund.id, amount ?? payment.amount).catch((error) => {
+      this.logger.warn(`Failed to notify refund (stripe): ${error instanceof Error ? error.message : String(error)}`);
+    });
 
     await this.createLedgerEntryIfMissing({
       tx: this.prisma,
@@ -972,6 +1015,68 @@ export class PaymentsService {
       refundId: refund.id,
       status: 'refunded',
     };
+  }
+
+  async refundStripePaymentForRegistration(
+    userId: string,
+    registrationId: string,
+    amount?: number,
+    reason?: string,
+  ) {
+    if (!this.stripeService.enabled) {
+      throw new BadRequestException('Stripe決済が現在利用できません');
+    }
+    const registration = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      include: { payment: true },
+    });
+    if (!registration || registration.userId !== userId) {
+      throw new NotFoundException('Registration not found');
+    }
+    const payment =
+      registration.payment ??
+      (await this.prisma.payment.findFirst({ where: { registrationId } }));
+    if (!payment) {
+      throw new BadRequestException('Payment not found');
+    }
+    if (payment.status !== 'paid') {
+      throw new BadRequestException('この支払いは返金できません');
+    }
+    if (amount !== undefined && amount > payment.amount) {
+      throw new BadRequestException('返金額が支払い額を超えています');
+    }
+
+    if (payment.method !== 'stripe') {
+      await this.markPaymentRefunded(payment, null, this.prisma, amount ?? payment.amount);
+      return { refundId: null, status: 'refunded' };
+    }
+
+    const paymentIntentId = await this.resolvePaymentIntentId(payment);
+    if (!paymentIntentId) {
+      throw new BadRequestException('Stripe支払い情報を取得できませんでした');
+    }
+
+    const refund = await this.stripeService.client.refunds.create({
+      payment_intent: paymentIntentId,
+      amount: amount ?? undefined,
+      reverse_transfer: true,
+      refund_application_fee: true,
+      metadata: {
+        paymentId: payment.id,
+        eventId: payment.eventId,
+        lessonId: payment.lessonId,
+        requestedBy: userId,
+        reason: reason ?? '',
+      },
+    });
+
+    await this.markPaymentRefunded(payment, refund.id, this.prisma, amount ?? payment.amount);
+
+    void this.notifications.notifyRefundByPayment(payment.id, refund.id, amount ?? payment.amount).catch((error) => {
+      this.logger.warn(`Failed to notify refund (stripe): ${error instanceof Error ? error.message : String(error)}`);
+    });
+
+    return { refundId: refund.id, status: 'refunded' };
   }
 
   private async handleCheckoutSessionCompleted(
@@ -1260,7 +1365,8 @@ export class PaymentsService {
       return;
     }
 
-    await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id, tx);
+    const refundedAmount = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : payment.amount;
+    await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id, tx, refundedAmount);
 
     await this.createLedgerEntryIfMissing({
       tx,
@@ -1357,6 +1463,7 @@ export class PaymentsService {
     payment: Payment,
     refundId?: string | null,
     tx: PrismaService | Prisma.TransactionClient = this.prisma,
+    refundedAmount?: number,
   ) {
     if (payment.status === 'refunded') {
       return;
@@ -1370,12 +1477,15 @@ export class PaymentsService {
     });
 
     if (payment.registrationId) {
+      const remaining = typeof refundedAmount === 'number'
+        ? Math.max((payment.amount ?? 0) - refundedAmount, 0)
+        : 0;
       await tx.eventRegistration.update({
         where: { id: payment.registrationId },
         data: {
           paymentStatus: 'refunded',
-          status: 'cancelled',
-          paidAmount: 0,
+          status: 'refunded',
+          paidAmount: remaining,
         },
       });
     }

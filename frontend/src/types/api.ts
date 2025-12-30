@@ -199,6 +199,7 @@ export interface EventWithCommunity {
   locationText: string;
   community: CommunitySummary;
   coverImageUrl?: string | null;
+  config?: Record<string, any> | null;
 }
 
 export interface EventRegistrationSummary {

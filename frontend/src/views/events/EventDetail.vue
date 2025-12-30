@@ -77,7 +77,7 @@
         <ul>
           <li v-if="event.config.requireCheckin">✔ チェックイン必須</li>
           <li v-if="event.config.enableWaitlist">✔ キャンセル待ちあり</li>
-          <li v-if="event.config.refundPolicy">返金: {{ event.config.refundPolicy }}</li>
+          <li v-if="refundPolicyText">返金: {{ refundPolicyText }}</li>
           <li v-if="event.config.riskNoticeEnabled">⚠️ 注意事項をご確認ください。</li>
         </ul>
       </div>
@@ -202,6 +202,7 @@ import {
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { getEventCategoryLabel } from '../../utils/eventCategory';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
@@ -225,6 +226,9 @@ const showFormModal = ref(false);
 const formAnswers = reactive<Record<string, any>>({});
 const eventCategoryLabel = computed(() =>
   event.value?.category ? getEventCategoryLabel(event.value.category) : '',
+);
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
 );
 
 const auth = useAuth();

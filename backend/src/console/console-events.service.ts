@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
@@ -9,6 +9,7 @@ import { AiService, TranslateTextDto } from '../ai/ai.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { assetKeyToDiskPath, buildAssetUrl } from '../common/storage/asset-path';
 import { ContentModerationService, ModerationResult } from '../common/moderation/content-moderation.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const EVENT_UPLOAD_PREFIX = 'events';
 
@@ -21,12 +22,14 @@ interface LocalizedField {
 
 @Injectable()
 export class ConsoleEventsService {
+  private readonly logger = new Logger(ConsoleEventsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly paymentsService: PaymentsService,
     private readonly aiService: AiService,
     private readonly moderationService: ContentModerationService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
@@ -141,6 +144,9 @@ export class ConsoleEventsService {
         description: created.description,
         descriptionHtml: created.descriptionHtml,
       });
+      void this.notifications.notifyEventPublished(created.id).catch((error) => {
+        this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
+      });
     }
     return this.prisma.event.findUnique({ where: { id: created.id }, include: { ticketTypes: true } });
   }
@@ -165,6 +171,7 @@ export class ConsoleEventsService {
       where: { id: eventId },
       select: { status: true, config: true, reviewStatus: true },
     });
+    const wasDraft = existing?.status === 'draft';
     const { ticketTypes = [], ...rest } = data;
     const isDraft = rest?.status === 'draft';
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
@@ -218,6 +225,11 @@ export class ConsoleEventsService {
         description: updated.description,
         descriptionHtml: updated.descriptionHtml,
       });
+      if (wasDraft) {
+        void this.notifications.notifyEventPublished(eventId).catch((error) => {
+          this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
     }
 
     return this.prisma.event.findUnique({ where: { id: eventId }, include: { ticketTypes: true } });
@@ -276,6 +288,11 @@ export class ConsoleEventsService {
       where: { id: registrationId },
       data: { status: 'approved', paymentStatus: registration.paymentStatus ?? 'unpaid' },
     });
+    if ((registration.amount ?? 0) === 0 || registration.paymentStatus === 'paid') {
+      void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
+        this.logger.warn(`Failed to notify approved registration: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     return { registrationId, status: 'approved' };
   }
 
@@ -464,6 +481,11 @@ export class ConsoleEventsService {
       }),
     ]);
 
+    void this.notifications
+      .notifyRefundSuccess({ registrationId: registration.id, refundAmount: approvedAmount, refundId })
+      .catch((error) => {
+        this.logger.warn(`Failed to notify refund success: ${error instanceof Error ? error.message : String(error)}`);
+      });
     return { requestId, status: 'completed', approvedAmount, refundId };
   }
 

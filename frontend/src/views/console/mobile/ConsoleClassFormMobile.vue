@@ -103,6 +103,15 @@ const handleSubmit = async () => {
       createdId = (res as any)?.id ?? null;
     }
     toast.show('教室を作成しました');
+    if (!isEdit.value) {
+      try {
+        sessionStorage.setItem('console_classes_refresh', '1');
+      } catch {
+        // ignore storage errors
+      }
+      router.replace({ name: 'ConsoleMobileClasses' });
+      return;
+    }
     if (createdId) {
       router.push({ name: 'ConsoleMobileLessons', params: { classId: createdId } });
     } else {

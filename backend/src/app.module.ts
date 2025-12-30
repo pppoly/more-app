@@ -23,6 +23,8 @@ import { AssetModule } from './asset/asset.module';
 import { BullModule } from '@nestjs/bullmq';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ClassesModule } from './classes/classes.module';
+import { NotificationModule } from './notifications/notification.module';
+import { AdminNotificationsController } from './admin/admin-notifications.controller';
 
 @Module({
   imports: [
@@ -46,6 +48,7 @@ import { ClassesModule } from './classes/classes.module';
     MeModule,
     PaymentsModule,
     ConsoleModule,
+    NotificationModule,
     AiModule,
     OrganizersModule,
     I18nModule,
@@ -53,7 +56,17 @@ import { ClassesModule } from './classes/classes.module';
     AnalyticsModule,
     ClassesModule,
   ],
-  controllers: [HealthController, HelloController, AdminPaymentsController, AdminPaymentsOpsController, AdminUsersController, AdminCommunitiesController, AdminEventsListController, AdminCommunityTagsController],
+  controllers: [
+    HealthController,
+    HelloController,
+    AdminPaymentsController,
+    AdminPaymentsOpsController,
+    AdminUsersController,
+    AdminCommunitiesController,
+    AdminEventsListController,
+    AdminCommunityTagsController,
+    AdminNotificationsController,
+  ],
   providers: [],
 })
 export class AppModule {}
