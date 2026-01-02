@@ -534,7 +534,12 @@ const canCancel = (item: MyEventItem) => {
 };
 
 const goBack = () => {
-  router.push({ name: 'MobileMe' });
+  const back = typeof window !== 'undefined' ? window.history.state?.back : null;
+  if (back) {
+    router.back();
+    return;
+  }
+  router.replace({ name: 'MobileMe' });
 };
 
 const hashToIndex = (value: string, length: number) => {

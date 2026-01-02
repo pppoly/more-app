@@ -82,7 +82,12 @@ const apiOrigin =
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 
 const goBack = () => {
-  router.push({ name: 'MobileMe' });
+  const back = typeof window !== 'undefined' ? window.history.state?.back : null;
+  if (back) {
+    router.back();
+    return;
+  }
+  router.replace({ name: 'MobileMe' });
 };
 
 const formatStatus = (item: CommunityCardItem) => {

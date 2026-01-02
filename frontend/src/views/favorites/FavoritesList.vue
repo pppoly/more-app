@@ -51,7 +51,12 @@ const { favorites, removeFavorite } = useFavorites();
 const router = useRouter();
 
 const goBack = () => {
-  router.push({ name: 'MobileMe' });
+  const back = typeof window !== 'undefined' ? window.history.state?.back : null;
+  if (back) {
+    router.back();
+    return;
+  }
+  router.replace({ name: 'MobileMe' });
 };
 </script>
 
