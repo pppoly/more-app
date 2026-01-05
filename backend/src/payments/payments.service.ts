@@ -301,23 +301,16 @@ export class PaymentsService {
           pending: pick(balance.pending),
         };
 
-        const createdFilter = monthStart ? { gte: Math.floor(monthStart.getTime() / 1000) } : undefined;
-        const feeParams: Stripe.BalanceTransactionListParams = {
-          limit: 100,
-          currency: 'jpy',
-          ...(createdFilter ? { created: createdFilter } : {}),
-        };
-
-        const txList = this.stripeService.client.balanceTransactions.list(feeParams, {
-          stripeAccount: community.stripeAccountId,
-        });
-
-        for await (const tx of txList) {
-          if (tx.currency !== 'jpy') continue;
-          stripeFee += Math.max(0, tx.fee ?? 0);
-        }
       } catch (err) {
         this.logger.warn(`Failed to fetch Stripe balance for community ${communityId}: ${err}`);
+      }
+    }
+
+    if (this.stripeService.enabled) {
+      try {
+        stripeFee = await this.getCommunityStripeFeeFromPlatform(communityId, monthStart ?? undefined);
+      } catch (err) {
+        this.logger.warn(`Failed to fetch Stripe fee from platform for community ${communityId}: ${err}`);
       }
     }
 
@@ -339,6 +332,68 @@ export class PaymentsService {
       stripeBalance,
       period: period === 'month' ? 'month' : 'all',
     };
+  }
+
+  private async getCommunityStripeFeeFromPlatform(communityId: string, monthStart?: Date) {
+    const paidPayments = await this.prisma.payment.findMany({
+      where: {
+        communityId,
+        method: 'stripe',
+        status: 'paid',
+        stripePaymentIntentId: { not: null },
+        ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+      },
+      select: { stripePaymentIntentId: true, stripeChargeId: true },
+    });
+
+    const paymentIntentSet = new Set(
+      paidPayments.map((p) => p.stripePaymentIntentId).filter((v): v is string => Boolean(v)),
+    );
+    const chargeMap = new Map<string, string | null>();
+    for (const payment of paidPayments) {
+      if (payment.stripeChargeId) {
+        chargeMap.set(payment.stripeChargeId, payment.stripePaymentIntentId ?? null);
+      }
+    }
+
+    const createdFilter = monthStart ? { gte: Math.floor(monthStart.getTime() / 1000) } : undefined;
+    const feeParams: Stripe.BalanceTransactionListParams = {
+      limit: 100,
+      currency: 'jpy',
+      ...(createdFilter ? { created: createdFilter } : {}),
+    };
+
+    let totalFee = 0;
+    const txList = this.stripeService.client.balanceTransactions.list(feeParams);
+    for await (const tx of txList) {
+      if (tx.currency !== 'jpy') continue;
+      if (tx.type !== 'charge') continue;
+      if (!tx.source || typeof tx.source !== 'string') continue;
+
+      const cachedIntent = chargeMap.get(tx.source);
+      if (cachedIntent) {
+        if (paymentIntentSet.has(cachedIntent)) {
+          totalFee += Math.max(0, tx.fee ?? 0);
+        }
+        continue;
+      }
+
+      try {
+        const charge = await this.stripeService.client.charges.retrieve(tx.source);
+        const intentId =
+          typeof charge.payment_intent === 'string'
+            ? charge.payment_intent
+            : charge.payment_intent?.id ?? null;
+        chargeMap.set(tx.source, intentId);
+        if (intentId && paymentIntentSet.has(intentId)) {
+          totalFee += Math.max(0, tx.fee ?? 0);
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to retrieve charge ${tx.source} for fee calc: ${err}`);
+      }
+    }
+
+    return totalFee;
   }
 
   async createMockPayment(userId: string, registrationId: string) {
@@ -805,6 +860,10 @@ export class PaymentsService {
               data: {
                 status: 'paid',
                 stripePaymentIntentId: intent.id,
+                stripeChargeId:
+                  typeof intent.latest_charge === 'string'
+                    ? intent.latest_charge
+                    : intent.latest_charge?.id ?? payment.stripeChargeId ?? null,
                 provider: 'stripe',
                 providerObjectType: 'payment_intent',
                 providerObjectId: intent.id,
@@ -1160,6 +1219,10 @@ export class PaymentsService {
       },
     });
 
+    if (!payment.stripeChargeId && paymentIntentId) {
+      void this.populateChargeIdFromPaymentIntent(payment.id, paymentIntentId);
+    }
+
     if (payment.registrationId) {
       await tx.eventRegistration.update({
         where: { id: payment.registrationId },
@@ -1222,6 +1285,25 @@ export class PaymentsService {
       userId: payment.userId,
       payload: { sessionId: session.id, paymentIntentId },
     });
+  }
+
+  private async populateChargeIdFromPaymentIntent(paymentId: string, paymentIntentId: string) {
+    try {
+      const intent = await this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
+        expand: ['latest_charge'],
+      });
+      const chargeId =
+        typeof intent.latest_charge === 'string'
+          ? intent.latest_charge
+          : intent.latest_charge?.id ?? null;
+      if (!chargeId) return;
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: { stripeChargeId: chargeId },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to resolve chargeId for payment ${paymentId}: ${err}`);
+    }
   }
 
   private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {

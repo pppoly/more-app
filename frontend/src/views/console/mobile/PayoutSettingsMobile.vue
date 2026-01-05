@@ -227,7 +227,7 @@ const loadStripeStatus = async () => {
 };
 
 const loadBalance = async () => {
-  if (!community.value?.id || !stripeReady.value) return;
+  if (!community.value?.id) return;
   try {
     balance.value = await fetchCommunityBalance(community.value.id, { period: 'all' });
   } catch (err) {
