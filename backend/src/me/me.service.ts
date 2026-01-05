@@ -676,9 +676,10 @@ export class MeService {
     return null;
   }
 
-  private resolveRefundPercent(event?: { startTime?: Date; config?: unknown | null } | null): number | null {
-    if (!event?.config) return null;
-    const rules = this.normalizeRefundPolicyRules((event.config as any)?.refundPolicyRules);
+  private resolveRefundPercent(
+    event?: { startTime?: Date; config?: unknown | null; refundPolicy?: unknown | null } | null,
+  ): number | null {
+    const rules = this.normalizeRefundPolicyRules(this.extractRefundPolicyRules(event));
     if (!rules) return null;
     if (rules.mode === 'none') return 0;
     const startTime = event.startTime ? new Date(event.startTime) : null;
@@ -697,6 +698,35 @@ export class MeService {
       }
       return 0;
     }
+    return null;
+  }
+
+  private extractRefundPolicyRules(event?: { config?: unknown | null; refundPolicy?: unknown | null } | null) {
+    const candidates = [event?.config, event?.refundPolicy];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const raw = this.parseJsonMaybe(candidate);
+      if (!raw || typeof raw !== 'object') continue;
+      const rulesCandidate =
+        (raw as any)?.refundPolicyRules ??
+        (raw as any)?.rules ??
+        (raw as any);
+      const rules = this.parseJsonMaybe(rulesCandidate);
+      if (rules && typeof rules === 'object') return rules;
+    }
+    return null;
+  }
+
+  private parseJsonMaybe(value: unknown) {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+    if (typeof value === 'object') return value;
     return null;
   }
 

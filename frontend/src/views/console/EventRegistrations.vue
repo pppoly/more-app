@@ -308,7 +308,7 @@ const registrationStatusLabel = (status: string) => {
     case 'pending_refund':
       return '返金待ち';
     case 'cancelled':
-      return 'キャンセル';
+      return 'キャンセル済み';
     default:
       return status;
   }
@@ -532,6 +532,7 @@ onMounted(load);
   border-radius: 999px;
   font-size: 0.85rem;
   background: #f1f5f9;
+  cursor: default;
 }
 .pill.paid {
   background: #dcfce7;

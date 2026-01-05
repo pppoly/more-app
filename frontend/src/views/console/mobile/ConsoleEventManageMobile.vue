@@ -596,7 +596,7 @@ const entryStatusLabel = (entry: ReturnType<typeof mapEntry>) => {
     case 'pending_refund':
       return '返金待ち';
     case 'cancelled':
-      return 'キャンセル';
+      return 'キャンセル済み';
     default:
       switch (entry.paymentStatus) {
         case 'paid':
@@ -1013,7 +1013,14 @@ const reload = () => loadData();
 .entry-main { min-width: 0; }
 .entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .entry-name { font-size: 14px; font-weight: 700; color: #0f172a; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry-chip { padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid #e2e8f0; }
+.entry-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #e2e8f0;
+  cursor: default;
+}
 .entry-sub { margin-top: 4px; font-size: 12px; color: #94a3b8; }
 .entry-time { font-weight: 600; color: #475569; }
 .empty-state { text-align: center; font-size: 12px; color: #94a3b8; padding: 10px 0; line-height: 1.5; }

@@ -28,10 +28,11 @@ export class ContentModerationService {
   private readonly projectId: string | undefined;
   private readonly credentialsReady: boolean;
   private readonly disabled: boolean;
+  private warnedUnavailable = false;
 
   constructor() {
     this.disabled = process.env.CONTENT_MODERATION_DISABLED === 'true';
-    this.projectId = process.env.GOOGLE_PROJECT_ID;
+    this.projectId = process.env.GOOGLE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
     this.credentialsReady = this.disabled ? false : this.ensureCredentials();
     if (this.disabled) {
       this.logger.log('Content moderation is disabled by CONTENT_MODERATION_DISABLED=true');
@@ -46,8 +47,18 @@ export class ContentModerationService {
     if (!text || !text.trim()) {
       return { decision: 'approve' };
     }
+    if (!this.projectId) {
+      if (!this.warnedUnavailable) {
+        this.logger.warn('GOOGLE_PROJECT_ID is missing; skipping text moderation.');
+        this.warnedUnavailable = true;
+      }
+      return { decision: 'needs_review', reason: 'moderation_unavailable' };
+    }
     if (!this.vertexTextClient || !this.credentialsReady) {
-      this.logger.warn('Vertex text moderation client unavailable; marking as needs_review');
+      if (!this.warnedUnavailable) {
+        this.logger.warn('Vertex text moderation client unavailable; marking as needs_review');
+        this.warnedUnavailable = true;
+      }
       return { decision: 'needs_review', reason: 'moderation_unavailable' };
     }
     try {
@@ -87,7 +98,10 @@ export class ContentModerationService {
       return { decision: 'approve' };
     }
     if (!this.visionClient || !this.credentialsReady) {
-      this.logger.warn('Vision client unavailable; marking image as needs_review');
+      if (!this.warnedUnavailable) {
+        this.logger.warn('Vision client unavailable; marking image as needs_review');
+        this.warnedUnavailable = true;
+      }
       return { decision: 'needs_review', reason: 'vision_unavailable' };
     }
     try {
@@ -136,8 +150,11 @@ export class ContentModerationService {
       );
       return false;
     }
-    if (!credPath && !process.env.GOOGLE_CLOUD_PROJECT && !this.projectId) {
-      this.logger.log('No explicit Google credential env found; falling back to ADC if available.');
+    if (!credPath && !this.projectId) {
+      this.logger.warn(
+        'No Google credential env found; moderation will be disabled. Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_PROJECT_ID/GOOGLE_CLOUD_PROJECT.',
+      );
+      return false;
     }
     return true;
   }

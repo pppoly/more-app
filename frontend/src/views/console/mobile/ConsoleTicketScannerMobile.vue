@@ -157,14 +157,17 @@ const startScan = async () => {
 const stopScan = async () => {
   if (stopping) return;
   stopping = true;
-  if (controls) {
-    await controls.stop();
-    controls = null;
+  try {
+    if (controls) {
+      await Promise.resolve(controls.stop()).catch(() => {});
+      controls = null;
+    }
+    if (readerInstance) {
+      readerInstance.reset();
+    }
+  } finally {
+    stopping = false;
   }
-  if (readerInstance) {
-    readerInstance.reset();
-  }
-  stopping = false;
 };
 
 const onPayload = async (raw: string) => {
@@ -174,7 +177,8 @@ const onPayload = async (raw: string) => {
   lastPayloadAt = now;
 
   state.value = 'submitting';
-  await stopScan();
+  // Do not block on camera stop; LIFF sometimes stalls stop() and leaves UI in "確認中…".
+  void stopScan();
 
   const parsed = parsePayload(raw);
   if (!parsed) {
