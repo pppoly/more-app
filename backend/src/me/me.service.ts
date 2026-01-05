@@ -682,7 +682,7 @@ export class MeService {
     const rules = this.normalizeRefundPolicyRules(this.extractRefundPolicyRules(event));
     if (!rules) return null;
     if (rules.mode === 'none') return 0;
-    const startTime = event.startTime ? new Date(event.startTime) : null;
+    const startTime = event?.startTime ? new Date(event.startTime) : null;
     if (!startTime || Number.isNaN(startTime.getTime())) return null;
     const now = new Date();
     const dayMs = 24 * 60 * 60 * 1000;

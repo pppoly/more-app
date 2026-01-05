@@ -810,6 +810,16 @@ export class PaymentsService {
                 providerObjectId: intent.id,
               },
             });
+            if (payment.registrationId) {
+              await tx.eventRegistration.update({
+                where: { id: payment.registrationId },
+                data: {
+                  status: 'paid',
+                  paymentStatus: 'paid',
+                  paidAmount: payment.amount,
+                },
+              });
+            }
             break;
           }
           case 'checkout.session.expired':
