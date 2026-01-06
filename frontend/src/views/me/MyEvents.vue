@@ -268,12 +268,22 @@ const filteredEvents = computed(() => {
   return eligibleEvents.value.filter((item) => active.matcher(item));
 });
 
+const groupTitleMap: Record<string, string> = {
+  upcoming_paid: 'これから参加',
+  refunding: '返金・キャンセル処理中',
+  refunded: '返金済み / キャンセル済み',
+  attended: '参加済み',
+  expired: '受付終了',
+  unpaid: '支払い待ち',
+};
+
 const groupOrder: Array<{ id: string; title: string }> = [
-  { id: 'upcoming_paid', title: 'これから参加' },
-  { id: 'refunding', title: '返金・キャンセル処理中' },
-  { id: 'refunded', title: '返金済み / キャンセル済み' },
-  { id: 'attended', title: '参加済み' },
-  { id: 'unpaid', title: '支払い待ち' },
+  { id: 'upcoming_paid', title: groupTitleMap.upcoming_paid },
+  { id: 'refunding', title: groupTitleMap.refunding },
+  { id: 'refunded', title: groupTitleMap.refunded },
+  { id: 'attended', title: groupTitleMap.attended },
+  { id: 'expired', title: groupTitleMap.expired },
+  { id: 'unpaid', title: groupTitleMap.unpaid },
 ];
 
 const groupIdFor = (item: MyEventItem): string => {
@@ -297,9 +307,18 @@ const groupedEvents = computed(() => {
     if (!groups[gid]) groups[gid] = [];
     groups[gid].push(item);
   });
-  return groupOrder
+  const ordered = groupOrder
     .map((g) => ({ ...g, items: groups[g.id] || [] }))
     .filter((g) => g.items.length > 0);
+  const extras = Object.keys(groups)
+    .filter((id) => !groupOrder.find((g) => g.id === id))
+    .map((id) => ({
+      id,
+      title: groupTitleMap[id] ?? 'その他',
+      items: groups[id] || [],
+    }))
+    .filter((g) => g.items.length > 0);
+  return [...ordered, ...extras];
 });
 
 const displayStart = (item: MyEventItem) => item.lesson?.startAt || item.event?.startTime || '';
