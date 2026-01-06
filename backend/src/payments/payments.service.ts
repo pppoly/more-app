@@ -13,6 +13,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { Prisma, Payment } from '@prisma/client';
 import Stripe from 'stripe';
 import { buildIdempotencyKey } from './idempotency.util';
+import { computeMerchantNet, computeProportionalAmount } from './settlement.utils';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
 const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 30);
@@ -661,6 +662,7 @@ export class PaymentsService {
         status: 'pending',
         method: 'stripe',
         idempotencyKey,
+        providerAccountId: community.stripeAccountId ?? undefined,
       },
       create: {
         userId,
@@ -675,6 +677,7 @@ export class PaymentsService {
         status: 'pending',
         method: 'stripe',
         idempotencyKey,
+        providerAccountId: community.stripeAccountId ?? undefined,
       },
     });
 
@@ -869,6 +872,7 @@ export class PaymentsService {
                 providerObjectId: intent.id,
               },
             });
+            void this.reconcilePaymentSettlement(payment.id, intent.id);
             if (payment.registrationId) {
               await tx.eventRegistration.update({
                 where: { id: payment.registrationId },
@@ -998,92 +1002,14 @@ export class PaymentsService {
     } else {
       throw new BadRequestException('決済の紐付け情報が不足しています');
     }
-    if (payment.status !== 'paid') {
+    if (!['paid', 'partial_refunded'].includes(payment.status)) {
       throw new BadRequestException('この支払いは返金できません');
     }
     if (amount !== undefined && amount > payment.amount) {
       throw new BadRequestException('返金額が支払い額を超えています');
     }
 
-    if (payment.method !== 'stripe') {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: 'refunded' },
-      });
-      if (payment.registrationId) {
-        await this.prisma.eventRegistration.update({
-          where: { id: payment.registrationId },
-          data: { paymentStatus: 'refunded', status: 'cancelled' },
-        });
-      }
-      void this.notifications.notifyRefundByPayment(payment.id, payment.stripeRefundId ?? null, amount ?? payment.amount).catch((error) => {
-        this.logger.warn(`Failed to notify refund (manual): ${error instanceof Error ? error.message : String(error)}`);
-      });
-      return { refundId: null, status: 'refunded' };
-    }
-
-    const paymentIntentId = await this.resolvePaymentIntentId(payment);
-    if (!paymentIntentId) {
-      throw new BadRequestException('Stripe支払い情報を取得できませんでした');
-    }
-
-    const refund = await this.stripeService.client.refunds.create({
-      payment_intent: paymentIntentId,
-      amount: amount ?? undefined,
-      reverse_transfer: true,
-      refund_application_fee: true,
-      metadata: {
-        paymentId,
-        eventId: payment.eventId,
-        lessonId: payment.lessonId,
-        requestedBy: userId,
-        reason: reason ?? '',
-      },
-    });
-
-    await this.markPaymentRefunded(payment, refund.id, this.prisma, amount ?? payment.amount);
-
-    void this.notifications.notifyRefundByPayment(payment.id, refund.id, amount ?? payment.amount).catch((error) => {
-      this.logger.warn(`Failed to notify refund (stripe): ${error instanceof Error ? error.message : String(error)}`);
-    });
-
-    await this.createLedgerEntryIfMissing({
-      tx: this.prisma,
-      businessPaymentId: payment.id,
-      businessRegistrationId: payment.registrationId ?? undefined,
-      businessLessonId: payment.lessonId ?? undefined,
-      businessCommunityId: payment.communityId ?? undefined,
-      entryType: 'refund',
-      direction: 'refund',
-      amount: amount ?? payment.amount,
-      currency: payment.currency ?? 'jpy',
-      provider: 'stripe',
-      providerObjectType: 'refund',
-      providerObjectId: refund.id,
-      providerBalanceTxId: undefined,
-      providerAccountId: payment.communityId ?? undefined,
-      idempotencyKey: `stripe:refund:${refund.id}`,
-      occurredAt: new Date(),
-      metadata: { reason },
-    });
-
-    await this.logGatewayEvent({
-      gateway: 'stripe',
-      eventType: 'refund.requested',
-      status: 'success',
-      paymentId: payment.id,
-      registrationId: payment.registrationId ?? undefined,
-      eventId: payment.eventId ?? undefined,
-      lessonId: payment.lessonId ?? undefined,
-      communityId: payment.communityId ?? undefined,
-      userId,
-      payload: { refundId: refund.id, amount },
-    });
-
-    return {
-      refundId: refund.id,
-      status: 'refunded',
-    };
+    return this.refundStripePaymentWithMerchantFee(userId, payment, amount, reason);
   }
 
   async refundStripePaymentForRegistration(
@@ -1108,16 +1034,43 @@ export class PaymentsService {
     if (!payment) {
       throw new BadRequestException('Payment not found');
     }
-    if (payment.status !== 'paid') {
+    if (!['paid', 'partial_refunded'].includes(payment.status)) {
       throw new BadRequestException('この支払いは返金できません');
     }
     if (amount !== undefined && amount > payment.amount) {
       throw new BadRequestException('返金額が支払い額を超えています');
     }
+    return this.refundStripePaymentWithMerchantFee(userId, payment, amount, reason);
+  }
+
+  private async refundStripePaymentWithMerchantFee(
+    userId: string,
+    payment: Payment,
+    amount?: number,
+    reason?: string,
+  ) {
+    const gross = payment.amount ?? 0;
+    const refundedGrossTotal = payment.refundedGrossTotal ?? 0;
+    const remainingGross = Math.max(0, gross - refundedGrossTotal);
+    const refundAmount = amount ?? remainingGross;
+    if (refundAmount <= 0) {
+      throw new BadRequestException('返金可能な金額がありません');
+    }
+    if (refundAmount > remainingGross) {
+      throw new BadRequestException('返金額が残高を超えています');
+    }
 
     if (payment.method !== 'stripe') {
-      await this.markPaymentRefunded(payment, null, this.prisma, amount ?? payment.amount);
-      return { refundId: null, status: 'refunded' };
+      const status = await this.recordRefundTotals(payment.id, {
+        refundAmount,
+        refundPlatformFee: 0,
+        reverseMerchant: 0,
+        refundId: null,
+      });
+      void this.notifications.notifyRefundByPayment(payment.id, payment.stripeRefundId ?? null, refundAmount).catch((error) => {
+        this.logger.warn(`Failed to notify refund (manual): ${error instanceof Error ? error.message : String(error)}`);
+      });
+      return { refundId: null, status };
     }
 
     const paymentIntentId = await this.resolvePaymentIntentId(payment);
@@ -1125,27 +1078,124 @@ export class PaymentsService {
       throw new BadRequestException('Stripe支払い情報を取得できませんでした');
     }
 
-    const refund = await this.stripeService.client.refunds.create({
-      payment_intent: paymentIntentId,
-      amount: amount ?? undefined,
-      reverse_transfer: true,
-      refund_application_fee: true,
-      metadata: {
-        paymentId: payment.id,
-        eventId: payment.eventId,
-        lessonId: payment.lessonId,
-        requestedBy: userId,
-        reason: reason ?? '',
+    await this.reconcilePaymentSettlement(payment.id, paymentIntentId);
+    const refreshed = await this.prisma.payment.findUnique({ where: { id: payment.id } });
+    if (!refreshed) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const platformFee = refreshed.platformFee ?? 0;
+    const stripeFee = refreshed.stripeFeeAmountActual ?? 0;
+    const merchantNet =
+      refreshed.merchantTransferAmount ?? computeMerchantNet(gross, platformFee, stripeFee);
+    const remainingPlatformFee = Math.max(0, platformFee - (refreshed.refundedPlatformFeeTotal ?? 0));
+    const remainingMerchant = Math.max(0, merchantNet - (refreshed.reversedMerchantTotal ?? 0));
+
+    let refundPlatformFee = computeProportionalAmount(platformFee, refundAmount, gross);
+    let reverseMerchant = computeProportionalAmount(merchantNet, refundAmount, gross);
+    refundPlatformFee = Math.min(refundPlatformFee, remainingPlatformFee);
+    reverseMerchant = Math.min(reverseMerchant, remainingMerchant);
+
+    const refund = await this.stripeService.client.refunds.create(
+      {
+        payment_intent: paymentIntentId,
+        amount: refundAmount,
+        refund_application_fee: true,
+        reverse_transfer: false,
+        metadata: {
+          paymentId: payment.id,
+          eventId: payment.eventId,
+          lessonId: payment.lessonId,
+          requestedBy: userId,
+          reason: reason ?? '',
+        },
       },
+      { idempotencyKey: `refund:${payment.id}:${refundAmount}:${refreshed.refundedGrossTotal ?? 0}` },
+    );
+
+    if (reverseMerchant > 0) {
+      if (!refreshed.stripeTransferId) {
+        throw new BadRequestException('Transfer not found for refund reversal');
+      }
+      const reversal = await this.stripeService.client.transfers.createReversal(
+        refreshed.stripeTransferId,
+        {
+          amount: reverseMerchant,
+          metadata: {
+            paymentId: payment.id,
+            refundId: refund.id,
+            reason: 'refund_reversal',
+          },
+        },
+        { idempotencyKey: `transfer:refund:${refund.id}` },
+      );
+
+      await this.createLedgerEntryIfMissing({
+        tx: this.prisma,
+        businessPaymentId: payment.id,
+        businessRegistrationId: payment.registrationId ?? undefined,
+        businessLessonId: payment.lessonId ?? undefined,
+        businessCommunityId: payment.communityId ?? undefined,
+        entryType: 'transfer_reversal',
+        direction: 'in',
+        amount: reverseMerchant,
+        currency: payment.currency ?? 'jpy',
+        provider: 'stripe',
+        providerObjectType: 'transfer_reversal',
+        providerObjectId: reversal.id,
+        providerBalanceTxId: reversal.balance_transaction as string | undefined,
+        providerAccountId: payment.communityId ?? undefined,
+        idempotencyKey: `stripe:transfer.reversal:refund:${reversal.id}`,
+        occurredAt: new Date(),
+        metadata: { refundId: refund.id, transferId: refreshed.stripeTransferId },
+      });
+    }
+
+    const status = await this.recordRefundTotals(payment.id, {
+      refundAmount,
+      refundPlatformFee,
+      reverseMerchant,
+      refundId: refund.id,
     });
 
-    await this.markPaymentRefunded(payment, refund.id, this.prisma, amount ?? payment.amount);
-
-    void this.notifications.notifyRefundByPayment(payment.id, refund.id, amount ?? payment.amount).catch((error) => {
+    void this.notifications.notifyRefundByPayment(payment.id, refund.id, refundAmount).catch((error) => {
       this.logger.warn(`Failed to notify refund (stripe): ${error instanceof Error ? error.message : String(error)}`);
     });
 
-    return { refundId: refund.id, status: 'refunded' };
+    await this.createLedgerEntryIfMissing({
+      tx: this.prisma,
+      businessPaymentId: payment.id,
+      businessRegistrationId: payment.registrationId ?? undefined,
+      businessLessonId: payment.lessonId ?? undefined,
+      businessCommunityId: payment.communityId ?? undefined,
+      entryType: 'refund',
+      direction: 'refund',
+      amount: refundAmount,
+      currency: payment.currency ?? 'jpy',
+      provider: 'stripe',
+      providerObjectType: 'refund',
+      providerObjectId: refund.id,
+      providerBalanceTxId: undefined,
+      providerAccountId: payment.communityId ?? undefined,
+      idempotencyKey: `stripe:refund:${refund.id}`,
+      occurredAt: new Date(),
+      metadata: { reason, refundPlatformFee, reverseMerchant },
+    });
+
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'refund.requested',
+      status: 'success',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId,
+      payload: { refundId: refund.id, amount: refundAmount },
+    });
+
+    return { refundId: refund.id, status };
   }
 
   private async handleCheckoutSessionCompleted(
@@ -1219,8 +1269,8 @@ export class PaymentsService {
       },
     });
 
-    if (!payment.stripeChargeId && paymentIntentId) {
-      void this.populateChargeIdFromPaymentIntent(payment.id, paymentIntentId);
+    if (paymentIntentId) {
+      void this.reconcilePaymentSettlement(payment.id, paymentIntentId);
     }
 
     if (payment.registrationId) {
@@ -1287,22 +1337,114 @@ export class PaymentsService {
     });
   }
 
-  private async populateChargeIdFromPaymentIntent(paymentId: string, paymentIntentId: string) {
+  private async reconcilePaymentSettlement(paymentId: string, paymentIntentId: string) {
     try {
+      const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+      if (!payment || payment.method !== 'stripe') return;
+
       const intent = await this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
-        expand: ['latest_charge'],
+        expand: ['latest_charge.balance_transaction', 'latest_charge.transfer'],
       });
+      const latestCharge =
+        typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
       const chargeId =
         typeof intent.latest_charge === 'string'
           ? intent.latest_charge
           : intent.latest_charge?.id ?? null;
       if (!chargeId) return;
+
+      const balanceTx =
+        latestCharge?.balance_transaction &&
+        typeof latestCharge.balance_transaction !== 'string'
+          ? latestCharge.balance_transaction
+          : null;
+      const stripeFee = balanceTx ? this.computeStripeFeeFromBalanceTx(balanceTx) : 0;
+      const gross = payment.amount ?? 0;
+      const platformFee = payment.platformFee ?? 0;
+      const merchantNet = computeMerchantNet(gross, platformFee, stripeFee);
+      const transferId =
+        typeof latestCharge?.transfer === 'string'
+          ? latestCharge.transfer
+          : (latestCharge?.transfer as Stripe.Transfer | null)?.id ?? null;
+
       await this.prisma.payment.update({
         where: { id: paymentId },
-        data: { stripeChargeId: chargeId },
+        data: {
+          stripePaymentIntentId: paymentIntentId,
+          stripeChargeId: chargeId,
+          stripeTransferId: transferId ?? undefined,
+          stripeFeeAmountActual: stripeFee,
+          merchantTransferAmount: merchantNet,
+        },
+      });
+
+      if (!transferId || stripeFee <= 0) return;
+      if (payment.stripeFeeReversalId) return;
+
+      const transfer = await this.stripeService.client.transfers.retrieve(transferId);
+      const transferAmount = transfer.amount ?? 0;
+
+      await this.createLedgerEntryIfMissing({
+        tx: this.prisma,
+        businessPaymentId: paymentId,
+        businessRegistrationId: payment.registrationId ?? undefined,
+        businessLessonId: payment.lessonId ?? undefined,
+        businessCommunityId: payment.communityId ?? undefined,
+        entryType: 'transfer',
+        direction: 'out',
+        amount: transferAmount,
+        currency: payment.currency ?? 'jpy',
+        provider: 'stripe',
+        providerObjectType: 'transfer',
+        providerObjectId: transferId,
+        providerBalanceTxId: transfer.balance_transaction as string | undefined,
+        providerAccountId: payment.communityId ?? undefined,
+        idempotencyKey: `stripe:transfer:${transferId}`,
+        occurredAt: new Date(),
+        metadata: { reason: 'destination_charge' },
+      });
+
+      const adjustment = Math.max(0, transferAmount - merchantNet);
+      if (adjustment <= 0) return;
+
+      const reversal = await this.stripeService.client.transfers.createReversal(
+        transferId,
+        {
+          amount: adjustment,
+          metadata: {
+            paymentId,
+            reason: 'stripe_fee_allocation',
+          },
+        },
+        { idempotencyKey: `transfer:fee:${paymentId}:${transferId}` },
+      );
+
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: { stripeFeeReversalId: reversal.id },
+      });
+
+      await this.createLedgerEntryIfMissing({
+        tx: this.prisma,
+        businessPaymentId: paymentId,
+        businessRegistrationId: payment.registrationId ?? undefined,
+        businessLessonId: payment.lessonId ?? undefined,
+        businessCommunityId: payment.communityId ?? undefined,
+        entryType: 'transfer_reversal',
+        direction: 'in',
+        amount: adjustment,
+        currency: payment.currency ?? 'jpy',
+        provider: 'stripe',
+        providerObjectType: 'transfer_reversal',
+        providerObjectId: reversal.id,
+        providerBalanceTxId: reversal.balance_transaction as string | undefined,
+        providerAccountId: payment.communityId ?? undefined,
+        idempotencyKey: `stripe:transfer.reversal:fee:${reversal.id}`,
+        occurredAt: new Date(),
+        metadata: { transferId, reason: 'stripe_fee_allocation' },
       });
     } catch (err) {
-      this.logger.warn(`Failed to resolve chargeId for payment ${paymentId}: ${err}`);
+      this.logger.warn(`Failed to reconcile settlement for payment ${paymentId}: ${err}`);
     }
   }
 
@@ -1458,7 +1600,7 @@ export class PaymentsService {
     }
 
     const refundedAmount = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : payment.amount;
-    await this.markPaymentRefunded(payment, charge.refunds?.data?.[0]?.id, tx, refundedAmount);
+    await this.syncRefundTotalsFromStripe(payment, refundedAmount, charge.refunds?.data?.[0]?.id, tx);
 
     await this.createLedgerEntryIfMissing({
       tx,
@@ -1551,28 +1693,43 @@ export class PaymentsService {
     });
   }
 
-  private async markPaymentRefunded(
-    payment: Payment,
-    refundId?: string | null,
-    tx: PrismaService | Prisma.TransactionClient = this.prisma,
-    refundedAmount?: number,
-  ) {
-    if (payment.status === 'refunded') {
-      return;
+  private async recordRefundTotals(
+    paymentId: string,
+    params: { refundAmount: number; refundPlatformFee: number; reverseMerchant: number; refundId: string | null },
+  ): Promise<string> {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
     }
-    await tx.payment.update({
-      where: { id: payment.id },
+    const gross = payment.amount ?? 0;
+    const nextRefundedGross = Math.min(gross, (payment.refundedGrossTotal ?? 0) + params.refundAmount);
+    const nextRefundedPlatformFee = Math.min(
+      payment.platformFee ?? 0,
+      (payment.refundedPlatformFeeTotal ?? 0) + params.refundPlatformFee,
+    );
+    const merchantNet =
+      payment.merchantTransferAmount ??
+      computeMerchantNet(gross, payment.platformFee ?? 0, payment.stripeFeeAmountActual ?? 0);
+    const nextReversedMerchant = Math.min(
+      merchantNet,
+      (payment.reversedMerchantTotal ?? 0) + params.reverseMerchant,
+    );
+    const status = nextRefundedGross >= gross ? 'refunded' : 'partial_refunded';
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
       data: {
-        status: 'refunded',
-        stripeRefundId: refundId ?? payment.stripeRefundId,
+        refundedGrossTotal: nextRefundedGross,
+        refundedPlatformFeeTotal: nextRefundedPlatformFee,
+        reversedMerchantTotal: nextReversedMerchant,
+        status,
+        stripeRefundId: params.refundId ?? payment.stripeRefundId,
       },
     });
 
     if (payment.registrationId) {
-      const remaining = typeof refundedAmount === 'number'
-        ? Math.max((payment.amount ?? 0) - refundedAmount, 0)
-        : 0;
-      await tx.eventRegistration.update({
+      const remaining = Math.max(gross - nextRefundedGross, 0);
+      await this.prisma.eventRegistration.update({
         where: { id: payment.registrationId },
         data: {
           paymentStatus: 'refunded',
@@ -1592,8 +1749,40 @@ export class PaymentsService {
       lessonId: payment.lessonId ?? undefined,
       communityId: payment.communityId ?? undefined,
       userId: payment.userId,
-      payload: { refundId },
+      payload: { refundId: params.refundId, refundAmount: params.refundAmount },
     });
+    return status;
+  }
+
+  private async syncRefundTotalsFromStripe(
+    payment: Payment,
+    refundedAmount: number,
+    refundId: string | null | undefined,
+    tx: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const gross = payment.amount ?? 0;
+    const nextRefundedGross = Math.min(gross, Math.max(payment.refundedGrossTotal ?? 0, refundedAmount));
+    const status = nextRefundedGross >= gross ? 'refunded' : 'partial_refunded';
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        refundedGrossTotal: nextRefundedGross,
+        status,
+        stripeRefundId: refundId ?? payment.stripeRefundId,
+      },
+    });
+
+    if (payment.registrationId) {
+      const remaining = Math.max(gross - nextRefundedGross, 0);
+      await tx.eventRegistration.update({
+        where: { id: payment.registrationId },
+        data: {
+          paymentStatus: 'refunded',
+          status: 'refunded',
+          paidAmount: remaining,
+        },
+      });
+    }
   }
 
   private async recordSubscriptionPayment(invoice: Stripe.Invoice, communityId: string, planId: string) {
@@ -1926,6 +2115,15 @@ export class PaymentsService {
     if (/timeout|connection/i.test(name)) return true;
     return false;
   }
+
+  private computeStripeFeeFromBalanceTx(balanceTx: Stripe.BalanceTransaction) {
+    const feeDetails = balanceTx.fee_details ?? [];
+    if (feeDetails.length) {
+      return feeDetails.reduce((sum, detail) => sum + (detail.amount ?? 0), 0);
+    }
+    return balanceTx.fee ?? 0;
+  }
+
 
   private hashPayload(payload: any): string {
     try {

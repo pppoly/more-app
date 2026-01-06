@@ -307,8 +307,16 @@ model Payment {
   method                  String             @default("stripe")
   stripePaymentIntentId   String?
   stripeChargeId          String?
+  stripeTransferId        String?
   stripeRefundId          String?
   stripeCheckoutSessionId String?            @unique
+  stripeFeeAmountActual   Int?
+  stripeFeeAmountEstimated Int?
+  merchantTransferAmount  Int?
+  refundedGrossTotal      Int               @default(0)
+  refundedPlatformFeeTotal Int              @default(0)
+  reversedMerchantTotal   Int               @default(0)
+  stripeFeeReversalId     String?
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
   lessonId                String?
