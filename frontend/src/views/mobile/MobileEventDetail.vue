@@ -88,14 +88,7 @@
                 <button class="event-action-icon" type="button" @click="shareEvent">
                   <img :src="shareIcon" alt="share" class="event-action-icon__img" />
                 </button>
-                <button
-                  class="event-action-icon"
-                  :class="{ 'is-active': isFavoriteEvent }"
-                  type="button"
-                  @click="handleFavoriteToggle"
-                >
-                  <img :src="followIcon" alt="follow" class="event-action-icon__img" />
-                </button>
+                <!-- follow/favorite action temporarily hidden -->
               </div>
             </div>
             <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>

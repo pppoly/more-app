@@ -244,6 +244,17 @@ export class ConsoleEventsService {
         user: { select: { id: true, name: true, avatarUrl: true } },
         ticketType: { select: { id: true, name: true, price: true } },
         payment: { select: { id: true } },
+        refundRequest: {
+          select: {
+            id: true,
+            status: true,
+            decision: true,
+            requestedAmount: true,
+            approvedAmount: true,
+            refundedAmount: true,
+            reason: true,
+          },
+        },
       },
     });
 
@@ -266,6 +277,17 @@ export class ConsoleEventsService {
         status: reg.status,
         paymentStatus: reg.paymentStatus,
         paymentId: reg.payment?.id ?? null,
+        refundRequest: reg.refundRequest
+          ? {
+              id: reg.refundRequest.id,
+              status: reg.refundRequest.status,
+              decision: reg.refundRequest.decision ?? null,
+              requestedAmount: reg.refundRequest.requestedAmount,
+              approvedAmount: reg.refundRequest.approvedAmount ?? null,
+              refundedAmount: reg.refundRequest.refundedAmount ?? null,
+              reason: reg.refundRequest.reason ?? null,
+            }
+          : null,
         attended: reg.attended,
         noShow: reg.noShow,
         amount: reg.amount,

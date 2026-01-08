@@ -455,6 +455,15 @@ export interface ConsoleEventRegistrationItem {
   status: string;
   paymentStatus: string;
   paymentId?: string | null;
+  refundRequest?: {
+    id: string;
+    status: string;
+    decision?: string | null;
+    requestedAmount?: number | null;
+    approvedAmount?: number | null;
+    refundedAmount?: number | null;
+    reason?: string | null;
+  } | null;
   attended: boolean;
   noShow: boolean;
   amount?: number | null;

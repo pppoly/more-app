@@ -130,6 +130,16 @@
                         {{ actionLoading[reg.registrationId] ? '処理中…' : '拒否' }}
                       </button>
                     </div>
+                    <div v-if="reg.status === 'cancel_requested'" class="actions-inline">
+                      <button
+                        type="button"
+                        class="ghost tiny"
+                        :disabled="actionLoading[reg.registrationId]"
+                        @click="handleApproveRefund(reg)"
+                      >
+                        {{ actionLoading[reg.registrationId] ? '処理中…' : '返金を承認' }}
+                      </button>
+                    </div>
                     <button
                       v-if="hasRegistrationForm"
                       type="button"
@@ -174,6 +184,7 @@ import {
   fetchEventRegistrations,
   exportEventRegistrationsCsv,
   rejectEventRegistration,
+  decideRefundRequest,
   cancelConsoleEvent,
 } from '../../api/client';
 import { useConfirm } from '../../composables/useConfirm';
@@ -271,6 +282,9 @@ const attendanceLabel = (reg: ConsoleEventRegistrationItem) => {
   return '未開始';
 };
 
+const formatYen = (value?: number | null) =>
+  new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 }).format(Math.max(0, value ?? 0));
+
 const progressPercent = (group: { count: number; capacity?: number | null }) => {
   const fallback = group.count || 1;
   const cap = group.capacity ?? summary.value?.capacity ?? fallback;
@@ -335,6 +349,24 @@ const handleReject = async (registrationId: string) => {
     error.value = err instanceof Error ? err.message : '拒否に失敗しました。再試行してください。';
   } finally {
     actionLoading.value = { ...actionLoading.value, [registrationId]: false };
+  }
+};
+
+const handleApproveRefund = async (reg: ConsoleEventRegistrationItem) => {
+  if (!reg.refundRequest?.id) return;
+  const amount = reg.refundRequest.requestedAmount ?? reg.amount ?? 0;
+  const sure = await confirmDialog(
+    `この申込の返金を承認しますか？返金額: ¥${formatYen(amount)}`,
+  );
+  if (!sure) return;
+  actionLoading.value = { ...actionLoading.value, [reg.registrationId]: true };
+  try {
+    await decideRefundRequest(reg.refundRequest.id, { decision: 'approve_full' });
+    await load();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '返金の承認に失敗しました。再試行してください。';
+  } finally {
+    actionLoading.value = { ...actionLoading.value, [reg.registrationId]: false };
   }
 };
 

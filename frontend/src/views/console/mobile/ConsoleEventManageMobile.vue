@@ -199,6 +199,14 @@
             {{ entryActionLoading[activeEntry.id] ? '処理中…' : '拒否する' }}
           </button>
           <button
+            v-if="canApproveRefundEntry(activeEntry)"
+            class="sheet-action danger"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="approveRefundEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '返金を承認' }}
+          </button>
+          <button
             v-if="canRefundEntry(activeEntry)"
             class="sheet-action danger"
             :disabled="entryActionLoading[activeEntry.id]"
@@ -273,6 +281,7 @@ import {
   rejectEventRegistration,
   cancelEventRegistration,
   cancelConsoleEvent,
+  decideRefundRequest,
   refundPayment,
 } from '../../../api/client';
 import type {
@@ -447,6 +456,7 @@ function mapEntry(reg: ConsoleEventRegistrationItem) {
     status: reg.status,
     paymentStatus: reg.paymentStatus,
     paymentId: reg.paymentId ?? null,
+    refundRequest: reg.refundRequest ?? null,
     amount: reg.amount ?? null,
     attended: reg.attended,
     noShow: reg.noShow,
@@ -826,9 +836,29 @@ const canRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
   entry.paymentStatus === 'paid' &&
   !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status);
 
+const canApproveRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
+  entry.status === 'cancel_requested' && Boolean(entry.refundRequest?.id);
+
 const canKickEntry = (entry: ReturnType<typeof mapEntry>) =>
   !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
   !canRefundEntry(entry);
+
+const approveRefundEntry = async () => {
+  if (!activeEntry.value?.refundRequest?.id) return;
+  const amount = activeEntry.value.refundRequest.requestedAmount ?? activeEntry.value.amount ?? 0;
+  const sure = window.confirm(`この申込の返金を承認しますか？返金額: ¥${formatYen(amount)}`);
+  if (!sure) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await decideRefundRequest(activeEntry.value.refundRequest.id, { decision: 'approve_full' });
+    await reload();
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '返金の承認に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
+};
 
 const refundEntry = async () => {
   if (!activeEntry.value || !activeEntry.value.paymentId) return;
