@@ -120,9 +120,6 @@ const filteredEvents = computed(() => {
           if (activeFilter.value === 'closed') return event.statusState !== 'open';
           return event.status === activeFilter.value;
         });
-  if (activeFilter.value === 'open' && base.length === 0) {
-    return normalizedEvents.value;
-  }
   return base;
 });
 

@@ -8,7 +8,11 @@
       titleKey="console.eventForm.title"
       @back="goBack"
     />
-    <div v-if="reviewStatus && reviewStatus !== 'draft'" class="review-banner" :class="reviewStatus">
+    <div
+      v-if="reviewStatus && !['draft', 'approved'].includes(reviewStatus)"
+      class="review-banner"
+      :class="reviewStatus"
+    >
       <div class="review-badge">{{ reviewStatusLabel }}</div>
       <p class="review-text">
         {{ reviewMessage }}

@@ -115,7 +115,7 @@ const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrow
 const isLoggedIn = computed(() => Boolean(user.value));
 
 const openLanguage = () => {
-  showLocaleSheet.value = true;
+  toast.show(t('mobile.settings.toast.languagePending'), 'info');
 };
 
 const openNotification = () => {

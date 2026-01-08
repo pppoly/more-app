@@ -120,6 +120,8 @@ const communityId = route.params.communityId as string;
 const community = ref<ConsoleCommunityDetail | null>(null);
 const pricingPlans = ref<PricingPlan[]>([]);
 const stripeStatus = ref<StripeAccountStatus | null>(null);
+const lastStripeRefreshAt = ref(0);
+const STRIPE_STATUS_TTL = 60_000;
 const selectedPlanId = ref<string>('');
 const savedPlanId = ref<string>('');
 const onboarding = ref(false);
@@ -136,7 +138,7 @@ const load = async () => {
     pricingPlans.value = plans;
     savedPlanId.value = community.value?.pricingPlanId || plans[0]?.id || '';
     selectedPlanId.value = savedPlanId.value;
-    await loadStripeStatus();
+    void loadStripeStatus();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '設定情報の取得に失敗しました';
   }
@@ -147,9 +149,13 @@ const loadStripeStatus = async () => {
     stripeStatus.value = null;
     return;
   }
+  if (!community.value?.stripeAccountOnboarded) return;
+  const now = Date.now();
+  if (stripeStatus.value && now - lastStripeRefreshAt.value < STRIPE_STATUS_TTL) return;
   try {
     const status = await refreshCommunityStripeStatus(community.value.id);
     stripeStatus.value = status.stripeAccountStatus ?? null;
+    lastStripeRefreshAt.value = now;
     if (community.value) {
       community.value.stripeAccountId = status.stripeAccountId ?? community.value.stripeAccountId;
       if (status.stripeAccountOnboarded !== undefined) {

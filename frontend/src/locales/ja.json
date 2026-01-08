@@ -226,7 +226,8 @@
     "active": "使用中"
   },
       "toast": {
-        "notificationsPending": "通知設定は準備中です"
+        "notificationsPending": "通知設定は準備中です",
+        "languagePending": "言語設定は近日公開です"
       }
     },
     "me": {

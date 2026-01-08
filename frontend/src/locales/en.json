@@ -199,7 +199,8 @@
     "active": "Active"
   },
       "toast": {
-        "notificationsPending": "Notification settings coming soon"
+        "notificationsPending": "Notification settings coming soon",
+        "languagePending": "Language settings coming soon"
       }
     },
     "me": {

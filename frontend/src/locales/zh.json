@@ -151,7 +151,8 @@
     "active": "使用中"
   },
       "toast": {
-        "notificationsPending": "通知设置开发中"
+        "notificationsPending": "通知设置开发中",
+        "languagePending": "语言设置即将开放"
       }
     },
     "me": {
