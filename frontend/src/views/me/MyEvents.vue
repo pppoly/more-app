@@ -234,11 +234,12 @@ const sortedEvents = computed(() =>
 );
 
 const isEligibleTicket = (item: MyEventItem) => {
+  if (item.status === 'rejected') return false;
+  if (item.status === 'pending' || item.status === 'pending_payment') return true;
   const amount = item.amount ?? 0;
   const paymentOk = isPaidStatus(item) || isRefundedStatus(item) || isRefundingStatus(item) || item.status === 'cancelled';
   if (amount > 0) return paymentOk;
-  // 無料の場合は審査中/却下を除外
-  return !['pending', 'rejected'].includes(item.status);
+  return true;
 };
 
 const eligibleEvents = computed(() => sortedEvents.value.filter((item) => isEligibleTicket(item)));
@@ -270,6 +271,7 @@ const filteredEvents = computed(() => {
 
 const groupTitleMap: Record<string, string> = {
   upcoming_paid: 'これから参加',
+  pending_approval: '審査中',
   refunding: '返金・キャンセル処理中',
   refunded: '返金済み / キャンセル済み',
   attended: '参加済み',
@@ -279,6 +281,7 @@ const groupTitleMap: Record<string, string> = {
 
 const groupOrder: Array<{ id: string; title: string }> = [
   { id: 'upcoming_paid', title: groupTitleMap.upcoming_paid },
+  { id: 'pending_approval', title: groupTitleMap.pending_approval },
   { id: 'refunding', title: groupTitleMap.refunding },
   { id: 'refunded', title: groupTitleMap.refunded },
   { id: 'attended', title: groupTitleMap.attended },
@@ -292,6 +295,7 @@ const groupIdFor = (item: MyEventItem): string => {
   const refundingLike = isRefundingStatus(item);
   if (refundingLike) return 'refunding';
   if (refundedLike) return 'refunded';
+  if (item.status === 'pending') return 'pending_approval';
   if (item.attended) return 'attended';
   if (isExpired(item)) return 'expired';
   if (!paidLike) return 'unpaid';

@@ -90,10 +90,34 @@ const goMyPayments = () => router.push({ name: 'my-payments' });
 const goSettings = () => router.push({ name: 'MobileSettings' });
 
 const serviceEntries = computed(() => [
-  { title: '参加したイベント', description: '予約・チケット', cta: '見る', icon: new URL('../../assets/我的的活动.svg', import.meta.url).href, action: goMyEvents },
-  { title: 'マイコミュニティ', description: 'フォロー中のコミュニティ一覧', cta: '入る', icon: new URL('../../assets/我的社群.svg', import.meta.url).href, action: goMyCommunities },
-  { title: '支払い履歴', description: 'お支払い記録', cta: '見る', icon: new URL('../../assets/付款记录.svg', import.meta.url).href, action: goMyPayments },
-  { title: '設定', description: 'アプリ環境', cta: '開く', icon: new URL('../../assets/设置.svg', import.meta.url).href, action: goSettings },
+  {
+    title: t('mobile.me.cards.events.title'),
+    description: t('mobile.me.cards.events.description'),
+    cta: t('mobile.me.cards.events.cta'),
+    icon: new URL('../../assets/我的的活动.svg', import.meta.url).href,
+    action: goMyEvents,
+  },
+  {
+    title: t('mobile.me.cards.communities.title'),
+    description: t('mobile.me.cards.communities.description'),
+    cta: t('mobile.me.cards.communities.cta'),
+    icon: new URL('../../assets/我的社群.svg', import.meta.url).href,
+    action: goMyCommunities,
+  },
+  {
+    title: t('mobile.me.cards.payments.title'),
+    description: t('mobile.me.cards.payments.description'),
+    cta: t('mobile.me.cards.payments.cta'),
+    icon: new URL('../../assets/付款记录.svg', import.meta.url).href,
+    action: goMyPayments,
+  },
+  {
+    title: t('mobile.me.cards.settings.title'),
+    description: t('mobile.me.cards.settings.description'),
+    cta: t('mobile.me.cards.settings.cta'),
+    icon: new URL('../../assets/设置.svg', import.meta.url).href,
+    action: goSettings,
+  },
 ]);
 
 const avatarInput = ref<HTMLInputElement | null>(null);

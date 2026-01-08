@@ -249,9 +249,14 @@
       },
       "cards": {
         "events": {
-          "title": "参加したイベント",
+          "title": "マイイベント",
           "description": "予約・チケット",
           "cta": "見る"
+        },
+        "communities": {
+          "title": "マイコミュニティ",
+          "description": "フォロー中のコミュニティ一覧",
+          "cta": "入る"
         },
         "payments": {
           "title": "支払い履歴",

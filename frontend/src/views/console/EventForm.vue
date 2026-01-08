@@ -316,17 +316,19 @@
         <div class="ios-form">
           <div class="ios-row ios-row--builder-line">
             <span class="ios-label">参加費</span>
-            <input
-              type="tel"
-              class="ios-inline-input"
-              placeholder="無料イベント"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              ref="ticketPriceInputRef"
-              :value="ticketPriceDisplay"
-              @input="handleTicketInput"
-            />
-            <span v-if="form.ticketPrice != null" class="ios-suffix">円</span>
+            <span class="ios-value ios-value--inline-input">
+              <input
+                type="tel"
+                class="ios-inline-input"
+                placeholder="無料イベント"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                ref="ticketPriceInputRef"
+                :value="ticketPriceDisplay"
+                @input="handleTicketInput"
+              />
+              <span v-if="form.ticketPrice != null" class="ios-suffix">円</span>
+            </span>
           </div>
         </div>
       </section>
@@ -2391,11 +2393,19 @@ const handleEntryFromQuery = async () => {
   const entry = route.query.entry as string | undefined;
   const copyEventId = route.query.copyEventId as string | undefined;
   const source = route.query.source as string | undefined;
+  const clearEntryQuery = async () => {
+    const nextQuery = { ...route.query };
+    delete nextQuery.entry;
+    delete nextQuery.copyEventId;
+    delete nextQuery.source;
+    await router.replace({ query: nextQuery });
+  };
   if (source === 'ai-assistant') {
     const applied = loadAiDraftFromSession();
     if (applied) {
       aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
     }
+    await clearEntryQuery();
   }
   if (!entry) return;
   entryHandled.value = true;
@@ -2422,17 +2432,21 @@ const handleEntryFromQuery = async () => {
           await checkPastedDraft(true);
         }
       }
+      await clearEntryQuery();
       break;
     }
     case 'basic':
       await nextTick();
       scrollToSection('basic');
+      await clearEntryQuery();
       break;
     case 'copy':
       if (copyEventId) {
         await handleCopyFromEvent(copyEventId);
+        await clearEntryQuery();
       } else {
         await openCopyOverlay();
+        await clearEntryQuery();
       }
       break;
     default:
@@ -4178,6 +4192,7 @@ select {
 
 .ios-row--builder-line {
   cursor: text;
+  overflow: visible;
 }
 
 .ios-row--inline-value {
@@ -4219,6 +4234,7 @@ select {
   padding: 0;
   -webkit-appearance: none;
   appearance: none;
+  min-width: 0;
 }
 
 .ios-inline-input:focus {

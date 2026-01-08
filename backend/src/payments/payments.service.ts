@@ -1096,12 +1096,13 @@ export class PaymentsService {
     refundPlatformFee = Math.min(refundPlatformFee, remainingPlatformFee);
     reverseMerchant = Math.min(reverseMerchant, remainingMerchant);
 
+    const reverseTransfer = reverseMerchant > 0;
     const refund = await this.stripeService.client.refunds.create(
       {
         payment_intent: paymentIntentId,
         amount: refundAmount,
         refund_application_fee: true,
-        reverse_transfer: false,
+        reverse_transfer: reverseTransfer,
         metadata: {
           paymentId: payment.id,
           eventId: payment.eventId,
@@ -1113,7 +1114,7 @@ export class PaymentsService {
       { idempotencyKey: `refund:${payment.id}:${refundAmount}:${refreshed.refundedGrossTotal ?? 0}` },
     );
 
-    if (reverseMerchant > 0) {
+    if (reverseMerchant > 0 && !reverseTransfer) {
       if (!refreshed.stripeTransferId) {
         throw new BadRequestException('Transfer not found for refund reversal');
       }
