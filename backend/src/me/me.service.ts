@@ -101,6 +101,7 @@ export class MeService {
       },
       select: {
         id: true,
+        createdAt: true,
         status: true,
         paymentStatus: true,
         amount: true,
@@ -122,6 +123,8 @@ export class MeService {
             status: true,
             id: true,
             amount: true,
+            method: true,
+            createdAt: true,
           },
         },
         event: {
@@ -196,12 +199,15 @@ export class MeService {
           : rest.status;
       return {
         registrationId: rest.id,
+        createdAt: rest.createdAt,
         status: derivedStatus,
         paymentStatus: derivedPaymentStatus,
         amount: rest.amount,
         attended: rest.attended,
         noShow: rest.noShow,
         refundRequest: rest?.refundRequest ?? null,
+        paymentMethod: registration.payment?.method ?? null,
+        paymentCreatedAt: registration.payment?.createdAt ?? null,
         event: event
           ? {
               ...event,

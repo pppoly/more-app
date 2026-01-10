@@ -3,11 +3,17 @@
     <ConsoleTopBar v-if="!isLiffClientMode" title="下書きを貼り付ける" @back="goBack" />
 
     <section class="intro-card">
-      <p class="intro-title">貼り付けるだけで OK</p>
-      <p class="intro-desc">AI がタイトルや説明を下書きに入れます。足りない部分は次の画面で微調整できます。</p>
+      <p class="intro-title">{{ preview ? '内容をご確認ください' : '貼り付けるだけで OK' }}</p>
+      <p class="intro-desc">
+        {{
+          preview
+            ? 'AI が読み取った内容を確認してください。修正が必要なら戻って編集できます。'
+            : 'AI がタイトルや説明を下書きに入れます。足りない部分は次の画面で微調整できます。'
+        }}
+      </p>
     </section>
 
-    <section class="input-card">
+    <section v-if="!preview" class="input-card">
       <textarea
         v-model="draft"
         class="draft-input"
@@ -18,11 +24,33 @@
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
+    <section v-else class="preview-card">
+      <div class="preview-item">
+        <p class="preview-label">タイトル</p>
+        <p class="preview-value">{{ preview.title || '未検出' }}</p>
+      </div>
+      <div class="preview-item">
+        <p class="preview-label">説明</p>
+        <p class="preview-value">{{ preview.description || '未検出' }}</p>
+      </div>
+      <div class="preview-item">
+        <p class="preview-label">注意事項 / ルール</p>
+        <p class="preview-value">{{ preview.rules || '未検出' }}</p>
+      </div>
+      <p class="preview-hint">他の項目は次の画面で調整できます。</p>
+    </section>
+
     <div class="action-row">
-      <button class="ghost-link" type="button" @click="goBack">キャンセル</button>
-      <button class="primary-next" type="button" :disabled="!draft.trim() || loading" @click="confirmApply">
+      <button v-if="!preview" class="ghost-link" type="button" @click="goBack">キャンセル</button>
+      <button v-else class="ghost-link" type="button" @click="editDraft">戻って修正</button>
+      <button
+        class="primary-next"
+        type="button"
+        :disabled="!draft.trim() || loading"
+        @click="preview ? proceedToForm() : confirmApply()"
+      >
         <span v-if="loading">少々お待ちください…</span>
-        <span v-else>次へ</span>
+        <span v-else>{{ preview ? 'この内容で次へ' : '次へ' }}</span>
       </button>
     </div>
   </div>
@@ -43,6 +71,8 @@ const router = useRouter();
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const draft = ref('');
 const error = ref<string | null>(null);
+const preview = ref<{ title?: string; description?: string; rules?: string } | null>(null);
+const parsedResult = ref<any | null>(null);
 const toast = useToast();
 const loading = ref(false);
 
@@ -55,24 +85,41 @@ const confirmApply = async () => {
   loading.value = true;
   error.value = null;
   try {
-    sessionStorage.setItem('CONSOLE_EVENT_ENTRY', 'paste');
-    sessionStorage.setItem('CONSOLE_EVENT_PASTE_DRAFT', draft.value);
     const communityId = route.params.communityId as string | undefined;
     if (communityId) {
       const parsed = await extractEventDraft(communityId, { draft: draft.value });
-      sessionStorage.setItem('CONSOLE_EVENT_PASTE_RESULT', JSON.stringify(parsed));
+      parsedResult.value = parsed;
+      preview.value = {
+        title: parsed?.title,
+        description: parsed?.description,
+        rules: parsed?.rules,
+      };
+    } else {
+      error.value = 'コミュニティIDが必要です。';
     }
-  router.push({
-    name: 'ConsoleMobileEventForm',
-    params: route.params,
-    query: { entry: 'paste' },
-  });
   } catch (e) {
     error.value = '送信に失敗しました。時間をおいて再試行してください。';
     toast.show(error.value);
   } finally {
     loading.value = false;
   }
+};
+
+const proceedToForm = () => {
+  if (!parsedResult.value) return;
+  sessionStorage.setItem('CONSOLE_EVENT_ENTRY', 'paste');
+  sessionStorage.setItem('CONSOLE_EVENT_PASTE_DRAFT', draft.value);
+  sessionStorage.setItem('CONSOLE_EVENT_PASTE_RESULT', JSON.stringify(parsedResult.value));
+  router.push({
+    name: 'ConsoleMobileEventForm',
+    params: route.params,
+    query: { entry: 'paste' },
+  });
+};
+
+const editDraft = () => {
+  preview.value = null;
+  parsedResult.value = null;
 };
 </script>
 
@@ -110,6 +157,39 @@ const confirmApply = async () => {
   flex-direction: column;
   gap: 8px;
   overflow: hidden;
+}
+.preview-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.preview-label {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.preview-value {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.preview-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
 }
 .draft-input {
   width: 100%;

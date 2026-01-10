@@ -260,7 +260,6 @@
             {{ regRangeDisplay || 'あとで設定できます（未設定ならイベント時間と同じ）' }}
           </span>
         </button>
-        <p class="info-subhint muted">未設定の場合、受付時間はイベント時間と同じです。</p>
         <button class="info-row info-row--secondary" type="button" @click="openParticipants">
           <span class="info-label">参加人数</span>
           <span class="info-value" :class="{ 'is-placeholder': !participantsDisplay }">
@@ -498,17 +497,6 @@
                     </div>
                     <span class="ios-value">{{ getSelectLabel('visibility', form.visibility) }}</span>
                   </button>
-                  <button
-                    type="button"
-                    class="ios-row ios-row--action advanced-row"
-                    @click="openFieldEditor('visibleRange')"
-                  >
-                    <div class="advanced-row__text">
-                      <span class="ios-label">Console 可視範囲</span>
-                      <span class="advanced-row__hint">運営メンバーへの表示権限</span>
-                    </div>
-                    <span class="ios-value">{{ getSelectLabel('visibleRange', form.config.visibleRange) }}</span>
-                  </button>
                 </div>
               </section>
 
@@ -600,7 +588,7 @@
                       <span class="ios-label">返金ルール</span>
                       <span class="advanced-row__hint">テンプレートから選択</span>
                     </div>
-                    <select v-model="form.config.refundPolicyTemplate" class="ios-inline-select">
+                    <select v-model="form.config.refundPolicyTemplate" class="ios-inline-select refund-template-select">
                       <option v-for="template in refundPolicyTemplates" :key="template.id" :value="template.id">
                         {{ template.label }}
                       </option>
@@ -911,7 +899,6 @@ type FieldKey =
   | 'maxParticipants'
   | 'ticketPrice'
   | 'visibility'
-  | 'visibleRange'
   | 'refundPolicy';
 
 interface BuilderField extends RegistrationFormField {
@@ -1007,7 +994,6 @@ const defaultRefundRules = normalizeRefundPolicyRules(refundPolicyTemplates[0].r
 const defaultConfig = () => ({
   requireCheckin: false,
   enableWaitlist: false,
-  visibleRange: 'public',
   refundPolicyTemplate: 'standard' as RefundPolicyTemplateId,
   refundPolicyRules: cloneRefundPolicyRules(defaultRefundRules),
   refundPolicy: buildRefundPolicyText(defaultRefundRules),
@@ -1387,7 +1373,6 @@ const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placehol
   maxParticipants: { label: '最大参加人数', type: 'number', placeholder: 'あとで設定できます' },
   ticketPrice: { label: '参加費 (円)', type: 'number', placeholder: 'あとで設定できます' },
   visibility: { label: '公開範囲', type: 'select' },
-  visibleRange: { label: 'Console 可視範囲', type: 'select' },
   refundPolicy: { label: '返金ポリシー', type: 'textarea', placeholder: '例：イベント3日前まで全額返金' },
   locationText: { label: '場所', type: 'text', placeholder: '設定してください' },
 };
@@ -1409,11 +1394,6 @@ const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: stri
   visibility: [
     { label: '公開 (public)', value: 'public' },
     { label: 'コミュニティのみ', value: 'community-only' },
-    { label: '非公開', value: 'private' },
-  ],
-  visibleRange: [
-    { label: '公開 (public)', value: 'public' },
-    { label: 'コミュニティ', value: 'community' },
     { label: '非公開', value: 'private' },
   ],
 };
@@ -1443,7 +1423,7 @@ watch(
   },
 );
 
-const getSelectLabel = (key: 'visibility' | 'visibleRange', value?: string | null) => {
+const getSelectLabel = (key: 'visibility', value?: string | null) => {
   const list = selectOptions[key] || [];
   const target = list.find((item) => item.value === value);
   return target?.label || '選択してください';
@@ -2149,7 +2129,9 @@ const buildMoreSettingsQuery = () => {
   return query;
 };
 
-const persistFormDraftToStorage = async (source: 'note-editor' | 'more-settings' = 'more-settings') => {
+const persistFormDraftToStorage = async (
+  source: 'note-editor' | 'more-settings' | 'paste' | 'ai-assistant' = 'more-settings',
+) => {
   const covers = await buildCoverDraft();
   try {
     const draftPayload: {
@@ -2349,11 +2331,6 @@ const applyParsedResult = async (result: Record<string, any>) => {
     form.visibility = visibility;
     pasteFilledFields.value.push('公開範囲');
   }
-  const visibleRange = pick<string>('visibleRange', 'visible_range');
-  if (visibleRange) {
-    form.config.visibleRange = visibleRange;
-    pasteFilledFields.value.push('Console 可視範囲');
-  }
   const refundPolicy = pick<string>('refundPolicy', 'refund_policy');
   if (refundPolicy) {
     form.config.refundPolicy = refundPolicy;
@@ -2404,6 +2381,7 @@ const handleEntryFromQuery = async () => {
     const applied = loadAiDraftFromSession();
     if (applied) {
       aiPrefillNotice.value = '🤖 AI が基本情報を補完しました。今すぐ公開できます（後から編集可能）';
+      await persistFormDraftToStorage('ai-assistant');
     }
     await clearEntryQuery();
   }
@@ -2431,6 +2409,9 @@ const handleEntryFromQuery = async () => {
         if (!applied) {
           await checkPastedDraft(true);
         }
+      }
+      if (route.query.entry === 'paste') {
+        await persistFormDraftToStorage('paste');
       }
       await clearEntryQuery();
       break;
@@ -4123,6 +4104,17 @@ select {
   font-weight: 600;
   background: rgba(15, 23, 42, 0.05);
   color: #0f172a;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.ios-add-btn:active {
+  background: rgba(15, 23, 42, 0.12);
+  transform: translateY(1px);
+}
+
+.ios-add-btn:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
 }
 
 .ios-field-set {
@@ -4276,6 +4268,13 @@ select {
   max-width: 70%;
 }
 
+.refund-template-select {
+  text-align: center;
+  text-align-last: center;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
 .refund-rule-grid {
   display: flex;
   flex-direction: column;
@@ -4292,7 +4291,8 @@ select {
 }
 
 .refund-rule-label {
-  min-width: 48px;
+  min-width: 64px;
+  text-align: right;
   color: #64748b;
 }
 
@@ -4836,7 +4836,7 @@ select {
   align-items: flex-end;
   justify-content: center;
   padding: 20px;
-  z-index: 80;
+  z-index: 100;
 }
 
 .field-sheet {
@@ -5377,6 +5377,8 @@ select {
 .info-label {
   font-size: 14px;
   color: #475569;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .info-value {
   font-size: 15px;

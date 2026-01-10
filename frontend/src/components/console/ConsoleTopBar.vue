@@ -40,7 +40,6 @@ const showBackButton = computed(() => !isLineInAppBrowser());
 
 <style scoped>
 .console-topbar {
-  position: sticky;
   top: 0;
   left: 0;
   right: 0;
@@ -53,6 +52,7 @@ const showBackButton = computed(() => !isLineInAppBrowser());
   border-bottom: 1px solid #e2e8f0;
   backdrop-filter: blur(12px);
   z-index: 20;
+  box-sizing: border-box;
 }
 .console-topbar.sticky {
   position: sticky;
@@ -72,12 +72,18 @@ const showBackButton = computed(() => !isLineInAppBrowser());
   height: 18px;
 }
 .topbar-title {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 120px);
   text-align: center;
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .topbar-placeholder {
   width: 36px;

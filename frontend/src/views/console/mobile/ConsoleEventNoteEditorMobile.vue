@@ -967,6 +967,7 @@ const handleCancel = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: relative;
 }
 
 .nav-btn {
@@ -989,6 +990,14 @@ const handleCancel = () => {
 }
 
 .note-editor__nav p {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 140px);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 600;
   letter-spacing: 0.05em;
 }

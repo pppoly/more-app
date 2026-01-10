@@ -716,11 +716,12 @@ const formatDate = (value: string) => {
 .ios-input-control {
   width: 100%;
   border: none;
-  padding: 0;
+  padding: 2px 2px;
   font-size: 14px;
   background: transparent;
   color: #0f172a;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .ios-input-control:focus {

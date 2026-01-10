@@ -218,6 +218,9 @@ export interface MyEventItem {
   status: string;
   paymentStatus?: string;
   amount?: number | null;
+  createdAt?: string;
+  paymentMethod?: string | null;
+  paymentCreatedAt?: string | null;
   attended?: boolean;
   noShow?: boolean;
   refundRequest?: {

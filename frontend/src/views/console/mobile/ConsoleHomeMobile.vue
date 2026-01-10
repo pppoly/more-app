@@ -820,7 +820,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
 <style scoped>
 .console-home {
   min-height: 100vh;
-  padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem calc(40px + env(safe-area-inset-bottom, 0px));
+  padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem calc(80px + env(safe-area-inset-bottom, 0px));
   background: #f4f6fb;
   display: flex;
   flex-direction: column;

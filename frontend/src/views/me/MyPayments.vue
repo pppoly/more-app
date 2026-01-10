@@ -133,7 +133,13 @@ const formatDateTime = (value?: string | null) => {
   if (!value) return '—';
   const d = new Date(value);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('ja-JP', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 };
 
 const statusText = (rec: PaymentRecord) => {
@@ -185,8 +191,13 @@ const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
     .map((item) => {
       try {
         const refund = item.refundRequest;
-        const paymentMethod = (item as any).paymentMethod || 'Stripe';
-        const createdAt = (item as any).createdAt ?? item.event?.startTime ?? item.lesson?.startAt ?? null;
+        const paymentMethod = item.paymentMethod || 'Stripe';
+        const createdAt =
+          item.paymentCreatedAt ??
+          item.createdAt ??
+          item.event?.startTime ??
+          item.lesson?.startAt ??
+          null;
         const sourceTitle = item.event
           ? getLocalizedText(item.event.title)
           : item.lesson?.class?.title

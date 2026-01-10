@@ -135,7 +135,16 @@
           @keyup.enter="handleSend('enter')"
         />
         <button class="chat-send" type="button" @click="handleSend('button')" :disabled="!chatDraft.trim()">
-          <span class="i-lucide-send"></span>
+          <svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M4 12l16-8-4.8 16-4.2-6.1L4 12z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+            />
+            <path d="M10.9 13.9L20 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
         </button>
       </div>
       <p class="input-hint">ひとこと送ると、AI が質問を続けたり案を出します</p>
@@ -150,8 +159,8 @@
               <p class="plan-preview-label">AI 下書き</p>
               <p class="plan-preview-title">{{ previewPlanTitle }}</p>
             </div>
-            <button type="button" class="plan-preview-close" @click="closePlanPreview">
-              <span class="i-lucide-x"></span>
+            <button type="button" class="plan-preview-close" aria-label="閉じる" @click="closePlanPreview">
+              <span class="plan-preview-close-icon" aria-hidden="true">×</span>
             </button>
           </header>
           <div class="plan-preview-scroll">
@@ -1197,14 +1206,15 @@ onUnmounted(() => {
   top: 0;
   z-index: 35;
   background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
+  display: flex;
+  flex-direction: column;
 }
 
 .top-actions {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
-  right: 12px;
   display: flex;
   gap: 8px;
+  justify-content: flex-end;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 10px;
   z-index: 36;
 }
 
@@ -1561,6 +1571,12 @@ onUnmounted(() => {
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
 }
 
+.chat-send-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 .chat-send:disabled {
   opacity: 0.4;
   box-shadow: none;
@@ -1626,6 +1642,14 @@ onUnmounted(() => {
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: #fff;
   color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.plan-preview-close-icon {
+  line-height: 1;
 }
 
 .plan-preview-scroll {
