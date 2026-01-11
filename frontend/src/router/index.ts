@@ -96,6 +96,7 @@ const routes: RouteRecordRaw[] = [
       layout: 'mobile-user',
       stackKey: 'mobile',
       hideShellHeader: true,
+      hideShellActions: true,
       hideTabbar: true,
       flushContent: true,
       devPageName: 'テスト体験エントリー',

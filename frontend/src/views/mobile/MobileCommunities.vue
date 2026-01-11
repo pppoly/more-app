@@ -27,9 +27,6 @@
             </div>
             <p class="community-status">{{ formatStatus(item) }}</p>
           </div>
-          <button class="cta-btn" type="button" @click.stop="goToCommunity(item)">
-            {{ item.cta || '開く' }}
-          </button>
         </article>
       </div>
       <div v-else class="state-card">
@@ -132,7 +129,6 @@ const classifyCommunities = (items: MyCommunityItem[]) => {
             ? `最終更新 ${new Date(lastActive).toLocaleDateString('ja-JP')}`
             : '',
       role: item.role ?? undefined,
-      cta: '開く',
     });
   });
   activeCommunities.value = active;
@@ -348,14 +344,6 @@ const goToCommunity = (item: CommunityCardItem) => {
 }
 
 .cta-btn {
-  margin-left: auto;
-  border: none;
-  border-radius: 10px;
-  padding: 8px 12px;
-  background: #0f172a;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  cursor: pointer;
+  display: none;
 }
 </style>

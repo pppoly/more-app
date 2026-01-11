@@ -216,7 +216,7 @@ onMounted(() => {
   background: #fff;
   border-radius: 18px;
   padding: 14px;
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -226,7 +226,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
-  align-items: center;
+  align-items: start;
 }
 
 .log-meta {
@@ -241,6 +241,8 @@ onMounted(() => {
   font-weight: 800;
   color: #0f172a;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .log-subtitle {
@@ -248,9 +250,8 @@ onMounted(() => {
   font-size: 13px;
   color: #475569;
   line-height: 1.5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .log-tags {

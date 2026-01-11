@@ -130,7 +130,6 @@
                   {{ scheduleLine }}
                 </p>
               </div>
-              <span v-if="isMultiDay" class="event-schedule__badge">複数日程</span>
             </div>
           </div>
           <div class="m-divider"></div>

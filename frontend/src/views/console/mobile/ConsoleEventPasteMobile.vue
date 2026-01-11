@@ -1,5 +1,5 @@
 <template>
-  <div class="paste-page">
+  <div class="paste-page" :class="{ 'is-liff': isLiffClientMode }">
     <ConsoleTopBar v-if="!isLiffClientMode" title="下書きを貼り付ける" @back="goBack" />
 
     <section class="intro-card">
@@ -132,6 +132,9 @@ const editDraft = () => {
   flex-direction: column;
   gap: 12px;
   box-sizing: border-box;
+}
+.paste-page.is-liff {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
 }
 .intro-card,
 .input-card {

@@ -126,14 +126,18 @@
 
     <footer class="input-bar">
       <div class="input-shell">
-        <input
+        <textarea
           ref="chatInputRef"
           v-model="chatDraft"
           class="chat-input"
-          type="text"
           :placeholder="currentPrompt"
-          @keyup.enter="handleSend('enter')"
-        />
+          rows="1"
+          @input="resizeChatInput"
+          @keydown.enter.exact.prevent="handleSend('enter')"
+          @keydown.enter.shift.prevent="insertLineBreak"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
+        ></textarea>
         <button class="chat-send" type="button" @click="handleSend('button')" :disabled="!chatDraft.trim()">
           <svg class="chat-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path
@@ -338,7 +342,7 @@ const screenStyle = computed(() => ({
   '--keyboard-offset': `${keyboardOffset.value}px`,
 }));
 const chatDraft = ref('');
-const chatInputRef = ref<HTMLInputElement | null>(null);
+const chatInputRef = ref<HTMLTextAreaElement | null>(null);
 const aiLoading = ref(false);
 const aiError = ref<string | null>(null);
 const aiResult = ref<(GeneratedEventContent & { summary: string }) | null>(null);
@@ -580,7 +584,26 @@ const startIntroConversation = async () => {
   });
 };
 
+const isComposing = ref(false);
+const MAX_CHAT_LINES = 3;
+const resizeChatInput = () => {
+  const el = chatInputRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  const lineHeight = parseFloat(getComputedStyle(el).lineHeight || '20');
+  const maxHeight = lineHeight * MAX_CHAT_LINES + 10;
+  el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+  el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+};
+
+const insertLineBreak = () => {
+  if (isComposing.value) return;
+  chatDraft.value += '\n';
+  nextTick(resizeChatInput);
+};
+
 const handleSend = async (source: 'button' | 'enter' = 'button') => {
+  if (isComposing.value) return;
   if (!chatDraft.value.trim() || aiLoading.value) return;
   autoScrollEnabled.value = true;
   const content = chatDraft.value.trim();
@@ -794,14 +817,25 @@ const persistAssistantLog = async (
 };
 
 const addHistoryEntry = (result: GeneratedEventContent & { summary: string }) => {
+  // Normalize key fields for comparison
+  const title = extractText(result.title);
+  const description = extractText(result.description);
+  const summary = result.summary;
+
+  // Deduplicate against existing history (same title + description + summary)
+  historyEntries.value = historyEntries.value.filter(
+    (item) => item.title !== title || item.description !== description || item.summary !== summary,
+  );
+
   const entry: AssistantHistoryEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     createdAt: Date.now(),
-    summary: result.summary,
-    title: extractText(result.title),
-    description: extractText(result.description),
+    summary,
+    title,
+    description,
     raw: result,
   };
+
   historyEntries.value = [entry, ...historyEntries.value].slice(0, 10);
   localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyEntries.value));
 };
@@ -843,9 +877,20 @@ const saveProposalDraft = (raw?: GeneratedEventContent & { summary?: string }) =
   pushMessage('assistant', 'text', 'この案を下書きとして保存しました。履歴からいつでも復元できます。');
 };
 
-const applyProposalToForm = (raw?: GeneratedEventContent & { summary?: string }) => {
+const applyProposalToForm = (raw?: (GeneratedEventContent & { summary?: string }) | string) => {
   if (!raw) return;
-  aiResult.value = { ...raw, summary: raw.summary || buildQaSummary() };
+  let normalized: (GeneratedEventContent & { summary?: string }) | null = null;
+  if (typeof raw === 'string') {
+    try {
+      normalized = JSON.parse(raw) as GeneratedEventContent & { summary?: string };
+    } catch (err) {
+      toast.show('下書きの解析に失敗しました。もう一度お試しください。', 'error');
+      return;
+    }
+  } else {
+    normalized = raw;
+  }
+  aiResult.value = { ...normalized, summary: normalized.summary || buildQaSummary() };
   goToForm(true);
 };
 
@@ -1036,10 +1081,22 @@ const getProfileValue = (value: string | undefined | null, key: keyof typeof pro
 const extractText = (content: any) => {
   if (!content) return '';
   if (typeof content === 'string') return content;
-  if (typeof content === 'object' && content.original) {
-    return content.original as string;
+  if (typeof content !== 'object') return '';
+  const original = typeof content.original === 'string' ? content.original : '';
+  if (original.trim()) return original;
+  const translations = content.translations;
+  if (translations && typeof translations === 'object') {
+    const preferred = content.lang ? (translations as any)[content.lang] : null;
+    if (typeof preferred === 'string' && preferred.trim()) return preferred;
+    const fallback = ['ja', 'zh', 'en']
+      .map((key) => (translations as any)[key])
+      .find((value) => typeof value === 'string' && value.trim());
+    if (fallback) return fallback as string;
   }
-  return '';
+  const direct = ['ja', 'zh', 'en']
+    .map((key) => (content as any)[key])
+    .find((value) => typeof value === 'string' && value.trim());
+  return direct ? (direct as string) : '';
 };
 
 const goBack = () => {
@@ -1548,6 +1605,10 @@ onUnmounted(() => {
   background: transparent;
   font-size: 15px;
   color: #0f172a;
+  resize: none;
+  line-height: 1.5;
+  max-height: 96px;
+  overflow-y: hidden;
 }
 
 .chat-input::placeholder {

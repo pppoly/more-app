@@ -909,9 +909,10 @@ interface BuilderField extends RegistrationFormField {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
-const isLiffClientMode = computed(
-  () => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient() || isLineBrowser(),
-);
+const isLiffClientMode = computed(() => {
+  const hasLiff = typeof window !== 'undefined' && Boolean((window as any).liff);
+  return APP_TARGET === 'liff' || hasLiff || isLineInAppBrowser() || isLiffClient() || isLineBrowser();
+});
 const isMoreSettingsRoute = computed(() => route.name === 'ConsoleMobileEventMoreSettings');
 const goBack = () => router.back();
 const showLocationPicker = ref(false);
@@ -2130,16 +2131,20 @@ const buildMoreSettingsQuery = () => {
 };
 
 const persistFormDraftToStorage = async (
-  source: 'note-editor' | 'more-settings' | 'paste' | 'ai-assistant' = 'more-settings',
+  source: 'note-editor' | 'more-settings' | 'paste' | 'ai-assistant' | 'copy' = 'more-settings',
 ) => {
   const covers = await buildCoverDraft();
   try {
+    const draftForm = {
+      ...form,
+      registrationForm: buildRegistrationSchema(),
+    };
     const draftPayload: {
-      form: typeof form;
+      form: typeof form & { registrationForm?: RegistrationFormField[] };
       covers?: Array<{ id: string; imageUrl: string; order?: number }>;
       galleries?: EventGalleryItem[];
       source?: string;
-    } = { form, source };
+    } = { form: draftForm, source };
     if (covers.length) {
       draftPayload.covers = covers;
     }
@@ -2424,6 +2429,9 @@ const handleEntryFromQuery = async () => {
     case 'copy':
       if (copyEventId) {
         await handleCopyFromEvent(copyEventId);
+        if (route.query.entry === 'copy') {
+          await persistFormDraftToStorage('copy');
+        }
         await clearEntryQuery();
       } else {
         await openCopyOverlay();
@@ -4040,6 +4048,20 @@ select {
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.15);
+}
+
+.quick-chip:active {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.35);
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+  transform: translateY(1px);
+}
+
+.quick-chip:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
 }
 
 .builder-eyebrow {
@@ -4403,7 +4425,7 @@ select {
   background: rgba(255, 255, 255, 0.98);
   width: 100%;
   max-width: none;
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
   box-sizing: border-box;
 }
 
@@ -4947,7 +4969,8 @@ select {
 }
 
 .console-section--mobile .form {
-  gap: 1rem;
+  gap: 0.6rem;
+  padding: 0;
 }
 
 .mobile-hero-card {
@@ -5812,6 +5835,23 @@ select {
   box-shadow: none;
   -webkit-appearance: none;
   background: transparent;
+  border-radius: 0;
+  line-height: 1.4;
+}
+
+.console-section--mobile .ios-row--textarea {
+  overflow: visible;
+}
+
+.console-section--mobile .ios-inline-input--textarea {
+  text-align: left;
+  line-height: 1.6;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .console-section--mobile .actions {

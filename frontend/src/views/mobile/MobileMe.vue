@@ -32,7 +32,6 @@
             <p class="service-row__title">{{ entry.title }}</p>
             <p class="service-row__desc">{{ entry.description }}</p>
           </div>
-          <span class="service-row__cta">{{ entry.cta }}</span>
         </button>
       </div>
     </section>
@@ -93,28 +92,24 @@ const serviceEntries = computed(() => [
   {
     title: t('mobile.me.cards.events.title'),
     description: t('mobile.me.cards.events.description'),
-    cta: t('mobile.me.cards.events.cta'),
     icon: new URL('../../assets/我的的活动.svg', import.meta.url).href,
     action: goMyEvents,
   },
   {
     title: t('mobile.me.cards.communities.title'),
     description: t('mobile.me.cards.communities.description'),
-    cta: t('mobile.me.cards.communities.cta'),
     icon: new URL('../../assets/我的社群.svg', import.meta.url).href,
     action: goMyCommunities,
   },
   {
     title: t('mobile.me.cards.payments.title'),
     description: t('mobile.me.cards.payments.description'),
-    cta: t('mobile.me.cards.payments.cta'),
     icon: new URL('../../assets/付款记录.svg', import.meta.url).href,
     action: goMyPayments,
   },
   {
     title: t('mobile.me.cards.settings.title'),
     description: t('mobile.me.cards.settings.description'),
-    cta: t('mobile.me.cards.settings.cta'),
     icon: new URL('../../assets/设置.svg', import.meta.url).href,
     action: goSettings,
   },
@@ -392,12 +387,6 @@ const handleCropConfirm = async (blob: Blob) => {
   text-align: left;
 }
 
-.service-row__trailing {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .service-row__title {
   margin: 0;
   font-size: 15px;
@@ -409,15 +398,6 @@ const handleCropConfirm = async (blob: Blob) => {
   margin: 2px 0 0;
   font-size: 12px;
   color: #94a3b8;
-}
-
-.service-row__cta {
-  font-size: 13px;
-  font-weight: 700;
-  color: #4b5563;
-  background: #f1f1f1;
-  padding: 8px 18px 7px;
-  border-radius: 16px;
 }
 
 .service-row:active {

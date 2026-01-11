@@ -78,7 +78,7 @@
                   <div class="ticket-card__badges">
                     <span class="ticket-card__badge ticket-card__badge--phase">{{ phaseLabel(item) }}</span>
                     <span class="ticket-card__badge" :class="statusClass(item)">{{ statusLabel(item) }}</span>
-                    <span class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
+                    <span v-if="attendanceLabel(item)" class="ticket-card__badge" :class="attendanceClass(item)">{{ attendanceLabel(item) }}</span>
                     <span v-if="paymentBadgeLabel(item)" class="ticket-card__badge" :class="paymentClass(item)">
                       {{ paymentBadgeLabel(item) }}
                     </span>
@@ -87,7 +87,7 @@
                 </div>
                 <footer class="ticket-card__footer">
                   <button
-                    v-if="!isVoidTicket(item) && item.status !== 'cancel_requested'"
+                    v-if="!isVoidTicket(item) && item.status !== 'cancel_requested' && !item.attended"
                     type="button"
                     class="ticket-btn"
                     @click="openTicketQr(item)"
@@ -121,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { cancelMyRegistration, fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
@@ -149,7 +149,8 @@ const qrVisible = ref(false);
 const qrTicket = ref<MyEventItem | null>(null);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+// 統一して LIFF 表示を優先（ブラウザでも同じ見た目に）
+const isLiffClientMode = computed(() => true);
 const resourceConfigStore = useResourceConfig();
 const { confirm: confirmDialog } = useConfirm();
 const { slotMap } = resourceConfigStore;
@@ -171,8 +172,31 @@ const loadEvents = async () => {
   }
 };
 
+const refreshEventsSilent = async () => {
+  try {
+    events.value = await fetchMyEvents();
+  } catch {
+    // silent refresh should not interrupt UX
+  }
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    void refreshEventsSilent();
+  }
+};
+
 onMounted(() => {
   loadEvents();
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  if (qrPollingTimer) {
+    window.clearInterval(qrPollingTimer);
+    qrPollingTimer = null;
+  }
 });
 
 const isVoidTicket = (item: MyEventItem) =>
@@ -430,7 +454,7 @@ const refundNotice = (item: MyEventItem) => {
 };
 
 const attendanceLabel = (item: MyEventItem) => {
-  if (item.status === 'cancelled') return 'キャンセル';
+  if (item.status === 'cancelled') return '';
   if (item.status === 'rejected') return '却下';
   if (item.status === 'refunded') return '返金済み';
   if (item.status === 'pending_refund' || item.status === 'cancel_requested') return '返金処理中';
@@ -483,7 +507,7 @@ const showBanner = (type: 'success' | 'error' | 'info', message: string) => {
 };
 
 const openTicketQr = (item: MyEventItem) => {
-  if (isVoidTicket(item)) return;
+  if (isVoidTicket(item) || item.attended) return;
   qrTicket.value = item;
   qrVisible.value = true;
 };
@@ -515,10 +539,27 @@ const generateQr = async () => {
   }
 };
 
+let qrPollingTimer: number | null = null;
+
 watch([qrVisible, qrTicket], async ([visible, ticket]) => {
   if (visible && ticket) {
     await nextTick();
     await generateQr();
+  }
+  if (visible && ticket) {
+    if (!qrPollingTimer) {
+      qrPollingTimer = window.setInterval(async () => {
+        await refreshEventsSilent();
+        const updated = events.value.find((event) => event.registrationId === ticket.registrationId);
+        if (updated?.attended) {
+          showBanner('success', 'チェックインが完了しました。');
+          closeTicketQr();
+        }
+      }, 8000);
+    }
+  } else if (qrPollingTimer) {
+    window.clearInterval(qrPollingTimer);
+    qrPollingTimer = null;
   }
 });
 
@@ -553,6 +594,7 @@ const cancelRegistration = async (item: MyEventItem) => {
 const canCancel = (item: MyEventItem) => {
   if (isVoidTicket(item)) return false;
   if (!isUpcoming(item)) return false;
+  if (item.attended) return false;
   return !['refunded', 'pending_refund', 'cancelled', 'rejected', 'cancel_requested'].includes(item.status);
 };
 

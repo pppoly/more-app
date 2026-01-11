@@ -95,7 +95,6 @@ onMounted(() => {
     linear-gradient(135deg, #f0f8ff 0%, #e7f3ff 40%, #e6f6f3 100%);
   color: #0f172a;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
 }
 .poster-illust {
   position: absolute;
@@ -165,15 +164,21 @@ onMounted(() => {
 .step-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border-radius: 999px;
   background: rgba(79, 209, 197, 0.12);
   color: #0f172a;
   font-size: 13px;
+  line-height: 1.2;
   border: 1px solid rgba(79, 209, 197, 0.35);
+  -webkit-appearance: none;
 }
 .cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #10b981, #0ea5e9);
   color: #ffffff;
   border: none;
@@ -182,9 +187,10 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 0.08s ease, box-shadow 0.08s ease;
-  box-shadow: 0 10px 20px rgba(22, 163, 74, 0.3);
+  transition: transform 0.08s ease;
   width: fit-content;
+  line-height: 1.2;
+  -webkit-appearance: none;
 }
 .cta:focus-visible {
   outline: 2px solid #c084fc;
@@ -192,7 +198,6 @@ onMounted(() => {
 }
 .cta:active {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.16);
 }
 
 .note {
@@ -204,7 +209,6 @@ onMounted(() => {
   border-radius: 12px;
   padding: 12px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 .note-title {
   margin: 0;

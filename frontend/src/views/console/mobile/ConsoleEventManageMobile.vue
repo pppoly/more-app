@@ -457,7 +457,8 @@ function mapEntry(reg: ConsoleEventRegistrationItem) {
     paymentStatus: reg.paymentStatus,
     paymentId: reg.paymentId ?? null,
     refundRequest: reg.refundRequest ?? null,
-    amount: reg.amount ?? null,
+    amount: reg.amount ?? 0,
+    paymentRequired: reg.paymentRequired,
     attended: reg.attended,
     noShow: reg.noShow,
     createdAtIso: reg.createdAt,
@@ -590,17 +591,19 @@ const cancelEvent = async () => {
 const entryStatusLabel = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.attended) return '出席済み';
   if (entry.noShow) return '無断欠席';
+  const isFree = entry.paymentRequired === false || (entry.amount ?? 0) === 0;
+  if (isFree && (entry.status === 'approved' || entry.status === 'paid')) return '無料';
   switch (entry.status) {
     case 'pending':
       return '審査待ち';
     case 'approved':
-      return '承認済み';
+      return isFree ? '無料' : '承認済み';
     case 'cancel_requested':
       return '返金申請中';
     case 'rejected':
       return '拒否';
     case 'paid':
-      return '支払済み';
+      return isFree ? '無料' : '支払済み';
     case 'refunded':
       return '返金済み';
     case 'pending_refund':
@@ -608,6 +611,7 @@ const entryStatusLabel = (entry: ReturnType<typeof mapEntry>) => {
     case 'cancelled':
       return 'キャンセル済み';
     default:
+      if (isFree) return '無料';
       switch (entry.paymentStatus) {
         case 'paid':
           return '支払済み';
@@ -624,11 +628,13 @@ const entryStatusBadgeClass = (entry: ReturnType<typeof mapEntry>) => {
   if (entry.noShow) return 'bg-rose-100 text-rose-600';
   if (entry.status === 'pending') return 'bg-amber-100 text-amber-700';
   if (entry.status === 'cancel_requested') return 'bg-amber-100 text-amber-700';
+  const isFree = entry.paymentRequired === false || (entry.amount ?? 0) === 0;
+  if (isFree && (entry.status === 'approved' || entry.status === 'paid')) return 'bg-slate-100 text-slate-500';
   if (entry.status === 'approved' || entry.status === 'paid') return 'bg-slate-800 text-white';
   if (entry.status === 'refunded') return 'bg-blue-100 text-blue-700';
   if (entry.status === 'pending_refund') return 'bg-amber-100 text-amber-700';
   if (entry.status === 'rejected' || entry.status === 'cancelled') return 'bg-slate-100 text-slate-500';
-  if (entry.paymentStatus === 'paid') return 'bg-slate-800 text-white';
+  if (entry.paymentStatus === 'paid') return isFree ? 'bg-slate-100 text-slate-500' : 'bg-slate-800 text-white';
   return 'bg-slate-100 text-slate-500';
 };
 

@@ -452,16 +452,23 @@ const toggleFollow = async () => {
   if (!community.value?.id) return;
   if (!(await ensureAuthed())) return;
   followBusy.value = true;
+  const prev = following.value;
   try {
-    if (following.value) {
+    if (prev) {
       const res = await unfollowCommunity(community.value.id);
-      following.value = res.following;
+      if (res.locked) {
+        following.value = true;
+        toast.show('コミュニティの設定によりフォロー解除ができません', { type: 'info' });
+      } else {
+        following.value = res.following;
+      }
     } else {
       const res = await followCommunity(community.value.id);
       following.value = res.following;
     }
     await fetchCurrentUser();
   } catch (err) {
+    following.value = prev;
     console.error(err);
     toast.show('処理に失敗しました。しばらくしてからお試しください。', { type: 'error' });
   } finally {
