@@ -228,6 +228,45 @@ export class MeService {
     });
   }
 
+  async getFavoriteEvents(userId: string) {
+    const follows = await this.prisma.eventFollow.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            startTime: true,
+            endTime: true,
+            locationText: true,
+            galleries: {
+              orderBy: { order: 'asc' },
+              take: 1,
+              select: { imageUrl: true },
+            },
+          },
+        },
+      },
+    });
+
+    return follows
+      .map((follow) => {
+        const event = follow.event;
+        if (!event) return null;
+        const coverImageUrl = buildAssetUrl(event.galleries?.[0]?.imageUrl);
+        return {
+          id: event.id,
+          title: event.title,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          locationText: event.locationText,
+          coverImageUrl,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }
+
   async updateAvatar(userId: string, file: Express.Multer.File) {
     if (!file?.buffer?.length) {
       throw new BadRequestException('無効な画像ファイルです');

@@ -27,6 +27,11 @@ export class MeController {
     return this.meService.getMyEvents(req.user.id);
   }
 
+  @Get('favorites')
+  getMyFavoriteEvents(@Req() req: any) {
+    return this.meService.getFavoriteEvents(req.user.id);
+  }
+
   @Get('communities')
   getMyCommunities(@Req() req: any, @Query('includeInactive') includeInactive?: string) {
     return this.meService.getMyCommunities(req.user.id, includeInactive === '1');

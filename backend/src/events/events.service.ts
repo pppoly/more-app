@@ -253,6 +253,35 @@ export class EventsService {
     };
   }
 
+  async getFollowStatus(eventId: string, userId: string) {
+    await this.assertEventExists(eventId);
+    const follow = await this.prisma.eventFollow.findUnique({
+      where: { eventId_userId: { eventId, userId } },
+    });
+    return { following: Boolean(follow) };
+  }
+
+  async followEvent(eventId: string, userId: string) {
+    await this.assertEventExists(eventId);
+    await this.prisma.eventFollow.upsert({
+      where: { eventId_userId: { eventId, userId } },
+      update: {},
+      create: { eventId, userId },
+    });
+    return { following: true };
+  }
+
+  async unfollowEvent(eventId: string, userId: string) {
+    const follow = await this.prisma.eventFollow.findUnique({
+      where: { eventId_userId: { eventId, userId } },
+    });
+    if (!follow) return { following: false };
+    await this.prisma.eventFollow.delete({
+      where: { eventId_userId: { eventId, userId } },
+    });
+    return { following: false };
+  }
+
   async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {
     const result = await this.prisma.$transaction(async (tx) => {
       const event = await tx.event.findUnique({
@@ -524,6 +553,14 @@ export class EventsService {
         },
       });
     }
+  }
+
+  private async assertEventExists(eventId: string) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    return event;
   }
 
   async getEventGallery(eventId: string) {

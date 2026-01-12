@@ -26,5 +26,80 @@
       "target": "events",
       "categories": ["event", "ugc"]
     }
+  },
+  {
+    "id": "event-assistant.collecting",
+    "name": "Event Assistant Collecting",
+    "description": "Collecting phase for event assistant (JSON only).",
+    "version": "v1",
+    "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
+    "instructions": "Phase=collecting. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
+    "params": ["latest_message", "next_question_key", "phase", "input_mode"],
+    "tags": ["event-assistant", "collecting"],
+    "meta": {
+      "module": "event-assistant",
+      "phase": "collecting"
+    },
+    "status": "published"
+  },
+  {
+    "id": "event-assistant.decision",
+    "name": "Event Assistant Decision",
+    "description": "Decision phase for event assistant (JSON only).",
+    "version": "v1",
+    "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
+    "instructions": "Phase=decision. Output ui.question (key,text) and ui.options (2-4). Use next_question_key as ui.question.key. ui.options.value must be a short slot value (no prose). You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
+    "params": ["latest_message", "next_question_key", "phase", "input_mode"],
+    "tags": ["event-assistant", "decision"],
+    "meta": {
+      "module": "event-assistant",
+      "phase": "decision"
+    },
+    "status": "published"
+  },
+  {
+    "id": "event-assistant.compare",
+    "name": "Event Assistant Compare",
+    "description": "Compare phase for event assistant (JSON only).",
+    "version": "v1",
+    "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
+    "instructions": "Phase=compare. Output ui.message and ui.options (2-3) based on compareCandidates. Use each compareCandidates.id to build ui.options.value as \"候補A/候補B\". Labels should be user-facing summaries. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
+    "params": ["latest_message", "next_question_key", "phase", "input_mode"],
+    "tags": ["event-assistant", "compare"],
+    "meta": {
+      "module": "event-assistant",
+      "phase": "compare"
+    },
+    "status": "published"
+  },
+  {
+    "id": "event-assistant.ready",
+    "name": "Event Assistant Ready",
+    "description": "Ready phase for event assistant (JSON only).",
+    "version": "v1",
+    "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
+    "instructions": "Phase=ready. Output: publicActivityDraft, internalExecutionPlan. Optionally include ui.message. Do NOT include ui.question or ui.options. Latest user message: \"{latest_message}\".",
+    "params": ["latest_message", "next_question_key", "phase", "input_mode"],
+    "tags": ["event-assistant", "ready"],
+    "meta": {
+      "module": "event-assistant",
+      "phase": "ready"
+    },
+    "status": "published"
+  },
+  {
+    "id": "event-assistant.operate",
+    "name": "Event Assistant Operate",
+    "description": "Operate phase for event assistant (JSON only).",
+    "version": "v1",
+    "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
+    "instructions": "Phase=operate. Output: publicActivityDraft, internalExecutionPlan. Optionally include ui.message. Do NOT include ui.question or ui.options. Latest user message: \"{latest_message}\".",
+    "params": ["latest_message", "next_question_key", "phase", "input_mode"],
+    "tags": ["event-assistant", "operate"],
+    "meta": {
+      "module": "event-assistant",
+      "phase": "operate"
+    },
+    "status": "published"
   }
 ]

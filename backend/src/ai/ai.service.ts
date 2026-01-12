@@ -2,8 +2,16 @@ import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestj
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import crypto from 'crypto';
-import { COACHING_PROMPT_CONFIG, PromptDefaultsProfile } from './prompt.config';
+import {
+  COACHING_PROMPT_CONFIG,
+  EventAssistantPromptPhase,
+  getEventAssistantPromptConfig,
+  PromptDefaultsProfile,
+} from './prompt.config';
+import { determinePromptPhase, enforcePhaseOutput } from './assistant-phase.guard';
+import { getEventAssistantOutputSchema, validateAssistantOutput } from './event-assistant.schemas';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromptStoreService } from './prompt-store.service';
 
 export interface GenerateEventContentDto {
   baseLanguage: string;
@@ -75,6 +83,23 @@ export interface AiAssistantMiniPreview {
   note?: string;
 }
 
+export interface AiAssistantUiQuestion {
+  key: keyof Slots;
+  text: string;
+}
+
+export interface AiAssistantUiOption {
+  label: string;
+  value: string;
+  recommended?: boolean;
+}
+
+export interface AiAssistantUiPayload {
+  message?: string;
+  question?: AiAssistantUiQuestion;
+  options?: AiAssistantUiOption[];
+}
+
 export interface AiAssistantChoiceQuestion {
   key: keyof Slots;
   prompt: string;
@@ -141,6 +166,7 @@ interface AiAssistantReplyPayload {
   message?: string;
   questions?: string[];
   options?: Array<AiAssistantOption | string>;
+  ui?: AiAssistantUiPayload;
   miniPreview?: AiAssistantMiniPreview;
   choiceQuestion?: AiAssistantChoiceQuestion;
   compareCandidates?: AiAssistantCompareCandidate[];
@@ -259,10 +285,79 @@ export class AiService {
   private readonly translationCache = new Map<string, Record<string, string>>();
   private readonly POLICY_VERSION = 'ready-gate-v1';
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly promptStore: PromptStoreService,
+  ) {
     const apiKey = process.env.OPENAI_API_KEY;
     this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     this.client = apiKey ? new OpenAI({ apiKey }) : null;
+  }
+
+  private applyPromptParams(
+    template: string,
+    params: Record<string, string>,
+    allowed?: string[],
+  ) {
+    if (!template) return template;
+    const normalizedParams: Record<string, string> = {};
+    Object.entries(params).forEach(([key, value]) => {
+      const normalizedKey = key.toLowerCase();
+      normalizedParams[normalizedKey] = value;
+      normalizedParams[normalizedKey.replace(/_/g, '')] = value;
+    });
+    const allowSet = Array.isArray(allowed) && allowed.length > 0
+      ? new Set(allowed.map((p) => p.toLowerCase()))
+      : null;
+    return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, rawKey) => {
+      const key = String(rawKey).toLowerCase();
+      if (allowSet && !allowSet.has(key) && !allowSet.has(key.replace(/_/g, ''))) {
+        return `{${rawKey}}`;
+      }
+      return normalizedParams[key] ?? normalizedParams[key.replace(/_/g, '')] ?? `{${rawKey}}`;
+    });
+  }
+
+  private async resolveEventAssistantPrompt(
+    phase: EventAssistantPromptPhase,
+    params: Record<string, string>,
+  ): Promise<{ systemPrompt: string; instruction: string; version: string }> {
+    const config = getEventAssistantPromptConfig(phase);
+    const promptId = config.promptId;
+    if (!promptId) {
+      return {
+        systemPrompt: this.applyPromptParams(config.systemPrompt, params),
+        instruction: this.applyPromptParams(config.instruction, params),
+        version: config.version,
+      };
+    }
+    let promptDef;
+    try {
+      const prompts = await this.promptStore.getAll();
+      promptDef =
+        prompts.find((p) => p.id === promptId && p.status === 'published') ??
+        prompts.find((p) => p.id === promptId);
+    } catch (err) {
+      console.warn('[AiService] failed to load prompt definitions, fallback to config', err);
+    }
+    if (!promptDef) {
+      return {
+        systemPrompt: this.applyPromptParams(config.systemPrompt, params),
+        instruction: this.applyPromptParams(config.instruction, params),
+        version: config.version,
+      };
+    }
+    const allowedParams = Array.isArray(promptDef.params) ? promptDef.params : undefined;
+    const systemPrompt = promptDef.system
+      ? this.applyPromptParams(promptDef.system, params, allowedParams)
+      : this.applyPromptParams(config.systemPrompt, params);
+    const instructionTemplate =
+      typeof promptDef.instructions === 'string' && promptDef.instructions.trim().length > 0
+        ? promptDef.instructions
+        : config.instruction;
+    const instruction = this.applyPromptParams(instructionTemplate, params, allowedParams);
+    const version = promptDef.version || config.version;
+    return { systemPrompt, instruction, version };
   }
 
   async generateEventContent(payload: GenerateEventContentDto): Promise<AiEventContent> {
@@ -392,17 +487,25 @@ export class AiService {
         'ワークショップ',
         'ミートアップ',
       ];
-      const activityMatches = new Set(
-        activityKeywords.filter((kw) => new RegExp(kw, 'i').test(text)),
-      );
-      const timeRanges = text.match(/\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/g) ?? [];
+      const activityMatches = new Set(activityKeywords.filter((kw) => new RegExp(kw, 'i').test(text)));
+      const timeRangeRegexGlobal = /\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/g;
+      const timeRanges = text.match(timeRangeRegexGlobal) ?? [];
       const timeWords = text.match(/来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前/g) ?? [];
       const timeTokens = new Set([...timeRanges, ...timeWords]);
       const lineParts = text.split(/\n+/).map((t) => t.trim()).filter(Boolean);
+      const timeRangeRegex = /\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/;
+      const timeWordRegex = /(来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前)/;
+      const candidateLines = lineParts.filter(
+        (line) =>
+          activityKeywords.some((kw) => new RegExp(kw, 'i').test(line)) ||
+          timeRangeRegex.test(line) ||
+          timeWordRegex.test(line),
+      );
+      const hasMultipleCandidateLines = candidateLines.length >= 2;
       let compareSignals = 0;
-      if (activityMatches.size >= 2) compareSignals += 1;
+      if (activityMatches.size >= 2 && hasMultipleCandidateLines) compareSignals += 1;
       if (timeTokens.size >= 2) compareSignals += 1;
-      if (lineParts.length >= 2) compareSignals += 1;
+      if (hasMultipleCandidateLines) compareSignals += 1;
       if (compareSignals >= 2) return 'compare';
       if (timeTokens.size >= 1 || /円|無料|フリー|0円/.test(text)) return 'fill';
       return 'describe';
@@ -411,24 +514,35 @@ export class AiService {
     const extractCompareCandidates = (text: string): AiAssistantCompareCandidate[] => {
       if (!text) return [];
       const activityRegex = /(BBQ|バーベキュー|交流会|勉強会|説明会|パーティー|セミナー|ワークショップ|ミートアップ)/i;
-      const activityGlobalRegex = new RegExp(activityRegex.source, 'ig');
+      const activityGlobalRegex = new RegExp(
+        activityRegex.source,
+        activityRegex.flags.includes('g') ? activityRegex.flags : `${activityRegex.flags}g`,
+      );
       const activityMatches = Array.from(text.matchAll(activityGlobalRegex));
+      const lineParts = text
+        .split(/\n+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const timeRangeRegex = /\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/;
+      const dayWordRegex = /(来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前)/;
+      const candidateLines = lineParts.filter(
+        (line) => activityRegex.test(line) || timeRangeRegex.test(line) || dayWordRegex.test(line),
+      );
+      const explicitSeparator = /(または|あるいは|or|vs|対|／|｜|\s\/\s)/i.test(text);
+      const timeRangeMatches = text.match(timeRangeRegex) ? text.match(new RegExp(timeRangeRegex.source, 'g')) ?? [] : [];
       let segments: string[] = [];
-      if (activityMatches.length >= 2) {
+      if (candidateLines.length >= 2) {
+        segments = candidateLines;
+      } else if (activityMatches.length >= 2 && (explicitSeparator || timeRangeMatches.length >= 2)) {
         for (let i = 0; i < activityMatches.length; i += 1) {
           const start = activityMatches[i].index ?? 0;
           const end = activityMatches[i + 1]?.index ?? text.length;
           segments.push(text.slice(start, end).trim());
         }
       } else {
-        segments = text
-          .split(/\n+/)
-          .map((t) => t.trim())
-          .filter(Boolean);
+        segments = [];
       }
       if (segments.length < 2) return [];
-      const timeRangeRegex = /\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/;
-      const dayWordRegex = /(来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前)/;
       const priceRegex = /(\d{2,5})\s*円|無料|フリー|0円/;
       const noteRegex = /(ドリンク持参|持参|持ち寄り|持ち物|食材)/;
       return segments.slice(0, 3).map((segment, idx) => {
@@ -518,9 +632,13 @@ export class AiService {
       // topic from payload is low-confidence unless user explicitly provides it later
       if (basePayload.topic?.trim()) {
         setSlot('title', basePayload.topic.trim(), 0.5);
-        setSlot('activityType', basePayload.topic.trim(), 0.7);
+        // Do not treat default topic as confirmed activity type.
+        setSlot('activityType', basePayload.topic.trim(), 0.5);
       }
-      setSlot('audience', basePayload.audience, 0.8);
+      // Do not treat default audience as confirmed.
+      if (basePayload.audience?.trim()) {
+        setSlot('audience', basePayload.audience, 0.5);
+      }
       if (basePayload.details?.trim()) {
         setSlot('details', basePayload.details.trim(), 0.7);
         const priceMatch = basePayload.details.match(/(\d{1,5})\s*円(?:\/人)?/);
@@ -588,11 +706,38 @@ export class AiService {
 
         // time detection
         const timeRangeMatch = text.match(/(\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2})/);
+        const cnTimeTokenRegex = /(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分)?/g;
+        const cnTokens = Array.from(text.matchAll(cnTimeTokenRegex));
+        const hasPm = /下午|晚上|夜/.test(text);
+        const hasAm = /上午|早上/.test(text);
+        const normalizeHour = (hour: number) => {
+          if (hasPm && hour < 12) return hour + 12;
+          if (hasAm && hour === 12) return 0;
+          return hour;
+        };
+        const formatTime = (hour: number, minute: number) =>
+          `${String(normalizeHour(hour)).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        const cnRangeFromTokens = (() => {
+          if (cnTokens.length < 2) return null;
+          const parseToken = (match: RegExpMatchArray) => {
+            const hour = Number(match[1]);
+            const minute = match[2] === '半' ? 30 : Number(match[3] || 0);
+            return formatTime(hour, Number.isNaN(minute) ? 0 : minute);
+          };
+          const start = parseToken(cnTokens[0]);
+          const end = parseToken(cnTokens[1]);
+          if (!start || !end) return null;
+          return `${start}-${end}`;
+        })();
+        const cnDayMatch = text.match(/(下周|下星期)?[周星期][一二三四五六日天1234567]/);
         const timeDateMatch =
           text.match(/(\d{4}-\d{2}-\d{2}(?:\s*\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}日(?:\s*\d{1,2}[:：]\d{2})?)/) ??
           text.match(/(\d{1,2}\/\d{1,2}(?:\s*\d{1,2}[:：]\d{2})?)/);
         if (timeRangeMatch?.[1]) {
           setSlot('time', timeRangeMatch[1], 0.75);
+        } else if (cnRangeFromTokens) {
+          const dayPrefix = cnDayMatch?.[0] ? `${cnDayMatch[0]} ` : '';
+          setSlot('time', `${dayPrefix}${cnRangeFromTokens}`.trim(), 0.75);
         } else if (timeDateMatch?.[0]) {
           setSlot('time', timeDateMatch[0], 0.75);
         } else if (/平日夜|週末|土曜|日曜|金曜|午後|午前/.test(text)) {
@@ -634,10 +779,12 @@ export class AiService {
         const hasTimeLike =
           /\d{1,2}[:：]\d{2}/.test(text) || /平日夜|週末|土曜|日曜|金曜|午後|午前|来週|今週/.test(text);
         const hasPriceLike = /\d{2,5}\s*円/.test(text) || /無料|フリー|0円|タダ|free/i.test(text);
+        const hasCjk = /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
+        const minTitleLength = hasCjk ? 2 : 4;
         // possible title phrase (short, non-question, not time/price/selection)
         if (
           (confidence.title ?? 0) < 0.6 &&
-          text.length >= 4 &&
+          text.length >= minTitleLength &&
           text.length <= 40 &&
           !/[?？]/.test(text) &&
           !/(日時|場所|時間|料金|価格|free|無料|どこ|いつ)/i.test(text) &&
@@ -774,7 +921,7 @@ export class AiService {
       const currConf = currentConfidence[key] ?? 0;
       return prevValue === currValue && currConf <= prevConf;
     };
-    const buildDecisionChoiceQuestion = (
+    const buildDecisionChoiceKey = (
       key: keyof Slots | null,
       slotValues: Slots,
       slotConfidence: Confidence,
@@ -782,7 +929,7 @@ export class AiService {
       prevConfidence: Confidence,
       lastUserMessage: string,
       lastAskedSlot: keyof Slots | null,
-    ): AiAssistantChoiceQuestion | null => {
+    ): keyof Slots | null => {
       if (!key) return null;
       const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details'];
       if (!subjectiveKeys.includes(key)) return null;
@@ -791,48 +938,7 @@ export class AiService {
       const askedSame = lastAskedSlot === key;
       const noNewInfo = askedSame && noNewInfoForKey(key, prevSlots, prevConfidence, slotValues, slotConfidence);
       const shouldOfferChoices = !hasSlotValue || ambiguous || noNewInfo;
-      if (!shouldOfferChoices) return null;
-      if (key === 'activityType') {
-        return {
-          key: 'activityType',
-          prompt: 'どの形式に近いですか？（おすすめ：カジュアル交流）',
-          options: [
-            { label: '🍺 カジュアル交流（自由に話す）', value: 'casual_meetup', recommended: true },
-            { label: '🤝 自己紹介＋小グループ交流', value: 'icebreakers' },
-            { label: '🎲 ゲーム/ボードゲーム中心', value: 'game_night' },
-            { label: '🌐 Language Exchange（言語交換）', value: 'language_exchange' },
-          ],
-        };
-      }
-      if (key === 'audience') {
-        return {
-          key: 'audience',
-          prompt: '誰向けにしますか？（おすすめ：友人・同僚）',
-          options: [
-            { label: '👥 友人・同僚向け', value: 'friends', recommended: true },
-            { label: '👨‍👩‍👧‍👦 親子OK', value: 'family' },
-            { label: '🌍 外国人歓迎（多言語）', value: 'multilingual' },
-            { label: '🧑‍🎓 初参加/初心者歓迎', value: 'beginners' },
-          ],
-        };
-      }
-      if (key === 'details') {
-        const recommendedPotluck =
-          /ドリンク持参|持参|持ち寄り/.test(lastUserMessage) ||
-          /ドリンク持参|持参|持ち寄り/.test(slotValues.details ?? '');
-        const recommendLabel = recommendedPotluck ? '持ち寄り' : 'わいわい';
-        return {
-          key: 'details',
-          prompt: `雰囲気はどれが近いですか？（おすすめ：${recommendLabel}）`,
-          options: [
-            { label: '🍻 わいわい（飲み会っぽい）', value: 'lively', recommended: !recommendedPotluck },
-            { label: '☕ 落ち着いた会話中心', value: 'calm_chat' },
-            { label: '🍱 持ち寄り（ドリンク/軽食）', value: 'potluck_drinks', recommended: recommendedPotluck },
-            { label: '🚫 ノンアル中心', value: 'no_alcohol' },
-          ],
-        };
-      }
-      return null;
+      return shouldOfferChoices ? key : null;
     };
     const hitSlot = (key: keyof Slots, slotValues: Slots, slotConfidence: Confidence) =>
       Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
@@ -890,7 +996,6 @@ export class AiService {
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
-    const promptConfig = COACHING_PROMPT_CONFIG;
     const detectedLanguage = this.detectLanguage(latestUserMessage, payload.baseLanguage);
     const inputMode = detectInputMode(latestUserMessage);
     const extracted = extractSlots(conversation, payload);
@@ -898,6 +1003,7 @@ export class AiService {
     const confidence = extracted.confidence;
     const intent = extracted.intent;
     const confirmDraft = payload.action === 'confirm_draft';
+    const compareCandidatesForPrompt = inputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
     const lastUserIndex = (() => {
       for (let i = conversation.length - 1; i >= 0; i -= 1) {
         if (conversation[i].role === 'user') return i;
@@ -908,24 +1014,99 @@ export class AiService {
     const prevExtracted = extractSlots(prevConversation, payload);
     const prevSlots = prevExtracted.slots;
     const prevConfidence = prevExtracted.confidence;
-    const instruction = promptConfig.instruction
-      .replace('{minQuestionTurns}', promptConfig.minQuestionTurns.toString())
-      .replace('{optionPhaseTurns}', promptConfig.optionPhaseTurns.toString())
-      .replace('{readyTurns}', promptConfig.readyTurns.toString())
-      .replace('{latestMessage}', latestUserMessage || '');
+    const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
+    const requiredAll = requiredSlots.every(hit);
+    const optCount = primaryOptionalSlots.filter(hit).length;
+    const fastPath = requiredAll && optCount >= 2;
+    const slowPath = requiredAll && optCount >= 1 && turnCount >= 3;
+    const isCompareMode = inputMode === 'compare';
+    const draftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
+
+    const lastAssistantMessage =
+      [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
+    const lastAskedSlot = lastAssistantMessage ? detectAskedSlot(lastAssistantMessage) : null;
+    const askedSet = new Set<keyof Slots>();
+    conversation
+      .filter((msg) => msg.role === 'assistant')
+      .forEach((msg) => {
+        const text = (msg.content || '').toLowerCase();
+        if (/日時|いつ|日程/.test(text)) askedSet.add('time');
+        if (/場所|どこ|会場|オンライン/.test(text)) askedSet.add('location');
+        if (/対象|誰向け|オーディエンス/.test(text)) askedSet.add('audience');
+        if (/料金|有料|無料|価格/.test(text)) askedSet.add('price');
+        if (/定員|人数/.test(text)) askedSet.add('capacity');
+        if (/形式|どんなイベント|タイプ/.test(text)) askedSet.add('activityType');
+      });
+    const pickNextQuestion = (missing: (keyof Slots)[]) => {
+      const priority: (keyof Slots)[] = [
+        'activityType',
+        'time',
+        'location',
+        'title',
+        'audience',
+        'price',
+        'capacity',
+        'details',
+      ];
+      if (lastAskedSlot && missing.includes(lastAskedSlot)) return lastAskedSlot;
+      for (const key of priority) {
+        if (askedSet.has(key)) continue;
+        if (missing.includes(key)) return key;
+      }
+      for (const key of priority) {
+        if (missing.includes(key)) return key;
+      }
+      return null;
+    };
+    const missingRequired = requiredSlots.filter((k) => !hit(k));
+    const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !hit(k));
+    const missingAll = [...missingRequired, ...missingOptional];
+    const nextQuestionKeyCandidate = draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]);
+    const decisionChoiceKey =
+      !draftReady && !isCompareMode
+        ? buildDecisionChoiceKey(
+            nextQuestionKeyCandidate,
+            slots,
+            confidence,
+            prevSlots,
+            prevConfidence,
+            latestUserMessage,
+            lastAskedSlot,
+          )
+        : null;
+    const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
+    const promptPhase: EventAssistantPromptPhase = determinePromptPhase({
+      inputMode,
+      confirmDraft,
+      draftReady,
+      hasDecisionChoice: Boolean(decisionChoiceKey),
+    });
+    const promptConfig = getEventAssistantPromptConfig(promptPhase);
+    const promptParams: Record<string, string> = {
+      latest_message: latestUserMessage || '',
+      phase: promptPhase,
+      next_question_key: nextQuestionKeyCandidate ?? '',
+      input_mode: inputMode,
+      min_question_turns: String(promptConfig.minQuestionTurns),
+      option_phase_turns: String(promptConfig.optionPhaseTurns),
+      ready_turns: String(promptConfig.readyTurns),
+    };
+    const resolvedPrompt = await this.resolveEventAssistantPrompt(promptPhase, promptParams);
+    const instruction = resolvedPrompt.instruction;
 
     try {
+      const outputSchema = getEventAssistantOutputSchema(promptPhase);
       const completion = await this.client.chat.completions.create({
         model: this.model,
         temperature: 0.45,
         response_format: {
           type: 'json_schema',
-          json_schema: this.buildAssistantReplySchema(),
+          json_schema: outputSchema,
         },
         messages: [
           {
             role: 'system',
-            content: promptConfig.systemPrompt,
+            content: resolvedPrompt.systemPrompt,
           },
           {
             role: 'user',
@@ -936,9 +1117,17 @@ export class AiService {
                 audience: payload.audience,
                 style: payload.style,
               },
+              phase: promptPhase,
               conversation,
               turnCount,
               latestUserMessage,
+              inputMode,
+              draftReady,
+              nextQuestionKey: nextQuestionKeyCandidate,
+              compareCandidates: compareCandidatesForPrompt,
+              slots,
+              confidence,
+              assumptions,
               targetLanguage: detectedLanguage,
               instruction,
             }),
@@ -952,19 +1141,41 @@ export class AiService {
         parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
       } catch (err) {
         // Fallback to safe collecting state instead of 500
+        const fallbackKey = nextQuestionKeyCandidate ?? 'title';
         parsed = {
           state: 'collecting',
           language: detectedLanguage,
           thinkingSteps: ['ヒアリングを続けます'],
           coachPrompt: 'イベントの概要を教えてください',
-          questions: [
-            'どんなイベントを企画していますか？',
-            '誰向けですか？',
-            '日時・場所・人数・料金は決まっていますか？',
-          ],
+          ui: {
+            question: {
+              key: fallbackKey,
+              text: 'イベントについて簡単に教えてください。',
+            },
+          },
         };
       }
-      let state = (parsed.state as AssistantReplyState) || 'collecting';
+      const { cleaned: phaseCleaned, removed: phaseRemoved } = enforcePhaseOutput(
+        parsed as unknown as Record<string, unknown>,
+        promptPhase,
+        promptConfig,
+      );
+      if (phaseRemoved.length) {
+        console.warn('[AiService] phase output guard removed fields', {
+          phase: promptPhase,
+          removed: phaseRemoved,
+        });
+      }
+      parsed = phaseCleaned as unknown as AiAssistantReplyPayload;
+      const schemaValidation = validateAssistantOutput(promptPhase, parsed);
+      if (!schemaValidation.valid) {
+        console.warn('[AiService] schema_validation_failed', {
+          phase: promptPhase,
+          errors: schemaValidation.errors,
+        });
+        parsed = {} as AiAssistantReplyPayload;
+      }
+      let state: AssistantReplyState = draftReady ? 'ready' : 'collecting';
       const rawOptions = Array.isArray(parsed.options) ? parsed.options : [];
       const optionDetails: AiAssistantOption[] = rawOptions
         .map((item) => {
@@ -991,126 +1202,16 @@ export class AiService {
           return title || desc;
         })
         .filter((text) => Boolean(text && text.trim()));
-      const hasQuestions = Array.isArray(parsed.questions) && parsed.questions.length > 0;
-      const hasOptions = optionDetails.length > 0;
-      if (state === 'options' && !hasOptions) {
-        state = 'collecting';
-      }
-      if (state === 'collecting' && !hasQuestions && inputMode !== 'compare') {
-        parsed.questions = [
-          'どんなイベントを企画していますか？',
-          '誰向けですか？',
-          '日時・場所・人数・料金は決まっていますか？',
-        ];
-      }
-      // ready gating: fast/slow paths using slots/confidence only
-      const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
-      const requiredAll = requiredSlots.every(hit);
-      const optCount = primaryOptionalSlots.filter(hit).length;
-      const fastPath = requiredAll && optCount >= 2;
-      const slowPath = requiredAll && optCount >= 1 && turnCount >= 3;
-      const isCompareMode = inputMode === 'compare';
       const effectiveIntent: AssistantIntent = confirmDraft ? 'create' : intent;
-      const draftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
       const applyEnabled = !isCompareMode && draftReady && effectiveIntent === 'create';
-
-      // detect which slots have already been asked in this conversation to avoid repetition
-      const lastAssistantMessage = [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)
-        ?.content;
-      const lastAskedSlot = lastAssistantMessage ? detectAskedSlot(lastAssistantMessage) : null;
-      const askedSet = new Set<keyof Slots>();
-      conversation
-        .filter((msg) => msg.role === 'assistant')
-        .forEach((msg) => {
-          const text = (msg.content || '').toLowerCase();
-          if (/日時|いつ|日程/.test(text)) askedSet.add('time');
-          if (/場所|どこ|会場|オンライン/.test(text)) askedSet.add('location');
-          if (/対象|誰向け|オーディエンス/.test(text)) askedSet.add('audience');
-          if (/料金|有料|無料|価格/.test(text)) askedSet.add('price');
-          if (/定員|人数/.test(text)) askedSet.add('capacity');
-          if (/形式|どんなイベント|タイプ/.test(text)) askedSet.add('activityType');
-        });
-
-      const pickNextQuestion = (missing: (keyof Slots)[]) => {
-        const priority: (keyof Slots)[] = [
-          'activityType',
-          'time',
-          'location',
-          'title',
-          'audience',
-          'price',
-          'capacity',
-          'details',
-        ];
-        if (lastAskedSlot && missing.includes(lastAskedSlot)) return lastAskedSlot;
-        for (const key of priority) {
-          if (askedSet.has(key)) continue;
-          if (missing.includes(key)) return key;
-        }
-        return null;
-      };
-
-      const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
-      let nextQuestionKey: keyof Slots | null = null;
+      let nextQuestionKey: keyof Slots | null = nextQuestionKeyCandidate;
+      let compareCandidates: AiAssistantCompareCandidate[] = [];
       if (isCompareMode) {
-        const compareCandidates = extractCompareCandidates(latestUserMessage);
-        const compareChoice = buildCompareChoiceQuestion(compareCandidates);
+        compareCandidates = compareCandidatesForPrompt;
         nextQuestionKey = null;
         parsed.compareCandidates = compareCandidates;
-        parsed.choiceQuestion = compareChoice ?? undefined;
-        parsed.questions = [];
-        parsed.message = '候補を整理しました。どちらを選びますか？';
         state = 'collecting';
       } else if (!draftReady) {
-        // set boundary question only if no ready
-        const missingRequired = requiredSlots.filter((k) => !hit(k));
-        const missingOptional = primaryOptionalSlots
-          .concat(secondaryOptionalSlots)
-          .filter((k) => !hit(k));
-        const missingAll = [...missingRequired, ...missingOptional];
-        nextQuestionKey = pickNextQuestion(missingAll as (keyof Slots)[]);
-        const decisionChoice = buildDecisionChoiceQuestion(
-          nextQuestionKey,
-          slots,
-          confidence,
-          prevSlots,
-          prevConfidence,
-          latestUserMessage,
-          lastAskedSlot,
-        );
-        if (decisionChoice) {
-          parsed.choiceQuestion = decisionChoice;
-          parsed.questions = [];
-          const ambiguousInput = isAmbiguousAnswer(latestUserMessage);
-          if (ambiguousInput && !confirmDraft) {
-            parsed.coachPrompt =
-              decisionChoice.key === 'activityType'
-                ? 'まだ決まってなくて大丈夫です。近いものを選ぶか、自由に入力してOKです。'
-                : decisionChoice.key === 'audience'
-                  ? '誰向けでも大丈夫です。まずは近いものを選んで、あとで調整できます。'
-                  : '雰囲気は後から変えられます。近いものを選ぶか、自由に入力してください。';
-          }
-        } else {
-          parsed.choiceQuestion = undefined;
-          parsed.questions =
-            nextQuestionKey != null
-              ? [
-                  nextQuestionKey === 'price'
-                    ? '無料か有料か、金額があれば教えてください。'
-                    : nextQuestionKey === 'time'
-                      ? '日時はいつにしますか？'
-                      : nextQuestionKey === 'location'
-                        ? '場所はどこにしますか？オンラインか現地か教えてください。'
-                        : nextQuestionKey === 'activityType'
-                          ? 'どんな形式のイベントですか？（例：交流会、WS、トークなど）'
-                          : nextQuestionKey === 'audience'
-                            ? '主な対象は誰ですか？'
-                            : nextQuestionKey === 'capacity'
-                              ? '定員は何人くらいにしますか？'
-                              : 'タイトルを教えてください。',
-                ]
-              : parsed.questions || [];
-        }
         const wantsTitleSuggestions =
           nextQuestionKey === 'title' &&
           /タイトル|名前|ネーミング|題名|名前案|タイトル案|名前を考えて/i.test(latestUserMessage);
@@ -1156,11 +1257,29 @@ export class AiService {
         Boolean(parsed.choiceQuestion),
       );
       parsed.message = sanitize(guardedMessage);
-      const fallbackMessage =
-        parsed.message ||
-        sanitize(typeof parsed.writerSummary === 'string' ? parsed.writerSummary : undefined) ||
-        sanitize(parsed.coachPrompt) ||
-        (parsed.questions && parsed.questions.length ? parsed.questions[0] : '');
+      const uiQuestionKey = nextQuestionKey ?? null;
+      const cleanUiOptions = Array.isArray(parsed.ui?.options)
+        ? parsed.ui!.options
+            .map((o) => ({
+              label: sanitize(o.label),
+              value: sanitize(o.value),
+              recommended: Boolean(o.recommended),
+            }))
+            .filter((o) => o.label && o.value)
+        : [];
+      const cleanUiQuestionText = sanitize(parsed.ui?.question?.text);
+      const cleanUiMessage = sanitize(parsed.ui?.message);
+      const cleanUiQuestion =
+        cleanUiQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: cleanUiQuestionText } : undefined;
+      const cleanUi: AiAssistantUiPayload | undefined =
+        cleanUiMessage || cleanUiQuestion || cleanUiOptions.length
+          ? {
+              message: cleanUiMessage || undefined,
+              question: cleanUiQuestion,
+              options: cleanUiOptions.length ? cleanUiOptions : undefined,
+            }
+          : undefined;
+      const fallbackMessage = cleanUiMessage || cleanUiQuestionText || '';
       // sanitize fields
       const cleanQuestions = Array.isArray(parsed.questions)
         ? parsed.questions.map((q) => sanitize(q)).filter(Boolean)
@@ -1176,27 +1295,23 @@ export class AiService {
         ? {
             bullets: Array.isArray(parsed.miniPreview.bullets)
               ? parsed.miniPreview.bullets.map((b) => sanitize(b)).filter(Boolean)
-              : [],
+            : [],
             note: sanitize(parsed.miniPreview.note),
           }
         : undefined;
-      const cleanChoiceQuestion = parsed.choiceQuestion
-        ? {
-            key: parsed.choiceQuestion.key,
-            prompt: sanitize(parsed.choiceQuestion.prompt),
-            options: Array.isArray(parsed.choiceQuestion.options)
-              ? parsed.choiceQuestion.options
-                  .map((o) => ({
-                    label: sanitize(o.label),
-                    value: sanitize(o.value),
-                    recommended: Boolean(o.recommended),
-                  }))
-                  .filter((o) => o.label && o.value)
-              : [],
-          }
-        : undefined;
-      const cleanCompareCandidates = Array.isArray(parsed.compareCandidates)
-        ? parsed.compareCandidates
+      const choiceKey =
+        isCompareMode && cleanUiOptions.length ? 'activityType' : uiQuestionKey;
+      const choicePrompt = cleanUiQuestionText || cleanUiMessage || '';
+      const cleanChoiceQuestion =
+        choiceKey && cleanUiOptions.length && choicePrompt
+          ? {
+              key: choiceKey,
+              prompt: choicePrompt,
+              options: cleanUiOptions,
+            }
+          : undefined;
+      const cleanCompareCandidates = Array.isArray(compareCandidates)
+        ? compareCandidates
             .map((candidate) => ({
               id: sanitize(candidate.id),
               summary: sanitize(candidate.summary),
@@ -1259,6 +1374,7 @@ export class AiService {
       parsed.choiceQuestion = cleanChoiceQuestion;
       parsed.compareCandidates = cleanCompareCandidates;
       parsed.titleSuggestions = cleanTitleSuggestions;
+      parsed.ui = cleanUi;
       parsed.inputMode = inputMode;
       parsed.nextQuestionKey = nextQuestionKey;
       parsed.editorChecklist = Array.isArray(parsed.editorChecklist)
@@ -1283,7 +1399,7 @@ export class AiService {
         ...parsed,
         status: state,
         stage: stageTag,
-        promptVersion: promptConfig.version,
+        promptVersion: resolvedPrompt.version,
         language: detectedLanguage,
         turnCount,
         thinkingSteps: Array.isArray(parsed.thinkingSteps) ? parsed.thinkingSteps : [],
@@ -1319,11 +1435,14 @@ export class AiService {
         coachPrompt: 'タイトル/対象/日時/場所/料金のいずれか1つだけ教えてください。',
         editorChecklist: [],
         writerSummary: '',
-        questions: [
-          '案を作るにはタイトル/対象/日時/場所/料金のいずれかが必要です。どれか1つだけ教えてください。',
-        ],
+        ui: {
+          question: {
+            key: 'title',
+            text: 'タイトル/対象/日時/場所/料金のいずれか1つだけ教えてください。',
+          },
+        },
         optionTexts: [],
-        promptVersion: promptConfig.version,
+        promptVersion: resolvedPrompt.version,
         turnCount,
         slots: {},
         confidence: {
@@ -2052,9 +2171,10 @@ export class AiService {
   }
 
   getProfileDefaults(): AiAssistantProfileDefaults {
+    const basePrompt = getEventAssistantPromptConfig('collecting');
     return {
-      version: COACHING_PROMPT_CONFIG.version,
-      defaults: COACHING_PROMPT_CONFIG.defaults,
+      version: basePrompt.version,
+      defaults: basePrompt.defaults,
     };
   }
 }

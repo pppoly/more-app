@@ -264,11 +264,9 @@ export class NotificationService {
       return { total: 0, sent: 0, skipped: 0 };
     }
 
-    const followers = await this.prisma.communityMember.findMany({
+    const followers = await this.prisma.communityFollow.findMany({
       where: {
         communityId: event.community.id,
-        role: 'follower',
-        status: 'active',
       },
       select: {
         user: {

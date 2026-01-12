@@ -416,8 +416,8 @@ export class ConsoleCommunitiesService {
     const totalRegistrations = successfulRegistrations.length;
     const totalAttended = successfulRegistrations.filter((reg) => reg.attended).length;
     const totalNoShow = successfulRegistrations.filter((reg) => reg.noShow).length;
-    const followerCount = await this.prisma.communityMember.count({
-      where: { communityId, status: 'active' },
+    const followerCount = await this.prisma.communityFollow.count({
+      where: { communityId },
     });
     return {
       communityId,

@@ -13,10 +13,17 @@ export interface PromptConfig {
   optionPhaseTurns: number;
   readyTurns: number;
   defaults: PromptDefaultsProfile;
+  schemaName?: string;
+  promptId?: string;
+  allowedFields?: string[];
+  forbiddenFields?: string[];
 }
+
+export type EventAssistantPromptPhase = 'collecting' | 'decision' | 'compare' | 'ready' | 'operate';
 
 export const COACHING_PROMPT_CONFIG: PromptConfig = {
   version: 'coach-v3-lite',
+  schemaName: 'MoreAppAssistantReply',
   systemPrompt:
     'You are MORE App’s coach-style event copilot. Always respond in the user’s latest language (default ja). Tone: friendly, patient, dialog-first. Reply MUST be valid JSON per schema; no extra text.',
   instruction:
@@ -38,3 +45,127 @@ export const COACHING_PROMPT_CONFIG: PromptConfig = {
     style: 'family-friendly',
   },
 };
+
+const BASE_PROMPT: Omit<
+  PromptConfig,
+  'version' | 'systemPrompt' | 'instruction' | 'schemaName' | 'allowedFields' | 'forbiddenFields'
+> = {
+  minQuestionTurns: COACHING_PROMPT_CONFIG.minQuestionTurns,
+  optionPhaseTurns: COACHING_PROMPT_CONFIG.optionPhaseTurns,
+  readyTurns: COACHING_PROMPT_CONFIG.readyTurns,
+  defaults: COACHING_PROMPT_CONFIG.defaults,
+};
+
+const COMMON_SYSTEM =
+  'You are MORE App event assistant. Always reply in the user’s latest language (default ja). ' +
+  'Return ONLY valid JSON per schema. Do NOT include policy/internal/debug text or flow-control fields. ' +
+  'All user-facing questions and options must be inside ui.{question,options}.';
+
+const COMMON_GUIDANCE =
+  'Use slots with confidence>=0.6 as facts. Assumptions are tentative and must be labeled. ' +
+  'Do not invent unconfirmed decisions. Keep output concise.';
+
+export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, PromptConfig> = {
+  collecting: {
+    version: 'event-assistant-v4-collect',
+    schemaName: 'MoreAppAssistantReply',
+    promptId: 'event-assistant.collecting',
+    systemPrompt: `${COMMON_SYSTEM} Phase: collecting. Provide the user-facing question only via ui.question.`,
+    instruction:
+      'Phase=collecting. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. ' +
+      'You may include thinkingSteps(2-4), coachPrompt, writerSummary. ' +
+      'Do NOT include drafts or flow-control fields. ' +
+      COMMON_GUIDANCE +
+      ' Latest user message: "{latestMessage}".',
+    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
+    forbiddenFields: [
+      'questions',
+      'options',
+      'publicActivityDraft',
+      'internalExecutionPlan',
+      'choiceQuestion',
+      'compareCandidates',
+      'titleSuggestions',
+    ],
+    ...BASE_PROMPT,
+  },
+  decision: {
+    version: 'event-assistant-v4-decision',
+    schemaName: 'MoreAppAssistantReply',
+    promptId: 'event-assistant.decision',
+    systemPrompt: `${COMMON_SYSTEM} Phase: decision. Provide the user-facing question only via ui.question and options via ui.options.`,
+    instruction:
+      'Phase=decision. Output ui.question (key,text) and ui.options (2-4). Use next_question_key as ui.question.key. ui.options.value must be a short slot value. ' +
+      'You may include thinkingSteps(2-4), coachPrompt, writerSummary. ' +
+      'Do NOT include drafts or flow-control fields. ' +
+      COMMON_GUIDANCE +
+      ' Latest user message: "{latestMessage}".',
+    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
+    forbiddenFields: [
+      'questions',
+      'options',
+      'publicActivityDraft',
+      'internalExecutionPlan',
+      'choiceQuestion',
+      'compareCandidates',
+      'titleSuggestions',
+    ],
+    ...BASE_PROMPT,
+  },
+  compare: {
+    version: 'event-assistant-v4-compare',
+    schemaName: 'MoreAppAssistantReply',
+    promptId: 'event-assistant.compare',
+    systemPrompt: `${COMMON_SYSTEM} Phase: compare. Provide ui.message and ui.options; no free-text questions.`,
+    instruction:
+      'Phase=compare. Output ui.message and ui.options (2-3) based on compareCandidates. Use compareCandidates.id for ui.options.value (候補A/候補B). ' +
+      'You may include thinkingSteps(2-4), writerSummary. ' +
+      'Do NOT include drafts or flow-control fields. ' +
+      COMMON_GUIDANCE +
+      ' Latest user message: "{latestMessage}".',
+    allowedFields: ['ui', 'thinkingSteps', 'writerSummary'],
+    forbiddenFields: [
+      'questions',
+      'options',
+      'publicActivityDraft',
+      'internalExecutionPlan',
+      'choiceQuestion',
+      'compareCandidates',
+      'titleSuggestions',
+    ],
+    ...BASE_PROMPT,
+  },
+  ready: {
+    version: 'event-assistant-v4-ready',
+    schemaName: 'MoreAppAssistantReply',
+    promptId: 'event-assistant.ready',
+    systemPrompt: `${COMMON_SYSTEM} Phase: ready. Generate draft content only; no questions.`,
+    instruction:
+      'Phase=ready. Output: publicActivityDraft, internalExecutionPlan. ' +
+      'Optionally include ui.message, writerSummary, coachPrompt if needed. ' +
+      'Do NOT include ui.question or ui.options, or flow-control fields. ' +
+      COMMON_GUIDANCE +
+      ' Latest user message: "{latestMessage}".',
+    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary', 'publicActivityDraft', 'internalExecutionPlan'],
+    forbiddenFields: ['questions', 'options', 'choiceQuestion', 'compareCandidates', 'titleSuggestions'],
+    ...BASE_PROMPT,
+  },
+  operate: {
+    version: 'event-assistant-v4-operate',
+    schemaName: 'MoreAppAssistantReply',
+    promptId: 'event-assistant.operate',
+    systemPrompt: `${COMMON_SYSTEM} Phase: operate. Finalize drafts only; no questions.`,
+    instruction:
+      'Phase=operate. Output: publicActivityDraft, internalExecutionPlan. ' +
+      'Optionally include ui.message, writerSummary, coachPrompt if needed. ' +
+      'Do NOT include ui.question or ui.options, or flow-control fields. ' +
+      COMMON_GUIDANCE +
+      ' Latest user message: "{latestMessage}".',
+    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary', 'publicActivityDraft', 'internalExecutionPlan'],
+    forbiddenFields: ['questions', 'options', 'choiceQuestion', 'compareCandidates', 'titleSuggestions'],
+    ...BASE_PROMPT,
+  },
+};
+
+export const getEventAssistantPromptConfig = (phase: EventAssistantPromptPhase): PromptConfig =>
+  EVENT_ASSISTANT_PROMPT_MATRIX[phase] ?? COACHING_PROMPT_CONFIG;

@@ -26,6 +26,8 @@ model User {
   analyticsEvents           AnalyticsEvent[]
   communities               Community[]            @relation("CommunityOwner")
   memberships               CommunityMember[]
+  communityFollows          CommunityFollow[]
+  eventFollows              EventFollow[]
   registrations             EventRegistration[]
   updatedI18nMessages       I18nMessage[]          @relation("I18nMessageUpdatedBy")
   organizerApplications     OrganizerApplication[]
@@ -61,6 +63,7 @@ model Community {
   owner                  User              @relation("CommunityOwner", fields: [ownerId], references: [id])
   pricingPlan            PricingPlan?      @relation(fields: [pricingPlanId], references: [id])
   members                CommunityMember[]
+  follows                CommunityFollow[]
   events                 Event[]
   payments               Payment[]
 }
@@ -109,6 +112,19 @@ model CommunityMember {
   @@unique([communityId, userId])
 }
 
+model CommunityFollow {
+  id          String    @id @default(cuid())
+  communityId String
+  userId      String
+  createdAt   DateTime  @default(now())
+  community   Community @relation(fields: [communityId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+}
+
 model Event {
   id                     String              @id @default(cuid())
   communityId            String
@@ -146,6 +162,20 @@ model Event {
   registrations          EventRegistration[]
   ticketTypes            EventTicketType[]
   payments               Payment[]
+  follows                EventFollow[]
+}
+
+model EventFollow {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
 }
 
 model Class {

@@ -182,47 +182,31 @@ export class CommunitiesService {
   }
 
   async getFollowStatus(communityId: string, userId: string) {
-    const membership = await this.prisma.communityMember.findUnique({
+    const follow = await this.prisma.communityFollow.findUnique({
       where: { communityId_userId: { communityId, userId } },
-      select: { status: true, role: true },
+      select: { id: true },
     });
-    const active = membership?.status === 'active';
-    const locked = active && membership && membership.role && membership.role !== 'follower';
-    return { following: active, locked };
+    return { following: Boolean(follow), locked: false };
   }
 
   async followCommunity(communityId: string, userId: string) {
     await this.ensureCommunityExists(communityId);
-    await this.prisma.communityMember.upsert({
+    await this.prisma.communityFollow.upsert({
       where: { communityId_userId: { communityId, userId } },
-      create: {
-        communityId,
-        userId,
-        role: 'follower',
-        status: 'active',
-      },
-      update: {
-        status: 'active',
-      },
+      create: { communityId, userId },
+      update: {},
     });
     return { following: true };
   }
 
   async unfollowCommunity(communityId: string, userId: string) {
     await this.ensureCommunityExists(communityId);
-    const membership = await this.prisma.communityMember.findUnique({
+    const follow = await this.prisma.communityFollow.findUnique({
       where: { communityId_userId: { communityId, userId } },
-      select: { role: true, status: true },
+      select: { id: true },
     });
-    if (!membership) {
-      return { following: false };
-    }
-    if (membership.role && membership.role !== 'follower') {
-      return { following: true, locked: true };
-    }
-    await this.prisma.communityMember.delete({
-      where: { communityId_userId: { communityId, userId } },
-    });
+    if (!follow) return { following: false };
+    await this.prisma.communityFollow.delete({ where: { communityId_userId: { communityId, userId } } });
     return { following: false };
   }
 

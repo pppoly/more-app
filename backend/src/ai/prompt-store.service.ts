@@ -29,16 +29,16 @@ export class PromptStoreService {
   }
 
   private async loadPrompts(): Promise<PromptDefinition[]> {
-    const fromDb = await this.readDb();
-    if (fromDb?.length) return fromDb;
-
-    const fromWritable = await this.readIfExists(WRITABLE_PROMPTS_PATH);
-    if (fromWritable) return fromWritable;
-
     const fromDefault = await this.readIfExists(DEFAULT_PROMPTS_PATH);
-    if (fromDefault) return fromDefault;
+    const fromWritable = await this.readIfExists(WRITABLE_PROMPTS_PATH);
+    const fromDb = await this.readDb();
+    const merged = new Map<string, PromptDefinition>();
 
-    return [];
+    (fromDefault ?? []).forEach((p) => merged.set(p.id, p));
+    (fromWritable ?? []).forEach((p) => merged.set(p.id, p));
+    (fromDb ?? []).forEach((p) => merged.set(p.id, p));
+
+    return Array.from(merged.values());
   }
 
   private async readIfExists(path: string): Promise<PromptDefinition[] | null> {
