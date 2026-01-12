@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import crypto from 'crypto';
 import { COACHING_PROMPT_CONFIG, PromptDefaultsProfile } from './prompt.config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -53,36 +54,120 @@ export interface AssistantConversationMessage {
 
 export interface GenerateAssistantReplyDto extends GenerateEventContentDto {
   conversation?: AssistantConversationMessage[];
+  action?: 'confirm_draft';
 }
 
-export type AssistantReplyStatus = 'collecting' | 'options' | 'ready';
+export type AssistantReplyState = 'collecting' | 'options' | 'ready';
+export type AssistantIntent = 'create' | 'explore' | 'unknown';
+export type AssistantInputMode = 'describe' | 'fill' | 'compare';
 
 export type AssistantStage = 'coach' | 'editor' | 'writer';
 
+export interface AiAssistantOption {
+  title: string;
+  description?: string;
+  pros?: string;
+  cons?: string;
+}
+
+export interface AiAssistantMiniPreview {
+  bullets: string[];
+  note?: string;
+}
+
+export interface AiAssistantChoiceQuestion {
+  key: keyof Slots;
+  prompt: string;
+  options: Array<{ label: string; value: string; recommended?: boolean }>;
+}
+
+export interface AiAssistantCompareCandidate {
+  id: string;
+  summary: string;
+  activityType?: string;
+  time?: string;
+  price?: string;
+  notes?: string;
+}
+
+export interface AiAssistantPublicDraft {
+  title?: string;
+  shortDescription?: string;
+  detailedDescription?: string;
+  targetAudience?: string;
+  ageRange?: string;
+  highlights?: string[];
+  schedule?: { date?: string; duration?: string; location?: string };
+  price?: number | string | null;
+  capacity?: number | string | null;
+  signupNotes?: string;
+  facts_from_user?: Record<string, any>;
+  assumptions?: Array<{ field: string; assumedValue: string; reason: string }>;
+  open_questions?: Array<{ field: string; question: string }>;
+  form_fields_payload?: Slots;
+  rich_description_payload?: { short: string; long: string };
+}
+
+export interface AiAssistantExecutionPlan {
+  objective?: string;
+  coreExperienceDesign?: string;
+  runOfShow?: string[];
+  materials?: string[];
+  staffing?: string[];
+  risksAndMitigation?: string[];
+  prepChecklist?: string[];
+}
+
+export type Slots = {
+  title?: string;
+  audience?: string;
+  activityType?: string;
+  time?: string;
+  location?: string;
+  price?: string;
+  capacity?: string;
+  details?: string;
+};
+
+export type Confidence = Record<keyof Slots, number>;
+
 interface AiAssistantReplyPayload {
-  status: AssistantReplyStatus;
-  message: string;
-  options?: string[];
-  proposal?: AiEventContent;
-  thinkingSteps?: string[];
-  stage?: AssistantStage;
-  coachPrompts?: string[];
+  state: AssistantReplyState;
+  language: string;
+  thinkingSteps: string[];
+  coachPrompt?: string;
   editorChecklist?: string[];
-  writerSummary?: {
-    headline?: string;
-    audience?: string;
-    logistics?: string;
-    riskNotes?: string;
-    nextSteps?: string;
-  };
-  confirmQuestions?: string[];
+  writerSummary?: string;
+  message?: string;
+  questions?: string[];
+  options?: Array<AiAssistantOption | string>;
+  miniPreview?: AiAssistantMiniPreview;
+  choiceQuestion?: AiAssistantChoiceQuestion;
+  compareCandidates?: AiAssistantCompareCandidate[];
+  titleSuggestions?: string[];
+  inputMode?: AssistantInputMode;
+  nextQuestionKey?: keyof Slots | null;
+  publicActivityDraft?: AiAssistantPublicDraft;
+  internalExecutionPlan?: AiAssistantExecutionPlan;
+  slots?: Slots;
+  confidence?: Confidence;
+  draftId?: string;
+  draftReady?: boolean;
+  applyEnabled?: boolean;
+  modeHint?: 'chat' | 'operate';
 }
 
 export interface AiAssistantReply extends AiAssistantReplyPayload {
   promptVersion: string;
   language: string;
   turnCount: number;
-  thinkingSteps: string[];
+  status: AssistantReplyState;
+  optionTexts?: string[];
+  stage?: AssistantStage;
+  confirmQuestions?: string[];
+  coachPrompts?: string[];
+  optionDetails?: AiAssistantOption[];
+  intent?: AssistantIntent;
 }
 
 export interface AiAssistantProfileDefaults {
@@ -172,6 +257,7 @@ export class AiService {
   private readonly model: string;
    // simple in-memory cache: key => { [targetLang]: translated }
   private readonly translationCache = new Map<string, Record<string, string>>();
+  private readonly POLICY_VERSION = 'ready-gate-v1';
 
   constructor(private readonly prisma: PrismaService) {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -239,12 +325,589 @@ export class AiService {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
     }
 
+    const requiredSlots: (keyof Slots)[] = ['title', 'audience', 'activityType'];
+    const primaryOptionalSlots: (keyof Slots)[] = ['time', 'location', 'price'];
+    const secondaryOptionalSlots: (keyof Slots)[] = ['capacity', 'details'];
+    const activityTypeChoiceLabels: Record<string, string> = {
+      casual_meetup: 'カジュアル交流（自由に話す）',
+      icebreakers: '自己紹介＋小グループ交流',
+      game_night: 'ゲーム/ボードゲーム中心',
+      language_exchange: 'Language Exchange（言語交換）',
+    };
+    const audienceChoiceLabels: Record<string, string> = {
+      friends: '友人・同僚向け',
+      family: '親子OK',
+      multilingual: '外国人歓迎（多言語）',
+      beginners: '初参加/初心者歓迎',
+    };
+    const detailsChoiceLines: Record<string, string> = {
+      lively: '雰囲気：わいわい（飲み会っぽい）',
+      calm_chat: '雰囲気：落ち着いた会話中心',
+      potluck_drinks: '雰囲気：持ち寄り（ドリンク/軽食）',
+      no_alcohol: '雰囲気：ノンアル中心',
+    };
+    const formatActivityType = (value?: string) => (value ? activityTypeChoiceLabels[value] ?? value : value);
+    const formatAudience = (value?: string) => (value ? audienceChoiceLabels[value] ?? value : value);
+
+    const normalizeSlotsForHash = (slots: Slots) => {
+      const norm: Slots = {};
+      const normalizeText = (v?: string) => (v ? v.trim() : v);
+      const normalizePrice = (v?: string) => {
+        if (!v) return v;
+        const lower = v.trim().toLowerCase();
+        if (['free', '無料', '0', '0円', 'free of charge', 'フリー'].includes(lower)) return 'free';
+        return lower;
+      };
+      const normalizeLocation = (v?: string) => (v ? v.replace(/\s+/g, ' ').trim() : v);
+      norm.title = normalizeText(slots.title);
+      norm.audience = normalizeText(slots.audience);
+      norm.activityType = normalizeText(slots.activityType);
+      norm.time = normalizeText(slots.time);
+      norm.location = normalizeLocation(slots.location);
+      norm.price = normalizePrice(slots.price);
+      norm.capacity = normalizeText(slots.capacity);
+      norm.details = normalizeText(slots.details);
+      return norm;
+    };
+
+    const hashStable = (input: any) => crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
+
+    const detectIntent = (text: string): AssistantIntent => {
+      if (/[作办办]活動|イベントを?作|開催|公開|募集|申し込みフォーム|申込フォーム|作成|掲載|告知/i.test(text)) return 'create';
+      if (/見たい|試す|体験だけ|デモ|見学/i.test(text)) return 'explore';
+      return 'unknown';
+    };
+
+    const detectInputMode = (text: string): AssistantInputMode => {
+      const selectionPattern = /【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/;
+      if (selectionPattern.test(text)) return 'fill';
+      const activityKeywords = [
+        'bbq',
+        'バーベキュー',
+        '交流会',
+        '勉強会',
+        '説明会',
+        'パーティー',
+        'セミナー',
+        'ワークショップ',
+        'ミートアップ',
+      ];
+      const activityMatches = new Set(
+        activityKeywords.filter((kw) => new RegExp(kw, 'i').test(text)),
+      );
+      const timeRanges = text.match(/\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/g) ?? [];
+      const timeWords = text.match(/来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前/g) ?? [];
+      const timeTokens = new Set([...timeRanges, ...timeWords]);
+      const lineParts = text.split(/\n+/).map((t) => t.trim()).filter(Boolean);
+      let compareSignals = 0;
+      if (activityMatches.size >= 2) compareSignals += 1;
+      if (timeTokens.size >= 2) compareSignals += 1;
+      if (lineParts.length >= 2) compareSignals += 1;
+      if (compareSignals >= 2) return 'compare';
+      if (timeTokens.size >= 1 || /円|無料|フリー|0円/.test(text)) return 'fill';
+      return 'describe';
+    };
+
+    const extractCompareCandidates = (text: string): AiAssistantCompareCandidate[] => {
+      if (!text) return [];
+      const activityRegex = /(BBQ|バーベキュー|交流会|勉強会|説明会|パーティー|セミナー|ワークショップ|ミートアップ)/i;
+      const activityGlobalRegex = new RegExp(activityRegex.source, 'ig');
+      const activityMatches = Array.from(text.matchAll(activityGlobalRegex));
+      let segments: string[] = [];
+      if (activityMatches.length >= 2) {
+        for (let i = 0; i < activityMatches.length; i += 1) {
+          const start = activityMatches[i].index ?? 0;
+          const end = activityMatches[i + 1]?.index ?? text.length;
+          segments.push(text.slice(start, end).trim());
+        }
+      } else {
+        segments = text
+          .split(/\n+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+      }
+      if (segments.length < 2) return [];
+      const timeRangeRegex = /\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/;
+      const dayWordRegex = /(来週|今週|平日夜|週末|土曜|日曜|金曜|月曜|火曜|水曜|木曜|夜|午後|午前)/;
+      const priceRegex = /(\d{2,5})\s*円|無料|フリー|0円/;
+      const noteRegex = /(ドリンク持参|持参|持ち寄り|持ち物|食材)/;
+      return segments.slice(0, 3).map((segment, idx) => {
+        const id = String.fromCharCode(65 + idx);
+        const activity = segment.match(activityRegex)?.[0] ?? segment.slice(0, 12);
+        const time =
+          segment.match(timeRangeRegex)?.[0] ??
+          segment.match(dayWordRegex)?.[0] ??
+          undefined;
+        const priceMatch = segment.match(priceRegex)?.[0];
+        const price = priceMatch ? priceMatch.replace(/\s+/g, '') : undefined;
+        const notes = segment.match(noteRegex)?.[0];
+        const summaryParts = [activity, time, price, notes].filter(Boolean);
+        return {
+          id,
+          summary: summaryParts.join(' / '),
+          activityType: activity,
+          time,
+          price,
+          notes,
+        };
+      });
+    };
+
+    const findLatestCompareMessage = (messages: AssistantConversationMessage[]) => {
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        if (messages[i].role !== 'user') continue;
+        const content = messages[i].content || '';
+        if (detectInputMode(content) === 'compare') return content;
+      }
+      return '';
+    };
+
+    const buildTitleSuggestions = (hint: Slots): string[] => {
+      const base = [];
+      if (hint.activityType) base.push(formatActivityType(hint.activityType));
+      if (hint.audience) base.push(formatAudience(hint.audience));
+      if (hint.location) base.push(hint.location);
+      const seeds = base.filter(Boolean).slice(0, 2).join('・');
+      const templates = [
+        `${seeds ? `${seeds}・` : ''}体験会`,
+        `${seeds ? `${seeds}・` : ''}交流ナイト`,
+        `${seeds ? `${seeds}・` : ''}ワークショップ`,
+        `${seeds ? `${seeds}・` : ''}オープンDay`,
+        `${seeds ? `${seeds}・` : ''}ミートアップ`,
+        `${seeds ? `${seeds}・` : ''}ラボ`,
+        `${seeds ? `${seeds}・` : ''}フェス`,
+      ];
+      return templates.slice(0, 7);
+    };
+
+    const extractSlots = (
+      conversationMessages: AssistantConversationMessage[],
+      basePayload: GenerateAssistantReplyDto,
+    ): { slots: Slots; confidence: Confidence; intent: AssistantIntent; flags: { hasRulePaste: boolean } } => {
+      const slots: Slots = {};
+      const confidence: Confidence = {
+        title: 0,
+        audience: 0,
+        activityType: 0,
+        time: 0,
+        location: 0,
+        price: 0,
+        capacity: 0,
+        details: 0,
+      };
+      const setSlot = (key: keyof Slots, value?: string, conf?: number) => {
+        if (!value) return;
+        const nextConf = conf ?? 0.7;
+        if ((confidence[key] ?? 0) < nextConf) {
+          slots[key] = value.trim();
+          confidence[key] = nextConf;
+        }
+      };
+      const appendDetailLine = (line: string, conf = 1) => {
+        const trimmed = line?.trim();
+        if (!trimmed) return;
+        const existing = slots.details ? slots.details.split('\n').map((item) => item.trim()) : [];
+        if (!existing.includes(trimmed)) {
+          existing.push(trimmed);
+        }
+        slots.details = existing.filter(Boolean).join('\n');
+        confidence.details = Math.max(confidence.details ?? 0, conf);
+      };
+
+      // seed from payload
+      // topic from payload is low-confidence unless user explicitly provides it later
+      if (basePayload.topic?.trim()) {
+        setSlot('title', basePayload.topic.trim(), 0.5);
+        setSlot('activityType', basePayload.topic.trim(), 0.7);
+      }
+      setSlot('audience', basePayload.audience, 0.8);
+      if (basePayload.details?.trim()) {
+        setSlot('details', basePayload.details.trim(), 0.7);
+        const priceMatch = basePayload.details.match(/(\d{1,5})\s*円(?:\/人)?/);
+        if (priceMatch?.[1]) {
+          const amount = Number(priceMatch[1]);
+          if (!Number.isNaN(amount)) {
+            if (amount === 0) {
+              setSlot('price', 'free', 0.7);
+            } else {
+              setSlot('price', priceMatch[0].replace(/\s+/g, ''), 0.75);
+            }
+          }
+        } else if (/無料|フリー|タダ|free/i.test(basePayload.details)) {
+          setSlot('price', 'free', 0.7);
+        }
+        if (/オンライン|zoom|teams|google meet|line/i.test(basePayload.details)) {
+          setSlot('location', 'online', 0.7);
+        }
+      }
+
+      const userMessages = conversationMessages.filter((msg) => msg.role === 'user');
+      let hasRulePaste = false;
+      const allUserText = userMessages.map((m) => m.content || '').join(' ');
+
+      for (const msg of userMessages) {
+        const text = msg.content || '';
+        const selectionMatch = text.match(/【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/);
+        if (selectionMatch?.[1] && selectionMatch?.[2]) {
+          const rawKey = selectionMatch[1] as keyof Slots;
+          const rawValue = selectionMatch[2].trim();
+          const candidateMatch = rawValue.match(/候補([A-C])/);
+          if (candidateMatch?.[1]) {
+            const compareSource = findLatestCompareMessage(userMessages);
+            const candidates = extractCompareCandidates(compareSource);
+            const selected = candidates.find((c) => c.id === candidateMatch[1]);
+            if (selected) {
+              if (selected.activityType) setSlot('activityType', selected.activityType, 1);
+              if (selected.time) setSlot('time', selected.time, 1);
+              if (selected.price) setSlot('price', selected.price, 1);
+              if (selected.notes) setSlot('details', selected.notes, 0.8);
+              continue;
+            }
+          }
+          if (Object.prototype.hasOwnProperty.call(confidence, rawKey)) {
+            if (rawKey === 'activityType' && activityTypeChoiceLabels[rawValue]) {
+              setSlot('activityType', rawValue, 1);
+              appendDetailLine(`形式: ${activityTypeChoiceLabels[rawValue]}`, 1);
+              continue;
+            }
+            if (rawKey === 'audience' && audienceChoiceLabels[rawValue]) {
+              setSlot('audience', rawValue, 1);
+              continue;
+            }
+            if (rawKey === 'details' && detailsChoiceLines[rawValue]) {
+              appendDetailLine(detailsChoiceLines[rawValue], 1);
+              continue;
+            }
+            setSlot(rawKey, rawValue, 1);
+            continue;
+          }
+        }
+        if (text.length > 400 && /(憲章|constitution|rule|規約)/i.test(text)) {
+          hasRulePaste = true;
+        }
+
+        // time detection
+        const timeRangeMatch = text.match(/(\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2})/);
+        const timeDateMatch =
+          text.match(/(\d{4}-\d{2}-\d{2}(?:\s*\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}日(?:\s*\d{1,2}[:：]\d{2})?)/) ??
+          text.match(/(\d{1,2}\/\d{1,2}(?:\s*\d{1,2}[:：]\d{2})?)/);
+        if (timeRangeMatch?.[1]) {
+          setSlot('time', timeRangeMatch[1], 0.75);
+        } else if (timeDateMatch?.[0]) {
+          setSlot('time', timeDateMatch[0], 0.75);
+        } else if (/平日夜|週末|土曜|日曜|金曜|午後|午前/.test(text)) {
+          setSlot('time', text.match(/(平日夜|週末|土曜|日曜|金曜|午後|午前)/)?.[0], 0.65);
+        }
+        // location detection
+        if (/オンライン|zoom|teams|meet|line/i.test(text)) {
+          setSlot('location', 'online', 0.8);
+        } else {
+          const locMatch = text.match(/(渋谷|新宿|池袋|東京|大阪|名古屋|福岡|札幌|横浜|神戸|京都|仙台|那覇|千葉|埼玉|神奈川)/);
+          if (locMatch?.[0]) {
+            setSlot('location', locMatch[0], 0.7);
+          }
+        }
+        // price detection
+        const priceMatch = text.match(/(\d{1,5})\s*円(?:\/人)?/);
+        if (priceMatch?.[1]) {
+          const amount = Number(priceMatch[1]);
+          if (!Number.isNaN(amount)) {
+            if (amount === 0) {
+              setSlot('price', 'free', 0.8);
+            } else {
+              setSlot('price', priceMatch[0].replace(/\s+/g, ''), 0.75);
+            }
+          }
+        } else if (/無料|フリー|タダ|free/i.test(text)) {
+          setSlot('price', 'free', 0.8);
+        }
+        // capacity detection
+        const capMatch = text.match(/(\d{1,3})\s*(名|人)/);
+        if (capMatch?.[1]) {
+          setSlot('capacity', capMatch[1], 0.7);
+        }
+        // activity type keywords
+        if (/バーベキュー|bbq|ワークショップ|ＷＳ|ws|セミナー|講座|トーク|交流|交流会|勉強会|体験|ピクニック|マルシェ/i.test(text)) {
+          setSlot('activityType', text, 0.75);
+        }
+        const hasSelectionTag = /【選択】/.test(text);
+        const hasTimeLike =
+          /\d{1,2}[:：]\d{2}/.test(text) || /平日夜|週末|土曜|日曜|金曜|午後|午前|来週|今週/.test(text);
+        const hasPriceLike = /\d{2,5}\s*円/.test(text) || /無料|フリー|0円|タダ|free/i.test(text);
+        // possible title phrase (short, non-question, not time/price/selection)
+        if (
+          (confidence.title ?? 0) < 0.6 &&
+          text.length >= 4 &&
+          text.length <= 40 &&
+          !/[?？]/.test(text) &&
+          !/(日時|場所|時間|料金|価格|free|無料|どこ|いつ)/i.test(text) &&
+          !hasSelectionTag &&
+          !hasTimeLike &&
+          !hasPriceLike
+        ) {
+          setSlot('title', text, 0.7);
+        }
+        // audience hints
+        if (/親子|子ども|子供|学生|社会人|ママ|パパ|ファミリー|シニア|若者|初心者/i.test(text)) {
+          setSlot('audience', text, Math.max(confidence.audience, 0.7));
+        }
+        if (text.length > 80 && (confidence.details ?? 0) < 0.6) {
+          setSlot('details', text, 0.65);
+        }
+      }
+
+      const intent = hasRulePaste ? 'unknown' : detectIntent(allUserText || basePayload.details || '');
+      return { slots, confidence, intent, flags: { hasRulePaste } };
+    };
+    const buildAssumptionsFromHeuristics = (slotValues: Slots, slotConfidence: Confidence, sourceText: string) => {
+      const assumptions: Array<{ field: string; assumedValue: string; reason: string }> = [];
+      const lower = sourceText.toLowerCase();
+      const hasBBQ =
+        /bbq|バーベキュー/.test(lower) ||
+        /bbq|バーベキュー/i.test(slotValues.activityType ?? '') ||
+        /bbq|バーベキュー/i.test(slotValues.title ?? '') ||
+        /bbq|バーベキュー/i.test(slotValues.details ?? '');
+      if (hasBBQ) {
+        assumptions.push({
+          field: 'activityType',
+          assumedValue: 'BBQパーティー（屋外）',
+          reason: 'BBQの一般的な形式',
+        });
+        if ((slotConfidence.location ?? 0) < 0.6) {
+          assumptions.push({
+            field: 'location',
+            assumedValue: '屋外（公園など）',
+            reason: 'BBQの一般的な開催場所',
+          });
+        }
+      }
+      if ((slotConfidence.audience ?? 0) < 0.6) {
+        assumptions.push({
+          field: 'audience',
+          assumedValue: '友人・同僚向け',
+          reason: '一般的な想定',
+        });
+      }
+      return assumptions;
+    };
+    const buildMiniPreview = (
+      slotValues: Slots,
+      slotConfidence: Confidence,
+      assumptions: Array<{ field: string; assumedValue: string; reason: string }>,
+      sourceText: string,
+    ): AiAssistantMiniPreview | null => {
+      const hasTime = (slotConfidence.time ?? 0) >= 0.6 && slotValues.time;
+      const hasPrice = (slotConfidence.price ?? 0) >= 0.6 && slotValues.price;
+      const hasTopic = (slotConfidence.activityType ?? 0) >= 0.6 || (slotConfidence.title ?? 0) >= 0.6;
+      if (!hasTime || !hasPrice || !hasTopic) return null;
+      const bullets: string[] = [];
+      const assumptionMap = new Map(assumptions.map((a) => [a.field, a.assumedValue]));
+      if ((slotConfidence.activityType ?? 0) >= 0.6 && slotValues.activityType) {
+        bullets.push(`タイプ: ${formatActivityType(slotValues.activityType)}`);
+      } else if (assumptionMap.has('activityType')) {
+        bullets.push(`タイプ: ${assumptionMap.get('activityType')}（暫定）`);
+      }
+      if (hasTime && slotValues.time) {
+        bullets.push(`日時: ${slotValues.time}`);
+      }
+      if (hasPrice && slotValues.price) {
+        bullets.push(`料金: ${slotValues.price}`);
+      }
+      if ((slotConfidence.audience ?? 0) >= 0.6 && slotValues.audience) {
+        bullets.push(`対象: ${formatAudience(slotValues.audience)}`);
+      } else if (assumptionMap.has('audience')) {
+        bullets.push(`対象: ${assumptionMap.get('audience')}（暫定）`);
+      }
+      if ((slotConfidence.location ?? 0) >= 0.6 && slotValues.location) {
+        bullets.push(`場所: ${slotValues.location}`);
+      } else if (assumptionMap.has('location')) {
+        bullets.push(`場所: ${assumptionMap.get('location')}（暫定）`);
+      }
+      const missingLabels: string[] = [];
+      const missingOrder: Array<{ key: keyof Slots; label: string }> = [
+        { key: 'title', label: 'タイトル' },
+        { key: 'location', label: '場所' },
+        { key: 'audience', label: '対象' },
+        { key: 'time', label: '日時' },
+        { key: 'price', label: '料金' },
+        { key: 'capacity', label: '定員' },
+        { key: 'details', label: '詳細' },
+      ];
+      missingOrder.forEach(({ key, label }) => {
+        if ((slotConfidence[key] ?? 0) >= 0.6 && slotValues[key]) return;
+        missingLabels.push(label);
+      });
+      const noteParts: string[] = [];
+      if (missingLabels.length) {
+        noteParts.push(`未定：${missingLabels.slice(0, 2).join(' / ')}（あとで変更できます）`);
+      }
+      const riskSource = `${sourceText || ''} ${slotValues.details ?? ''}`;
+      if (/(飲み|酒|bbq|バーベキュー|食事|飲食|アルコール)/i.test(riskSource)) {
+        noteParts.push('注意：飲食がある場合は持ち物・アレルギー案内があると安心です');
+      }
+      const note = noteParts.filter(Boolean).join(' / ');
+      return bullets.length ? { bullets: bullets.slice(0, 6), note } : null;
+    };
+    const isAmbiguousAnswer = (text: string) => {
+      if (!text) return false;
+      const lower = text.toLowerCase();
+      return (
+        /未定|わからない|適当|あとで|どれでも|随便|没想好|都行|まだ決めてない/i.test(text) ||
+        /わからん|迷ってる|不确定|不知道|随意|隨便/.test(text) ||
+        /あとで決める|いまは決めない/.test(text)
+      );
+    };
+    const isOptionRequest = (text: string) => {
+      if (!text) return false;
+      return /候補|おすすめ|選択肢|案を出して|提案|オプション|option|choices?|选项|選項|推荐|推薦|建议|建議|給我|给我/i.test(text);
+    };
+    const noNewInfoForKey = (
+      key: keyof Slots,
+      prevSlots: Slots,
+      prevConfidence: Confidence,
+      currentSlots: Slots,
+      currentConfidence: Confidence,
+    ) => {
+      const prevValue = prevSlots[key] ?? '';
+      const currValue = currentSlots[key] ?? '';
+      const prevConf = prevConfidence[key] ?? 0;
+      const currConf = currentConfidence[key] ?? 0;
+      return prevValue === currValue && currConf <= prevConf;
+    };
+    const buildDecisionChoiceQuestion = (
+      key: keyof Slots | null,
+      slotValues: Slots,
+      slotConfidence: Confidence,
+      prevSlots: Slots,
+      prevConfidence: Confidence,
+      lastUserMessage: string,
+      lastAskedSlot: keyof Slots | null,
+    ): AiAssistantChoiceQuestion | null => {
+      if (!key) return null;
+      const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details'];
+      if (!subjectiveKeys.includes(key)) return null;
+      const hasSlotValue = Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
+      const ambiguous = isAmbiguousAnswer(lastUserMessage) || isOptionRequest(lastUserMessage);
+      const askedSame = lastAskedSlot === key;
+      const noNewInfo = askedSame && noNewInfoForKey(key, prevSlots, prevConfidence, slotValues, slotConfidence);
+      const shouldOfferChoices = !hasSlotValue || ambiguous || noNewInfo;
+      if (!shouldOfferChoices) return null;
+      if (key === 'activityType') {
+        return {
+          key: 'activityType',
+          prompt: 'どの形式に近いですか？（おすすめ：カジュアル交流）',
+          options: [
+            { label: '🍺 カジュアル交流（自由に話す）', value: 'casual_meetup', recommended: true },
+            { label: '🤝 自己紹介＋小グループ交流', value: 'icebreakers' },
+            { label: '🎲 ゲーム/ボードゲーム中心', value: 'game_night' },
+            { label: '🌐 Language Exchange（言語交換）', value: 'language_exchange' },
+          ],
+        };
+      }
+      if (key === 'audience') {
+        return {
+          key: 'audience',
+          prompt: '誰向けにしますか？（おすすめ：友人・同僚）',
+          options: [
+            { label: '👥 友人・同僚向け', value: 'friends', recommended: true },
+            { label: '👨‍👩‍👧‍👦 親子OK', value: 'family' },
+            { label: '🌍 外国人歓迎（多言語）', value: 'multilingual' },
+            { label: '🧑‍🎓 初参加/初心者歓迎', value: 'beginners' },
+          ],
+        };
+      }
+      if (key === 'details') {
+        const recommendedPotluck =
+          /ドリンク持参|持参|持ち寄り/.test(lastUserMessage) ||
+          /ドリンク持参|持参|持ち寄り/.test(slotValues.details ?? '');
+        const recommendLabel = recommendedPotluck ? '持ち寄り' : 'わいわい';
+        return {
+          key: 'details',
+          prompt: `雰囲気はどれが近いですか？（おすすめ：${recommendLabel}）`,
+          options: [
+            { label: '🍻 わいわい（飲み会っぽい）', value: 'lively', recommended: !recommendedPotluck },
+            { label: '☕ 落ち着いた会話中心', value: 'calm_chat' },
+            { label: '🍱 持ち寄り（ドリンク/軽食）', value: 'potluck_drinks', recommended: recommendedPotluck },
+            { label: '🚫 ノンアル中心', value: 'no_alcohol' },
+          ],
+        };
+      }
+      return null;
+    };
+    const hitSlot = (key: keyof Slots, slotValues: Slots, slotConfidence: Confidence) =>
+      Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
+    const detectAskedSlot = (message: string): keyof Slots | null => {
+      const lower = message.toLowerCase();
+      if (/日時|いつ|何時|日程|時間/.test(message) || /(time|when)/.test(lower)) return 'time';
+      if (/場所|どこ|会場|オンライン/.test(message) || /(where|location)/.test(lower)) return 'location';
+      if (/料金|価格|いくら/.test(message) || /(price|fee|cost)/.test(lower)) return 'price';
+      if (/タイトル|題名/.test(message) || /(title|name)/.test(lower)) return 'title';
+      if (/対象|誰向け|参加者/.test(message) || /(audience|who)/.test(lower)) return 'audience';
+      if (/形式|タイプ|どんなイベント/.test(message) || /(type|format)/.test(lower)) return 'activityType';
+      return null;
+    };
+    const sanitizeAssistantQuestion = (
+      message: string | undefined,
+      nextKey: keyof Slots | null,
+      slotValues: Slots,
+      slotConfidence: Confidence,
+      mode: AssistantInputMode,
+      hasChoice: boolean,
+    ) => {
+      if (!message) return message ?? '';
+      if (mode === 'compare' || hasChoice) return '次の1つを選んでください。';
+      const askedSlot = detectAskedSlot(message);
+      if (!askedSlot) return message;
+      if (!nextKey) return '';
+      if (askedSlot !== nextKey) return '';
+      if (hitSlot(askedSlot, slotValues, slotConfidence)) return '';
+      return message;
+    };
+    const buildCompareChoiceQuestion = (
+      candidates: AiAssistantCompareCandidate[],
+    ): AiAssistantChoiceQuestion | null => {
+      if (!candidates || candidates.length < 2) return null;
+      return {
+        key: 'activityType',
+        prompt: 'どちらの候補を先に作りますか？',
+        options: candidates.map((candidate, idx) => ({
+          label: `候補${candidate.id}: ${candidate.summary}`,
+          value: `候補${candidate.id}`,
+          recommended: idx === 0,
+        })),
+      };
+    };
+    const sanitize = (text?: string | null) => {
+      if (!text) return text ?? '';
+      const banned = ['AI 憲章', 'AI憲章', '憲章', 'AI Constitution', 'SOCIALMORE AI', 'SOCIALMORE', 'You are MORE App', 'Rules:'];
+      const lower = text.toLowerCase();
+      const hasLeak = banned.some((kw) => text.includes(kw)) || lower.includes('constitution');
+      if (hasLeak || text.length > 400) return '';
+      return text;
+    };
+
     const conversation = (payload.conversation ?? []).slice(-12);
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
     const promptConfig = COACHING_PROMPT_CONFIG;
     const detectedLanguage = this.detectLanguage(latestUserMessage, payload.baseLanguage);
+    const inputMode = detectInputMode(latestUserMessage);
+    const extracted = extractSlots(conversation, payload);
+    const slots = extracted.slots;
+    const confidence = extracted.confidence;
+    const intent = extracted.intent;
+    const confirmDraft = payload.action === 'confirm_draft';
+    const lastUserIndex = (() => {
+      for (let i = conversation.length - 1; i >= 0; i -= 1) {
+        if (conversation[i].role === 'user') return i;
+      }
+      return -1;
+    })();
+    const prevConversation = lastUserIndex >= 0 ? conversation.slice(0, lastUserIndex) : conversation;
+    const prevExtracted = extractSlots(prevConversation, payload);
+    const prevSlots = prevExtracted.slots;
+    const prevConfidence = prevExtracted.confidence;
     const instruction = promptConfig.instruction
       .replace('{minQuestionTurns}', promptConfig.minQuestionTurns.toString())
       .replace('{optionPhaseTurns}', promptConfig.optionPhaseTurns.toString())
@@ -254,7 +917,7 @@ export class AiService {
     try {
       const completion = await this.client.chat.completions.create({
         model: this.model,
-        temperature: 0.65,
+        temperature: 0.45,
         response_format: {
           type: 'json_schema',
           json_schema: this.buildAssistantReplySchema(),
@@ -284,27 +947,403 @@ export class AiService {
       });
 
       const raw = this.extractMessageContent(completion);
-      if (!raw) {
-        throw new Error('Empty response from AI');
+      let parsed: AiAssistantReplyPayload;
+      try {
+        parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
+      } catch (err) {
+        // Fallback to safe collecting state instead of 500
+        parsed = {
+          state: 'collecting',
+          language: detectedLanguage,
+          thinkingSteps: ['ヒアリングを続けます'],
+          coachPrompt: 'イベントの概要を教えてください',
+          questions: [
+            'どんなイベントを企画していますか？',
+            '誰向けですか？',
+            '日時・場所・人数・料金は決まっていますか？',
+          ],
+        };
       }
+      let state = (parsed.state as AssistantReplyState) || 'collecting';
+      const rawOptions = Array.isArray(parsed.options) ? parsed.options : [];
+      const optionDetails: AiAssistantOption[] = rawOptions
+        .map((item) => {
+          if (!item) return null;
+          if (typeof item === 'string') {
+            const title = item.trim();
+            return title ? { title } : null;
+          }
+          const title = typeof item.title === 'string' ? item.title.trim() : '';
+          if (!title) return null;
+          return {
+            title,
+            description: typeof item.description === 'string' ? item.description : undefined,
+            pros: typeof item.pros === 'string' ? item.pros : undefined,
+            cons: typeof item.cons === 'string' ? item.cons : undefined,
+          };
+        })
+        .filter((opt): opt is AiAssistantOption => Boolean(opt));
+      const optionTexts = optionDetails
+        .map((item) => {
+          const title = item.title?.trim() ?? '';
+          const desc = item.description?.trim() ?? '';
+          if (title && desc) return `${title}：${desc}`;
+          return title || desc;
+        })
+        .filter((text) => Boolean(text && text.trim()));
+      const hasQuestions = Array.isArray(parsed.questions) && parsed.questions.length > 0;
+      const hasOptions = optionDetails.length > 0;
+      if (state === 'options' && !hasOptions) {
+        state = 'collecting';
+      }
+      if (state === 'collecting' && !hasQuestions && inputMode !== 'compare') {
+        parsed.questions = [
+          'どんなイベントを企画していますか？',
+          '誰向けですか？',
+          '日時・場所・人数・料金は決まっていますか？',
+        ];
+      }
+      // ready gating: fast/slow paths using slots/confidence only
+      const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
+      const requiredAll = requiredSlots.every(hit);
+      const optCount = primaryOptionalSlots.filter(hit).length;
+      const fastPath = requiredAll && optCount >= 2;
+      const slowPath = requiredAll && optCount >= 1 && turnCount >= 3;
+      const isCompareMode = inputMode === 'compare';
+      const effectiveIntent: AssistantIntent = confirmDraft ? 'create' : intent;
+      const draftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
+      const applyEnabled = !isCompareMode && draftReady && effectiveIntent === 'create';
 
-      const parsed = JSON.parse(raw) as AiAssistantReplyPayload;
-      const stageTag = parsed.stage ?? 'coach';
+      // detect which slots have already been asked in this conversation to avoid repetition
+      const lastAssistantMessage = [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)
+        ?.content;
+      const lastAskedSlot = lastAssistantMessage ? detectAskedSlot(lastAssistantMessage) : null;
+      const askedSet = new Set<keyof Slots>();
+      conversation
+        .filter((msg) => msg.role === 'assistant')
+        .forEach((msg) => {
+          const text = (msg.content || '').toLowerCase();
+          if (/日時|いつ|日程/.test(text)) askedSet.add('time');
+          if (/場所|どこ|会場|オンライン/.test(text)) askedSet.add('location');
+          if (/対象|誰向け|オーディエンス/.test(text)) askedSet.add('audience');
+          if (/料金|有料|無料|価格/.test(text)) askedSet.add('price');
+          if (/定員|人数/.test(text)) askedSet.add('capacity');
+          if (/形式|どんなイベント|タイプ/.test(text)) askedSet.add('activityType');
+        });
+
+      const pickNextQuestion = (missing: (keyof Slots)[]) => {
+        const priority: (keyof Slots)[] = [
+          'activityType',
+          'time',
+          'location',
+          'title',
+          'audience',
+          'price',
+          'capacity',
+          'details',
+        ];
+        if (lastAskedSlot && missing.includes(lastAskedSlot)) return lastAskedSlot;
+        for (const key of priority) {
+          if (askedSet.has(key)) continue;
+          if (missing.includes(key)) return key;
+        }
+        return null;
+      };
+
+      const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
+      let nextQuestionKey: keyof Slots | null = null;
+      if (isCompareMode) {
+        const compareCandidates = extractCompareCandidates(latestUserMessage);
+        const compareChoice = buildCompareChoiceQuestion(compareCandidates);
+        nextQuestionKey = null;
+        parsed.compareCandidates = compareCandidates;
+        parsed.choiceQuestion = compareChoice ?? undefined;
+        parsed.questions = [];
+        parsed.message = '候補を整理しました。どちらを選びますか？';
+        state = 'collecting';
+      } else if (!draftReady) {
+        // set boundary question only if no ready
+        const missingRequired = requiredSlots.filter((k) => !hit(k));
+        const missingOptional = primaryOptionalSlots
+          .concat(secondaryOptionalSlots)
+          .filter((k) => !hit(k));
+        const missingAll = [...missingRequired, ...missingOptional];
+        nextQuestionKey = pickNextQuestion(missingAll as (keyof Slots)[]);
+        const decisionChoice = buildDecisionChoiceQuestion(
+          nextQuestionKey,
+          slots,
+          confidence,
+          prevSlots,
+          prevConfidence,
+          latestUserMessage,
+          lastAskedSlot,
+        );
+        if (decisionChoice) {
+          parsed.choiceQuestion = decisionChoice;
+          parsed.questions = [];
+          const ambiguousInput = isAmbiguousAnswer(latestUserMessage);
+          if (ambiguousInput && !confirmDraft) {
+            parsed.coachPrompt =
+              decisionChoice.key === 'activityType'
+                ? 'まだ決まってなくて大丈夫です。近いものを選ぶか、自由に入力してOKです。'
+                : decisionChoice.key === 'audience'
+                  ? '誰向けでも大丈夫です。まずは近いものを選んで、あとで調整できます。'
+                  : '雰囲気は後から変えられます。近いものを選ぶか、自由に入力してください。';
+          }
+        } else {
+          parsed.choiceQuestion = undefined;
+          parsed.questions =
+            nextQuestionKey != null
+              ? [
+                  nextQuestionKey === 'price'
+                    ? '無料か有料か、金額があれば教えてください。'
+                    : nextQuestionKey === 'time'
+                      ? '日時はいつにしますか？'
+                      : nextQuestionKey === 'location'
+                        ? '場所はどこにしますか？オンラインか現地か教えてください。'
+                        : nextQuestionKey === 'activityType'
+                          ? 'どんな形式のイベントですか？（例：交流会、WS、トークなど）'
+                          : nextQuestionKey === 'audience'
+                            ? '主な対象は誰ですか？'
+                            : nextQuestionKey === 'capacity'
+                              ? '定員は何人くらいにしますか？'
+                              : 'タイトルを教えてください。',
+                ]
+              : parsed.questions || [];
+        }
+        const wantsTitleSuggestions =
+          nextQuestionKey === 'title' &&
+          /タイトル|名前|ネーミング|題名|名前案|タイトル案|名前を考えて/i.test(latestUserMessage);
+        if (wantsTitleSuggestions) {
+          parsed.titleSuggestions = buildTitleSuggestions(slots);
+        }
+        const miniPreview = buildMiniPreview(
+          slots,
+          confidence,
+          assumptions,
+          `${latestUserMessage} ${slots.details ?? ''}`,
+        );
+        if (miniPreview) {
+          parsed.miniPreview = miniPreview;
+        }
+        state = 'collecting';
+      } else {
+        nextQuestionKey = null;
+        state = 'ready';
+        if (confirmDraft) {
+          parsed.questions = [];
+          parsed.choiceQuestion = undefined;
+          parsed.compareCandidates = [];
+          parsed.message = 'イベント案を作成しました。フォームで確認できます。';
+        }
+      }
+      parsed.state = state;
+      const stageTag: AssistantStage = state === 'ready' ? 'writer' : 'coach';
+      if (state === 'ready') {
+        if (!parsed.publicActivityDraft) {
+          parsed.publicActivityDraft = {};
+        }
+        if (!parsed.internalExecutionPlan) {
+          parsed.internalExecutionPlan = {};
+        }
+      }
+      const guardedMessage = sanitizeAssistantQuestion(
+        parsed.message,
+        nextQuestionKey,
+        slots,
+        confidence,
+        inputMode,
+        Boolean(parsed.choiceQuestion),
+      );
+      parsed.message = sanitize(guardedMessage);
+      const fallbackMessage =
+        parsed.message ||
+        sanitize(typeof parsed.writerSummary === 'string' ? parsed.writerSummary : undefined) ||
+        sanitize(parsed.coachPrompt) ||
+        (parsed.questions && parsed.questions.length ? parsed.questions[0] : '');
+      // sanitize fields
+      const cleanQuestions = Array.isArray(parsed.questions)
+        ? parsed.questions.map((q) => sanitize(q)).filter(Boolean)
+        : [];
+      const cleanOptions = optionDetails.map((o) => ({
+        ...o,
+        title: sanitize(o.title),
+        description: sanitize(o.description),
+        pros: sanitize(o.pros),
+        cons: sanitize(o.cons),
+      }));
+      const cleanMiniPreview = parsed.miniPreview
+        ? {
+            bullets: Array.isArray(parsed.miniPreview.bullets)
+              ? parsed.miniPreview.bullets.map((b) => sanitize(b)).filter(Boolean)
+              : [],
+            note: sanitize(parsed.miniPreview.note),
+          }
+        : undefined;
+      const cleanChoiceQuestion = parsed.choiceQuestion
+        ? {
+            key: parsed.choiceQuestion.key,
+            prompt: sanitize(parsed.choiceQuestion.prompt),
+            options: Array.isArray(parsed.choiceQuestion.options)
+              ? parsed.choiceQuestion.options
+                  .map((o) => ({
+                    label: sanitize(o.label),
+                    value: sanitize(o.value),
+                    recommended: Boolean(o.recommended),
+                  }))
+                  .filter((o) => o.label && o.value)
+              : [],
+          }
+        : undefined;
+      const cleanCompareCandidates = Array.isArray(parsed.compareCandidates)
+        ? parsed.compareCandidates
+            .map((candidate) => ({
+              id: sanitize(candidate.id),
+              summary: sanitize(candidate.summary),
+              activityType: sanitize(candidate.activityType),
+              time: sanitize(candidate.time),
+              price: sanitize(candidate.price),
+              notes: sanitize(candidate.notes),
+            }))
+            .filter((candidate) => candidate.id && candidate.summary)
+        : [];
+      const cleanTitleSuggestions = Array.isArray(parsed.titleSuggestions)
+        ? parsed.titleSuggestions.map((t) => sanitize(t)).filter(Boolean)
+        : [];
+      const cleanWriterSummary =
+        typeof parsed.writerSummary === 'string'
+          ? sanitize(parsed.writerSummary)
+          : parsed.writerSummary;
+      if (parsed.publicActivityDraft) {
+        parsed.publicActivityDraft.title = sanitize(parsed.publicActivityDraft.title as any);
+        parsed.publicActivityDraft.shortDescription = sanitize(parsed.publicActivityDraft.shortDescription);
+        parsed.publicActivityDraft.detailedDescription = sanitize(parsed.publicActivityDraft.detailedDescription);
+        parsed.publicActivityDraft.targetAudience = sanitize(parsed.publicActivityDraft.targetAudience);
+        parsed.publicActivityDraft.ageRange = sanitize(parsed.publicActivityDraft.ageRange);
+        if (Array.isArray(parsed.publicActivityDraft.highlights)) {
+          parsed.publicActivityDraft.highlights = parsed.publicActivityDraft.highlights
+            .map((h) => sanitize(h))
+            .filter(Boolean);
+        }
+        if (parsed.publicActivityDraft.schedule) {
+          parsed.publicActivityDraft.schedule.date = sanitize(parsed.publicActivityDraft.schedule.date);
+          parsed.publicActivityDraft.schedule.duration = sanitize(parsed.publicActivityDraft.schedule.duration);
+          parsed.publicActivityDraft.schedule.location = sanitize(parsed.publicActivityDraft.schedule.location);
+        }
+        parsed.publicActivityDraft.signupNotes = sanitize(parsed.publicActivityDraft.signupNotes);
+      }
+      if (parsed.internalExecutionPlan) {
+        parsed.internalExecutionPlan.objective = sanitize(parsed.internalExecutionPlan.objective);
+        parsed.internalExecutionPlan.coreExperienceDesign = sanitize(parsed.internalExecutionPlan.coreExperienceDesign);
+        if (Array.isArray(parsed.internalExecutionPlan.runOfShow)) {
+          parsed.internalExecutionPlan.runOfShow = parsed.internalExecutionPlan.runOfShow.map((i) => sanitize(i)).filter(Boolean);
+        }
+        if (Array.isArray(parsed.internalExecutionPlan.materials)) {
+          parsed.internalExecutionPlan.materials = parsed.internalExecutionPlan.materials.map((i) => sanitize(i)).filter(Boolean);
+        }
+        if (Array.isArray(parsed.internalExecutionPlan.staffing)) {
+          parsed.internalExecutionPlan.staffing = parsed.internalExecutionPlan.staffing.map((i) => sanitize(i)).filter(Boolean);
+        }
+        if (Array.isArray(parsed.internalExecutionPlan.risksAndMitigation)) {
+          parsed.internalExecutionPlan.risksAndMitigation = parsed.internalExecutionPlan.risksAndMitigation
+            .map((i) => sanitize(i))
+            .filter(Boolean);
+        }
+        if (Array.isArray(parsed.internalExecutionPlan.prepChecklist)) {
+          parsed.internalExecutionPlan.prepChecklist = parsed.internalExecutionPlan.prepChecklist.map((i) => sanitize(i)).filter(Boolean);
+        }
+      }
+      parsed.coachPrompt = sanitize(parsed.coachPrompt);
+      parsed.questions = cleanQuestions;
+      parsed.miniPreview = cleanMiniPreview;
+      parsed.choiceQuestion = cleanChoiceQuestion;
+      parsed.compareCandidates = cleanCompareCandidates;
+      parsed.titleSuggestions = cleanTitleSuggestions;
+      parsed.inputMode = inputMode;
+      parsed.nextQuestionKey = nextQuestionKey;
+      parsed.editorChecklist = Array.isArray(parsed.editorChecklist)
+        ? parsed.editorChecklist.map((item) => sanitize(item)).filter(Boolean)
+        : [];
+      parsed.thinkingSteps = Array.isArray(parsed.thinkingSteps)
+        ? parsed.thinkingSteps.map((item) => sanitize(item)).filter(Boolean)
+        : [];
+      const highConfSlots: Slots = {};
+      (Object.keys(slots) as (keyof Slots)[]).forEach((k) => {
+        if ((confidence[k] ?? 0) >= 0.6 && slots[k]) {
+          highConfSlots[k] = slots[k];
+        }
+      });
+      const draftBaseSlots = Object.keys(highConfSlots).length ? highConfSlots : slots;
+      const draftId =
+        draftReady && Object.keys(draftBaseSlots).length
+          ? hashStable({ slots: normalizeSlotsForHash(draftBaseSlots), policyVersion: this.POLICY_VERSION })
+          : undefined;
+
       return {
         ...parsed,
+        status: state,
+        stage: stageTag,
         promptVersion: promptConfig.version,
         language: detectedLanguage,
         turnCount,
-        stage: stageTag,
         thinkingSteps: Array.isArray(parsed.thinkingSteps) ? parsed.thinkingSteps : [],
+        editorChecklist: Array.isArray(parsed.editorChecklist) ? parsed.editorChecklist : [],
+        optionDetails: cleanOptions,
+        options: optionTexts,
+        optionTexts: optionTexts.map((t) => sanitize(t) as string),
+        writerSummary: cleanWriterSummary as any,
+        message: fallbackMessage ?? '',
+        miniPreview: cleanMiniPreview,
+        choiceQuestion: cleanChoiceQuestion,
+        compareCandidates: cleanCompareCandidates,
+        titleSuggestions: cleanTitleSuggestions,
+        inputMode,
+        nextQuestionKey,
+        slots,
+        confidence,
+        draftReady,
+        applyEnabled,
+        draftId,
+        intent: effectiveIntent,
+        modeHint: confirmDraft ? 'operate' : 'chat',
       };
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException('Failed to generate assistant reply', HttpStatus.INTERNAL_SERVER_ERROR, {
-        cause: error,
-      });
+      // eslint-disable-next-line no-console
+      console.error('[AiService] generateAssistantReply error:', error);
+      const safe: AiAssistantReply = {
+        state: 'collecting',
+        status: 'collecting',
+        stage: 'coach',
+        language: payload.baseLanguage || 'ja',
+        thinkingSteps: ['AI接続が不安定です', '必要な情報をもう1つ教えてください'],
+        coachPrompt: 'タイトル/対象/日時/場所/料金のいずれか1つだけ教えてください。',
+        editorChecklist: [],
+        writerSummary: '',
+        questions: [
+          '案を作るにはタイトル/対象/日時/場所/料金のいずれかが必要です。どれか1つだけ教えてください。',
+        ],
+        optionTexts: [],
+        promptVersion: promptConfig.version,
+        turnCount,
+        slots: {},
+        confidence: {
+          title: 0,
+          audience: 0,
+          activityType: 0,
+          time: 0,
+          location: 0,
+          price: 0,
+          capacity: 0,
+          details: 0,
+        },
+        draftReady: false,
+        applyEnabled: false,
+        intent: 'unknown',
+        inputMode: 'describe',
+        nextQuestionKey: null,
+        modeHint: 'chat',
+      };
+      return safe;
     }
   }
 
@@ -755,45 +1794,137 @@ export class AiService {
         type: 'object',
         additionalProperties: false,
         properties: {
-          status: { type: 'string', enum: ['collecting', 'options', 'ready'] },
+          state: { type: 'string', enum: ['collecting', 'options', 'ready'] },
+          language: { type: 'string' },
           message: { type: 'string' },
-          stage: { type: 'string', enum: ['coach', 'editor', 'writer'] },
           thinkingSteps: {
             type: 'array',
             items: { type: 'string' },
-            minItems: 1,
+            minItems: 2,
             maxItems: 6,
           },
-          coachPrompts: {
-            type: 'array',
-            items: { type: 'string' },
-          },
+          coachPrompt: { type: 'string' },
           editorChecklist: {
             type: 'array',
             items: { type: 'string' },
           },
-          writerSummary: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              headline: { type: 'string' },
-              audience: { type: 'string' },
-              logistics: { type: 'string' },
-              riskNotes: { type: 'string' },
-              nextSteps: { type: 'string' },
-            },
-          },
-          confirmQuestions: {
+          writerSummary: { type: 'string' },
+          questions: {
             type: 'array',
             items: { type: 'string' },
+            maxItems: 4,
           },
           options: {
             type: 'array',
-            items: { type: 'string' },
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                title: { type: 'string' },
+                description: { type: 'string' },
+                pros: { type: 'string' },
+                cons: { type: 'string' },
+              },
+              required: ['title'],
+            },
+            maxItems: 3,
           },
-          proposal: this.getEventContentSchema(),
+          miniPreview: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              bullets: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+              note: { type: 'string' },
+            },
+          },
+          choiceQuestion: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              key: { type: 'string' },
+              prompt: { type: 'string' },
+              options: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    label: { type: 'string' },
+                    value: { type: 'string' },
+                    recommended: { type: 'boolean' },
+                  },
+                  required: ['label', 'value'],
+                },
+                maxItems: 6,
+              },
+            },
+          },
+          compareCandidates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string' },
+                summary: { type: 'string' },
+                activityType: { type: 'string' },
+                time: { type: 'string' },
+                price: { type: 'string' },
+                notes: { type: 'string' },
+              },
+              required: ['id', 'summary'],
+            },
+            maxItems: 3,
+          },
+          inputMode: { type: 'string', enum: ['describe', 'fill', 'compare'] },
+          nextQuestionKey: { type: ['string', 'null'] },
+          titleSuggestions: {
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 10,
+          },
+          publicActivityDraft: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              title: { type: 'string' },
+              shortDescription: { type: 'string' },
+              detailedDescription: { type: 'string' },
+              targetAudience: { type: 'string' },
+              ageRange: { type: 'string' },
+              highlights: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+              schedule: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  date: { type: 'string' },
+                  duration: { type: 'string' },
+                  location: { type: 'string' },
+                },
+              },
+              price: { type: ['number', 'string', 'null'] },
+              capacity: { type: ['number', 'string', 'null'] },
+              signupNotes: { type: 'string' },
+            },
+          },
+          internalExecutionPlan: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              objective: { type: 'string' },
+              coreExperienceDesign: { type: 'string' },
+              runOfShow: { type: 'array', items: { type: 'string' } },
+              materials: { type: 'array', items: { type: 'string' } },
+              staffing: { type: 'array', items: { type: 'string' } },
+              risksAndMitigation: { type: 'array', items: { type: 'string' } },
+              prepChecklist: { type: 'array', items: { type: 'string' } },
+            },
+          },
         },
-        required: ['status', 'message', 'thinkingSteps', 'stage'],
+        required: ['state', 'language', 'thinkingSteps'],
       },
     };
   }

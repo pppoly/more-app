@@ -12,6 +12,7 @@ export class ConsoleEventAssistantController {
     @Param('communityId') communityId: string,
     @Body()
     body: {
+      logId?: string;
       stage?: string;
       summary?: string;
       qaState?: any;
@@ -31,6 +32,15 @@ export class ConsoleEventAssistantController {
   @Get('logs')
   listLogs(@Param('communityId') communityId: string, @Req() req: any) {
     return this.assistantService.listLogs(req.user.id, communityId);
+  }
+
+  @Get('logs/:logId')
+  getLog(
+    @Param('communityId') communityId: string,
+    @Param('logId') logId: string,
+    @Req() req: any,
+  ) {
+    return this.assistantService.getLog(req.user.id, communityId, logId);
   }
 
   @Get('dashboard')
