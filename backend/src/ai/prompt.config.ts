@@ -93,11 +93,11 @@ export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, Pr
     version: 'event-assistant-v4-decision',
     schemaName: 'MoreAppAssistantReply',
     promptId: 'event-assistant.decision',
-    systemPrompt: `${COMMON_SYSTEM} Phase: decision. Provide the user-facing question only via ui.question and options via ui.options.`,
+    systemPrompt: `${COMMON_SYSTEM} Phase: decision. Provide only ui.message (no questions/options).`,
     instruction:
-      'Phase=decision. Output ui.question (key,text) and ui.options (2-4). Use next_question_key as ui.question.key. ui.options.value must be a short slot value. ' +
+      'Phase=decision. Output ui.message only. ' +
       'You may include thinkingSteps(2-4), coachPrompt, writerSummary. ' +
-      'Do NOT include drafts or flow-control fields. ' +
+      'Do NOT include ui.question or ui.options, drafts, or flow-control fields. ' +
       COMMON_GUIDANCE +
       ' Latest user message: "{latestMessage}".',
     allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],

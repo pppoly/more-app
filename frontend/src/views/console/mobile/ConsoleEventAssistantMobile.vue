@@ -231,6 +231,17 @@
             </button>
           </div>
         </div>
+        <div v-if="mode === 'chat' && shouldShowCommitCheckpoint" class="commit-block">
+          <p class="commit-title">内容がそろいました。続け方を選んでください。</p>
+          <div class="commit-actions">
+            <button type="button" class="commit-primary" @click="handleCommitDraft">
+              この内容で作成する
+            </button>
+            <button type="button" class="commit-secondary" @click="handleCommitEdit">
+              もう少し直す
+            </button>
+          </div>
+        </div>
 
         <div v-if="aiLoading" class="chat-bubble chat-bubble--assistant chat-bubble--typing">
           <span class="typing-dot"></span>
@@ -377,6 +388,12 @@ import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 import { getAssistantDisplay } from '../../../utils/assistantDisplay';
+import {
+  computeShouldShowCommitCheckpoint,
+  isCompareMode as computeIsCompareMode,
+  resolveChoiceQuestionState,
+  shouldAppendQuestionBubble,
+} from '../../../utils/eventAssistantUiState';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
@@ -504,13 +521,19 @@ const isCommitted = ref(false);
 const canShowProposalUi = computed(
   () => lastDraftReady.value && Boolean(lastDraftId.value) && isCommitted.value,
 );
+const shouldShowCommitCheckpoint = computed(() =>
+  computeShouldShowCommitCheckpoint({
+    mode: mode.value,
+    draftReady: lastDraftReady.value,
+    draftId: lastDraftId.value,
+    isCommitted: isCommitted.value,
+    hasChoiceQuestion: Boolean(choiceQuestionState.value),
+    isCompareMode: isCompareModeUi.value,
+  }),
+);
 const hasProposalMessage = computed(() => chatMessages.value.some((msg) => msg.type === 'proposal'));
 const showEntryBar = computed(() => canShowProposalUi.value && !hasProposalMessage.value);
-const isCompareModeUi = computed(
-  () =>
-    lastInputMode.value === 'compare' ||
-    Boolean(compareCandidatesState.value && compareCandidatesState.value.length),
-);
+const isCompareModeUi = computed(() => computeIsCompareMode(lastInputMode.value, compareCandidatesState.value));
 const selectionLabelMap: Record<string, string> = {
   activityType: 'イベントの形式',
   audience: '対象',
@@ -1108,9 +1131,7 @@ const requestAssistantReply = async (
     const stageTag: EventAssistantStage = state === 'ready' ? 'writer' : state === 'options' ? 'editor' : 'coach';
     currentStage.value = stageTag;
     const steps = Array.isArray(result.thinkingSteps) ? result.thinkingSteps : [];
-    const isCompareMode =
-      result.inputMode === 'compare' ||
-      (Array.isArray(result.compareCandidates) && result.compareCandidates.length > 0);
+    const isCompareMode = computeIsCompareMode(result.inputMode ?? null, result.compareCandidates ?? null);
     const nextQuestionKey = result.nextQuestionKey ?? null;
     const willOperate =
       mode.value === 'operate' || result.modeHint === 'operate' || options?.action === 'confirm_draft';
@@ -1118,16 +1139,13 @@ const requestAssistantReply = async (
       typeof result.ui?.question?.text === 'string' ? result.ui.question.text.trim() : '';
     const uiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
     const uiOptions = Array.isArray(result.ui?.options) ? result.ui.options : [];
-    const derivedChoiceKey = nextQuestionKey ?? (isCompareMode ? 'activityType' : null);
-    const derivedChoiceQuestion =
-      derivedChoiceKey && uiOptions.length
-        ? {
-            key: derivedChoiceKey,
-            prompt: uiQuestionText || uiMessageText,
-            options: uiOptions,
-          }
-        : null;
-    const choiceQuestion = result.choiceQuestion ?? derivedChoiceQuestion;
+    const choiceQuestion = resolveChoiceQuestionState({
+      inputMode: result.inputMode ?? null,
+      compareCandidates: result.compareCandidates ?? null,
+      machineChoiceQuestion: result.choiceQuestion ?? null,
+      uiMessage: uiMessageText,
+      uiOptions,
+    });
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
     coachPromptState.value =
       !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
@@ -1139,12 +1157,19 @@ const requestAssistantReply = async (
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
     let messageId: string | null = null;
     const canRenderBubble = !willOperate;
+    const shouldHoldCommit = Boolean(result.draftReady) && !isCommitted.value && !willOperate;
     const shouldRenderQuestionBubble =
-      canRenderBubble && !isCompareMode && nextQuestionKey && uiQuestionText;
+      canRenderBubble && !isCompareMode && nextQuestionKey && uiQuestionText && !shouldHoldCommit;
     const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
     const shouldRenderMessageBubble =
-      canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText;
-    if (shouldRenderQuestionBubble) {
+      canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText && !shouldHoldCommit;
+    const lastMessage = chatMessages.value[chatMessages.value.length - 1] ?? null;
+    const canAppendQuestionBubble = shouldAppendQuestionBubble({
+      lastMessage,
+      questionText: uiQuestionText,
+      shouldRender: shouldRenderQuestionBubble,
+    });
+    if (canAppendQuestionBubble) {
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1192,7 +1217,7 @@ const requestAssistantReply = async (
         { contentJson: result as unknown as Record<string, unknown> },
       );
     }
-    pendingQuestion.value = shouldRenderQuestionBubble ? uiQuestionText : null;
+    pendingQuestion.value = canAppendQuestionBubble ? uiQuestionText : null;
     // keep options bubble highlighted to drive user click
     currentQuestionId.value =
       messageId && (shouldRenderQuestionBubble || shouldRenderCompareBubble) ? messageId : null;
@@ -1604,6 +1629,21 @@ const handleSkipCompare = async () => {
   choiceQuestionState.value = null;
   showCandidateDetails.value = false;
   await requestAssistantReply(payload);
+};
+
+const handleCommitDraft = async () => {
+  if (aiLoading.value || !lastDraftReady.value || !lastDraftId.value) return;
+  const content = 'この内容で作成する';
+  isCommitted.value = true;
+  pushMessage('user', 'text', content);
+  await requestAssistantReply(content, { action: 'confirm_draft' });
+};
+
+const handleCommitEdit = () => {
+  isCommitted.value = false;
+  nextTick(() => {
+    chatInputRef.value?.focus();
+  });
 };
 
 const openMilestonePreview = () => {
@@ -2463,6 +2503,48 @@ onUnmounted(() => {
   font-size: 12px;
   color: #6b7280;
   margin: 4px 0 6px;
+}
+
+.commit-block {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.commit-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: #111827;
+}
+
+.commit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commit-primary {
+  border: none;
+  background: #111827;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.commit-secondary {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 

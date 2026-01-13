@@ -921,7 +921,7 @@ export class AiService {
       const currConf = currentConfidence[key] ?? 0;
       return prevValue === currValue && currConf <= prevConf;
     };
-    const buildDecisionChoiceKey = (
+    const buildDecisionChoiceQuestion = (
       key: keyof Slots | null,
       slotValues: Slots,
       slotConfidence: Confidence,
@@ -929,7 +929,7 @@ export class AiService {
       prevConfidence: Confidence,
       lastUserMessage: string,
       lastAskedSlot: keyof Slots | null,
-    ): keyof Slots | null => {
+    ): AiAssistantChoiceQuestion | null => {
       if (!key) return null;
       const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details'];
       if (!subjectiveKeys.includes(key)) return null;
@@ -938,7 +938,48 @@ export class AiService {
       const askedSame = lastAskedSlot === key;
       const noNewInfo = askedSame && noNewInfoForKey(key, prevSlots, prevConfidence, slotValues, slotConfidence);
       const shouldOfferChoices = !hasSlotValue || ambiguous || noNewInfo;
-      return shouldOfferChoices ? key : null;
+      if (!shouldOfferChoices) return null;
+      if (key === 'activityType') {
+        return {
+          key: 'activityType',
+          prompt: 'どの形式に近いですか？（おすすめ：カジュアル交流）',
+          options: [
+            { label: '🍺 カジュアル交流（自由に話す）', value: 'casual_meetup', recommended: true },
+            { label: '🤝 自己紹介＋小グループ交流', value: 'icebreakers' },
+            { label: '🎲 ゲーム/ボードゲーム中心', value: 'game_night' },
+            { label: '🌐 Language Exchange（言語交換）', value: 'language_exchange' },
+          ],
+        };
+      }
+      if (key === 'audience') {
+        return {
+          key: 'audience',
+          prompt: '誰向けにしますか？（おすすめ：友人・同僚）',
+          options: [
+            { label: '👥 友人・同僚向け', value: 'friends', recommended: true },
+            { label: '👨‍👩‍👧‍👦 親子OK', value: 'family' },
+            { label: '🌍 外国人歓迎（多言語）', value: 'multilingual' },
+            { label: '🧑‍🎓 初参加/初心者歓迎', value: 'beginners' },
+          ],
+        };
+      }
+      if (key === 'details') {
+        const recommendedPotluck =
+          /ドリンク持参|持参|持ち寄り/.test(lastUserMessage) ||
+          /ドリンク持参|持参|持ち寄り/.test(slotValues.details ?? '');
+        const recommendLabel = recommendedPotluck ? '持ち寄り' : 'わいわい';
+        return {
+          key: 'details',
+          prompt: `雰囲気はどれが近いですか？（おすすめ：${recommendLabel}）`,
+          options: [
+            { label: '🍻 わいわい（飲み会っぽい）', value: 'lively', recommended: !recommendedPotluck },
+            { label: '☕ 落ち着いた会話中心', value: 'calm_chat' },
+            { label: '🍱 持ち寄り（ドリンク/軽食）', value: 'potluck_drinks', recommended: recommendedPotluck },
+            { label: '🚫 ノンアル中心', value: 'no_alcohol' },
+          ],
+        };
+      }
+      return null;
     };
     const hitSlot = (key: keyof Slots, slotValues: Slots, slotConfidence: Confidence) =>
       Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
@@ -1062,9 +1103,9 @@ export class AiService {
     const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !hit(k));
     const missingAll = [...missingRequired, ...missingOptional];
     const nextQuestionKeyCandidate = draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]);
-    const decisionChoiceKey =
+    const decisionChoiceCandidate =
       !draftReady && !isCompareMode
-        ? buildDecisionChoiceKey(
+        ? buildDecisionChoiceQuestion(
             nextQuestionKeyCandidate,
             slots,
             confidence,
@@ -1079,7 +1120,7 @@ export class AiService {
       inputMode,
       confirmDraft,
       draftReady,
-      hasDecisionChoice: Boolean(decisionChoiceKey),
+      hasDecisionChoice: Boolean(decisionChoiceCandidate),
     });
     const promptConfig = getEventAssistantPromptConfig(promptPhase);
     const promptParams: Record<string, string> = {
@@ -1258,7 +1299,8 @@ export class AiService {
       );
       parsed.message = sanitize(guardedMessage);
       const uiQuestionKey = nextQuestionKey ?? null;
-      const cleanUiOptions = Array.isArray(parsed.ui?.options)
+      const isDecisionPhase = promptPhase === 'decision';
+      const cleanUiOptions = !isDecisionPhase && Array.isArray(parsed.ui?.options)
         ? parsed.ui!.options
             .map((o) => ({
               label: sanitize(o.label),
@@ -1267,10 +1309,24 @@ export class AiService {
             }))
             .filter((o) => o.label && o.value)
         : [];
-      const cleanUiQuestionText = sanitize(parsed.ui?.question?.text);
+      const cleanUiQuestionText = isDecisionPhase ? '' : sanitize(parsed.ui?.question?.text);
       const cleanUiMessage = sanitize(parsed.ui?.message);
+      const cleanDecisionChoice = decisionChoiceCandidate
+        ? {
+            key: decisionChoiceCandidate.key,
+            prompt: sanitize(decisionChoiceCandidate.prompt),
+            options: decisionChoiceCandidate.options
+              .map((o) => ({
+                label: sanitize(o.label),
+                value: sanitize(o.value),
+                recommended: Boolean(o.recommended),
+              }))
+              .filter((o) => o.label && o.value),
+          }
+        : null;
+      const finalQuestionText = cleanDecisionChoice?.prompt || cleanUiQuestionText;
       const cleanUiQuestion =
-        cleanUiQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: cleanUiQuestionText } : undefined;
+        finalQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: finalQuestionText } : undefined;
       const cleanUi: AiAssistantUiPayload | undefined =
         cleanUiMessage || cleanUiQuestion || cleanUiOptions.length
           ? {
@@ -1303,13 +1359,14 @@ export class AiService {
         isCompareMode && cleanUiOptions.length ? 'activityType' : uiQuestionKey;
       const choicePrompt = cleanUiQuestionText || cleanUiMessage || '';
       const cleanChoiceQuestion =
-        choiceKey && cleanUiOptions.length && choicePrompt
+        cleanDecisionChoice ??
+        (choiceKey && cleanUiOptions.length && choicePrompt
           ? {
               key: choiceKey,
               prompt: choicePrompt,
               options: cleanUiOptions,
             }
-          : undefined;
+          : undefined);
       const cleanCompareCandidates = Array.isArray(compareCandidates)
         ? compareCandidates
             .map((candidate) => ({

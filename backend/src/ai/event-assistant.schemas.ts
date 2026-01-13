@@ -67,15 +67,8 @@ const uiCollectingSchema: JsonSchema = baseObject(
 const uiDecisionSchema: JsonSchema = baseObject(
   {
     message: uiMessageSchema,
-    question: uiQuestionSchema,
-    options: {
-      type: 'array',
-      minItems: 2,
-      maxItems: 4,
-      items: uiOptionSchema,
-    },
   },
-  ['question', 'options'],
+  [],
 );
 
 const uiCompareSchema: JsonSchema = baseObject(
@@ -120,7 +113,7 @@ export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
         coachPrompt: coachPromptSchema,
         writerSummary: writerSummarySchema,
       },
-      ['ui'],
+      [],
     ),
   },
   compare: {

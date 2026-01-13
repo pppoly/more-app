@@ -48,7 +48,7 @@
     "description": "Decision phase for event assistant (JSON only).",
     "version": "v1",
     "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
-    "instructions": "Phase=decision. Output ui.question (key,text) and ui.options (2-4). Use next_question_key as ui.question.key. ui.options.value must be a short slot value (no prose). You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
+    "instructions": "Phase=decision. Output ui.message only (no ui.question/ui.options). You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
     "params": ["latest_message", "next_question_key", "phase", "input_mode"],
     "tags": ["event-assistant", "decision"],
     "meta": {
