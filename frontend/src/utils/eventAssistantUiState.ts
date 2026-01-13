@@ -6,8 +6,10 @@ export type ChoiceOption = {
   recommended?: boolean;
 };
 
+type QuestionKey = NonNullable<EventAssistantReply['choiceQuestion']>['key'];
+
 export type ChoiceQuestion = {
-  key: string;
+  key: QuestionKey;
   prompt: string;
   options: ChoiceOption[];
 };
@@ -57,6 +59,18 @@ export const buildAckText = (key: string | null | undefined, answer: string) => 
       return normalized ? `了解しました。定員は${normalized}ですね。` : '了解しました。定員を記録しました。';
     case 'registrationForm':
       return normalized ? `了解しました。申込項目は「${normalized}」ですね。` : '了解しました。申込フォームを記録しました。';
+    case 'visibility':
+      return normalized ? `了解しました。公開範囲は「${normalized}」ですね。` : '了解しました。公開範囲を記録しました。';
+    case 'requireApproval':
+      return normalized ? `了解しました。参加承認は「${normalized}」ですね。` : '了解しました。参加承認を記録しました。';
+    case 'enableWaitlist':
+      return normalized ? `了解しました。キャンセル待ちは「${normalized}」ですね。` : '了解しました。キャンセル待ちを記録しました。';
+    case 'requireCheckin':
+      return normalized ? `了解しました。チェックインは「${normalized}」ですね。` : '了解しました。チェックインを記録しました。';
+    case 'refundPolicy':
+      return normalized ? `了解しました。返金ポリシーは「${normalized}」ですね。` : '了解しました。返金ポリシーを記録しました。';
+    case 'riskNotice':
+      return normalized ? `了解しました。注意事項は「${normalized}」ですね。` : '了解しました。注意事項を記録しました。';
     default:
       return '了解しました。';
   }
@@ -80,7 +94,7 @@ export const resolveChoiceQuestionState = ({
   if (!isCompareMode(inputMode, compareCandidates)) return null;
   if (!compareCandidates || compareCandidates.length === 0) return null;
   return {
-    key: 'activityType',
+    key: 'details',
     prompt: '比較したい候補を選んでください。',
     options: compareCandidates.map((candidate, idx) => ({
       label: `候補${candidate.id}: ${candidate.summary}`,

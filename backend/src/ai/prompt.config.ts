@@ -32,7 +32,7 @@ export const COACHING_PROMPT_CONFIG: PromptConfig = {
     'options => partial info but branching; 2-3 options with title/description (pros/cons optional). ' +
     'ready => required slots present and key optional slots present per policy; include publicActivityDraft + internalExecutionPlan with facts_from_user, assumptions, open_questions. ' +
     'If turnCount >= {readyTurns} and key info still missing, ask ONE missing high-priority slot only. ' +
-    'Key slots: required = title/topic, audience, activityType; optional = time, location, price, capacity. ' +
+    'Key slots: required = title, time, location, price, details; optional = capacity, visibility, registrationForm. ' +
     'Always include: state, language, thinkingSteps (2-4 progress notes), coachPrompt, editorChecklist, writerSummary. ' +
     'Never ask more than 1 question per turn, never invent unconfirmed decisions, keep concise. Latest user message: "{latestMessage}".',
   minQuestionTurns: 2,

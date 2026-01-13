@@ -601,7 +601,7 @@
                         type="number"
                         min="0"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.tiers[0].daysBefore"
+                        v-model.number="refundPolicyRules.tiers![0].daysBefore"
                       />
                       <span class="refund-rule-suffix">日（含む）</span>
                       <input
@@ -609,7 +609,7 @@
                         min="0"
                         max="100"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.tiers[0].percent"
+                        v-model.number="refundPolicyRules.tiers![0].percent"
                       />
                       <span class="refund-rule-suffix">%</span>
                     </div>
@@ -619,7 +619,7 @@
                         type="number"
                         min="0"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.tiers[1].daysBefore"
+                        v-model.number="refundPolicyRules.tiers![1].daysBefore"
                       />
                       <span class="refund-rule-suffix">日（含む）</span>
                       <input
@@ -627,7 +627,7 @@
                         min="0"
                         max="100"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.tiers[1].percent"
+                        v-model.number="refundPolicyRules.tiers![1].percent"
                       />
                       <span class="refund-rule-suffix">%</span>
                     </div>
@@ -639,7 +639,7 @@
                         type="number"
                         min="0"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.single.daysBefore"
+                        v-model.number="refundPolicyRules.single!.daysBefore"
                       />
                       <span class="refund-rule-suffix">日（含む）</span>
                       <input
@@ -647,7 +647,7 @@
                         min="0"
                         max="100"
                         class="ios-inline-input refund-rule-input"
-                        v-model.number="form.config.refundPolicyRules.single.percent"
+                        v-model.number="refundPolicyRules.single!.percent"
                       />
                       <span class="refund-rule-suffix">%</span>
                     </div>
@@ -838,7 +838,7 @@
 
 <script setup lang="ts">
 // Google Maps types for global "google" loaded via script
-declare const google: typeof import('google.maps');
+declare const google: any;
 
 import { computed, reactive, ref, onMounted, onUnmounted, onActivated, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
@@ -921,9 +921,9 @@ const mapError = ref<string | null>(null);
 const mapRef = ref<HTMLDivElement | null>(null);
 const locationSearchInputRef = ref<HTMLInputElement | null>(null);
 const locationSearchText = ref('');
-let mapInstance: google.maps.Map | null = null;
-let markerInstance: google.maps.Marker | null = null;
-let autocompleteInstance: google.maps.places.Autocomplete | null = null;
+let mapInstance: any = null;
+let markerInstance: any = null;
+let autocompleteInstance: any = null;
 let googleLoaded = false;
 const ENTRY_PREF_KEY = 'CONSOLE_EVENT_ENTRY';
 const communityId = route.params.communityId as string | undefined;
@@ -1026,6 +1026,13 @@ const form = reactive({
   requireApproval: false,
   ticketPrice: null as number | null,
   config: defaultConfig(),
+});
+
+const refundPolicyRules = computed<RefundPolicyRules>(() => {
+  if (!form.config.refundPolicyRules) {
+    form.config.refundPolicyRules = cloneRefundPolicyRules(defaultRefundRules);
+  }
+  return form.config.refundPolicyRules;
 });
 
 const registrationFields = ref<BuilderField[]>([]);
@@ -1357,7 +1364,7 @@ const fetchPasteInsights = async (draft: string) => {
     pasteResultLoading.value = false;
   }
 };
-type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number';
+type FieldMetaType = 'text' | 'textarea' | 'datetime' | 'number' | 'select';
 
 const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placeholder?: string }> = {
   title: { label: 'タイトル', type: 'text', placeholder: '設定してください' },
@@ -1764,6 +1771,18 @@ const applyAiDraft = (draft: any) => {
   }
   if (draft.visibility) {
     form.visibility = draft.visibility;
+  }
+  if (draft.requireApproval != null) {
+    form.requireApproval = draft.requireApproval;
+  }
+  if (draft.enableWaitlist != null) {
+    form.config.enableWaitlist = draft.enableWaitlist;
+  }
+  if (draft.requireCheckin != null) {
+    form.config.requireCheckin = draft.requireCheckin;
+  }
+  if (draft.refundPolicy) {
+    form.config.refundPolicy = draft.refundPolicy;
   }
   if (Array.isArray(draft.ticketTypes) && draft.ticketTypes.length) {
     const price = Number(draft.ticketTypes[0].price);
@@ -2208,7 +2227,8 @@ onBeforeRouteLeave(async () => {
   }
 });
 
-const checkPastedDraft = async (auto = false) => {
+const checkPastedDraft = async (autoOrEvent: boolean | Event = false) => {
+  const auto = typeof autoOrEvent === 'boolean' ? autoOrEvent : false;
   draftCheckMessage.value = '';
   pastedPreview.value = null;
   const text = pastedDraft.value.trim();
@@ -2348,7 +2368,7 @@ const applyParsedResult = async (result: Record<string, any>) => {
   }
   const ticketTypes = pick<any[]>('ticketTypes', 'ticket_types');
   if (Array.isArray(ticketTypes) && ticketTypes.length) {
-    form.ticketTypes = ticketTypes as any;
+    (form as unknown as { ticketTypes?: unknown[] }).ticketTypes = ticketTypes as unknown[];
     pasteFilledFields.value.push('チケット設定');
   }
   const regForm = pick<any[]>('registrationForm', 'registration_form');
@@ -3076,7 +3096,7 @@ const applyFormDraftFromStorage = async (): Promise<boolean> => {
       normalizeRefundPolicyConfig(form.config as Record<string, any>);
     }
     if (Array.isArray(savedForm.ticketTypes)) {
-      form.ticketTypes = savedForm.ticketTypes;
+      (form as unknown as { ticketTypes?: unknown[] }).ticketTypes = savedForm.ticketTypes as unknown[];
     }
     if (Array.isArray(savedForm.registrationForm)) {
       registrationFields.value = buildBuilderFields(savedForm.registrationForm as RegistrationFormField[]);
@@ -3450,7 +3470,6 @@ const handleCoverUpload = async (ev: Event) => {
     return;
   }
   if (!eventId.value) {
-    pendingCoverFiles.value.push(...valid);
     setLocalCoverPreviews(valid);
     coverError.value = null;
     input.value = '';

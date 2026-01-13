@@ -42,7 +42,7 @@ class PrismaStub {
 }
 
 test('organizer payout policy status reflects stored acceptance', async () => {
-  const user = { id: 'user-1', organizerPayoutPolicyAcceptedAt: null };
+  const user: UserRecord = { id: 'user-1', organizerPayoutPolicyAcceptedAt: null };
   const prisma = new PrismaStub(user) as any;
   const service = new OrganizersService(prisma);
 
@@ -57,7 +57,7 @@ test('organizer payout policy status reflects stored acceptance', async () => {
 });
 
 test('payout policy acceptance is required before onboarding', async () => {
-  const user = { id: 'user-2', organizerPayoutPolicyAcceptedAt: null };
+  const user: UserRecord = { id: 'user-2', organizerPayoutPolicyAcceptedAt: null };
   const prisma = new PrismaStub(user) as any;
   const permissions = new PermissionsService(prisma);
 

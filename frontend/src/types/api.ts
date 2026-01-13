@@ -603,6 +603,10 @@ export interface GeneratedEventContent {
   requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
   registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
   visibility?: EventVisibility;
+  requireApproval?: boolean;
+  enableWaitlist?: boolean;
+  requireCheckin?: boolean;
+  refundPolicy?: string;
 }
 
 export interface GenerateEventCopyInput {
@@ -638,14 +642,20 @@ export interface EventAssistantPublicDraft {
   title?: string;
   shortDescription?: string;
   detailedDescription?: string;
-  targetAudience?: string;
   ageRange?: string;
   highlights?: string[];
+  requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
   schedule?: { date?: string; duration?: string; location?: string; startTime?: string; endTime?: string };
   price?: number | string | null;
   capacity?: number | string | null;
   signupNotes?: string;
   registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
+  visibility?: string;
+  requireApproval?: boolean;
+  enableWaitlist?: boolean;
+  requireCheckin?: boolean;
+  refundPolicy?: string;
+  riskNotice?: string;
   expertComment?: string;
 }
 
@@ -668,32 +678,38 @@ export interface EventAssistantReply {
     question?: {
       key:
         | 'title'
-        | 'audience'
-        | 'activityType'
         | 'time'
         | 'location'
-      | 'price'
-      | 'capacity'
-      | 'details'
-      | 'visibility'
-      | 'registrationForm';
-    text: string;
-  };
-  options?: Array<{ label: string; value: string; recommended?: boolean }>;
-  mode?: 'explain' | 'collecting' | 'decision';
+        | 'price'
+        | 'capacity'
+        | 'details'
+        | 'visibility'
+        | 'registrationForm'
+        | 'requireApproval'
+        | 'enableWaitlist'
+        | 'requireCheckin'
+        | 'refundPolicy'
+        | 'riskNotice';
+      text: string;
+    };
+    options?: Array<{ label: string; value: string; recommended?: boolean }>;
+    mode?: 'explain' | 'collecting' | 'decision';
   };
   questionMeta?: {
     key:
       | 'title'
-      | 'audience'
-      | 'activityType'
       | 'time'
       | 'location'
       | 'price'
       | 'capacity'
       | 'details'
       | 'visibility'
-      | 'registrationForm';
+      | 'registrationForm'
+      | 'requireApproval'
+      | 'enableWaitlist'
+      | 'requireCheckin'
+      | 'refundPolicy'
+      | 'riskNotice';
     exampleLines: string[];
   };
   thinkingSteps?: string[];
@@ -722,8 +738,6 @@ export interface EventAssistantReply {
   stage?: 'coach' | 'editor' | 'writer';
   slots?: {
     title?: string;
-    audience?: string;
-    activityType?: string;
     time?: string;
     location?: string;
     price?: string;
@@ -731,18 +745,26 @@ export interface EventAssistantReply {
     details?: string;
     visibility?: string;
     registrationForm?: string;
+    requireApproval?: string;
+    enableWaitlist?: string;
+    requireCheckin?: string;
+    refundPolicy?: string;
+    riskNotice?: string;
   };
   confidence?: Record<
     | 'title'
-    | 'audience'
-    | 'activityType'
     | 'time'
     | 'location'
     | 'price'
     | 'capacity'
     | 'details'
     | 'visibility'
-    | 'registrationForm',
+    | 'registrationForm'
+    | 'requireApproval'
+    | 'enableWaitlist'
+    | 'requireCheckin'
+    | 'refundPolicy'
+    | 'riskNotice',
     number
   >;
   draftReady?: boolean;
@@ -753,20 +775,46 @@ export interface EventAssistantReply {
   autoTitle?: string;
   miniPreview?: { bullets: string[]; note?: string };
   choiceQuestion?: {
-    key: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details';
+    key:
+      | 'title'
+      | 'time'
+      | 'location'
+      | 'price'
+      | 'capacity'
+      | 'details'
+      | 'visibility'
+      | 'registrationForm'
+      | 'requireApproval'
+      | 'enableWaitlist'
+      | 'requireCheckin'
+      | 'refundPolicy'
+      | 'riskNotice';
     prompt: string;
     options: Array<{ label: string; value: string; recommended?: boolean }>;
   };
   compareCandidates?: Array<{
     id: string;
     summary: string;
-    activityType?: string;
     time?: string;
     price?: string;
     notes?: string;
   }>;
   inputMode?: 'describe' | 'fill' | 'compare';
-  nextQuestionKey?: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details' | null;
+  nextQuestionKey?:
+    | 'title'
+    | 'time'
+    | 'location'
+    | 'price'
+    | 'capacity'
+    | 'details'
+    | 'visibility'
+    | 'registrationForm'
+    | 'requireApproval'
+    | 'enableWaitlist'
+    | 'requireCheckin'
+    | 'refundPolicy'
+    | 'riskNotice'
+    | null;
   modeHint?: 'chat' | 'operate';
   uiMode?: 'explain' | 'collect' | 'decision';
 }

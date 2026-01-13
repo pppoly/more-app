@@ -33,7 +33,6 @@ test('ready schema requires draft fields', () => {
       title: 't',
       shortDescription: 's',
       detailedDescription: 'd',
-      targetAudience: 'a',
       schedule: { date: '2025-01-01', startTime: '10:00', endTime: '11:00', location: 'tokyo' },
       price: '無料',
       capacity: null,

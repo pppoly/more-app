@@ -51,7 +51,6 @@ const publicDraftSchema: JsonSchema = {
     title: { type: 'string' },
     shortDescription: { type: 'string' },
     detailedDescription: { type: 'string' },
-    targetAudience: { type: 'string' },
     schedule: scheduleSchema,
     price: { type: 'string' },
     capacity: { type: 'string' },
@@ -69,6 +68,12 @@ const publicDraftSchema: JsonSchema = {
         required: ['label', 'type'],
       },
     },
+    visibility: { type: 'string' },
+    requireApproval: { type: 'boolean' },
+    enableWaitlist: { type: 'boolean' },
+    requireCheckin: { type: 'boolean' },
+    refundPolicy: { type: 'string' },
+    riskNotice: { type: 'string' },
   },
   required: [
     'title',
@@ -92,15 +97,6 @@ const uiQuestionSchema: JsonSchema = baseObject(
     text: { type: 'string' },
   },
   ['key', 'text'],
-);
-
-const uiOptionSchema: JsonSchema = baseObject(
-  {
-    label: { type: 'string' },
-    value: { type: 'string' },
-    recommended: { type: 'boolean' },
-  },
-  ['label', 'value'],
 );
 
 const uiMessageSchema: JsonSchema = { type: 'string' };
@@ -151,6 +147,11 @@ const slotUpdatesSchema: JsonSchema = baseObject(
     details: slotUpdateSchema,
     visibility: slotUpdateSchema,
     registrationForm: slotUpdateSchema,
+    requireApproval: slotUpdateSchema,
+    enableWaitlist: slotUpdateSchema,
+    requireCheckin: slotUpdateSchema,
+    refundPolicy: slotUpdateSchema,
+    riskNotice: slotUpdateSchema,
   },
   [],
 );
@@ -278,8 +279,8 @@ export const validateAssistantOutput = (
   });
   Object.entries(properties).forEach(([key, node]) => {
     if (!node || typeof node !== 'object') return;
-    const value = (payload as Record<string, unknown>)[key];
-    validateRequired(node as JsonSchema, value, key);
+    const value = payload[key];
+    validateRequired(node, value, key);
   });
   return { valid: errors.length === 0, errors };
 };

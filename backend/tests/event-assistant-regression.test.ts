@@ -5,10 +5,13 @@ import { getEventAssistantPromptConfig } from '../src/ai/prompt.config';
 import { getEventAssistantOutputSchema, validateAssistantOutput } from '../src/ai/event-assistant.schemas';
 import {
   buildFallbackQuestionText,
+  buildUnrelatedAnswerMessage,
   detectUnsupportedCurrencyInput,
   extractTokyoStartTimeIso,
+  INITIAL_PARSE_SCHEMA,
   isDelegateAnswer,
   isDelegateTitleAnswer,
+  isLikelyAnswerForSlot,
   shouldEnterExplainMode,
 } from '../src/ai/ai.service';
 
@@ -77,10 +80,26 @@ test('delegate title answer is detected', () => {
   assert.equal(isDelegateTitleAnswer('秋のBBQ交流会'), false);
 });
 
+test('unrelated answer feedback is generated for current slot', () => {
+  assert.equal(isLikelyAnswerForSlot('price', '支払い事故の話です'), false);
+  assert.equal(isLikelyAnswerForSlot('location', '啊水淀粉撒地方是德国撒个撒的发生地方地方啊水淀粉'), false);
+  assert.equal(isLikelyAnswerForSlot('time', '啊水淀粉撒地方是德国撒个撒的发生地方地方啊水淀粉'), false);
+  const message = buildUnrelatedAnswerMessage('price');
+  assert.ok(message.includes('参加費'));
+});
+
 test('extractTokyoStartTimeIso parses explicit date+time', () => {
   const iso = extractTokyoStartTimeIso('2026年2月12日 15:30 開始');
   assert.ok(iso);
   assert.ok(iso?.startsWith('2026-02-12T06:30:00.000Z'));
+});
+
+test('initial parse schema includes UNKNOWN intent and firstReplyKey', () => {
+  const intentEnum = INITIAL_PARSE_SCHEMA.schema.properties.intent.enum as unknown as string[];
+  const firstReplyEnum = INITIAL_PARSE_SCHEMA.schema.properties.firstReplyKey.enum as unknown as string[];
+  assert.ok(intentEnum.includes('UNKNOWN'));
+  assert.ok(firstReplyEnum.includes('ASK_CLARIFY'));
+  assert.ok(firstReplyEnum.includes('UNKNOWN'));
 });
 
 

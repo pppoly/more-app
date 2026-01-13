@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildAckText,
-  computeShouldShowCommitCheckpoint,
-  resolveChoiceQuestionState,
-  shouldAppendQuestionBubble,
-} from '../../frontend/src/utils/eventAssistantUiState';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-test('commit checkpoint appears only when draftReady and not committed', () => {
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<any>;
+const loadUiState = () =>
+  dynamicImport(
+    pathToFileURL(resolve(__dirname, '../../frontend/src/utils/eventAssistantUiState.ts')).href,
+  );
+
+test('commit checkpoint appears only when draftReady and not committed', async () => {
+  const { computeShouldShowCommitCheckpoint } = await loadUiState();
   assert.equal(
     computeShouldShowCommitCheckpoint({
       mode: 'chat',
@@ -43,9 +48,10 @@ test('commit checkpoint appears only when draftReady and not committed', () => {
   );
 });
 
-test('choiceQuestion prefers machine options over ui.options', () => {
+test('choiceQuestion prefers machine options over ui.options', async () => {
+  const { resolveChoiceQuestionState } = await loadUiState();
   const machineChoice = {
-    key: 'details',
+    key: 'details' as const,
     prompt: '内容はどうしますか？',
     options: [
       { label: 'A', value: 'A' },
@@ -65,7 +71,8 @@ test('choiceQuestion prefers machine options over ui.options', () => {
   assert.deepEqual(result?.options, machineChoice.options);
 });
 
-test('compare choiceQuestion uses compareCandidates and ignores ui.options', () => {
+test('compare choiceQuestion uses compareCandidates and ignores ui.options', async () => {
+  const { resolveChoiceQuestionState } = await loadUiState();
   const result = resolveChoiceQuestionState({
     inputMode: 'compare',
     compareCandidates: [
@@ -79,12 +86,13 @@ test('compare choiceQuestion uses compareCandidates and ignores ui.options', () 
       { label: '候補B', value: '候補B' },
     ],
   });
-  assert.equal(result?.key, 'activityType');
+  assert.equal(result?.key, 'details');
   assert.equal(result?.options.length, 2);
   assert.equal(result?.options[0].value, '候補A');
 });
 
-test('compare choiceQuestion ignores ui.options when compareCandidates missing', () => {
+test('compare choiceQuestion ignores ui.options when compareCandidates missing', async () => {
+  const { resolveChoiceQuestionState } = await loadUiState();
   const result = resolveChoiceQuestionState({
     inputMode: 'compare',
     compareCandidates: [],
@@ -98,7 +106,8 @@ test('compare choiceQuestion ignores ui.options when compareCandidates missing',
   assert.equal(result, null);
 });
 
-test('question bubble is not appended when last message is identical', () => {
+test('question bubble is not appended when last message is identical', async () => {
+  const { shouldAppendQuestionBubble } = await loadUiState();
   const shouldAppend = shouldAppendQuestionBubble({
     lastMessage: { role: 'assistant', type: 'text', content: 'タイトルは？' },
     questionText: 'タイトルは？',
@@ -107,7 +116,8 @@ test('question bubble is not appended when last message is identical', () => {
   assert.equal(shouldAppend, false);
 });
 
-test('buildAckText formats price response', () => {
+test('buildAckText formats price response', async () => {
+  const { buildAckText } = await loadUiState();
   const ack = buildAckText('price', '1000円');
   assert.ok(ack.includes('参加費'));
 });

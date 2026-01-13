@@ -314,8 +314,8 @@
           </header>
           <div class="plan-preview-scroll">
             <article class="plan-preview-section">
-              <p class="plan-preview-subtitle">概要（短文）</p>
-              <p class="plan-preview-text">{{ previewShortDescription }}</p>
+              <p class="plan-preview-subtitle">概要</p>
+              <p class="plan-preview-text">{{ previewPlanDescription }}</p>
             </article>
             <article v-if="previewExpertComment" class="plan-preview-section">
               <p class="plan-preview-subtitle">AIコメント</p>
@@ -323,7 +323,7 @@
             </article>
             <article class="plan-preview-section">
               <p class="plan-preview-subtitle">詳細</p>
-              <p class="plan-preview-text">{{ previewDetailedDescription || previewPlanDescription }}</p>
+              <p class="plan-preview-text">{{ previewPlanDescription }}</p>
             </article>
             <div class="plan-preview-grid">
               <article>
@@ -422,6 +422,7 @@ import type {
   EventAssistantState,
   EventDraft,
   GeneratedEventContent,
+  EventVisibility,
   ConsoleCommunityDetail,
   ConsoleEventAssistantLog,
 } from '../../../types/api';
@@ -620,6 +621,11 @@ const selectionLabelMap: Record<string, string> = {
   capacity: '定員',
   visibility: '公開範囲',
   registrationForm: '申込フォーム',
+  requireApproval: '参加承認',
+  enableWaitlist: 'キャンセル待ち',
+  requireCheckin: 'チェックイン',
+  refundPolicy: '返金ポリシー',
+  riskNotice: '注意事項',
   interrupt: '次の操作',
 };
 const confirmedAnswers = reactive<Record<string, string>>({});
@@ -710,7 +716,7 @@ const upsertDraftAnchor = (draft: GeneratedEventContent & { summary?: string }, 
   );
   const title = extractText(draft.title);
   const desc = extractText(draft.description);
-  const payload = {
+  const payload: ChatMessage['payload'] = {
     title,
     description: desc,
     raw: draft,
@@ -785,6 +791,31 @@ const QUESTION_HELPERS: Record<
     lines: ['氏名 / 電話 / メール', '希望チケットプラン'],
     foot: '必要な項目だけでOKです。',
   },
+  requireApproval: {
+    title: '例',
+    lines: ['承認あり / なし', '手動承認にする'],
+    foot: '後から変更できます。',
+  },
+  enableWaitlist: {
+    title: '例',
+    lines: ['有効 / 無効', '満員時のみ有効'],
+    foot: '後から変更できます。',
+  },
+  requireCheckin: {
+    title: '例',
+    lines: ['有効 / 無効', '当日受付でQR確認'],
+    foot: '後から変更できます。',
+  },
+  refundPolicy: {
+    title: '例',
+    lines: ['3日前まで全額返金', '当日キャンセルは返金不可'],
+    foot: '後から変更できます。',
+  },
+  riskNotice: {
+    title: '例',
+    lines: ['持ち物：身分証', '注意事項：遅刻連絡必須'],
+    foot: '後から変更できます。',
+  },
 };
 
 const getQuestionHelper = (msg: ChatMessage) => {
@@ -841,11 +872,10 @@ const getCandidateDisplayValue = (value: string) => {
   if (!match) return null;
   const id = match[1].toUpperCase();
   const candidate = compareCandidatesState.value?.find((item) => item.id === id);
-  return candidate?.activityType || candidate?.summary || null;
+  return candidate?.summary || null;
 };
 const getCandidateTitle = (opt: { label: string; value: string }) => {
   const candidate = findCandidate(opt);
-  if (candidate?.activityType) return candidate.activityType;
   if (candidate?.summary) return candidate.summary;
   return opt.label.replace(/^(候補|解釈)[A-Z]:?\s*/i, '');
 };
@@ -968,8 +998,6 @@ const finalPlanTickets = computed(() => getPlanTickets(aiResult.value));
 const finalPlanRequirements = computed(() => getPlanRequirements(aiResult.value));
 const finalPlanFormFields = computed(() => getPlanFormFields(aiResult.value));
 const previewPlanTitle = computed(() => getPlanTitle(planPreview.value));
-const previewShortDescription = computed(() => extractText(planPreview.value?.shortDescription) || '未設定');
-const previewDetailedDescription = computed(() => extractText(planPreview.value?.detailedDescription) || '');
 const previewPlanDescription = computed(() => {
   const text = extractText(planPreview.value?.description);
   if (text) return text;
@@ -1443,7 +1471,7 @@ const buildProposalFromDraft = (
     title: toLocalizedContent(draft?.title || 'イベント案'),
     description: toLocalizedContent(mergedDescription),
     notes: toLocalizedContent(checklistNotes),
-    riskNotice: toLocalizedContent(''),
+    riskNotice: toLocalizedContent(draft?.riskNotice || ''),
     expertComment: draft?.expertComment || '',
     snsCaptions: {
       line: { ja: '', zh: '', en: '' },
@@ -1469,7 +1497,11 @@ const buildProposalFromDraft = (
         : [],
     requirements: draft?.requirements ?? [],
     registrationForm: draft?.registrationForm ?? [],
-    visibility: 'public',
+    visibility: (draft?.visibility as EventVisibility) || 'public',
+    requireApproval: draft?.requireApproval ?? undefined,
+    enableWaitlist: draft?.enableWaitlist ?? undefined,
+    requireCheckin: draft?.requireCheckin ?? undefined,
+    refundPolicy: draft?.refundPolicy ?? undefined,
     summary,
   };
 };
@@ -1490,7 +1522,7 @@ const requestAssistantReply = async (
   const conversationContext = buildConversationContext();
   const promptDetails = `${qaSummary}\n\n--- Conversation ---\n${conversationContext}\n\n--- Assistant Prompt ---\n${prompt}`;
   const conversationMessages = buildConversationMessages();
-  const payload = {
+  const payload: EventAssistantRequest = {
     baseLanguage: getProfileValue(qaState.baseLanguage, 'baseLanguage'),
     topic: getProfileValue(qaState.topic, 'topic'),
     audience: getProfileValue(qaState.audience, 'audience'),
@@ -1569,11 +1601,13 @@ const requestAssistantReply = async (
     if (uiQuestionText && isDuplicateQuestionKey) {
       console.warn('[EventAssistant] duplicate question key ignored', { nextQuestionKey });
     }
+    const hasNextQuestion = Boolean(nextQuestionKey);
+    const hasQuestionText = Boolean(uiQuestionText);
     const shouldRenderQuestionBubble =
       canRenderBubble &&
       !isCompareMode &&
-      nextQuestionKey &&
-      uiQuestionText &&
+      hasNextQuestion &&
+      hasQuestionText &&
       !shouldHoldCommit &&
       !isDuplicateQuestionKey;
     const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
@@ -2347,7 +2381,7 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
       contentText: selectionDisplay,
     };
   });
-  const sanitizedMessages = hydratedMessages.map((msg) => {
+  const sanitizedMessages: ChatMessage[] = hydratedMessages.map((msg) => {
     if (msg.role !== 'assistant' || msg.type !== 'text') return msg;
     if (msg.action && SAFE_ASSISTANT_ACTIONS.has(msg.action)) return msg;
     const derived = getAssistantDisplay({
@@ -2360,7 +2394,7 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
       contentText: derived,
       action: 'system-safe',
       includeInContext: false,
-    };
+    } as ChatMessage;
   });
   const hasRenderableAssistantMessage = sanitizedMessages.some(
     (msg) => msg.role === 'assistant' && (msg.type === 'proposal' || isSafeAssistantMessage(msg)),
@@ -2782,13 +2816,14 @@ onMounted(async () => {
   });
 });
 
-if (typeof window !== 'undefined' && window.visualViewport) {
-  const handleViewport = () => {
-    const viewport = window.visualViewport;
-    const inner = window.innerHeight;
-    const offset = Math.max(0, inner - viewport.height - viewport.offsetTop);
-    keyboardOffset.value = offset;
-  };
+  if (typeof window !== 'undefined' && window.visualViewport) {
+    const handleViewport = () => {
+      const viewport = window.visualViewport;
+      if (!viewport) return;
+      const inner = window.innerHeight;
+      const offset = Math.max(0, inner - viewport.height - viewport.offsetTop);
+      keyboardOffset.value = offset;
+    };
   window.visualViewport.addEventListener('resize', handleViewport);
   window.visualViewport.addEventListener('scroll', handleViewport);
   handleViewport();

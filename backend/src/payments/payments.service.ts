@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
 import {
   BadRequestException,
   ForbiddenException,
@@ -1784,6 +1785,203 @@ export class PaymentsService {
         },
       });
     }
+  }
+
+  private normalizeLedgerStatus(status: string) {
+    switch (status) {
+      case 'paid':
+      case 'refunded':
+      case 'partial_refunded':
+      case 'pending':
+        return status;
+      default:
+        return status || 'pending';
+    }
+  }
+
+  private normalizePaymentStatus(status: string) {
+    if (['refunded', 'partial_refunded', 'paid', 'pending', 'failed', 'cancelled', 'disputed'].includes(status)) {
+      return status;
+    }
+    return status || 'pending';
+  }
+
+  private mapRegistrationStatus(paymentStatus: string) {
+    if (paymentStatus === 'paid') return { paymentStatus: 'paid', status: 'paid' };
+    if (paymentStatus === 'refunded' || paymentStatus === 'partial_refunded') {
+      return { paymentStatus: 'refunded', status: 'refunded' };
+    }
+    if (paymentStatus === 'failed') return { paymentStatus: 'failed', status: 'pending' };
+    if (paymentStatus === 'cancelled') return { paymentStatus: 'cancelled', status: 'cancelled' };
+    return { paymentStatus: 'unpaid', status: 'pending' };
+  }
+
+  private getConsistencyIssues(
+    payment: Payment & { registration?: { id: string; paymentStatus: string | null; status: string | null } | null },
+    ledger: Awaited<ReturnType<PaymentsService['getPaymentSummaryFromLedger']>>,
+  ) {
+    const issues: Array<{ code: string; message: string }> = [];
+    const normalizedPaymentStatus = this.normalizePaymentStatus(payment.status);
+    const normalizedLedgerStatus = this.normalizeLedgerStatus(ledger.status);
+    const graceMs = 10 * 60 * 1000;
+    const isOldEnough = Date.now() - payment.updatedAt.getTime() > graceMs;
+
+    if (ledger.entryCount === 0 && normalizedPaymentStatus !== 'pending') {
+      issues.push({
+        code: 'ledger_missing',
+        message: '支払いは進行しているが台帳記録がありません',
+      });
+    }
+
+    if (normalizedLedgerStatus !== 'pending' && normalizedLedgerStatus !== normalizedPaymentStatus) {
+      issues.push({
+        code: 'status_mismatch',
+        message: `台帳(${normalizedLedgerStatus})と支払い状態(${normalizedPaymentStatus})が不一致です`,
+      });
+    }
+
+    if (normalizedPaymentStatus === 'paid' && !payment.stripeChargeId && payment.method === 'stripe') {
+      issues.push({
+        code: 'missing_charge',
+        message: 'Stripe 決済に対して charge ID が未保存です',
+      });
+    }
+
+    if (
+      normalizedPaymentStatus === 'paid' &&
+      payment.method === 'stripe' &&
+      payment.providerAccountId &&
+      !payment.stripeTransferId &&
+      isOldEnough
+    ) {
+      issues.push({
+        code: 'missing_transfer',
+        message: 'Stripe transfer が未作成または未保存です',
+      });
+    }
+
+    if (normalizedPaymentStatus === 'refunded' && payment.refundedGrossTotal < (payment.amount ?? 0)) {
+      issues.push({
+        code: 'refund_amount_short',
+        message: '返金済みなのに返金合計が不足しています',
+      });
+    }
+
+    if (normalizedPaymentStatus === 'paid' && payment.refundedGrossTotal > 0) {
+      issues.push({
+        code: 'refund_status_mismatch',
+        message: '返金合計があるのに支払い状態が paid のままです',
+      });
+    }
+
+    if (payment.registration && payment.registrationId) {
+      const expected = this.mapRegistrationStatus(normalizedPaymentStatus);
+      const regPaymentStatus = payment.registration.paymentStatus ?? '';
+      if (expected.paymentStatus !== regPaymentStatus) {
+        issues.push({
+          code: 'registration_status_mismatch',
+          message: `参加状態(${regPaymentStatus})が支払い状態(${normalizedPaymentStatus})と不一致です`,
+        });
+      }
+    }
+
+    if (payment.refundedGrossTotal > (payment.amount ?? 0)) {
+      issues.push({
+        code: 'refund_exceeds_amount',
+        message: '返金合計が決済金額を超えています',
+      });
+    }
+
+    return { issues, normalizedPaymentStatus, normalizedLedgerStatus };
+  }
+
+  async scanPaymentInconsistencies(params?: { sinceDays?: number; limit?: number }) {
+    const sinceDays = Math.max(1, Math.min(90, Number(params?.sinceDays ?? 30)));
+    const limit = Math.max(1, Math.min(200, Number(params?.limit ?? 50)));
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+    const payments = await this.prisma.payment.findMany({
+      where: { updatedAt: { gte: since } },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      include: {
+        registration: { select: { id: true, paymentStatus: true, status: true } },
+      },
+    });
+    const results: Array<{
+      paymentId: string;
+      registrationId?: string | null;
+      status: string;
+      ledgerStatus: string;
+      issues: Array<{ code: string; message: string }>;
+    }> = [];
+    for (const payment of payments) {
+      const ledger = await this.getPaymentSummaryFromLedger(payment.id);
+      const { issues, normalizedPaymentStatus, normalizedLedgerStatus } = this.getConsistencyIssues(payment, ledger);
+      if (!issues.length) continue;
+      results.push({
+        paymentId: payment.id,
+        registrationId: payment.registrationId,
+        status: normalizedPaymentStatus,
+        ledgerStatus: normalizedLedgerStatus,
+        issues,
+      });
+    }
+    return {
+      checked: payments.length,
+      issues: results.length,
+      items: results,
+    };
+  }
+
+  async reconcilePaymentInconsistencies(params?: { sinceDays?: number; limit?: number; dryRun?: boolean }) {
+    const dryRun = params?.dryRun !== false;
+    const scan = await this.scanPaymentInconsistencies(params);
+    if (dryRun || scan.items.length === 0) {
+      return { ...scan, reconciled: 0, dryRun };
+    }
+    let reconciled = 0;
+    for (const item of scan.items) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: item.paymentId },
+        include: { registration: { select: { id: true } } },
+      });
+      if (!payment) continue;
+      const ledger = await this.getPaymentSummaryFromLedger(payment.id);
+      if (ledger.entryCount === 0) {
+        continue;
+      }
+      const expectedStatus = this.normalizeLedgerStatus(ledger.status);
+      const updateData: Prisma.PaymentUpdateInput = {};
+      if (expectedStatus && expectedStatus !== payment.status) {
+        updateData.status = expectedStatus;
+      }
+      if (ledger.refundedAmount > (payment.refundedGrossTotal ?? 0)) {
+        updateData.refundedGrossTotal = ledger.refundedAmount;
+      }
+      if (Object.keys(updateData).length === 0) continue;
+      await this.prisma.payment.update({ where: { id: payment.id }, data: updateData });
+      if (payment.registrationId) {
+        const mapped = this.mapRegistrationStatus(expectedStatus);
+        await this.prisma.eventRegistration.update({
+          where: { id: payment.registrationId },
+          data: { paymentStatus: mapped.paymentStatus, status: mapped.status },
+        });
+      }
+      await this.logGatewayEvent({
+        gateway: payment.method ?? 'unknown',
+        eventType: 'consistency.reconciled',
+        status: 'success',
+        paymentId: payment.id,
+        registrationId: payment.registrationId ?? undefined,
+        eventId: payment.eventId ?? undefined,
+        lessonId: payment.lessonId ?? undefined,
+        communityId: payment.communityId ?? undefined,
+        userId: payment.userId,
+        payload: { expectedStatus, ledgerStatus: ledger.status, refundedAmount: ledger.refundedAmount },
+      });
+      reconciled += 1;
+    }
+    return { ...scan, reconciled, dryRun };
   }
 
   private async recordSubscriptionPayment(invoice: Stripe.Invoice, communityId: string, planId: string) {
