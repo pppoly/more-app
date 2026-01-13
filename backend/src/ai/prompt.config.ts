@@ -116,11 +116,11 @@ export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, Pr
     version: 'event-assistant-v4-compare',
     schemaName: 'MoreAppAssistantReply',
     promptId: 'event-assistant.compare',
-    systemPrompt: `${COMMON_SYSTEM} Phase: compare. Provide ui.message and ui.options; no free-text questions.`,
+    systemPrompt: `${COMMON_SYSTEM} Phase: compare. Provide ui.message only; no questions/options.`,
     instruction:
-      'Phase=compare. Output ui.message and ui.options (2-3) based on compareCandidates. Use compareCandidates.id for ui.options.value (候補A/候補B). ' +
+      'Phase=compare. Output ui.message only. ' +
       'You may include thinkingSteps(2-4), writerSummary. ' +
-      'Do NOT include drafts or flow-control fields. ' +
+      'Do NOT include ui.question or ui.options, drafts, or flow-control fields. ' +
       COMMON_GUIDANCE +
       ' Latest user message: "{latestMessage}".',
     allowedFields: ['ui', 'thinkingSteps', 'writerSummary'],
@@ -142,6 +142,9 @@ export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, Pr
     systemPrompt: `${COMMON_SYSTEM} Phase: ready. Generate draft content only; no questions.`,
     instruction:
       'Phase=ready. Output: publicActivityDraft, internalExecutionPlan. ' +
+      'publicActivityDraft.shortDescription must be 2-3 sentences, and detailedDescription must be 6-10 sentences, in the user’s latest language. ' +
+      'Add publicActivityDraft.expertComment: 2-3 sentences from a community event expert perspective, using only confirmed facts (no new assumptions). ' +
+      'Use only confirmed facts; do not invent time/location/price/capacity. If info is missing, write neutral, non-specific sentences. ' +
       'Optionally include ui.message, writerSummary, coachPrompt if needed. ' +
       'Do NOT include ui.question or ui.options, or flow-control fields. ' +
       COMMON_GUIDANCE +
@@ -157,6 +160,9 @@ export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, Pr
     systemPrompt: `${COMMON_SYSTEM} Phase: operate. Finalize drafts only; no questions.`,
     instruction:
       'Phase=operate. Output: publicActivityDraft, internalExecutionPlan. ' +
+      'publicActivityDraft.shortDescription must be 2-3 sentences, and detailedDescription must be 6-10 sentences, in the user’s latest language. ' +
+      'Add publicActivityDraft.expertComment: 2-3 sentences from a community event expert perspective, using only confirmed facts (no new assumptions). ' +
+      'Use only confirmed facts; do not invent time/location/price/capacity. If info is missing, write neutral, non-specific sentences. ' +
       'Optionally include ui.message, writerSummary, coachPrompt if needed. ' +
       'Do NOT include ui.question or ui.options, or flow-control fields. ' +
       COMMON_GUIDANCE +

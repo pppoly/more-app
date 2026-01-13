@@ -88,7 +88,8 @@ export class AiController {
       return await this.aiService.generateAssistantReply({
         ...(body as GenerateEventContentDto),
         conversation: normalizedConversation,
-        action: body?.action === 'confirm_draft' ? 'confirm_draft' : undefined,
+        action:
+          body?.action === 'confirm_draft' || body?.action === 'continue_edit' ? body.action : undefined,
       });
     } catch (err) {
       // eslint-disable-next-line no-console

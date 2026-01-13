@@ -11,7 +11,7 @@ test('commit checkpoint appears only when draftReady and not committed', () => {
     computeShouldShowCommitCheckpoint({
       mode: 'chat',
       draftReady: true,
-      draftId: 'draft-1',
+      nextQuestionKey: null,
       isCommitted: false,
       hasChoiceQuestion: false,
       isCompareMode: false,
@@ -22,8 +22,19 @@ test('commit checkpoint appears only when draftReady and not committed', () => {
     computeShouldShowCommitCheckpoint({
       mode: 'chat',
       draftReady: true,
-      draftId: 'draft-1',
+      nextQuestionKey: null,
       isCommitted: true,
+      hasChoiceQuestion: false,
+      isCompareMode: false,
+    }),
+    false,
+  );
+  assert.equal(
+    computeShouldShowCommitCheckpoint({
+      mode: 'chat',
+      draftReady: true,
+      nextQuestionKey: 'title',
+      isCommitted: false,
       hasChoiceQuestion: false,
       isCompareMode: false,
     }),
@@ -53,10 +64,13 @@ test('choiceQuestion prefers machine options over ui.options', () => {
   assert.deepEqual(result?.options, machineChoice.options);
 });
 
-test('choiceQuestion uses compare ui.options when machine choice is missing', () => {
+test('compare choiceQuestion uses compareCandidates and ignores ui.options', () => {
   const result = resolveChoiceQuestionState({
     inputMode: 'compare',
-    compareCandidates: [{ id: 'A', summary: 'A' }],
+    compareCandidates: [
+      { id: 'A', summary: '候補A' },
+      { id: 'B', summary: '候補B' },
+    ],
     machineChoiceQuestion: null,
     uiMessage: 'どれにしますか？',
     uiOptions: [
@@ -66,6 +80,21 @@ test('choiceQuestion uses compare ui.options when machine choice is missing', ()
   });
   assert.equal(result?.key, 'activityType');
   assert.equal(result?.options.length, 2);
+  assert.equal(result?.options[0].value, '候補A');
+});
+
+test('compare choiceQuestion ignores ui.options when compareCandidates missing', () => {
+  const result = resolveChoiceQuestionState({
+    inputMode: 'compare',
+    compareCandidates: [],
+    machineChoiceQuestion: null,
+    uiMessage: 'どれにしますか？',
+    uiOptions: [
+      { label: '候補A', value: '候補A' },
+      { label: '候補B', value: '候補B' },
+    ],
+  });
+  assert.equal(result, null);
 });
 
 test('question bubble is not appended when last message is identical', () => {

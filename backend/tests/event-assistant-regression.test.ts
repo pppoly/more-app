@@ -13,6 +13,14 @@ test('decision schema forbids ui.question/options', () => {
   assert.equal('options' in uiProps, false);
 });
 
+test('compare schema forbids ui.options', () => {
+  const schema = getEventAssistantOutputSchema('compare').schema;
+  const uiSchema = schema.properties?.ui;
+  const uiProps = (uiSchema?.properties ?? {}) as Record<string, unknown>;
+  assert.ok(Object.keys(uiProps).length > 0);
+  assert.equal('options' in uiProps, false);
+});
+
 test('collecting/compare drop draft fields', () => {
   const collectingPolicy = getEventAssistantPromptConfig('collecting');
   const collectingPayload = {

@@ -47,34 +47,33 @@
       <div class="chat-log" ref="chatLogRef">
         <div v-if="isEmptyConversation" class="intro-card">
           <div class="intro-header">
-            <div>
-              <p class="intro-eyebrow">AI イベント作成ガイド</p>
-              <p class="intro-title">AI がイベント作成をお手伝いします。</p>
+            <div class="intro-copy">
+              <p class="intro-title">AIがイベント作成を手伝います</p>
+              <p class="intro-subtitle">一言でOK。足りないところはあとで一緒に整えます。</p>
+              <p class="intro-example-line">入力例：来週の金曜、15:00〜17:00にBBQしませんか？参加費は2000円/人です。</p>
             </div>
             <button type="button" class="intro-toggle" @click="introExpanded = !introExpanded">
               {{ introExpanded ? '閉じる' : 'もっと見る' }}
             </button>
           </div>
-          <p class="intro-desc">
-            ひとこと入力すると、必要な点だけ聞き返しながら「イベント案・募集文・フォーム反映用の下書き」をまとめます。
-          </p>
-          <ul class="intro-list">
-            <li>・ 最初は一言でOK（例：来週金曜 BBQ、15:00-17:00、2000円/人）</li>
-            <li>・ 足りないところは1つずつ質問します</li>
-            <li>・ まとまったらフォームに反映できます</li>
-          </ul>
           <transition name="fade">
-            <div v-if="introExpanded" class="intro-more">
-              <p class="intro-desc">フォーム反映もワンタップでできます。途中でやめても下書きに残ります。</p>
+            <div v-if="introExpanded" class="intro-expanded">
+              <ul class="intro-list">
+                <li>・ まずは一言でOK</li>
+                <li>・ 足りないところは1つずつ聞きます</li>
+                <li>・ まとまったらフォームに反映できます</li>
+              </ul>
+              <div class="intro-examples">
+                <p class="intro-examples-title">入力例</p>
+                <ul class="intro-examples-list">
+                  <li>来週の金曜、15:00〜17:00にBBQしませんか？参加費は2000円/人です。</li>
+                  <li>平日夜にゆるい交流会をやります。19:00〜21:00、飲み物は各自持参で。</li>
+                  <li>土曜の午前に勉強会をします。10人くらい、参加費は無料です。</li>
+                  <li>日曜の午後にLanguage Exchange。場所はカフェ、参加費はワンドリンクだけでOK。</li>
+                </ul>
+              </div>
             </div>
           </transition>
-          <div class="chip-row">
-            <button type="button" class="chip" @click="handleChipSelect('来週金曜 BBQ パーティー 15:00-17:00 2000円/人')">🍖 BBQ・パーティー</button>
-            <button type="button" class="chip" @click="handleChipSelect('カジュアル交流会 平日夜 19:00-21:00 ドリンク持参')">🤝 交流会</button>
-            <button type="button" class="chip" @click="handleChipSelect('土曜午前 勉強会 10人まで 参加費無料')">🎓 勉強会</button>
-            <button type="button" class="chip" @click="handleChipSelect('親子イベント 屋内 1時間 参加費500円')">👨‍👩‍👧‍👦 親子</button>
-            <button type="button" class="chip" @click="handleChipSelect('Language Exchange 英語/日本語 日曜午後 カフェにて')">🌐 Language Exchange</button>
-          </div>
         </div>
         <template v-for="msg in chatMessages" :key="msg.id">
           <template v-if="shouldRenderMessage(msg)">
@@ -89,6 +88,15 @@
             >
               <div v-if="msg.type === 'text'" class="chat-stack">
                 <p class="chat-text">{{ getMessageDisplayText(msg) }}</p>
+                <div v-if="getQuestionHelper(msg)" class="question-helper">
+                  <p class="question-helper-title">{{ getQuestionHelper(msg)?.title }}</p>
+                  <ul class="question-helper-list">
+                    <li v-for="(line, idx) in getQuestionHelper(msg)?.lines" :key="`helper-${msg.id}-${idx}`">
+                      {{ line }}
+                    </li>
+                  </ul>
+                  <p class="question-helper-foot">未定でもOK。ざっくりで大丈夫です。</p>
+                </div>
                 <button
                   v-if="msg.action === 'direct-form'"
                   type="button"
@@ -123,18 +131,6 @@
                       </li>
                     </ol>
                   </div>
-                </div>
-                <div v-if="msg.writerSummary && mode === 'operate' && canShowProposalUi" class="summary-block">
-                  <p class="summary-eyebrow">下書きサマリー（草案）</p>
-                  <p v-if="typeof msg.writerSummary === 'string'" class="summary-text">{{ msg.writerSummary }}</p>
-                  <ul v-else class="summary-list">
-                    <li v-if="msg.writerSummary.headline"><strong>タイトル</strong>{{ msg.writerSummary.headline }}</li>
-                    <li v-if="msg.writerSummary.audience"><strong>対象</strong>{{ msg.writerSummary.audience }}</li>
-                    <li v-if="msg.writerSummary.logistics"><strong>詳細</strong>{{ msg.writerSummary.logistics }}</li>
-                    <li v-if="msg.writerSummary.riskNotes"><strong>リスク</strong>{{ msg.writerSummary.riskNotes }}</li>
-                    <li v-if="msg.writerSummary.nextSteps"><strong>次のステップ</strong>{{ msg.writerSummary.nextSteps }}</li>
-                  </ul>
-                  <p class="summary-hint">全文はプレビューで確認できます。</p>
                 </div>
               </div>
               <div
@@ -222,7 +218,19 @@
           </div>
         </div>
         <div v-if="mode === 'chat' && shouldShowCommitCheckpoint" class="commit-block">
+          <div v-if="readyDraftSummary.length" class="draft-summary">
+            <p class="draft-summary-title">下書き（草案）</p>
+            <ul class="draft-summary-list">
+              <li v-for="item in readyDraftSummary" :key="item.label">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.value }}</span>
+              </li>
+            </ul>
+          </div>
           <p class="commit-title">この内容で進めるか、もう少し調整するかを選んでください。</p>
+          <button type="button" class="commit-preview" @click="openMilestonePreview">
+            下書きをプレビュー
+          </button>
           <div class="commit-actions">
             <button type="button" class="commit-primary" @click="handleCommitDraft">
               この内容で作成する
@@ -293,48 +301,71 @@
             </button>
           </header>
           <div class="plan-preview-scroll">
-            <article class="plan-preview-section" v-if="previewPlanDescription">
-              <p class="plan-preview-subtitle">概要</p>
-              <p class="plan-preview-text">{{ previewPlanDescription }}</p>
+            <article class="plan-preview-section">
+              <p class="plan-preview-subtitle">概要（短文）</p>
+              <p class="plan-preview-text">{{ previewShortDescription }}</p>
+            </article>
+            <article class="plan-preview-section">
+              <p class="plan-preview-subtitle">詳細</p>
+              <p class="plan-preview-text">{{ previewDetailedDescription || previewPlanDescription }}</p>
             </article>
             <div class="plan-preview-grid">
-              <article v-if="previewPlanNotes">
-                <p class="plan-preview-subtitle">備考 / 準備</p>
-                <p class="plan-preview-text">{{ previewPlanNotes }}</p>
+              <article>
+                <p class="plan-preview-subtitle">対象</p>
+                <p class="plan-preview-text">{{ previewTargetAudience }}</p>
               </article>
-              <article v-if="previewPlanRisk">
+              <article>
+                <p class="plan-preview-subtitle">定員</p>
+                <p class="plan-preview-text">{{ previewCapacity }}</p>
+              </article>
+              <article>
+                <p class="plan-preview-subtitle">備考 / 準備</p>
+                <p class="plan-preview-text">{{ previewPlanNotesText }}</p>
+              </article>
+              <article>
                 <p class="plan-preview-subtitle">リスク</p>
-                <p class="plan-preview-text">{{ previewPlanRisk }}</p>
+                <p class="plan-preview-text">{{ previewPlanRiskText }}</p>
+              </article>
+              <article>
+                <p class="plan-preview-subtitle">申込方法</p>
+                <p class="plan-preview-text">{{ previewRegistrationMethod }}</p>
+              </article>
+              <article>
+                <p class="plan-preview-subtitle">キャンセル/返金</p>
+                <p class="plan-preview-text">{{ previewCancellationPolicy }}</p>
               </article>
             </div>
-            <article class="plan-preview-section" v-if="previewPlanLogistics.length">
+            <article class="plan-preview-section">
               <p class="plan-preview-subtitle">時間・場所</p>
               <ul class="plan-preview-list">
-                <li v-for="item in previewPlanLogistics" :key="`preview-logistics-${item.label}`">
+                <li v-for="item in previewPlanLogisticsDisplay" :key="`preview-logistics-${item.label}`">
                   <strong>{{ item.label }}：</strong>{{ item.value }}
                 </li>
               </ul>
             </article>
-            <article class="plan-preview-section" v-if="previewPlanTickets.length">
+            <article class="plan-preview-section">
               <p class="plan-preview-subtitle">チケット設定</p>
               <ul class="plan-preview-ticket-list">
+                <li v-if="!previewPlanTickets.length">参加費: {{ previewPriceText }}</li>
                 <li v-for="(ticket, idx) in previewPlanTickets" :key="`preview-ticket-${idx}`">
                   <span>{{ ticket.name }}</span>
                   <span>{{ formatTicketPrice(ticket.price) }}</span>
                 </li>
               </ul>
             </article>
-            <article class="plan-preview-section" v-if="previewPlanRequirements.length">
+            <article class="plan-preview-section">
               <p class="plan-preview-subtitle">参加要件</p>
               <ul class="plan-preview-list">
+                <li v-if="!previewPlanRequirements.length">未設定</li>
                 <li v-for="(req, idx) in previewPlanRequirements" :key="`preview-req-${idx}`">
                   {{ req.label }}{{ req.type === 'must' ? '（必須）' : '' }}
                 </li>
               </ul>
             </article>
-            <article class="plan-preview-section" v-if="previewPlanFormFields.length">
+            <article class="plan-preview-section">
               <p class="plan-preview-subtitle">申込フォーム項目</p>
               <ul class="plan-preview-list">
+                <li v-if="!previewPlanFormFields.length">未設定</li>
                 <li v-for="(field, idx) in previewPlanFormFields" :key="`preview-form-${idx}`">
                   {{ field.label }} · {{ field.type }}{{ field.required ? '（必須）' : '' }}
                 </li>
@@ -511,6 +542,7 @@ const chatLogRef = ref<HTMLElement | null>(null);
 const keyboardOffset = ref(0);
 const autoScrollEnabled = ref(true);
 const currentQuestionId = ref<string | null>(null);
+const lastQuestionKey = ref<string | null>(null);
 const backTarget = ref<{ name: string; params?: Record<string, any> } | null>(null);
 const lastShownDraftId = ref<string | null>(null);
 const seenDraftIds = ref<string[]>([]);
@@ -520,6 +552,8 @@ const lastMilestoneMessageId = ref<string | null>(null);
 const lastMilestoneDraftId = ref<string | null>(null);
 const lastDraftReady = ref(false);
 const lastDraftId = ref<string | null>(null);
+const lastReadyDraft = ref<EventAssistantReply['publicActivityDraft'] | null>(null);
+const lastNextQuestionKey = ref<string | null>(null);
 const lastInputMode = ref<EventAssistantReply['inputMode'] | null>(null);
 const mode = ref<'chat' | 'operate'>('chat');
 const isCommitted = ref(false);
@@ -548,14 +582,14 @@ const phaseTemplates: Record<'collecting' | 'decision' | 'compare' | 'ready' | '
   operate: ['作成しました。次の操作に進めます。', '反映しました。次に進めます。', '実行しました。次の手順へ進めます。'],
 };
 const canShowProposalUi = computed(
-  () => isReadyState.value && lastDraftReady.value && Boolean(lastDraftId.value) && isCommitted.value,
+  () => isReadyState.value && lastDraftReady.value && Boolean(lastReadyDraft.value) && isCommitted.value,
 );
 const shouldShowCommitCheckpoint = computed(() =>
   isReadyState.value &&
   computeShouldShowCommitCheckpoint({
     mode: mode.value,
     draftReady: lastDraftReady.value,
-    draftId: lastDraftId.value,
+    nextQuestionKey: lastNextQuestionKey.value,
     isCommitted: isCommitted.value,
     hasChoiceQuestion: Boolean(choiceQuestionState.value),
     isCompareMode: isCompareModeUi.value,
@@ -620,11 +654,73 @@ const buildSafeWriterSummary = () => {
   return summary;
 };
 
+const buildFallbackOverview = (answers: Record<string, string> | null) => {
+  const parts: string[] = [];
+  const titleValue = (answers?.title || qaState.topic || '').trim();
+  const audienceValue = (answers?.audience || qaState.audience || '').trim();
+  const timeValue = (answers?.time || '').trim();
+  const locationValue = (answers?.location || '').trim();
+  if (titleValue) parts.push(`イベント: ${titleValue}`);
+  if (audienceValue) parts.push(`対象: ${audienceValue}`);
+  if (timeValue) parts.push(`日時: ${timeValue}`);
+  if (locationValue) parts.push(`場所: ${locationValue}`);
+  return parts.join(' / ');
+};
+
 const pickPhaseMessage = (phase: 'collecting' | 'decision' | 'compare' | 'ready' | 'operate', seed?: number) => {
   const pool = phaseTemplates[phase];
   if (!pool.length) return '';
   const index = Math.abs((seed ?? 0) % pool.length);
   return pool[index];
+};
+
+const QUESTION_HELPERS: Record<
+  string,
+  {
+    title: string;
+    lines: string[];
+  }
+> = {
+  activityType: {
+    title: '例',
+    lines: ['BBQ / 交流会 / 勉強会', '小さな集まりでもOK'],
+  },
+  title: {
+    title: '例',
+    lines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'],
+  },
+  time: {
+    title: '例',
+    lines: ['9/20(金) 19:00-21:00', '平日夜 2時間 くらい'],
+  },
+  location: {
+    title: '例',
+    lines: ['渋谷駅周辺 / 近くの公園', 'オンラインでもOK'],
+  },
+  audience: {
+    title: '例',
+    lines: ['友人・同僚向け', '初心者歓迎 / 初参加OK'],
+  },
+  price: {
+    title: '例',
+    lines: ['無料 / 1000円', '材料費のみでもOK'],
+  },
+  capacity: {
+    title: '例',
+    lines: ['10人くらい', '少人数でもOK'],
+  },
+  details: {
+    title: 'ヒント',
+    lines: ['持ち物 / 服装 / 集合場所', '注意事項やルール'],
+  },
+};
+
+const getQuestionHelper = (msg: ChatMessage) => {
+  if (msg.role !== 'assistant') return null;
+  const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+  const key = contentJson?.ui?.question?.key;
+  if (!key) return null;
+  return QUESTION_HELPERS[key] ?? null;
 };
 const SAFE_ASSISTANT_ACTIONS = new Set(['direct-form', 'title-suggestion', 'system-safe']);
 const isSafeAssistantMessage = (msg: ChatMessage) => {
@@ -713,6 +809,7 @@ const lastAssistantStatus = ref<EventAssistantState>('collecting');
 const lastPromptVersion = ref('coach-v3-lite');
 const currentStage = ref<EventAssistantStage>('coach');
 const pendingQuestion = ref<string | null>(null);
+const lastExpertComment = ref<string | null>(null);
 const stageLabels: Record<EventAssistantStage, string> = {
   coach: 'ディスカッション',
   editor: '詳細調整',
@@ -794,13 +891,64 @@ const finalPlanTickets = computed(() => getPlanTickets(aiResult.value));
 const finalPlanRequirements = computed(() => getPlanRequirements(aiResult.value));
 const finalPlanFormFields = computed(() => getPlanFormFields(aiResult.value));
 const previewPlanTitle = computed(() => getPlanTitle(planPreview.value));
-const previewPlanDescription = computed(() => extractText(planPreview.value?.description));
-const previewPlanNotes = computed(() => extractText(planPreview.value?.notes));
-const previewPlanRisk = computed(() => extractText(planPreview.value?.riskNotice));
+const previewShortDescription = computed(() => extractText(planPreview.value?.shortDescription) || '未設定');
+const previewDetailedDescription = computed(() => extractText(planPreview.value?.detailedDescription) || '');
+const previewPlanDescription = computed(() => {
+  const text = extractText(planPreview.value?.description);
+  if (text) return text;
+  return buildFallbackOverview(confirmedAnswers) || extractText(planPreview.value?.notes) || '未設定';
+});
+const previewTargetAudience = computed(
+  () => extractText(planPreview.value?.targetAudience) || confirmedAnswers.audience || qaState.audience || '未設定',
+);
+const previewCapacity = computed(() => confirmedAnswers.capacity || '未設定');
+const previewRegistrationMethod = computed(() => '未設定');
+const previewCancellationPolicy = computed(() => '未設定');
+const previewPlanLogisticsDisplay = computed(() => {
+  const items = previewPlanLogistics.value;
+  if (items.length) return items;
+  return [{ label: '日時', value: '未設定' }, { label: '場所', value: '未設定' }];
+});
+const previewPlanNotesText = computed(() => extractText(planPreview.value?.notes) || '未設定');
+const previewPlanRiskText = computed(() => extractText(planPreview.value?.riskNotice) || '未設定');
 const previewPlanLogistics = computed(() => buildPlanLogistics(planPreview.value));
 const previewPlanTickets = computed(() => getPlanTickets(planPreview.value));
 const previewPlanRequirements = computed(() => getPlanRequirements(planPreview.value));
 const previewPlanFormFields = computed(() => getPlanFormFields(planPreview.value));
+const previewPriceText = computed(() => confirmedAnswers.price || '未設定');
+const readyDraftSummary = computed(() => {
+  const draft = lastReadyDraft.value;
+  const titleValue = draft?.title?.trim() || confirmedAnswers.title || qaState.topic || '未設定';
+  const audienceValue = draft?.targetAudience?.trim() || confirmedAnswers.audience || qaState.audience || '未設定';
+  const scheduleDate = draft?.schedule?.date?.trim() || '';
+  const scheduleDuration = draft?.schedule?.duration?.trim() || '';
+  const scheduleStart = draft?.schedule?.startTime;
+  const scheduleEnd = draft?.schedule?.endTime;
+  const scheduleParts = [scheduleDate, scheduleDuration].filter(Boolean);
+  const structuredTime =
+    scheduleStart && scheduleEnd
+      ? `${formatDateTime(scheduleStart)} 〜 ${formatDateTime(scheduleEnd)}`
+      : scheduleStart
+      ? formatDateTime(scheduleStart)
+      : '';
+  const timeValue = structuredTime || scheduleParts.join(' / ') || confirmedAnswers.time || '未設定';
+  const locationValue =
+    draft?.schedule?.location?.trim() || confirmedAnswers.location || qaState.details || '未設定';
+  const rawPrice = draft?.price ?? confirmedAnswers.price;
+  const priceValue =
+    typeof rawPrice === 'number' ? `¥${rawPrice.toLocaleString('ja-JP')}` : rawPrice ? String(rawPrice) : '未設定';
+  const rawCapacity = draft?.capacity ?? confirmedAnswers.capacity;
+  const capacityValue =
+    typeof rawCapacity === 'number' ? `${rawCapacity}人` : rawCapacity ? String(rawCapacity) : '未設定';
+  return [
+    { label: 'タイトル', value: titleValue },
+    { label: '日時', value: timeValue },
+    { label: '場所', value: locationValue },
+    { label: '対象', value: audienceValue },
+    { label: '料金', value: priceValue },
+    { label: '定員', value: capacityValue },
+  ];
+});
 const formatTicketPrice = (price?: number) => {
   if (price == null) return '無料';
   return `¥${price.toLocaleString('ja-JP')}`;
@@ -976,7 +1124,6 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
   const content = chatDraft.value.trim();
   const commitIntent =
     lastDraftReady.value &&
-    lastDraftId.value &&
     !isCommitted.value &&
     /(就用这个吧?|可以开始了|按这个来|就这样|この内容で|この案で|これでいこう|これで進めて|これでOK|この内容で作って|この内容で作成|この案で作成)/i.test(
       content,
@@ -1045,6 +1192,7 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
 
 const detectLanguage = (text: string) => {
   if (/[ぁ-んァ-ン]/.test(text)) return 'ja';
+  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
   if (/[a-zA-Z]/.test(text)) return 'en';
   return 'ja';
 };
@@ -1103,6 +1251,23 @@ const toLocalizedContent = (text: string) => {
   };
 };
 
+const isDraftMvp = (draft?: EventAssistantReply['publicActivityDraft'] | null) => {
+  if (!draft) return false;
+  const hasTitle = Boolean(draft.title && String(draft.title).trim());
+  const hasAudience = Boolean(draft.targetAudience && String(draft.targetAudience).trim());
+  const hasDescription = Boolean(
+    (draft.detailedDescription && String(draft.detailedDescription).trim()) ||
+      (draft.shortDescription && String(draft.shortDescription).trim()),
+  );
+  const hasTime = Boolean(draft.schedule?.startTime || draft.schedule?.endTime || draft.schedule?.date);
+  const hasLocation = Boolean(draft.schedule?.location && String(draft.schedule.location).trim());
+  const hasPrice =
+    draft.price !== undefined && draft.price !== null && String(draft.price).trim().length > 0;
+  const hasCapacityField = Object.prototype.hasOwnProperty.call(draft, 'capacity');
+  const hasNotesField = Object.prototype.hasOwnProperty.call(draft, 'signupNotes');
+  return hasTitle && hasAudience && hasDescription && hasTime && hasLocation && hasPrice && hasCapacityField && hasNotesField;
+};
+
 const buildProposalFromDraft = (
   draft: EventAssistantReply['publicActivityDraft'] | undefined | null,
   summary: string,
@@ -1116,10 +1281,12 @@ const buildProposalFromDraft = (
     .map((item) => String(item));
   const notesText = notesParts.join('\n');
   const highlightsText = Array.isArray(draft?.highlights) ? draft?.highlights?.join(' / ') : '';
+  const fallbackOverview = buildFallbackOverview(answers || null);
   const mergedDescription =
-    draft?.shortDescription ||
     draft?.detailedDescription ||
+    draft?.shortDescription ||
     [highlightsText, draft?.targetAudience].filter(Boolean).join(' | ') ||
+    fallbackOverview ||
     (fallbackDescription || '');
   const priceValue = draft?.price;
   const capacityValue = draft?.capacity;
@@ -1131,11 +1298,15 @@ const buildProposalFromDraft = (
     infoNoteParts.push(`定員: ${capacityValue}`);
   }
   const checklistNotes = [notesText, infoNoteParts.join(' / ')].filter(Boolean).join('\n');
+  const scheduleDate = draft?.schedule?.date || '';
+  const looksLikeIso = typeof scheduleDate === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(scheduleDate);
   const safeSchedule = draft?.schedule
     ? {
         date: answers?.time ? draft.schedule.date || undefined : undefined,
         duration: answers?.time ? draft.schedule.duration || undefined : undefined,
-        location: answers?.location ? answers.location : undefined,
+        location: draft.schedule.location || answers?.location || undefined,
+        startTime: draft.schedule.startTime || (looksLikeIso ? scheduleDate : undefined),
+        endTime: draft.schedule.endTime || undefined,
       }
     : undefined;
   return {
@@ -1143,14 +1314,15 @@ const buildProposalFromDraft = (
     description: toLocalizedContent(mergedDescription),
     notes: toLocalizedContent(checklistNotes),
     riskNotice: toLocalizedContent(''),
+    expertComment: draft?.expertComment || '',
     snsCaptions: {
       line: { ja: '', zh: '', en: '' },
       instagram: { ja: '', zh: '', en: '' },
     },
     logistics: safeSchedule
       ? {
-          startTime: safeSchedule.date || undefined,
-          endTime: undefined,
+          startTime: safeSchedule.startTime || undefined,
+          endTime: safeSchedule.endTime || undefined,
           locationText: safeSchedule.location || undefined,
           locationNote: safeSchedule.duration || undefined,
         }
@@ -1237,9 +1409,23 @@ const requestAssistantReply = async (
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
     let messageId: string | null = null;
     const canRenderBubble = !willOperate;
-    const shouldHoldCommit = effectiveDraftReady && !isCommitted.value && !willOperate;
+    const hasMvpDraft = isDraftMvp(result.publicActivityDraft ?? null);
+    const draftReadyForUi = effectiveDraftReady && hasMvpDraft;
+    const shouldHoldCommit = draftReadyForUi && !isCommitted.value && !willOperate;
+    const isDuplicateQuestionKey = Boolean(nextQuestionKey && lastQuestionKey.value === nextQuestionKey);
+    if (uiQuestionText && !nextQuestionKey) {
+      console.warn('[EventAssistant] ui.question ignored because nextQuestionKey is null', { uiQuestionText });
+    }
+    if (uiQuestionText && isDuplicateQuestionKey) {
+      console.warn('[EventAssistant] duplicate question key ignored', { nextQuestionKey });
+    }
     const shouldRenderQuestionBubble =
-      canRenderBubble && !isCompareMode && nextQuestionKey && uiQuestionText && !shouldHoldCommit;
+      canRenderBubble &&
+      !isCompareMode &&
+      nextQuestionKey &&
+      uiQuestionText &&
+      !shouldHoldCommit &&
+      !isDuplicateQuestionKey;
     const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
     const shouldRenderMessageBubble =
       canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText && !shouldHoldCommit;
@@ -1260,11 +1446,12 @@ const requestAssistantReply = async (
       ? 'compare'
       : hasChoiceQuestion
       ? 'decision'
-      : effectiveDraftReady
+      : draftReadyForUi
       ? 'ready'
       : 'collecting';
     const phaseMessage = pickPhaseMessage(phase, result.turnCount);
     if (canAppendQuestionBubble) {
+      lastQuestionKey.value = nextQuestionKey ?? null;
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1360,14 +1547,34 @@ const requestAssistantReply = async (
       );
     }
     lastInputMode.value = result.inputMode ?? null;
-    lastDraftReady.value = effectiveDraftReady;
-    lastDraftId.value = effectiveDraftReady ? result.draftId ?? null : null;
+    lastNextQuestionKey.value = nextQuestionKey ?? null;
+    lastDraftReady.value = draftReadyForUi;
+    lastDraftId.value = draftReadyForUi ? result.draftId ?? null : null;
+    lastReadyDraft.value = draftReadyForUi ? result.publicActivityDraft ?? null : null;
     const shouldPushProposal =
-      effectiveDraftReady &&
+      draftReadyForUi &&
       Boolean(result.draftId) &&
       isCommitted.value &&
       !seenDraftIds.value.includes(result.draftId as string);
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
+    const expertComment = result.publicActivityDraft?.expertComment?.trim() || '';
+    if (draftReadyForUi && expertComment && expertComment !== lastExpertComment.value) {
+      lastExpertComment.value = expertComment;
+      pushMessage(
+        'assistant',
+        'text',
+        expertComment,
+        undefined,
+        'system-safe',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { includeInContext: false },
+      );
+    }
     if (shouldPushProposal) {
       preparedProposal = buildProposalFromDraft(
         result.publicActivityDraft ?? null,
@@ -1767,41 +1974,49 @@ const handleSkipCompare = async () => {
 };
 
 const handleCommitDraft = async () => {
-  if (aiLoading.value || !lastDraftReady.value || !lastDraftId.value) return;
+  if (aiLoading.value || !lastDraftReady.value) return;
   const content = 'この内容で作成する';
+  if (!lastDraftId.value) {
+    toast.show('下書きを確認しています。少し待ってもう一度お試しください。', 'info');
+  }
   isCommitted.value = true;
   pushMessage('user', 'text', content);
   await requestAssistantReply(content, { action: 'confirm_draft' });
 };
 
-const handleCommitEdit = () => {
+const handleCommitEdit = async () => {
+  if (aiLoading.value) return;
   isCommitted.value = false;
+  const content = 'もう少し直す';
+  pushMessage('user', 'text', content);
+  await requestAssistantReply(content, { action: 'continue_edit' });
   nextTick(() => {
     chatInputRef.value?.focus();
   });
 };
 
 const openMilestonePreview = () => {
-  if (!canShowProposalUi.value) return;
-  const targetId = lastMilestoneMessageId.value;
-  if (targetId) {
-    const el = document.getElementById(`msg-${targetId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-  }
-  const fallback = [...chatMessages.value].reverse().find((msg) => msg.type === 'proposal');
-  if (fallback) {
-    const el = document.getElementById(`msg-${fallback.id}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
+  const proposal = [...chatMessages.value].reverse().find((msg) => msg.type === 'proposal' && msg.payload?.raw);
+  if (proposal?.payload?.raw) {
+    openPlanPreview(proposal.payload.raw);
+    return;
   }
   if (aiResult.value) {
     openPlanPreview(aiResult.value);
+    return;
   }
+  if (lastReadyDraft.value) {
+    openPlanPreview(
+      buildProposalFromDraft(
+        lastReadyDraft.value,
+        buildQaSummary(''),
+        qaState.details || qaState.topic || '',
+        confirmedAnswers,
+      ),
+    );
+    return;
+  }
+  toast.show('下書きがまだありません。', 'info');
 };
 
 const computeQuestionIndexFromQaState = () => {
@@ -1819,6 +2034,7 @@ const resetQaState = () => {
   qaState.audience = '';
   qaState.style = '';
   qaState.details = '';
+  lastExpertComment.value = null;
   Object.keys(confirmedAnswers).forEach((key) => {
     delete confirmedAnswers[key];
   });
@@ -1978,8 +2194,13 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   lastTurnCount.value = log.turnCount || 0;
   lastLanguage.value = (log.language as string) || lastLanguage.value;
   activeLogId.value = log.id;
-  lastDraftReady.value = log.status === 'ready';
-  lastDraftId.value = log.status === 'ready' ? (log.meta as any)?.draftId ?? null : null;
+  const restoredDraft = [...chatMessages.value]
+    .reverse()
+    .map((msg) => (msg.contentJson ?? (msg.payload as any)?.assistantReply ?? null) as Record<string, any> | null)
+    .find((reply) => reply?.publicActivityDraft)?.publicActivityDraft;
+  lastReadyDraft.value = restoredDraft ?? null;
+  lastDraftReady.value = Boolean(restoredDraft);
+  lastDraftId.value = restoredDraft ? (log.meta as any)?.draftId ?? null : null;
   lastInputMode.value = null;
   mode.value = (log.meta as any)?.mode === 'operate' ? 'operate' : 'chat';
   isCommitted.value = Boolean((log.meta as any)?.isCommitted) || hasProposalMessage;
@@ -2074,6 +2295,7 @@ const startNewConversation = () => {
   lastMilestoneMessageId.value = null;
   lastDraftReady.value = false;
   lastDraftId.value = null;
+  lastReadyDraft.value = null;
   lastInputMode.value = null;
   mode.value = 'chat';
   isCommitted.value = false;
@@ -2157,25 +2379,68 @@ const goToForm = async (useAi: boolean) => {
   if (useAi && aiResult.value) {
     const draft = aiResult.value;
     const fallbackDescription =
-      extractText(draft.description) || extractText(draft.notes) || qaState.details || qaState.topic || '';
+      extractText(draft.description) ||
+      extractText(draft.notes) ||
+      buildFallbackOverview(confirmedAnswers) ||
+      qaState.details ||
+      qaState.topic ||
+      '';
+    const fallbackLogistics =
+      draft.logistics ??
+      (confirmedAnswers.time || confirmedAnswers.location
+        ? {
+            startTime: confirmedAnswers.time || undefined,
+            endTime: undefined,
+            locationText: confirmedAnswers.location || undefined,
+            locationNote: undefined,
+          }
+        : null);
+    const fallbackTickets =
+      draft.ticketTypes && draft.ticketTypes.length
+        ? draft.ticketTypes
+        : confirmedAnswers.price
+        ? [
+            {
+              name: '参加チケット',
+              price: Number(confirmedAnswers.price) || 0,
+              currency: 'JPY',
+            },
+          ]
+        : [];
+    const parsedCapacity = Number(confirmedAnswers.capacity);
     const payload = {
       title: extractText(draft.title),
       subtitle: extractText(draft.subtitle),
       description: fallbackDescription,
       notes: extractText(draft.notes),
       riskNotice: extractText(draft.riskNotice),
-      logistics: draft.logistics ?? null,
-      ticketTypes: draft.ticketTypes ?? [],
+      logistics: fallbackLogistics,
+      ticketTypes: fallbackTickets,
       requirements: draft.requirements ?? [],
       registrationForm: draft.registrationForm ?? [],
+      maxParticipants: Number.isFinite(parsedCapacity) ? parsedCapacity : undefined,
       visibility: draft.visibility ?? 'public',
       checklist: latestChecklist.value,
       confirmQuestions: latestConfirmQuestions.value,
       generatedAt: Date.now(),
     };
-    sessionStorage.setItem(CONSOLE_AI_EVENT_DRAFT_KEY, JSON.stringify(payload));
+    try {
+      sessionStorage.setItem(CONSOLE_AI_EVENT_DRAFT_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore session storage failure
+    }
+    try {
+      localStorage.setItem(CONSOLE_AI_EVENT_DRAFT_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore local storage failure
+    }
   } else {
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    try {
+      localStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    } catch {
+      // ignore local storage failure
+    }
   }
   toast.show('AI案をフォームに送信しました。次の画面で項目を確認してください。', 'info');
   await markSessionCompleted();
@@ -2378,22 +2643,42 @@ onUnmounted(() => {
 }
 
 .intro-card {
-  background: #ffffff;
+  background: #f8fafc;
   border-radius: 14px;
-  padding: 14px;
-  margin: 4px 0 8px;
+  padding: 12px 14px;
+  margin: 4px 0 18px;
   box-shadow: none;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(148, 163, 184, 0.4);
   color: #111827;
 }
 
 .intro-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
+.intro-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.intro-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.intro-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.intro-example-line {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
 .intro-toggle {
   border: none;
   background: transparent;
@@ -2403,8 +2688,41 @@ onUnmounted(() => {
   padding: 4px 6px;
 }
 
-.intro-more {
+.intro-expanded {
   margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.intro-list {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.intro-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.intro-examples-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.intro-examples-list {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 12px;
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .chip-row {
@@ -2653,6 +2971,41 @@ onUnmounted(() => {
   padding: 12px;
 }
 
+.draft-summary {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.draft-summary-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.draft-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px 10px;
+  color: #111827;
+  font-size: 12px;
+}
+
+.draft-summary-list strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
 .commit-title {
   font-size: 13px;
   font-weight: 600;
@@ -2664,6 +3017,18 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.commit-preview {
+  width: 100%;
+  border: 1px dashed #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .commit-primary {
@@ -2906,43 +3271,6 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.summary-block {
-  border-radius: 14px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  padding: 10px 12px;
-}
-
-.summary-eyebrow {
-  margin: 0 0 6px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: #6b7280;
-  text-transform: uppercase;
-}
-
-.summary-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 6px;
-  color: #374151;
-}
-
-.summary-list strong {
-  display: block;
-  font-size: 12px;
-  text-transform: uppercase;
-  color: #6b7280;
-}
-.summary-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #6b7280;
-}
-
 .proposal-bubble {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -2977,6 +3305,34 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.question-helper {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.question-helper-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.question-helper-list {
+  margin: 0;
+  padding-left: 16px;
+}
+.question-helper-foot {
+  margin: 0;
+  color: #64748b;
 }
 
 .ghost-link {

@@ -18,8 +18,12 @@ const deriveFromJson = (contentJson: Record<string, unknown> | null | undefined)
   if (!contentJson || typeof contentJson !== 'object') return '';
   const reply = contentJson as Record<string, any>;
   const ui = reply.ui ?? null;
+  const nextQuestionKey = normalizeText(reply.nextQuestionKey);
   const uiQuestion = normalizeText(ui?.question?.text);
-  if (uiQuestion) return uiQuestion;
+  if (uiQuestion && nextQuestionKey) return uiQuestion;
+  if (uiQuestion && !nextQuestionKey) {
+    console.warn('[assistantDisplay] ignore ui.question without nextQuestionKey');
+  }
   const uiMessage = normalizeText(ui?.message);
   if (uiMessage) return uiMessage;
   return '';

@@ -62,7 +62,7 @@ export interface AssistantConversationMessage {
 
 export interface GenerateAssistantReplyDto extends GenerateEventContentDto {
   conversation?: AssistantConversationMessage[];
-  action?: 'confirm_draft';
+  action?: 'confirm_draft' | 'continue_edit';
 }
 
 export type AssistantReplyState = 'collecting' | 'options' | 'ready';
@@ -122,10 +122,11 @@ export interface AiAssistantPublicDraft {
   targetAudience?: string;
   ageRange?: string;
   highlights?: string[];
-  schedule?: { date?: string; duration?: string; location?: string };
+  schedule?: { date?: string; duration?: string; location?: string; startTime?: string; endTime?: string };
   price?: number | string | null;
   capacity?: number | string | null;
   signupNotes?: string;
+  expertComment?: string;
   facts_from_user?: Record<string, any>;
   assumptions?: Array<{ field: string; assumedValue: string; reason: string }>;
   open_questions?: Array<{ field: string; question: string }>;
@@ -360,6 +361,68 @@ export class AiService {
     return { systemPrompt, instruction, version };
   }
 
+  private async generateTitleSuggestions(
+    draft: AiAssistantPublicDraft | undefined,
+    language: string,
+  ): Promise<string[]> {
+    if (!this.client) return [];
+    const lang = language || 'ja';
+    const payload = {
+      title: draft?.title ?? '',
+      shortDescription: draft?.shortDescription ?? '',
+      detailedDescription: draft?.detailedDescription ?? '',
+      targetAudience: draft?.targetAudience ?? '',
+      schedule: draft?.schedule ?? null,
+      price: draft?.price ?? null,
+      capacity: draft?.capacity ?? null,
+      signupNotes: draft?.signupNotes ?? '',
+    };
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: 0.7,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'TitleSuggestions',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              titles: {
+                type: 'array',
+                minItems: 3,
+                maxItems: 5,
+                items: { type: 'string' },
+              },
+            },
+            required: ['titles'],
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'system',
+          content:
+            `You generate event title suggestions for a community app. ` +
+            `Return only JSON that matches the schema. Use the user's language: ${lang}. ` +
+            `Do NOT invent facts. Keep titles short and friendly.`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(payload),
+        },
+      ],
+    });
+    const raw = response.choices?.[0]?.message?.content ?? '';
+    try {
+      const parsed = JSON.parse(raw) as { titles?: string[] };
+      const titles = Array.isArray(parsed.titles) ? parsed.titles.map((t) => t.trim()).filter(Boolean) : [];
+      return titles.slice(0, 5);
+    } catch {
+      return [];
+    }
+  }
+
   async generateEventContent(payload: GenerateEventContentDto): Promise<AiEventContent> {
     if (!this.client) {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
@@ -466,6 +529,190 @@ export class AiService {
     };
 
     const hashStable = (input: any) => crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
+
+    const parseTimeRangeFromText = (text: string) => {
+      if (!text) return null;
+      const hasPm = /午後|下午|晚上|夜/i.test(text);
+      const hasAm = /午前|上午|早上/i.test(text);
+      const normalizeHour = (hour: number) => {
+        if (hasPm && hour < 12) return hour + 12;
+        if (hasAm && hour === 12) return 0;
+        return hour;
+      };
+      const parseMinutes = (raw?: string) => {
+        if (!raw) return 0;
+        if (raw === '半') return 30;
+        const num = Number(raw.replace(/\D/g, ''));
+        return Number.isNaN(num) ? 0 : num;
+      };
+      const timeRangeMatch = text.match(
+        /(\d{1,2})[:：](\d{2})\s*[-〜~]\s*(\d{1,2})[:：](\d{2})/,
+      );
+      if (timeRangeMatch) {
+        const startHour = normalizeHour(Number(timeRangeMatch[1]));
+        const startMinute = Number(timeRangeMatch[2]);
+        const endHour = normalizeHour(Number(timeRangeMatch[3]));
+        const endMinute = Number(timeRangeMatch[4]);
+        return {
+          start: { hour: startHour, minute: Number.isNaN(startMinute) ? 0 : startMinute },
+          end: { hour: endHour, minute: Number.isNaN(endMinute) ? 0 : endMinute },
+        };
+      }
+      const cnRangeMatch = text.match(
+        /(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分)?\s*(?:到|至|~|-)\s*(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分)?/,
+      );
+      if (cnRangeMatch) {
+        const startHour = normalizeHour(Number(cnRangeMatch[1]));
+        const startMinute = parseMinutes(cnRangeMatch[2] ?? cnRangeMatch[3]);
+        const endHour = normalizeHour(Number(cnRangeMatch[4]));
+        const endMinute = parseMinutes(cnRangeMatch[5] ?? cnRangeMatch[6]);
+        return {
+          start: { hour: startHour, minute: startMinute },
+          end: { hour: endHour, minute: endMinute },
+        };
+      }
+      const singleMatch = text.match(/(\d{1,2})[:：](\d{2})/);
+      if (singleMatch) {
+        const hour = normalizeHour(Number(singleMatch[1]));
+        const minute = Number(singleMatch[2]);
+        return {
+          start: { hour, minute: Number.isNaN(minute) ? 0 : minute },
+        };
+      }
+      const singleCnMatch = text.match(/(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分)?/);
+      if (singleCnMatch) {
+        const hour = normalizeHour(Number(singleCnMatch[1]));
+        const minute = parseMinutes(singleCnMatch[2] ?? singleCnMatch[3]);
+        return {
+          start: { hour, minute },
+        };
+      }
+      return null;
+    };
+
+    const resolveWeekdayDate = (weekday: number, weekOffset: number) => {
+      const now = new Date();
+      const current = now.getDay();
+      let delta = (weekday - current + 7) % 7;
+      if (weekOffset > 0) delta += 7 * weekOffset;
+      const next = new Date(now);
+      next.setHours(0, 0, 0, 0);
+      next.setDate(now.getDate() + delta);
+      return next;
+    };
+
+    const parseDateFromText = (text: string) => {
+      if (!text) return null;
+      const ymdMatch = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (ymdMatch) {
+        const year = Number(ymdMatch[1]);
+        const month = Number(ymdMatch[2]) - 1;
+        const day = Number(ymdMatch[3]);
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+      const mdMatch = text.match(/(\d{1,2})月(\d{1,2})日/);
+      if (mdMatch) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = Number(mdMatch[1]) - 1;
+        const day = Number(mdMatch[2]);
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+      const slashMatch = text.match(/(\d{1,2})\/(\d{1,2})/);
+      if (slashMatch) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = Number(slashMatch[1]) - 1;
+        const day = Number(slashMatch[2]);
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+      const jpMatch = text.match(/(来週|今週)?\s*([月火水木金土日])曜/);
+      if (jpMatch) {
+        const prefix = jpMatch[1] ?? '';
+        const weekdayMap: Record<string, number> = {
+          日: 0,
+          月: 1,
+          火: 2,
+          水: 3,
+          木: 4,
+          金: 5,
+          土: 6,
+        };
+        const weekday = weekdayMap[jpMatch[2]];
+        const offset = /来週/.test(prefix) ? 1 : 0;
+        return resolveWeekdayDate(weekday, offset);
+      }
+      const cnMatch =
+        text.match(/(下周|下星期|本周|本週|这周|這周|今周|今週)?\s*(周|星期)\s*([一二三四五六日天1234567])/);
+      if (cnMatch) {
+        const prefix = cnMatch[1] ?? '';
+        const dayToken = cnMatch[3];
+        const weekdayMap: Record<string, number> = {
+          日: 0,
+          天: 0,
+          一: 1,
+          二: 2,
+          三: 3,
+          四: 4,
+          五: 5,
+          六: 6,
+          '1': 1,
+          '2': 2,
+          '3': 3,
+          '4': 4,
+          '5': 5,
+          '6': 6,
+          '7': 0,
+        };
+        const weekday = weekdayMap[dayToken];
+        const offset = /下周|下星期/.test(prefix) ? 1 : 0;
+        return resolveWeekdayDate(weekday, offset);
+      }
+      const cnShortMatch = text.match(/(下周|下星期)\s*([一二三四五六日天1234567])/);
+      if (cnShortMatch) {
+        const dayToken = cnShortMatch[2];
+        const weekdayMap: Record<string, number> = {
+          日: 0,
+          天: 0,
+          一: 1,
+          二: 2,
+          三: 3,
+          四: 4,
+          五: 5,
+          六: 6,
+          '1': 1,
+          '2': 2,
+          '3': 3,
+          '4': 4,
+          '5': 5,
+          '6': 6,
+          '7': 0,
+        };
+        const weekday = weekdayMap[dayToken];
+        return resolveWeekdayDate(weekday, 1);
+      }
+      return null;
+    };
+
+    const buildStructuredSchedule = (text: string) => {
+      const timeRange = parseTimeRangeFromText(text);
+      const dateOnly = parseDateFromText(text);
+      if (!timeRange || !dateOnly) return null;
+      const start = new Date(dateOnly);
+      start.setHours(timeRange.start.hour, timeRange.start.minute, 0, 0);
+      let end: Date | null = null;
+      if (timeRange.end) {
+        end = new Date(dateOnly);
+        end.setHours(timeRange.end.hour, timeRange.end.minute, 0, 0);
+        if (end <= start) {
+          end.setDate(end.getDate() + 1);
+        }
+      }
+      return {
+        startTime: start.toISOString(),
+        endTime: end ? end.toISOString() : undefined,
+      };
+    };
 
     const detectIntent = (text: string): AssistantIntent => {
       if (/[作办办]活動|イベントを?作|開催|公開|募集|申し込みフォーム|申込フォーム|作成|掲載|告知/i.test(text)) return 'create';
@@ -729,14 +976,16 @@ export class AiService {
           if (!start || !end) return null;
           return `${start}-${end}`;
         })();
-        const cnDayMatch = text.match(/(下周|下星期)?[周星期][一二三四五六日天1234567]/);
+        const cnDayMatch = text.match(
+          /(下周|下星期|本周|本週|这周|這周|今周|今週)?\s*(?:周|星期)?\s*([一二三四五六日天1234567])/,
+        );
         const timeDateMatch =
           text.match(/(\d{4}-\d{2}-\d{2}(?:\s*\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}日(?:\s*\d{1,2}[:：]\d{2})?)/) ??
           text.match(/(\d{1,2}\/\d{1,2}(?:\s*\d{1,2}[:：]\d{2})?)/);
         if (timeRangeMatch?.[1]) {
           setSlot('time', timeRangeMatch[1], 0.75);
         } else if (cnRangeFromTokens) {
-          const dayPrefix = cnDayMatch?.[0] ? `${cnDayMatch[0]} ` : '';
+          const dayPrefix = cnDayMatch?.[0] ? `${cnDayMatch[0].replace(/\s+/g, '')} ` : '';
           setSlot('time', `${dayPrefix}${cnRangeFromTokens}`.trim(), 0.75);
         } else if (timeDateMatch?.[0]) {
           setSlot('time', timeDateMatch[0], 0.75);
@@ -747,7 +996,10 @@ export class AiService {
         if (/オンライン|zoom|teams|meet|line/i.test(text)) {
           setSlot('location', 'online', 0.8);
         } else {
-          const locMatch = text.match(/(渋谷|新宿|池袋|東京|大阪|名古屋|福岡|札幌|横浜|神戸|京都|仙台|那覇|千葉|埼玉|神奈川)/);
+          const locMatch =
+            text.match(/([\u4e00-\u9fff]{1,6}(市|区|區|县|縣|町|村))/) ??
+            text.match(/([ぁ-んァ-ン\u4e00-\u9fff]{1,6}(駅|駅前))/) ??
+            text.match(/(渋谷|新宿|池袋|東京|大阪|名古屋|福岡|札幌|横浜|神戸|京都|仙台|那覇|千葉|埼玉|神奈川)/);
           if (locMatch?.[0]) {
             setSlot('location', locMatch[0], 0.7);
           }
@@ -795,7 +1047,11 @@ export class AiService {
           setSlot('title', text, 0.7);
         }
         // audience hints
-        if (/親子|子ども|子供|学生|社会人|ママ|パパ|ファミリー|シニア|若者|初心者/i.test(text)) {
+        if (/親子|子ども|子供|家族|家庭|ファミリー|ファミリー向け|ファミリーOK/i.test(text)) {
+          setSlot('audience', 'family', Math.max(confidence.audience, 0.75));
+        } else if (/同学|同學|同事|朋友|友人|友達|同僚|クラスメート/i.test(text)) {
+          setSlot('audience', 'friends', Math.max(confidence.audience, 0.75));
+        } else if (/学生|社会人|ママ|パパ|シニア|若者|初心者/i.test(text)) {
           setSlot('audience', text, Math.max(confidence.audience, 0.7));
         }
         if (text.length > 80 && (confidence.details ?? 0) < 0.6) {
@@ -1044,7 +1300,14 @@ export class AiService {
     const confidence = extracted.confidence;
     const intent = extracted.intent;
     const confirmDraft = payload.action === 'confirm_draft';
-    const compareCandidatesForPrompt = inputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
+    const continueEdit = payload.action === 'continue_edit';
+    const effectiveInputMode: AssistantInputMode = continueEdit ? 'fill' : inputMode;
+    const compareCandidatesForPrompt =
+      effectiveInputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
+    const normalizedInputMode: AssistantInputMode =
+      effectiveInputMode === 'compare' && compareCandidatesForPrompt.length < 2
+        ? 'describe'
+        : effectiveInputMode;
     const lastUserIndex = (() => {
       for (let i = conversation.length - 1; i >= 0; i -= 1) {
         if (conversation[i].role === 'user') return i;
@@ -1056,12 +1319,25 @@ export class AiService {
     const prevSlots = prevExtracted.slots;
     const prevConfidence = prevExtracted.confidence;
     const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
+    const isFreeText = (value?: string | null) => /無料|free/i.test(value ?? '');
+    const getMissingMvpKeys = (source: Slots, conf: Confidence): (keyof Slots)[] => {
+      const missing: (keyof Slots)[] = [];
+      const hasTitle = (source.title && (conf.title ?? 0) >= 0.6) || hit('activityType') || hit('details');
+      if (!hasTitle) missing.push('title');
+      if (!hit('time')) missing.push('time');
+      if (!hit('location')) missing.push('location');
+      if (!hit('audience')) missing.push('audience');
+      if (!hit('details')) missing.push('details');
+      const hasPrice = hit('price') || isFreeText(source.price) || isFreeText(source.details);
+      if (!hasPrice) missing.push('price');
+      return missing;
+    };
     const requiredAll = requiredSlots.every(hit);
     const optCount = primaryOptionalSlots.filter(hit).length;
     const fastPath = requiredAll && optCount >= 2;
     const slowPath = requiredAll && optCount >= 1 && turnCount >= 3;
-    const isCompareMode = inputMode === 'compare';
-    const draftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
+    const isCompareMode = normalizedInputMode === 'compare';
+    const baseDraftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
 
     const lastAssistantMessage =
       [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
@@ -1101,10 +1377,13 @@ export class AiService {
     };
     const missingRequired = requiredSlots.filter((k) => !hit(k));
     const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !hit(k));
-    const missingAll = [...missingRequired, ...missingOptional];
-    const nextQuestionKeyCandidate = draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]);
+    const missingMvpKeys = baseDraftReady ? getMissingMvpKeys(slots, confidence) : [];
+    const draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
+    const missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
+    const forcedNextQuestionKey = continueEdit ? 'details' : null;
+    const nextQuestionKeyCandidate = forcedNextQuestionKey ?? (draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]));
     const decisionChoiceCandidate =
-      !draftReady && !isCompareMode
+      !draftReady && !isCompareMode && !continueEdit
         ? buildDecisionChoiceQuestion(
             nextQuestionKeyCandidate,
             slots,
@@ -1116,18 +1395,20 @@ export class AiService {
           )
         : null;
     const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
-    const promptPhase: EventAssistantPromptPhase = determinePromptPhase({
-      inputMode,
-      confirmDraft,
-      draftReady,
-      hasDecisionChoice: Boolean(decisionChoiceCandidate),
-    });
+    const promptPhase: EventAssistantPromptPhase = continueEdit
+      ? 'decision'
+      : determinePromptPhase({
+          inputMode: normalizedInputMode,
+          confirmDraft,
+          draftReady,
+          hasDecisionChoice: Boolean(decisionChoiceCandidate),
+        });
     const promptConfig = getEventAssistantPromptConfig(promptPhase);
     const promptParams: Record<string, string> = {
       latest_message: latestUserMessage || '',
       phase: promptPhase,
       next_question_key: nextQuestionKeyCandidate ?? '',
-      input_mode: inputMode,
+      input_mode: normalizedInputMode,
       min_question_turns: String(promptConfig.minQuestionTurns),
       option_phase_turns: String(promptConfig.optionPhaseTurns),
       ready_turns: String(promptConfig.readyTurns),
@@ -1162,7 +1443,7 @@ export class AiService {
               conversation,
               turnCount,
               latestUserMessage,
-              inputMode,
+              inputMode: normalizedInputMode,
               draftReady,
               nextQuestionKey: nextQuestionKeyCandidate,
               compareCandidates: compareCandidatesForPrompt,
@@ -1294,13 +1575,19 @@ export class AiService {
         nextQuestionKey,
         slots,
         confidence,
-        inputMode,
+        normalizedInputMode,
         Boolean(parsed.choiceQuestion),
       );
       parsed.message = sanitize(guardedMessage);
       const uiQuestionKey = nextQuestionKey ?? null;
+      if (!uiQuestionKey && parsed.ui?.question?.text) {
+        console.warn('[AiService] ui.question ignored because nextQuestionKey is null', {
+          phase: promptPhase,
+          question: parsed.ui?.question?.text,
+        });
+      }
       const isDecisionPhase = promptPhase === 'decision';
-      const cleanUiOptions = !isDecisionPhase && Array.isArray(parsed.ui?.options)
+      const cleanUiOptions = !isDecisionPhase && !isCompareMode && Array.isArray(parsed.ui?.options)
         ? parsed.ui!.options
             .map((o) => ({
               label: sanitize(o.label),
@@ -1324,7 +1611,10 @@ export class AiService {
               .filter((o) => o.label && o.value),
           }
         : null;
-      const finalQuestionText = cleanDecisionChoice?.prompt || cleanUiQuestionText;
+      const forcedQuestionText = continueEdit
+        ? 'どこを直したいですか？（日時/場所/参加費/説明/対象など）'
+        : '';
+      const finalQuestionText = forcedQuestionText || cleanDecisionChoice?.prompt || cleanUiQuestionText;
       const cleanUiQuestion =
         finalQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: finalQuestionText } : undefined;
       const cleanUi: AiAssistantUiPayload | undefined =
@@ -1355,18 +1645,6 @@ export class AiService {
             note: sanitize(parsed.miniPreview.note),
           }
         : undefined;
-      const choiceKey =
-        isCompareMode && cleanUiOptions.length ? 'activityType' : uiQuestionKey;
-      const choicePrompt = cleanUiQuestionText || cleanUiMessage || '';
-      const cleanChoiceQuestion =
-        cleanDecisionChoice ??
-        (choiceKey && cleanUiOptions.length && choicePrompt
-          ? {
-              key: choiceKey,
-              prompt: choicePrompt,
-              options: cleanUiOptions,
-            }
-          : undefined);
       const cleanCompareCandidates = Array.isArray(compareCandidates)
         ? compareCandidates
             .map((candidate) => ({
@@ -1379,6 +1657,19 @@ export class AiService {
             }))
             .filter((candidate) => candidate.id && candidate.summary)
         : [];
+      const choiceKey = isCompareMode ? 'activityType' : uiQuestionKey;
+      const choicePrompt = cleanUiQuestionText || cleanUiMessage || '';
+      const compareChoiceQuestion = isCompareMode ? buildCompareChoiceQuestion(cleanCompareCandidates) : null;
+      const cleanChoiceQuestion =
+        compareChoiceQuestion ??
+        cleanDecisionChoice ??
+        (choiceKey && cleanUiOptions.length && choicePrompt
+          ? {
+              key: choiceKey,
+              prompt: choicePrompt,
+              options: cleanUiOptions,
+            }
+          : undefined);
       const cleanTitleSuggestions = Array.isArray(parsed.titleSuggestions)
         ? parsed.titleSuggestions.map((t) => sanitize(t)).filter(Boolean)
         : [];
@@ -1401,8 +1692,11 @@ export class AiService {
           parsed.publicActivityDraft.schedule.date = sanitize(parsed.publicActivityDraft.schedule.date);
           parsed.publicActivityDraft.schedule.duration = sanitize(parsed.publicActivityDraft.schedule.duration);
           parsed.publicActivityDraft.schedule.location = sanitize(parsed.publicActivityDraft.schedule.location);
+          parsed.publicActivityDraft.schedule.startTime = sanitize(parsed.publicActivityDraft.schedule.startTime);
+          parsed.publicActivityDraft.schedule.endTime = sanitize(parsed.publicActivityDraft.schedule.endTime);
         }
         parsed.publicActivityDraft.signupNotes = sanitize(parsed.publicActivityDraft.signupNotes);
+        parsed.publicActivityDraft.expertComment = sanitize(parsed.publicActivityDraft.expertComment);
       }
       if (parsed.internalExecutionPlan) {
         parsed.internalExecutionPlan.objective = sanitize(parsed.internalExecutionPlan.objective);
@@ -1432,7 +1726,7 @@ export class AiService {
       parsed.compareCandidates = cleanCompareCandidates;
       parsed.titleSuggestions = cleanTitleSuggestions;
       parsed.ui = cleanUi;
-      parsed.inputMode = inputMode;
+      parsed.inputMode = normalizedInputMode;
       parsed.nextQuestionKey = nextQuestionKey;
       parsed.editorChecklist = Array.isArray(parsed.editorChecklist)
         ? parsed.editorChecklist.map((item) => sanitize(item)).filter(Boolean)
@@ -1447,6 +1741,98 @@ export class AiService {
         }
       });
       const draftBaseSlots = Object.keys(highConfSlots).length ? highConfSlots : slots;
+      const buildExpertCommentFromSlots = (source: Slots): string => {
+        const notes: string[] = [];
+        if (source.audience) {
+          notes.push(`対象が「${source.audience}」なので、参加者がイメージしやすいです。`);
+        }
+        if (source.time && source.location) {
+          notes.push('日時と場所が揃っているので、告知までがスムーズです。');
+        } else if (!source.time || !source.location) {
+          notes.push('日時や場所が未確定の場合は、決まり次第追記すると安心感が増します。');
+        }
+        if (source.price) {
+          notes.push('参加費の目安があると検討しやすくなります。');
+        }
+        return notes.filter(Boolean).join(' ');
+      };
+      const buildDraftFromSlots = (source: Slots, timeSourceText: string): AiAssistantPublicDraft => {
+        const title = source.title || source.activityType || source.details || '';
+        const structuredSchedule = buildStructuredSchedule(timeSourceText);
+        const schedule =
+          source.time || source.location
+            ? {
+                date: source.time || undefined,
+                duration: undefined,
+                location: source.location || undefined,
+                startTime: structuredSchedule?.startTime,
+                endTime: structuredSchedule?.endTime,
+              }
+            : undefined;
+        const description = source.details || '';
+        const price = source.price || (isFreeText(source.details) ? '無料' : undefined);
+        return {
+          title: title || undefined,
+          shortDescription: description || undefined,
+          detailedDescription: description || undefined,
+          targetAudience: source.audience || undefined,
+          ageRange: undefined,
+          highlights: [],
+          schedule,
+          price,
+          capacity: source.capacity || undefined,
+          signupNotes: source.details || undefined,
+          expertComment: buildExpertCommentFromSlots(source),
+        };
+      };
+      const ensureDraftMvpShape = (
+        draft: AiAssistantPublicDraft,
+        fallback: AiAssistantPublicDraft,
+      ): AiAssistantPublicDraft => {
+        const next: AiAssistantPublicDraft = { ...draft };
+        if (!('title' in next)) next.title = fallback.title ?? undefined;
+        if (!('shortDescription' in next)) next.shortDescription = fallback.shortDescription ?? undefined;
+        if (!('detailedDescription' in next)) next.detailedDescription = fallback.detailedDescription ?? undefined;
+        if (!('targetAudience' in next)) next.targetAudience = fallback.targetAudience ?? undefined;
+        if (!('price' in next)) next.price = fallback.price ?? undefined;
+        if (!('capacity' in next)) next.capacity = fallback.capacity ?? undefined;
+        if (!('signupNotes' in next)) next.signupNotes = fallback.signupNotes ?? undefined;
+        if (!('schedule' in next) || !next.schedule) {
+          next.schedule = fallback.schedule ?? { date: undefined, startTime: undefined, endTime: undefined, location: undefined };
+        } else {
+          const schedule = next.schedule;
+          if (!('date' in schedule)) schedule.date = fallback.schedule?.date ?? undefined;
+          if (!('startTime' in schedule)) schedule.startTime = fallback.schedule?.startTime ?? undefined;
+          if (!('endTime' in schedule)) schedule.endTime = fallback.schedule?.endTime ?? undefined;
+          if (!('location' in schedule)) schedule.location = fallback.schedule?.location ?? undefined;
+        }
+        return next;
+      };
+      if (state === 'ready' && parsed.publicActivityDraft) {
+        const timeSourceText = [draftBaseSlots.time, latestUserMessage].filter(Boolean).join(' ');
+        const fallbackDraft = buildDraftFromSlots(draftBaseSlots, timeSourceText);
+        parsed.publicActivityDraft = {
+          ...fallbackDraft,
+          ...parsed.publicActivityDraft,
+          schedule: {
+            ...(fallbackDraft.schedule ?? {}),
+            ...(parsed.publicActivityDraft.schedule ?? {}),
+          },
+        };
+        parsed.publicActivityDraft = ensureDraftMvpShape(parsed.publicActivityDraft, fallbackDraft);
+      }
+      const shouldSuggestTitles =
+        !confirmDraft && draftReady && (!slots.title || (confidence.title ?? 0) < 0.6);
+      if (shouldSuggestTitles) {
+        try {
+          parsed.titleSuggestions = await this.generateTitleSuggestions(
+            parsed.publicActivityDraft as AiAssistantPublicDraft,
+            detectedLanguage || payload.baseLanguage || 'ja',
+          );
+        } catch (err) {
+          parsed.titleSuggestions = buildTitleSuggestions(draftBaseSlots);
+        }
+      }
       const draftId =
         draftReady && Object.keys(draftBaseSlots).length
           ? hashStable({ slots: normalizeSlotsForHash(draftBaseSlots), policyVersion: this.POLICY_VERSION })
@@ -1470,7 +1856,7 @@ export class AiService {
         choiceQuestion: cleanChoiceQuestion,
         compareCandidates: cleanCompareCandidates,
         titleSuggestions: cleanTitleSuggestions,
-        inputMode,
+        inputMode: normalizedInputMode,
         nextQuestionKey,
         slots,
         confidence,

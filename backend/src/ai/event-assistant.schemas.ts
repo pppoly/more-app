@@ -32,6 +32,43 @@ const thinkingStepsSchema: JsonSchema = {
 const coachPromptSchema: JsonSchema = { type: 'string' };
 const writerSummarySchema: JsonSchema = { type: 'string' };
 
+const scheduleSchema: JsonSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    date: { type: 'string' },
+    startTime: { type: 'string' },
+    endTime: { type: 'string' },
+    location: { type: 'string' },
+    duration: { type: 'string' },
+  },
+};
+
+const publicDraftSchema: JsonSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    title: { type: 'string' },
+    shortDescription: { type: 'string' },
+    detailedDescription: { type: 'string' },
+    targetAudience: { type: 'string' },
+    schedule: scheduleSchema,
+    price: { type: 'string' },
+    capacity: { type: 'string' },
+    signupNotes: { type: 'string' },
+  },
+  required: [
+    'title',
+    'shortDescription',
+    'detailedDescription',
+    'targetAudience',
+    'schedule',
+    'price',
+    'capacity',
+    'signupNotes',
+  ],
+};
+
 const draftSchema: JsonSchema = {
   type: 'object',
   additionalProperties: true,
@@ -61,7 +98,7 @@ const uiCollectingSchema: JsonSchema = baseObject(
     message: uiMessageSchema,
     question: uiQuestionSchema,
   },
-  ['question'],
+  [],
 );
 
 const uiDecisionSchema: JsonSchema = baseObject(
@@ -74,14 +111,8 @@ const uiDecisionSchema: JsonSchema = baseObject(
 const uiCompareSchema: JsonSchema = baseObject(
   {
     message: uiMessageSchema,
-    options: {
-      type: 'array',
-      minItems: 2,
-      maxItems: 3,
-      items: uiOptionSchema,
-    },
   },
-  ['message', 'options'],
+  ['message'],
 );
 
 const uiReadySchema: JsonSchema = baseObject({
@@ -132,7 +163,7 @@ export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
     schema: baseObject(
       {
         ui: uiReadySchema,
-        publicActivityDraft: draftSchema,
+        publicActivityDraft: publicDraftSchema,
         internalExecutionPlan: draftSchema,
         writerSummary: writerSummarySchema,
         coachPrompt: coachPromptSchema,
@@ -145,7 +176,7 @@ export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
     schema: baseObject(
       {
         ui: uiReadySchema,
-        publicActivityDraft: draftSchema,
+        publicActivityDraft: publicDraftSchema,
         internalExecutionPlan: draftSchema,
         writerSummary: writerSummarySchema,
         coachPrompt: coachPromptSchema,
@@ -174,8 +205,23 @@ export const validateAssistantOutput = (
   Object.keys(payload).forEach((key) => {
     if (!properties[key]) errors.push(`unknown_field:${key}`);
   });
+  const validateRequired = (schemaNode: JsonSchema, value: unknown, path: string) => {
+    if (!schemaNode.required || !Array.isArray(schemaNode.required)) return;
+    if (!isObject(value)) {
+      schemaNode.required.forEach((req) => errors.push(`missing_required:${path}.${req}`));
+      return;
+    }
+    schemaNode.required.forEach((req) => {
+      if (!(req in value)) errors.push(`missing_required:${path}.${req}`);
+    });
+  };
   (schema.required ?? []).forEach((req) => {
     if (!(req in payload)) errors.push(`missing_required:${req}`);
+  });
+  Object.entries(properties).forEach(([key, node]) => {
+    if (!node || typeof node !== 'object') return;
+    const value = (payload as Record<string, unknown>)[key];
+    validateRequired(node as JsonSchema, value, key);
   });
   return { valid: errors.length === 0, errors };
 };

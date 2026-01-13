@@ -23,7 +23,7 @@ type ResolveChoiceQuestionInput = {
 type CommitCheckpointParams = {
   mode: 'chat' | 'operate';
   draftReady: boolean;
-  draftId?: string | null;
+  nextQuestionKey?: string | null;
   isCommitted: boolean;
   hasChoiceQuestion: boolean;
   isCompareMode: boolean;
@@ -51,30 +51,32 @@ export const resolveChoiceQuestionState = ({
     return machineChoiceQuestion as ChoiceQuestion;
   }
   if (!isCompareMode(inputMode, compareCandidates)) return null;
-  if (!uiOptions || uiOptions.length === 0) return null;
-  const prompt = (uiMessage ?? '').trim();
-  if (!prompt) return null;
+  if (!compareCandidates || compareCandidates.length === 0) return null;
   return {
     key: 'activityType',
-    prompt,
-    options: uiOptions,
+    prompt: '比較したい候補を選んでください。',
+    options: compareCandidates.map((candidate, idx) => ({
+      label: `候補${candidate.id}: ${candidate.summary}`,
+      value: `候補${candidate.id}`,
+      recommended: idx === 0,
+    })),
   };
 };
 
 export const computeShouldShowCommitCheckpoint = ({
   mode,
   draftReady,
-  draftId,
+  nextQuestionKey,
   isCommitted,
   hasChoiceQuestion,
   isCompareMode,
 }: CommitCheckpointParams) =>
   mode === 'chat' &&
   draftReady &&
-  Boolean(draftId) &&
   !isCommitted &&
   !hasChoiceQuestion &&
-  !isCompareMode;
+  !isCompareMode &&
+  !nextQuestionKey;
 
 export const shouldAppendQuestionBubble = ({
   lastMessage,

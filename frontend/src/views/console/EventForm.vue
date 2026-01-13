@@ -1803,11 +1803,15 @@ const applyAiDraft = (draft: any) => {
 
 const loadAiDraftFromSession = () => {
   const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
-  if (!raw) return false;
+  const fallbackRaw = !raw ? localStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY) : null;
+  if (!raw && !fallbackRaw) return false;
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw ?? fallbackRaw ?? '');
     applyAiDraft(parsed);
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    if (fallbackRaw) {
+      localStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
+    }
     return true;
   } catch (err) {
     console.warn('Failed to parse AI draft', err);

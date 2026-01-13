@@ -582,6 +582,7 @@ export interface GeneratedEventContent {
   description: LocalizedContent;
   notes: LocalizedContent;
   riskNotice: LocalizedContent;
+  expertComment?: string;
   snsCaptions: {
     line: Record<string, string>;
     instagram: Record<string, string>;
@@ -619,7 +620,7 @@ export interface EventAssistantMessage {
 
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
-  action?: 'confirm_draft';
+  action?: 'confirm_draft' | 'continue_edit';
 }
 
 export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
@@ -638,10 +639,11 @@ export interface EventAssistantPublicDraft {
   targetAudience?: string;
   ageRange?: string;
   highlights?: string[];
-  schedule?: { date?: string; duration?: string; location?: string };
+  schedule?: { date?: string; duration?: string; location?: string; startTime?: string; endTime?: string };
   price?: number | string | null;
   capacity?: number | string | null;
   signupNotes?: string;
+  expertComment?: string;
 }
 
 export interface EventAssistantExecutionPlan {

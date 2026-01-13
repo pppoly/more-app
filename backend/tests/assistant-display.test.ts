@@ -18,3 +18,11 @@ test('assistant display derives from ui.message when contentText missing', () =>
   assert.equal(result.text, '候補を整理しました。');
   assert.equal(result.source, 'derived_from_json');
 });
+
+test('assistant display ignores ui.question without nextQuestionKey', () => {
+  const result = getAssistantDisplay({
+    contentJson: { ui: { question: { key: 'title', text: 'タイトルは？' } } },
+  });
+  assert.equal(result.text, '');
+  assert.equal(result.source, 'empty');
+});

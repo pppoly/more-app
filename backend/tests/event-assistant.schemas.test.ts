@@ -13,6 +13,13 @@ test('collecting schema rejects draft and unknown fields', () => {
   assert.ok(result.errors.some((e) => e.includes('unknown_field')));
 });
 
+test('collecting schema allows message without question', () => {
+  const result = validateAssistantOutput('collecting', {
+    ui: { message: '了解しました。' },
+  });
+  assert.equal(result.valid, true);
+});
+
 test('ready schema requires draft fields', () => {
   const missingDraft = validateAssistantOutput('ready', {
     writerSummary: 'ok',
@@ -22,7 +29,16 @@ test('ready schema requires draft fields', () => {
 
   const okDraft = validateAssistantOutput('ready', {
     ui: { message: 'ok' },
-    publicActivityDraft: {},
+    publicActivityDraft: {
+      title: 't',
+      shortDescription: 's',
+      detailedDescription: 'd',
+      targetAudience: 'a',
+      schedule: { date: '2025-01-01', startTime: '10:00', endTime: '11:00', location: 'tokyo' },
+      price: '無料',
+      capacity: null,
+      signupNotes: null,
+    },
     internalExecutionPlan: {},
   });
   assert.equal(okDraft.valid, true);
