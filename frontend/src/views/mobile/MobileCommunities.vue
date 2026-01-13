@@ -68,6 +68,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const lastFetchedAt = ref(0);
 const STALE_MS = 60_000;
+const FOLLOW_CHANGE_KEY = 'more_my_communities_follow_change';
 // できるだけネットワーク経由で取得されるデフォルト画像（無い場合は後段のフォールバックへ）
 const runtimeDefaultAvatar =
   typeof window !== 'undefined'
@@ -156,7 +157,16 @@ onMounted(() => {
 
 onActivated(() => {
   if (!lastFetchedAt.value || loading.value) return;
-  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  let followChanged = false;
+  try {
+    if (typeof window !== 'undefined') {
+      const marker = Number(window.localStorage.getItem(FOLLOW_CHANGE_KEY) || 0);
+      followChanged = marker > lastFetchedAt.value;
+    }
+  } catch (err) {
+    console.warn('follow change marker read failed', err);
+  }
+  if (!followChanged && Date.now() - lastFetchedAt.value < STALE_MS) return;
   void loadCommunities();
 });
 

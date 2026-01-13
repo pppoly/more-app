@@ -31,13 +31,12 @@ export class MeService {
   ) {}
 
   async getMyCommunities(userId: string, includeInactive = false) {
-    const memberships = await this.prisma.communityMember.findMany({
-      where: { userId, status: 'active' },
-      orderBy: { lastActiveAt: 'desc' },
+    const follows = await this.prisma.communityFollow.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
       select: {
         communityId: true,
-        role: true,
-        lastActiveAt: true,
+        createdAt: true,
         community: {
           select: {
             id: true,
@@ -57,9 +56,9 @@ export class MeService {
       },
     });
 
-    return memberships
-      .map((membership) => {
-        const community = membership.community;
+    return follows
+      .map((follow) => {
+        const community = follow.community;
         if (!community) return null;
         const lastEvent = community.events?.[0];
         const coverRawCandidate =
@@ -74,8 +73,8 @@ export class MeService {
           id: community.id,
           name: community.name,
           slug: community.slug,
-          role: membership.role,
-          lastActiveAt: membership.lastActiveAt,
+          role: 'follower',
+          lastActiveAt: follow.createdAt,
           avatarUrl,
           imageUrl,
           coverImage: coverImageResolved,

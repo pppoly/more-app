@@ -1787,6 +1787,11 @@ const applyAiDraft = (draft: any) => {
   }
   if (Array.isArray(draft.requirements) && draft.requirements.length) {
     form.config.notes = draft.requirements.map((req: any) => req.label).join('\n');
+  } else if (draft.notes) {
+    form.config.notes = draft.notes;
+  }
+  if (draft.riskNotice) {
+    form.config.riskNoticeText = draft.riskNotice;
   }
   aiChecklist.value = toChecklistItems(draft.checklist || []);
   aiConfirmQuestions.value = toChecklistItems(draft.confirmQuestions || []);

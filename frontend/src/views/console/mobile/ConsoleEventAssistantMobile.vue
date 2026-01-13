@@ -125,7 +125,7 @@
                   </div>
                 </div>
                 <div v-if="msg.writerSummary && mode === 'operate' && canShowProposalUi" class="summary-block">
-                  <p class="summary-eyebrow">AI 下書きサマリー</p>
+                  <p class="summary-eyebrow">下書きサマリー（草案）</p>
                   <p v-if="typeof msg.writerSummary === 'string'" class="summary-text">{{ msg.writerSummary }}</p>
                   <ul v-else class="summary-list">
                     <li v-if="msg.writerSummary.headline"><strong>タイトル</strong>{{ msg.writerSummary.headline }}</li>
@@ -134,6 +134,7 @@
                     <li v-if="msg.writerSummary.riskNotes"><strong>リスク</strong>{{ msg.writerSummary.riskNotes }}</li>
                     <li v-if="msg.writerSummary.nextSteps"><strong>次のステップ</strong>{{ msg.writerSummary.nextSteps }}</li>
                   </ul>
+                  <p class="summary-hint">全文はプレビューで確認できます。</p>
                 </div>
               </div>
               <div
@@ -143,20 +144,9 @@
               >
                 <div class="proposal-head">
                   <p class="proposal-title">{{ msg.payload?.title }}</p>
-                  <p class="proposal-desc">{{ msg.payload?.description }}</p>
+                  <p class="proposal-desc">AI がまとめた下書きです。プレビューで全体を確認できます。</p>
                 </div>
                 <div class="proposal-actions" v-if="msg.payload?.raw">
-                  <button
-                    v-if="msg.payload?.applyEnabled"
-                    type="button"
-                    class="ghost-link"
-                    @click.stop="applyProposalToForm(msg.payload?.raw)"
-                  >
-                    フォームに反映
-                  </button>
-                  <button type="button" class="ghost-link" @click.stop="saveProposalDraft(msg.payload?.raw)">
-                    下書きを保存
-                  </button>
                   <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
                     全文を見る
                   </button>
@@ -232,7 +222,7 @@
           </div>
         </div>
         <div v-if="mode === 'chat' && shouldShowCommitCheckpoint" class="commit-block">
-          <p class="commit-title">内容がそろいました。続け方を選んでください。</p>
+          <p class="commit-title">この内容で進めるか、もう少し調整するかを選んでください。</p>
           <div class="commit-actions">
             <button type="button" class="commit-primary" @click="handleCommitDraft">
               この内容で作成する
@@ -256,7 +246,7 @@
       </div>
     </section>
 
-    <footer class="input-bar">
+    <footer class="input-bar" v-if="!planPreview">
       <div v-if="showEntryBar" class="entry-bar">
         <button type="button" class="entry-button" @click="openMilestonePreview">
           イベント案を開く
@@ -292,10 +282,10 @@
   <teleport to="body">
     <transition name="fade">
       <div v-if="planPreview" class="plan-preview-overlay" @click.self="closePlanPreview">
-        <section class="plan-preview-panel">
+        <section class="plan-preview-panel" role="dialog" aria-modal="true" aria-label="下書きプレビュー">
           <header class="plan-preview-head">
             <div>
-              <p class="plan-preview-label">AI 下書き</p>
+              <p class="plan-preview-label">プレビュー / AI下書き</p>
               <p class="plan-preview-title">{{ previewPlanTitle }}</p>
             </div>
             <button type="button" class="plan-preview-close" aria-label="閉じる" @click="closePlanPreview">
@@ -304,7 +294,7 @@
           </header>
           <div class="plan-preview-scroll">
             <article class="plan-preview-section" v-if="previewPlanDescription">
-              <p class="plan-preview-subtitle">イベントのポイント</p>
+              <p class="plan-preview-subtitle">概要</p>
               <p class="plan-preview-text">{{ previewPlanDescription }}</p>
             </article>
             <div class="plan-preview-grid">
@@ -350,6 +340,21 @@
                 </li>
               </ul>
             </article>
+          </div>
+          <div class="plan-preview-actions">
+            <button
+              type="button"
+              class="preview-primary"
+              :disabled="!planPreview"
+              @click="applyProposalToForm(planPreview)"
+            >
+              フォームに反映
+            </button>
+            <button type="button" class="preview-secondary" :disabled="!planPreview" @click="saveProposalDraft(planPreview)">
+              下書きを保存
+            </button>
+            <button type="button" class="preview-ghost" @click="returnToChat">続けて編集</button>
+            <button type="button" class="preview-ghost" @click="closePlanPreview">閉じる</button>
           </div>
         </section>
       </div>
@@ -518,10 +523,35 @@ const lastDraftId = ref<string | null>(null);
 const lastInputMode = ref<EventAssistantReply['inputMode'] | null>(null);
 const mode = ref<'chat' | 'operate'>('chat');
 const isCommitted = ref(false);
+const isReadyState = computed(() => lastAssistantStatus.value === 'ready');
+const phaseTemplates: Record<'collecting' | 'decision' | 'compare' | 'ready' | 'operate', string[]> = {
+  collecting: [
+    '受け取りました。次も教えてください。',
+    '了解です。続けてお願いします。',
+    'ありがとう。次のことも聞かせてください。',
+  ],
+  decision: [
+    '了解です。続けて聞かせてください。',
+    'そうですね。次に進みましょう。',
+    'いいですね。続けて教えてください。',
+  ],
+  compare: [
+    '今の内容から、こういう見方もできます。',
+    'まだ決めなくて大丈夫です。参考にしてください。',
+    'いったん整理だけします。判断はあとでOKです。',
+  ],
+  ready: [
+    'ここまでの内容を一度まとめました。まだ確定ではありません。',
+    '内容を整理しました。進めるかどうかはこれから決められます。',
+    'いったん形にしました。確定はまだです。',
+  ],
+  operate: ['作成しました。次の操作に進めます。', '反映しました。次に進めます。', '実行しました。次の手順へ進めます。'],
+};
 const canShowProposalUi = computed(
-  () => lastDraftReady.value && Boolean(lastDraftId.value) && isCommitted.value,
+  () => isReadyState.value && lastDraftReady.value && Boolean(lastDraftId.value) && isCommitted.value,
 );
 const shouldShowCommitCheckpoint = computed(() =>
+  isReadyState.value &&
   computeShouldShowCommitCheckpoint({
     mode: mode.value,
     draftReady: lastDraftReady.value,
@@ -544,6 +574,8 @@ const selectionLabelMap: Record<string, string> = {
   title: 'タイトル',
   capacity: '定員',
 };
+const confirmedAnswers = reactive<Record<string, string>>({});
+const currentSlotKey = ref<string | null>(null);
 const formatSelectionDisplay = (raw: string) => {
   const match = raw.match(/【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/);
   if (!match) return '';
@@ -562,6 +594,37 @@ const buildChoiceDisplayText = (key: string, value: string, label?: string) => {
   const name = selectionLabelMap[key] ?? '選択内容';
   const displayValue = label?.replace(/^(候補|解釈)[A-Z]:?\s*/i, '') || value;
   return `${name}を「${displayValue}」にしました`;
+};
+
+const storeConfirmedAnswer = (key: string, value: string) => {
+  const normalizedKey = key?.trim();
+  const normalizedValue = value?.trim();
+  if (!normalizedKey || !normalizedValue) return;
+  confirmedAnswers[normalizedKey] = normalizedValue;
+};
+
+const buildSafeWriterSummary = () => {
+  const summary: {
+    headline?: string;
+    audience?: string;
+    logistics?: string;
+    riskNotes?: string;
+    nextSteps?: string;
+  } = {};
+  const titleValue = confirmedAnswers.title || qaState.topic;
+  const audienceValue = confirmedAnswers.audience || qaState.audience;
+  if (titleValue) summary.headline = titleValue;
+  if (audienceValue) summary.audience = audienceValue;
+  const logisticsParts = [confirmedAnswers.time, confirmedAnswers.location].filter(Boolean);
+  if (logisticsParts.length) summary.logistics = logisticsParts.join(' / ');
+  return summary;
+};
+
+const pickPhaseMessage = (phase: 'collecting' | 'decision' | 'compare' | 'ready' | 'operate', seed?: number) => {
+  const pool = phaseTemplates[phase];
+  if (!pool.length) return '';
+  const index = Math.abs((seed ?? 0) % pool.length);
+  return pool[index];
 };
 const SAFE_ASSISTANT_ACTIONS = new Set(['direct-form', 'title-suggestion', 'system-safe']);
 const isSafeAssistantMessage = (msg: ChatMessage) => {
@@ -999,6 +1062,10 @@ const handleChatAnswer = async (text: string, submitText?: string) => {
   if (question) {
     (qaState as any)[question.key] = text;
   }
+  if (currentSlotKey.value) {
+    storeConfirmedAnswer(currentSlotKey.value, text);
+    currentSlotKey.value = null;
+  }
   if (currentQuestionIndex.value < questions.length - 1) {
     currentQuestionIndex.value += 1;
   }
@@ -1039,6 +1106,8 @@ const toLocalizedContent = (text: string) => {
 const buildProposalFromDraft = (
   draft: EventAssistantReply['publicActivityDraft'] | undefined | null,
   summary: string,
+  fallbackDescription?: string,
+  answers?: Record<string, string>,
 ): (GeneratedEventContent & { summary: string }) => {
   const scheduleNoteParts: string[] = [];
   if (draft?.schedule?.duration) scheduleNoteParts.push(`所要時間: ${draft.schedule.duration}`);
@@ -1051,7 +1120,7 @@ const buildProposalFromDraft = (
     draft?.shortDescription ||
     draft?.detailedDescription ||
     [highlightsText, draft?.targetAudience].filter(Boolean).join(' | ') ||
-    '';
+    (fallbackDescription || '');
   const priceValue = draft?.price;
   const capacityValue = draft?.capacity;
   const infoNoteParts: string[] = [];
@@ -1062,6 +1131,13 @@ const buildProposalFromDraft = (
     infoNoteParts.push(`定員: ${capacityValue}`);
   }
   const checklistNotes = [notesText, infoNoteParts.join(' / ')].filter(Boolean).join('\n');
+  const safeSchedule = draft?.schedule
+    ? {
+        date: answers?.time ? draft.schedule.date || undefined : undefined,
+        duration: answers?.time ? draft.schedule.duration || undefined : undefined,
+        location: answers?.location ? answers.location : undefined,
+      }
+    : undefined;
   return {
     title: toLocalizedContent(draft?.title || 'イベント案'),
     description: toLocalizedContent(mergedDescription),
@@ -1071,12 +1147,12 @@ const buildProposalFromDraft = (
       line: { ja: '', zh: '', en: '' },
       instagram: { ja: '', zh: '', en: '' },
     },
-    logistics: draft?.schedule
+    logistics: safeSchedule
       ? {
-          startTime: draft.schedule.date || undefined,
+          startTime: safeSchedule.date || undefined,
           endTime: undefined,
-          locationText: draft.schedule.location || undefined,
-          locationNote: draft.schedule.duration || undefined,
+          locationText: safeSchedule.location || undefined,
+          locationNote: safeSchedule.duration || undefined,
         }
       : undefined,
     ticketTypes:
@@ -1133,17 +1209,21 @@ const requestAssistantReply = async (
     const steps = Array.isArray(result.thinkingSteps) ? result.thinkingSteps : [];
     const isCompareMode = computeIsCompareMode(result.inputMode ?? null, result.compareCandidates ?? null);
     const nextQuestionKey = result.nextQuestionKey ?? null;
+    const effectiveDraftReady = state === 'ready' && Boolean(result.draftReady);
     const willOperate =
-      mode.value === 'operate' || result.modeHint === 'operate' || options?.action === 'confirm_draft';
+      mode.value === 'operate' ||
+      options?.action === 'confirm_draft' ||
+      (effectiveDraftReady && result.modeHint === 'operate');
     const uiQuestionText =
       typeof result.ui?.question?.text === 'string' ? result.ui.question.text.trim() : '';
-    const uiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
+    const rawUiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
+    let uiMessageText = rawUiMessageText;
     const uiOptions = Array.isArray(result.ui?.options) ? result.ui.options : [];
     const choiceQuestion = resolveChoiceQuestionState({
       inputMode: result.inputMode ?? null,
       compareCandidates: result.compareCandidates ?? null,
       machineChoiceQuestion: result.choiceQuestion ?? null,
-      uiMessage: uiMessageText,
+      uiMessage: rawUiMessageText,
       uiOptions,
     });
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
@@ -1157,7 +1237,7 @@ const requestAssistantReply = async (
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
     let messageId: string | null = null;
     const canRenderBubble = !willOperate;
-    const shouldHoldCommit = Boolean(result.draftReady) && !isCommitted.value && !willOperate;
+    const shouldHoldCommit = effectiveDraftReady && !isCommitted.value && !willOperate;
     const shouldRenderQuestionBubble =
       canRenderBubble && !isCompareMode && nextQuestionKey && uiQuestionText && !shouldHoldCommit;
     const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
@@ -1169,6 +1249,21 @@ const requestAssistantReply = async (
       questionText: uiQuestionText,
       shouldRender: shouldRenderQuestionBubble,
     });
+    if (shouldRenderQuestionBubble) {
+      currentSlotKey.value = nextQuestionKey;
+    } else {
+      currentSlotKey.value = null;
+    }
+    const phase: 'collecting' | 'decision' | 'compare' | 'ready' | 'operate' = willOperate
+      ? 'operate'
+      : isCompareMode
+      ? 'compare'
+      : hasChoiceQuestion
+      ? 'decision'
+      : effectiveDraftReady
+      ? 'ready'
+      : 'collecting';
+    const phaseMessage = pickPhaseMessage(phase, result.turnCount);
     if (canAppendQuestionBubble) {
       messageId = pushMessage(
         'assistant',
@@ -1180,11 +1275,12 @@ const requestAssistantReply = async (
         steps,
         result.coachPrompts,
         result.editorChecklist,
-        stageTag === 'writer' ? result.writerSummary : undefined,
+        stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
         { contentJson: result as unknown as Record<string, unknown> },
       );
     } else if (shouldRenderCompareBubble || shouldRenderMessageBubble) {
+      uiMessageText = phaseMessage;
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1195,13 +1291,13 @@ const requestAssistantReply = async (
         steps,
         result.coachPrompts,
         result.editorChecklist,
-        stageTag === 'writer' ? result.writerSummary : undefined,
+        stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
         { contentJson: result as unknown as Record<string, unknown> },
       );
     }
     if (isSelectionAction && !messageId && !willOperate) {
-      const ackText = buildSelectionAck(nextQuestionKey, hasChoiceQuestion, isCompareMode);
+      const ackText = phaseMessage || buildSelectionAck(nextQuestionKey, hasChoiceQuestion, isCompareMode);
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1212,7 +1308,7 @@ const requestAssistantReply = async (
         steps,
         result.coachPrompts,
         result.editorChecklist,
-        stageTag === 'writer' ? result.writerSummary : undefined,
+        stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
         { contentJson: result as unknown as Record<string, unknown> },
       );
@@ -1264,16 +1360,21 @@ const requestAssistantReply = async (
       );
     }
     lastInputMode.value = result.inputMode ?? null;
-    lastDraftReady.value = Boolean(result.draftReady);
-    lastDraftId.value = result.draftReady ? result.draftId ?? null : null;
+    lastDraftReady.value = effectiveDraftReady;
+    lastDraftId.value = effectiveDraftReady ? result.draftId ?? null : null;
     const shouldPushProposal =
-      Boolean(result.draftReady) &&
+      effectiveDraftReady &&
       Boolean(result.draftId) &&
       isCommitted.value &&
       !seenDraftIds.value.includes(result.draftId as string);
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
     if (shouldPushProposal) {
-      preparedProposal = buildProposalFromDraft(result.publicActivityDraft ?? null, qaSummary);
+      preparedProposal = buildProposalFromDraft(
+        result.publicActivityDraft ?? null,
+        qaSummary,
+        qaState.details || qaState.topic || '',
+        confirmedAnswers,
+      );
       aiResult.value = preparedProposal;
       if (preparedProposal) {
         const title = extractText(preparedProposal.title);
@@ -1314,7 +1415,7 @@ const requestAssistantReply = async (
       options: uiOptions.map((opt) => opt.label).filter(Boolean),
       coachPrompts: result.coachPrompts ?? [],
       editorChecklist: result.editorChecklist ?? [],
-      writerSummary: stageTag === 'writer' ? result.writerSummary ?? null : null,
+      writerSummary: stageTag === 'writer' ? buildSafeWriterSummary() : null,
       ui: result.ui ?? null,
       draftId: result.draftId,
     });
@@ -1511,6 +1612,13 @@ const closePlanPreview = () => {
   planPreview.value = null;
 };
 
+const returnToChat = () => {
+  closePlanPreview();
+  nextTick(() => {
+    chatInputRef.value?.focus();
+  });
+};
+
 const loadProfileDefaults = async () => {
   try {
     const response = await fetchAssistantProfileDefaults();
@@ -1566,16 +1674,42 @@ const buildConversationMessages = () => {
     }));
 };
 
+const resolvePhaseForMessage = (msg: ChatMessage): 'collecting' | 'decision' | 'compare' | 'ready' | 'operate' => {
+  const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+  if (!contentJson) return 'collecting';
+  const state = (contentJson.state as EventAssistantState) || (contentJson.status as EventAssistantState) || 'collecting';
+  if (state === 'completed') return 'operate';
+  if (state === 'ready') return 'ready';
+  const isCompare = contentJson.inputMode === 'compare' || Boolean(contentJson.compareCandidates?.length);
+  if (isCompare) return 'compare';
+  const hasChoice =
+    Boolean(contentJson.choiceQuestion?.options?.length) || Boolean(contentJson.ui?.options?.length);
+  if (hasChoice) return 'decision';
+  return 'collecting';
+};
+
 const getMessageDisplayText = (msg: ChatMessage) => {
   if (msg.role === 'user') return msg.contentText || msg.content || '';
-  return (
+  const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+  const questionText = contentJson?.ui?.question?.text;
+  if (questionText && msg.content === questionText) {
+    return msg.content;
+  }
+  if (contentJson && msg.type === 'text') {
+    const phase = resolvePhaseForMessage(msg);
+    return pickPhaseMessage(phase, contentJson.turnCount);
+  }
+  const fallback =
     getAssistantDisplay({
       content: msg.content,
       contentText: msg.contentText,
       contentJson: msg.contentJson ?? msg.payload?.assistantReply ?? null,
       payload: msg.payload?.assistantReply ? { assistantReply: msg.payload.assistantReply } : undefined,
-    }).text || msg.contentText || ''
-  );
+    }).text || msg.contentText || '';
+  if (!isCommitted.value && /(決まりました|確定しました|以下の内容で進めます|完成しました|準備が整いました)/.test(fallback)) {
+    return pickPhaseMessage('collecting', 0);
+  }
+  return fallback;
 };
 
 const isInProgressStatus = (status?: string | null) => {
@@ -1596,8 +1730,9 @@ const handleChipSelect = (template: string) => {
 const handleChoiceSelect = async (key: string, value: string) => {
   if (!key || !value || aiLoading.value) return;
   autoScrollEnabled.value = true;
-  const payload = `【選択】${key}:${value}`;
   const label = choiceQuestionState.value?.options.find((opt) => opt.value === value)?.label;
+  storeConfirmedAnswer(key, label ?? value);
+  const payload = `【選択】${key}:${value}`;
   const displayText = buildChoiceDisplayText(key, value, label);
   pushMessage(
     'user',
@@ -1684,6 +1819,10 @@ const resetQaState = () => {
   qaState.audience = '';
   qaState.style = '';
   qaState.details = '';
+  Object.keys(confirmedAnswers).forEach((key) => {
+    delete confirmedAnswers[key];
+  });
+  currentSlotKey.value = null;
 };
 
 const closeActiveSession = async () => {
@@ -2017,10 +2156,12 @@ const goToForm = async (useAi: boolean) => {
   if (!communityId.value) return;
   if (useAi && aiResult.value) {
     const draft = aiResult.value;
+    const fallbackDescription =
+      extractText(draft.description) || extractText(draft.notes) || qaState.details || qaState.topic || '';
     const payload = {
       title: extractText(draft.title),
       subtitle: extractText(draft.subtitle),
-      description: extractText(draft.description),
+      description: fallbackDescription,
       notes: extractText(draft.notes),
       riskNotice: extractText(draft.riskNotice),
       logistics: draft.logistics ?? null,
@@ -2796,6 +2937,11 @@ onUnmounted(() => {
   text-transform: uppercase;
   color: #6b7280;
 }
+.summary-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
 
 .proposal-bubble {
   background: #ffffff;
@@ -3011,6 +3157,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
 .plan-preview-section {
@@ -3071,6 +3219,41 @@ onUnmounted(() => {
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.04);
   font-size: 13px;
+}
+
+.plan-preview-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+.preview-primary,
+.preview-secondary,
+.preview-ghost {
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.preview-primary {
+  border: none;
+  background: #111827;
+  color: #ffffff;
+}
+.preview-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.preview-secondary {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
+}
+.preview-ghost {
+  border: 1px dashed #e5e7eb;
+  background: #ffffff;
+  color: #6b7280;
 }
 
 .fade-enter-active,

@@ -448,6 +448,18 @@ const ensureAuthed = async () => {
   return false;
 };
 
+const FOLLOW_CHANGE_KEY = 'more_my_communities_follow_change';
+
+const notifyFollowChange = () => {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(FOLLOW_CHANGE_KEY, String(Date.now()));
+    }
+  } catch (err) {
+    console.warn('follow change marker failed', err);
+  }
+};
+
 const toggleFollow = async () => {
   if (!community.value?.id) return;
   if (!(await ensureAuthed())) return;
@@ -461,10 +473,12 @@ const toggleFollow = async () => {
         toast.show('コミュニティの設定によりフォロー解除ができません', { type: 'info' });
       } else {
         following.value = res.following;
+        notifyFollowChange();
       }
     } else {
       const res = await followCommunity(community.value.id);
       following.value = res.following;
+      notifyFollowChange();
     }
     await fetchCurrentUser();
   } catch (err) {
