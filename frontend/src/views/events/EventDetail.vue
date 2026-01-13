@@ -38,11 +38,8 @@
         </div>
         <div class="info-row">
           <span class="label">日時</span>
-          <span class="info-row__value">
-            <button v-if="calendarLink" type="button" class="date-link" @click="openCalendar">
-              {{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}
-            </button>
-            <span v-else>{{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}</span>
+          <span class="info-row__value info-row__value--multiline">
+            {{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}
           </span>
         </div>
         <div class="info-row">
@@ -404,27 +401,6 @@ const formatDate = (value?: string | null) => {
   });
 };
 
-const pad = (value: number) => value.toString().padStart(2, '0');
-
-const formatCalendarDate = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(
-    date.getUTCHours(),
-  )}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
-};
-
-const calendarLink = computed(() => {
-  if (!event.value?.startTime) return '';
-  const start = formatCalendarDate(event.value.startTime);
-  const end = formatCalendarDate(event.value.endTime ?? event.value.startTime);
-  if (!start || !end) return '';
-  const titleText = encodeURIComponent(title.value);
-  const location = encodeURIComponent(event.value.locationText ?? '');
-  const descriptionText = encodeURIComponent(description.value || title.value);
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titleText}&dates=${start}/${end}&location=${location}&details=${descriptionText}`;
-});
-
 const startRegistration = async () => {
   if (!eventId.value || !isLoggedIn.value) {
     registrationError.value = 'ログインしてください';
@@ -602,10 +578,6 @@ const openMap = () => {
   }
 };
 
-const openCalendar = () => {
-  if (!calendarLink.value) return;
-  window.open(calendarLink.value, '_blank');
-};
 
 const syncRegistrationStatus = async () => {
   if (!isLoggedIn.value || !eventId.value) {
@@ -785,6 +757,14 @@ watch(
   align-items: center;
   gap: 8px;
   text-align: right;
+}
+
+.info-row__value--multiline {
+  align-items: flex-start;
+  max-width: 70%;
+  white-space: normal;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .date-link {

@@ -1,6 +1,6 @@
 <template>
   <div class="my-events-page">
-    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイイベント" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" title="マイチケット" @back="goBack" />
     <header class="page-header">
       <div class="segmented-control" role="tablist">
         <button
@@ -55,7 +55,7 @@
                 <span>検証済み</span>
               </div>
               <div class="ticket-card__top">
-                <div>
+                <div class="ticket-card__meta-left">
                     <p class="ticket-card__date">{{ formatDate(displayStart(item)) }}</p>
                     <p class="ticket-card__community">{{ displayCommunity(item) }}</p>
                   </div>
@@ -270,7 +270,7 @@ const eligibleEvents = computed(() => sortedEvents.value.filter((item) => isElig
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
   { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) },
-  { id: 'past', label: '過去', matcher: (item) => !isUpcoming(item) },
+  { id: 'past', label: '参加済み', matcher: (item) => !isUpcoming(item) },
   { id: 'all', label: 'すべて', matcher: () => true },
 ];
 
@@ -335,6 +335,9 @@ const groupedEvents = computed(() => {
     if (!groups[gid]) groups[gid] = [];
     groups[gid].push(item);
   });
+  if (groups.upcoming_paid) {
+    groups.upcoming_paid.sort((a, b) => getStartTime(a).getTime() - getStartTime(b).getTime());
+  }
   const ordered = groupOrder
     .map((g) => ({ ...g, items: groups[g.id] || [] }))
     .filter((g) => g.items.length > 0);
@@ -667,7 +670,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 
 .page-header {
   width: 100%;
-  padding: 24px 0 8px;
+  padding: 12px 0 8px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -709,6 +712,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   background: #e2e8f0;
   padding: 6px;
   border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 14px rgba(15, 23, 42, 0.08);
 }
 
 .segmented-button {
@@ -735,7 +739,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 .segmented-button--active {
   background: #fff;
   color: #0f172a;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
 }
 
 .events-section {
@@ -753,7 +757,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   gap: 12px;
 }
 .group-title {
-  margin: 0;
+  margin: 8px 0 4px;
   font-size: 14px;
   font-weight: 700;
   color: #0f172a;
@@ -784,6 +788,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 
 .ticket-card-wrapper {
   position: relative;
+  padding-bottom: 8px;
 }
 
 .ticket-card {
@@ -791,7 +796,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   background: #fff;
   border-radius: 24px;
   padding: 20px 18px 18px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -896,6 +901,15 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   border-bottom: 1px dashed rgba(148, 163, 184, 0.5);
   position: relative;
   z-index: 1;
+  gap: 12px;
+}
+
+.ticket-card__meta-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .ticket-card--with-cover .ticket-card__top {
@@ -924,6 +938,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .ticket-card--with-cover .ticket-card__qr {
@@ -939,6 +954,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   font-size: 10px;
   color: rgba(15, 23, 42, 0.7);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .ticket-card__cancel:disabled {
@@ -1072,6 +1088,9 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   font-size: 15px;
   color: #334155;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ticket-card--with-cover .ticket-card__community {

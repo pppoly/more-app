@@ -578,7 +578,7 @@ const goClasses = () => {
 };
 
 const openManage = (eventId: string) => {
-  router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
+  router.push({ name: 'ConsoleMobileEventManage', params: { eventId }, query: { source: 'home' } });
 };
 
 const openCreateEventSheet = () => {

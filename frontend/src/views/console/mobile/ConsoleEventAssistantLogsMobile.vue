@@ -7,7 +7,18 @@
         titleKey="console.eventAssistant.logs"
         :sticky="true"
         @back="goBack"
-      />
+      >
+        <template #right>
+          <span class="topbar-right">
+            <button type="button" class="new-session-btn" @click="startNewConversation" aria-label="新しい相談">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 5v14" stroke-linecap="round" />
+                <path d="M5 12h14" stroke-linecap="round" />
+              </svg>
+            </button>
+          </span>
+        </template>
+      </ConsoleTopBar>
     </div>
 
     <section class="logs-body" v-if="loading">
@@ -15,11 +26,6 @@
     </section>
 
     <section class="logs-body" v-else>
-      <div class="logs-actions">
-        <button class="new-session-btn" type="button" @click="startNewConversation">
-          ＋ 新しい相談
-        </button>
-      </div>
       <p v-if="!displayLogs.length" class="text-muted">まだAIアシスタントの履歴がありません。</p>
       <article
         v-for="log in displayLogs"
@@ -30,19 +36,9 @@
         <div class="log-row">
           <div class="log-meta">
             <p class="log-title">{{ extractTitle(log) || log.summary || 'AI提案' }}</p>
-            <p class="log-subtitle">
-              {{ extractSubtitle(log) }}
-            </p>
-            <div class="log-tags">
-              <span class="status-dot" :class="statusClass(log.status)"></span>
-              <span class="tag">{{ statusLabel(log.status) }}</span>
-              <span v-if="log.qaState?.communityName" class="tag tag--muted">{{ log.qaState.communityName }}</span>
-              <span class="time">{{ formatTime(log.updatedAt || log.createdAt) }}</span>
-            </div>
+            <p class="log-subtitle">{{ extractSubtitle(log) }}</p>
           </div>
-          <button type="button" class="chip-btn" @click.stop="openDetail(log.id)">
-            {{ actionLabel(log.status) }}
-          </button>
+          <span class="log-arrow" aria-hidden="true">›</span>
         </div>
       </article>
     </section>
@@ -78,21 +74,9 @@ const displayLogs = computed(() => {
     const withinWindow = now - createdAt <= 24 * 60 * 60 * 1000;
     return isInProgressStatus(log.status) && withinWindow;
   });
-  const completed = sorted.filter((log) => !isInProgressStatus(log.status)).slice(0, 3);
+  const completed = sorted.filter((log) => !isInProgressStatus(log.status)).slice(0, 10);
   return inProgress ? [inProgress, ...completed] : completed;
 });
-
-const statusLabel = (status: string | undefined) => {
-  if (status === 'ready' || status === 'completed') return '完了';
-  if (status === 'options') return '候補あり';
-  return '進行中';
-};
-
-const statusClass = (status: string | undefined) => {
-  if (status === 'ready' || status === 'completed') return 'ok';
-  if (status === 'options') return 'warn';
-  return 'active';
-};
 
 const isInProgressStatus = (status?: string | null) => {
   if (!status) return true;
@@ -115,9 +99,6 @@ const goBack = () => {
   router.back();
 };
 
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
 const extractTitle = (log: ConsoleEventAssistantLog) => {
   const title = log.aiResult?.title;
   if (!title) return '';
@@ -132,11 +113,6 @@ const extractSubtitle = (log: ConsoleEventAssistantLog) => {
   if (log.qaState?.topic) return log.qaState.topic;
   if (log.summary) return log.summary;
   return '対話の要約がありません';
-};
-
-const actionLabel = (status?: string) => {
-  if (status === 'ready' || status === 'completed') return '結果を見る';
-  return '続ける';
 };
 
 const openDetail = (id: string) => {
@@ -167,7 +143,7 @@ onMounted(() => {
 .logs-shell {
   min-height: 100vh;
   padding: calc(env(safe-area-inset-top, 0px)) 12px calc(72px + env(safe-area-inset-bottom, 0px));
-  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
+  background: #f7f7f8;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -183,7 +159,14 @@ onMounted(() => {
   position: sticky;
   top: 0;
   z-index: 35;
-  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
+  background: #f7f7f8;
+}
+
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 36px;
 }
 
 .logs-body {
@@ -192,41 +175,38 @@ onMounted(() => {
   gap: 12px;
 }
 
-.logs-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .new-session-btn {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
-  border-radius: 12px;
-  padding: 10px 12px;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
-  font-weight: 700;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .text-muted {
   font-size: 13px;
-  color: #475569;
+  color: #6b7280;
 }
 
 .log-card {
-  background: #fff;
-  border-radius: 18px;
-  padding: 14px;
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 4px;
   box-shadow: none;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .log-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
 }
 
 .log-meta {
@@ -237,9 +217,9 @@ onMounted(() => {
 
 .log-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-  color: #0f172a;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
   line-height: 1.4;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -248,62 +228,15 @@ onMounted(() => {
 .log-subtitle {
   margin: 0;
   font-size: 13px;
-  color: #475569;
+  color: #6b7280;
   line-height: 1.5;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.log-tags {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #0ea5e9;
-}
-.status-dot.ok {
-  background: #22c55e;
-}
-.status-dot.warn {
-  background: #f59e0b;
-}
-.status-dot.active {
-  background: #0ea5e9;
-}
-
-.tag {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.tag--muted {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.time {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.chip-btn {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #0f172a;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-weight: 700;
-  min-width: 110px;
-  justify-self: flex-end;
+.log-arrow {
+  color: #d1d5db;
+  font-size: 20px;
+  line-height: 1;
 }
 </style>

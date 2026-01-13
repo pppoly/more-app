@@ -22,6 +22,7 @@ import type {
   EventAssistantProfileDefaults,
   EventDetail,
   EventGalleryItem,
+  FavoriteEventItem,
   EventRegistrationSummary,
   EventRegistrationsSummary,
   EventSummary,
@@ -190,12 +191,27 @@ export async function fetchEventById(eventId: string): Promise<EventDetail> {
   return data;
 }
 
+export async function fetchEventFollowStatus(eventId: string) {
+  const { data } = await apiClient.get<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
+}
+
 export async function fetchEventGallery(eventId: string): Promise<EventGalleryItem[]> {
   const { data } = await apiClient.get<EventGalleryItem[]>(`/events/${eventId}/gallery`);
   return data.map((item) => ({
     ...item,
     imageUrl: resolveAssetUrl(item.imageUrl),
   }));
+}
+
+export async function followEvent(eventId: string) {
+  const { data } = await apiClient.post<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
+}
+
+export async function unfollowEvent(eventId: string) {
+  const { data } = await apiClient.delete<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
 }
 
 export async function fetchCommunityBySlug(slug: string): Promise<CommunityPortal> {
@@ -245,6 +261,11 @@ export async function fetchCommunityPortalConfig(communityId: string) {
 
 export async function fetchCommunityTags(): Promise<CommunityTagCategory[]> {
   const { data } = await apiClient.get<CommunityTagCategory[]>(`/console/community-tags`);
+  return data;
+}
+
+export async function fetchMyFavoriteEvents(): Promise<FavoriteEventItem[]> {
+  const { data } = await apiClient.get<FavoriteEventItem[]>(`/me/favorites`);
   return data;
 }
 
@@ -597,6 +618,16 @@ export async function fetchEventAssistantLogs(
 ): Promise<ConsoleEventAssistantLog[]> {
   const { data } = await apiClient.get<ConsoleEventAssistantLog[]>(
     `/console/communities/${communityId}/event-assistant/logs`,
+  );
+  return data;
+}
+
+export async function fetchEventAssistantLog(
+  communityId: string,
+  logId: string,
+): Promise<ConsoleEventAssistantLog> {
+  const { data } = await apiClient.get<ConsoleEventAssistantLog>(
+    `/console/communities/${communityId}/event-assistant/logs/${logId}`,
   );
   return data;
 }

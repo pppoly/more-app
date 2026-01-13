@@ -9,8 +9,20 @@
         @back="goBack"
       />
       <div class="top-actions" v-if="communityId">
-        <button type="button" class="new-session-btn" @click="startNewConversation">
-          ＋ 新しい相談
+        <button
+          type="button"
+          class="new-session-btn"
+          :disabled="isEmptyConversation"
+          :class="{ 'is-disabled': isEmptyConversation }"
+          @click="startNewConversation"
+          aria-label="新しい相談"
+          title="新しい相談"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 5v14" stroke-linecap="round" />
+            <path d="M5 12h14" stroke-linecap="round" />
+          </svg>
+          <span class="sr-only">新しい相談</span>
         </button>
         <button
           type="button"
@@ -19,7 +31,7 @@
           aria-label="履歴"
           title="履歴"
         >
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M4 8.5c0-2.485 2.21-4.5 4.933-4.5h6.134C17.79 4 20 6.015 20 8.5v7c0 2.485-2.21 4.5-4.933 4.5H8.933C6.21 20 4 17.985 4 15.5v-7Z" />
             <path d="M8 6.5V4" stroke-linecap="round" />
             <path d="M16 6.5V4" stroke-linecap="round" />
@@ -33,82 +45,191 @@
 
     <section class="chat-surface">
       <div class="chat-log" ref="chatLogRef">
-        <div
-          v-for="msg in chatMessages"
-          :key="msg.id"
-          :class="[
-            'chat-bubble',
-            msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--assistant',
-            msg.role === 'assistant' && msg.id === currentQuestionId ? 'is-current-question' : '',
-            msg.role === 'assistant' && msg.id !== currentQuestionId ? 'is-previous' : '',
-          ]"
-        >
-          <div v-if="msg.type === 'text'" class="chat-stack">
-            <p class="chat-text">{{ msg.content }}</p>
-            <button
-              v-if="msg.action === 'direct-form'"
-              type="button"
-              class="inline-link"
-              @click="goToForm(false)"
-            >
-              すぐにフォームを編集
+        <div v-if="isEmptyConversation" class="intro-card">
+          <div class="intro-header">
+            <div>
+              <p class="intro-eyebrow">AI イベント作成ガイド</p>
+              <p class="intro-title">AI がイベント作成をお手伝いします。</p>
+            </div>
+            <button type="button" class="intro-toggle" @click="introExpanded = !introExpanded">
+              {{ introExpanded ? '閉じる' : 'もっと見る' }}
             </button>
-            <div v-if="msg.options?.length && msg.id === currentQuestionId" class="chat-follow-up">
-              <p class="follow-up-label">次の質問</p>
-              <p class="follow-up-text">{{ msg.options[0] }}</p>
-              <div class="follow-up-actions">
+          </div>
+          <p class="intro-desc">
+            ひとこと入力すると、必要な点だけ聞き返しながら「イベント案・募集文・フォーム反映用の下書き」をまとめます。
+          </p>
+          <ul class="intro-list">
+            <li>・ 最初は一言でOK（例：来週金曜 BBQ、15:00-17:00、2000円/人）</li>
+            <li>・ 足りないところは1つずつ質問します</li>
+            <li>・ まとまったらフォームに反映できます</li>
+          </ul>
+          <transition name="fade">
+            <div v-if="introExpanded" class="intro-more">
+              <p class="intro-desc">フォーム反映もワンタップでできます。途中でやめても下書きに残ります。</p>
+            </div>
+          </transition>
+          <div class="chip-row">
+            <button type="button" class="chip" @click="handleChipSelect('来週金曜 BBQ パーティー 15:00-17:00 2000円/人')">🍖 BBQ・パーティー</button>
+            <button type="button" class="chip" @click="handleChipSelect('カジュアル交流会 平日夜 19:00-21:00 ドリンク持参')">🤝 交流会</button>
+            <button type="button" class="chip" @click="handleChipSelect('土曜午前 勉強会 10人まで 参加費無料')">🎓 勉強会</button>
+            <button type="button" class="chip" @click="handleChipSelect('親子イベント 屋内 1時間 参加費500円')">👨‍👩‍👧‍👦 親子</button>
+            <button type="button" class="chip" @click="handleChipSelect('Language Exchange 英語/日本語 日曜午後 カフェにて')">🌐 Language Exchange</button>
+          </div>
+        </div>
+        <template v-for="msg in chatMessages" :key="msg.id">
+          <template v-if="shouldRenderMessage(msg)">
+            <div
+              :id="`msg-${msg.id}`"
+              :class="[
+                'chat-bubble',
+                msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--assistant',
+                msg.role === 'assistant' && msg.id === currentQuestionId ? 'is-current-question' : '',
+                msg.role === 'assistant' && msg.id !== currentQuestionId ? 'is-previous' : '',
+              ]"
+            >
+              <div v-if="msg.type === 'text'" class="chat-stack">
+                <p class="chat-text">{{ getMessageDisplayText(msg) }}</p>
                 <button
-                  v-for="(option, idx) in msg.options"
-                  :key="`${msg.id}-option-${idx}`"
+                  v-if="msg.action === 'direct-form'"
                   type="button"
-                  class="ghost-link"
-                  @click="handleOptionSelect(option)"
+                  class="inline-link"
+                  @click="goToForm(false)"
                 >
-                  {{ option }}
+                  すぐにフォームを編集
                 </button>
+                <div v-if="msg.options?.length && msg.id === currentQuestionId" class="chat-follow-up">
+                  <p class="follow-up-label">次の質問</p>
+                  <p class="follow-up-text">{{ msg.options[0] }}</p>
+                  <div class="follow-up-actions">
+                    <button
+                      v-for="(option, idx) in msg.options"
+                      :key="`${msg.id}-option-${idx}`"
+                      type="button"
+                      class="ghost-link"
+                      @click="handleOptionSelect(option, msg.action)"
+                    >
+                      {{ option }}
+                    </button>
+                  </div>
+                  <div v-if="msg.thinkingSteps?.length" class="hint-row-inline">
+                    <button type="button" class="hint-toggle" @click="toggleThinking(msg.id)">
+                      <span>ヒントを見る</span>
+                      <span class="hint-toggle__state">{{ expandedThinkingId === msg.id ? '隠す' : '表示' }}</span>
+                    </button>
+                    <ol v-if="expandedThinkingId === msg.id" class="thinking-list">
+                      <li v-for="(step, idx) in msg.thinkingSteps" :key="`${msg.id}-thinking-${idx}`">
+                        <span class="dot"></span>
+                        <span>{{ step }}</span>
+                      </li>
+                    </ol>
+                  </div>
+                </div>
+                <div v-if="msg.writerSummary && mode === 'operate' && canShowProposalUi" class="summary-block">
+                  <p class="summary-eyebrow">AI 下書きサマリー</p>
+                  <p v-if="typeof msg.writerSummary === 'string'" class="summary-text">{{ msg.writerSummary }}</p>
+                  <ul v-else class="summary-list">
+                    <li v-if="msg.writerSummary.headline"><strong>タイトル</strong>{{ msg.writerSummary.headline }}</li>
+                    <li v-if="msg.writerSummary.audience"><strong>対象</strong>{{ msg.writerSummary.audience }}</li>
+                    <li v-if="msg.writerSummary.logistics"><strong>詳細</strong>{{ msg.writerSummary.logistics }}</li>
+                    <li v-if="msg.writerSummary.riskNotes"><strong>リスク</strong>{{ msg.writerSummary.riskNotes }}</li>
+                    <li v-if="msg.writerSummary.nextSteps"><strong>次のステップ</strong>{{ msg.writerSummary.nextSteps }}</li>
+                  </ul>
+                </div>
               </div>
-              <div v-if="msg.thinkingSteps?.length" class="hint-row-inline">
-                <button type="button" class="hint-toggle" @click="toggleThinking(msg.id)">
-                  <span>ヒントを見る</span>
-                  <span class="hint-toggle__state">{{ expandedThinkingId === msg.id ? '隠す' : '表示' }}</span>
-                </button>
-                <ol v-if="expandedThinkingId === msg.id" class="thinking-list">
-                  <li v-for="(step, idx) in msg.thinkingSteps" :key="`${msg.id}-thinking-${idx}`">
-                    <span class="dot"></span>
-                    <span>{{ step }}</span>
-                  </li>
-                </ol>
+              <div
+                v-else-if="msg.type === 'proposal' && canShowProposalUi"
+                class="proposal-bubble"
+                @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)"
+              >
+                <div class="proposal-head">
+                  <p class="proposal-title">{{ msg.payload?.title }}</p>
+                  <p class="proposal-desc">{{ msg.payload?.description }}</p>
+                </div>
+                <div class="proposal-actions" v-if="msg.payload?.raw">
+                  <button
+                    v-if="msg.payload?.applyEnabled"
+                    type="button"
+                    class="ghost-link"
+                    @click.stop="applyProposalToForm(msg.payload?.raw)"
+                  >
+                    フォームに反映
+                  </button>
+                  <button type="button" class="ghost-link" @click.stop="saveProposalDraft(msg.payload?.raw)">
+                    下書きを保存
+                  </button>
+                  <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
+                    全文を見る
+                  </button>
+                </div>
               </div>
+              <span class="chat-meta">{{ msg.createdAt }}</span>
             </div>
-            <div v-if="msg.writerSummary" class="summary-block">
-              <p class="summary-eyebrow">AI 下書きサマリー</p>
-              <ul class="summary-list">
-                <li v-if="msg.writerSummary.headline"><strong>タイトル</strong>{{ msg.writerSummary.headline }}</li>
-                <li v-if="msg.writerSummary.audience"><strong>対象</strong>{{ msg.writerSummary.audience }}</li>
-                <li v-if="msg.writerSummary.logistics"><strong>詳細</strong>{{ msg.writerSummary.logistics }}</li>
-                <li v-if="msg.writerSummary.riskNotes"><strong>リスク</strong>{{ msg.writerSummary.riskNotes }}</li>
-                <li v-if="msg.writerSummary.nextSteps"><strong>次のステップ</strong>{{ msg.writerSummary.nextSteps }}</li>
+          </template>
+        </template>
+
+        <div
+          v-if="mode === 'chat' && !canShowProposalUi && isCompareModeUi && choiceQuestionState"
+          class="decision-block"
+        >
+          <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
+          <div class="decision-chips">
+            <button
+              v-for="(opt, idx) in choiceQuestionState.options"
+              :key="`choice-${idx}`"
+              type="button"
+              class="chip"
+              :class="{ 'chip--recommended': opt.recommended }"
+              @click="handleChoiceSelect(choiceQuestionState.key, opt.value)"
+            >
+              {{ getCandidateChipLabel(opt) }}
+            </button>
+          </div>
+          <button type="button" class="decision-toggle" @click="showCandidateDetails = !showCandidateDetails">
+            {{ showCandidateDetails ? '候補の詳細を閉じる' : '候補の詳細を見る' }}
+          </button>
+          <div v-if="showCandidateDetails" class="candidate-details">
+            <div
+              v-for="(opt, idx) in choiceQuestionState.options"
+              :key="`detail-${idx}`"
+              class="candidate-detail-card"
+            >
+              <div class="candidate-head">
+                <span class="candidate-tag">{{ getCandidateTag(opt) }}</span>
+                <span class="candidate-title">{{ getCandidateTitle(opt) }}</span>
+                <span v-if="opt.recommended" class="candidate-badge">近いかも</span>
+              </div>
+              <ul v-if="getCandidateMeta(opt).length" class="candidate-meta">
+                <li v-for="(line, mIdx) in getCandidateMeta(opt)" :key="`meta-${idx}-${mIdx}`">
+                  {{ line }}
+                </li>
               </ul>
+              <p v-else class="candidate-summary">{{ getCandidateTitle(opt) }}</p>
             </div>
           </div>
-          <div v-else class="proposal-bubble" @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)">
-            <div class="proposal-head">
-              <p class="proposal-title">{{ msg.payload?.title }}</p>
-              <p class="proposal-desc">{{ msg.payload?.description }}</p>
-            </div>
-            <div class="proposal-actions" v-if="msg.payload?.raw">
-              <button type="button" class="ghost-link" @click.stop="applyProposalToForm(msg.payload?.raw)">
-                フォームに反映
-              </button>
-              <button type="button" class="ghost-link" @click.stop="saveProposalDraft(msg.payload?.raw)">
-                下書きを保存
-              </button>
-              <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
-                全文を見る
-              </button>
-            </div>
+          <div class="decision-actions">
+            <button type="button" class="decision-secondary" @click="handleSkipCompare">
+              どちらでもないので続ける
+            </button>
           </div>
-          <span class="chat-meta">{{ msg.createdAt }}</span>
+        </div>
+        <div
+          v-if="mode === 'chat' && !canShowProposalUi && !isCompareModeUi && choiceQuestionState"
+          class="choice-block"
+        >
+          <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
+          <p class="choice-helper">近いものがあれば選んでください。なければ、そのまま入力してOKです。</p>
+          <div class="choice-options">
+            <button
+              v-for="(opt, idx) in choiceQuestionState.options"
+              :key="`choice-${idx}`"
+              type="button"
+              class="chip"
+              :class="{ 'chip--recommended': opt.recommended }"
+              @click="handleChoiceSelect(choiceQuestionState.key, opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
         </div>
 
         <div v-if="aiLoading" class="chat-bubble chat-bubble--assistant chat-bubble--typing">
@@ -125,6 +246,11 @@
     </section>
 
     <footer class="input-bar">
+      <div v-if="showEntryBar" class="entry-bar">
+        <button type="button" class="entry-button" @click="openMilestonePreview">
+          イベント案を開く
+        </button>
+      </div>
       <div class="input-shell">
         <textarea
           ref="chatInputRef"
@@ -133,8 +259,7 @@
           :placeholder="currentPrompt"
           rows="1"
           @input="resizeChatInput"
-          @keydown.enter.exact.prevent="handleSend('enter')"
-          @keydown.enter.shift.prevent="insertLineBreak"
+          @keydown.enter.exact.prevent="insertLineBreak"
           @compositionstart="isComposing = true"
           @compositionend="isComposing = false"
         ></textarea>
@@ -151,7 +276,6 @@
           </svg>
         </button>
       </div>
-      <p class="input-hint">ひとこと送ると、AI が質問を続けたり案を出します</p>
     </footer>
   </div>
   <teleport to="body">
@@ -229,16 +353,17 @@ import { buildEventAssistantPrompt } from '../../../ai/eventCreationAssistant';
 import type { EventAssistantStage } from '../../../ai/eventCreationAssistant';
 import {
   fetchAssistantProfileDefaults,
-  generateEventContent,
   requestEventAssistantReply,
   fetchEventAssistantLogs,
+  fetchEventAssistantLog,
   saveEventAssistantLog,
   fetchConsoleCommunity,
 } from '../../../api/client';
 import type {
   EventAssistantProfileDefaults,
-  EventAssistantStatus,
+  EventAssistantRequest,
   EventAssistantReply,
+  EventAssistantState,
   EventDraft,
   GeneratedEventContent,
   ConsoleCommunityDetail,
@@ -246,23 +371,28 @@ import type {
 } from '../../../types/api';
 import { CONSOLE_AI_EVENT_DRAFT_KEY } from '../../../constants/console';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
-import { getLocalizedText } from '../../../utils/i18nContent';
 import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
+import { getAssistantDisplay } from '../../../utils/assistantDisplay';
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
 interface ChatMessage {
   id: string;
+  clientMessageId?: string;
   role: ChatRole;
   type: ChatMessageType;
   content: string;
+  contentText?: string;
+  contentJson?: Record<string, unknown> | null;
   createdAt: string;
+  serverCreatedAt?: string;
   includeInContext?: boolean;
-  action?: 'direct-form';
+  action?: 'direct-form' | 'title-suggestion' | 'system-safe' | 'welcome';
+  status?: 'pending' | 'sent' | 'failed';
   options?: string[];
   thinkingSteps?: string[];
   coachPrompts?: string[];
@@ -273,6 +403,8 @@ interface ChatMessage {
     title?: string;
     description?: string;
     raw?: (GeneratedEventContent & { summary?: string }) | null;
+    applyEnabled?: boolean;
+    assistantReply?: Record<string, unknown> | null;
   };
 }
 
@@ -294,17 +426,18 @@ const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isDebugEnabled = computed(() => import.meta.env.DEV);
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
 const activeCommunityDetail = ref<ConsoleCommunityDetail | null>(null);
-const introConversationStarted = ref(false);
-const welcomeText = 'おかえりなさい。どんなイベントを作りたいか教えてください。';
-const leadPrompts = [
-  'まず、どんなイベントを考えていますか？',
-  '誰に来てほしいですか？参加条件はありますか？',
-  '日時や場所、雰囲気が決まっていればゆるく教えてください。',
-];
+const debugMessageCounts = ref<{
+  total: number;
+  user: number;
+  assistant: number;
+  source: 'server' | 'cache';
+  bytes?: number;
+} | null>(null);
 
 const qaState = reactive({
   baseLanguage: 'ja',
@@ -333,11 +466,150 @@ const questions = [
   },
 ];
 
+const LEGACY_INTRO_MESSAGES = new Set([
+  'おかえりなさい。どんなイベントを作りたいか教えてください。',
+  'まず、どんなイベントを考えていますか？',
+  'どんなイベントを考えていますか？',
+  '日時はいつにしますか？',
+]);
+
+const buildSelectionAck = (
+  nextKey: EventAssistantReply['nextQuestionKey'],
+  hasChoice: boolean,
+  isCompare: boolean,
+) => {
+  if (isCompare) return '受け取りました。次に進みますね。';
+  if (hasChoice) return '受け取りました。次に進みますね。';
+  if (nextKey) return '受け取りました。次に進みますね。';
+  return '受け取りました。続けて入力してください。';
+};
+
 const chatMessages = ref<ChatMessage[]>([]);
 const chatLogRef = ref<HTMLElement | null>(null);
 const keyboardOffset = ref(0);
 const autoScrollEnabled = ref(true);
 const currentQuestionId = ref<string | null>(null);
+const backTarget = ref<{ name: string; params?: Record<string, any> } | null>(null);
+const lastShownDraftId = ref<string | null>(null);
+const seenDraftIds = ref<string[]>([]);
+const introExpanded = ref(false);
+const isLoadingLog = ref(false);
+const lastMilestoneMessageId = ref<string | null>(null);
+const lastMilestoneDraftId = ref<string | null>(null);
+const lastDraftReady = ref(false);
+const lastDraftId = ref<string | null>(null);
+const lastInputMode = ref<EventAssistantReply['inputMode'] | null>(null);
+const mode = ref<'chat' | 'operate'>('chat');
+const isCommitted = ref(false);
+const canShowProposalUi = computed(
+  () => lastDraftReady.value && Boolean(lastDraftId.value) && isCommitted.value,
+);
+const hasProposalMessage = computed(() => chatMessages.value.some((msg) => msg.type === 'proposal'));
+const showEntryBar = computed(() => canShowProposalUi.value && !hasProposalMessage.value);
+const isCompareModeUi = computed(
+  () =>
+    lastInputMode.value === 'compare' ||
+    Boolean(compareCandidatesState.value && compareCandidatesState.value.length),
+);
+const selectionLabelMap: Record<string, string> = {
+  activityType: 'イベントの形式',
+  audience: '対象',
+  details: '雰囲気/ルール',
+  time: '日時',
+  location: '場所',
+  price: '料金',
+  title: 'タイトル',
+  capacity: '定員',
+};
+const formatSelectionDisplay = (raw: string) => {
+  const match = raw.match(/【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/);
+  if (!match) return '';
+  const key = match[1];
+  const value = match[2];
+  const candidateDisplay = getCandidateDisplayValue(value);
+  if (candidateDisplay) return `「${candidateDisplay}」が近いと選びました`;
+  if (/(?:候補|解釈)[A-Z]/i.test(value)) return '近い内容を選びました';
+  const label = selectionLabelMap[key] ?? '選択内容';
+  return `${label}を「${value}」にしました`;
+};
+const buildChoiceDisplayText = (key: string, value: string, label?: string) => {
+  const candidateDisplay = getCandidateDisplayValue(value);
+  if (candidateDisplay) return `「${candidateDisplay}」が近いと選びました`;
+  if (/(?:候補|解釈)[A-Z]/i.test(value)) return '近い内容を選びました';
+  const name = selectionLabelMap[key] ?? '選択内容';
+  const displayValue = label?.replace(/^(候補|解釈)[A-Z]:?\s*/i, '') || value;
+  return `${name}を「${displayValue}」にしました`;
+};
+const SAFE_ASSISTANT_ACTIONS = new Set(['direct-form', 'title-suggestion', 'system-safe']);
+const isSafeAssistantMessage = (msg: ChatMessage) => {
+  if (msg.role !== 'assistant') return true;
+  if (msg.type === 'proposal') return true;
+  return Boolean(msg.action && SAFE_ASSISTANT_ACTIONS.has(msg.action));
+};
+const shouldRenderMessage = (msg: ChatMessage) => {
+  if (msg.role === 'assistant' && msg.type === 'text' && !isSafeAssistantMessage(msg)) {
+    if (import.meta.env.DEV) {
+      console.assert(false, 'Unsafe assistant message blocked from render', msg);
+    }
+    return false;
+  }
+  return true;
+};
+const isEmptyConversation = computed(
+  () => !isLoadingLog.value && chatMessages.value.length === 0 && !activeLogId.value,
+);
+const miniPreviewState = ref<EventAssistantReply['miniPreview'] | null>(null);
+const choiceQuestionState = ref<EventAssistantReply['choiceQuestion'] | null>(null);
+const compareCandidatesState = ref<EventAssistantReply['compareCandidates'] | null>(null);
+const showCandidateDetails = ref(false);
+const getCandidateId = (opt: { label: string; value: string }) => {
+  const labelMatch = opt.label.match(/(?:候補|解釈)([A-Z])/i);
+  if (labelMatch?.[1]) return labelMatch[1].toUpperCase();
+  const valueMatch = opt.value.match(/(?:候補|解釈)([A-Z])/i);
+  if (valueMatch?.[1]) return valueMatch[1].toUpperCase();
+  return opt.value.slice(0, 1).toUpperCase();
+};
+const findCandidate = (opt: { label: string; value: string }) => {
+  const id = getCandidateId(opt);
+  return compareCandidatesState.value?.find((candidate) => candidate.id === id) ?? null;
+};
+const getCandidateTag = (opt: { label: string; value: string }) => {
+  const id = getCandidateId(opt);
+  return `解釈${id}`;
+};
+const getCandidateDisplayValue = (value: string) => {
+  const match = value.match(/(?:候補|解釈)([A-Z])/i);
+  if (!match) return null;
+  const id = match[1].toUpperCase();
+  const candidate = compareCandidatesState.value?.find((item) => item.id === id);
+  return candidate?.activityType || candidate?.summary || null;
+};
+const getCandidateTitle = (opt: { label: string; value: string }) => {
+  const candidate = findCandidate(opt);
+  if (candidate?.activityType) return candidate.activityType;
+  if (candidate?.summary) return candidate.summary;
+  return opt.label.replace(/^(候補|解釈)[A-Z]:?\s*/i, '');
+};
+const getCandidateMeta = (opt: { label: string; value: string }) => {
+  const candidate = findCandidate(opt);
+  if (!candidate) return [];
+  const meta: string[] = [];
+  if (candidate.time) meta.push(`日時: ${candidate.time}`);
+  if (candidate.price) meta.push(`料金: ${candidate.price}`);
+  if (candidate.notes) meta.push(`メモ: ${candidate.notes}`);
+  return meta;
+};
+const getCandidateChipLabel = (opt: { label: string; value: string }) => {
+  const title = getCandidateTitle(opt);
+  const candidate = findCandidate(opt);
+  const parts: string[] = [];
+  if (candidate?.time) parts.push(candidate.time);
+  if (candidate?.price) parts.push(candidate.price);
+  const suffix = parts.length ? `（${parts.join(' / ')}）` : '';
+  return `${title}${suffix}`;
+};
+const coachPromptState = ref<string | null>(null);
+const previewExpanded = ref(false);
 const screenStyle = computed(() => ({
   '--keyboard-offset': `${keyboardOffset.value}px`,
 }));
@@ -351,8 +623,8 @@ const currentQuestionIndex = ref(0);
 const savingLog = ref(false);
 const historyEntries = ref<AssistantHistoryEntry[]>([]);
 const expandedThinkingId = ref<string | null>(null);
-const lastAssistantStatus = ref<EventAssistantStatus>('collecting');
-const lastPromptVersion = ref('coach-v2');
+const lastAssistantStatus = ref<EventAssistantState>('collecting');
+const lastPromptVersion = ref('coach-v3-lite');
 const currentStage = ref<EventAssistantStage>('coach');
 const pendingQuestion = ref<string | null>(null);
 const stageLabels: Record<EventAssistantStage, string> = {
@@ -470,22 +742,21 @@ const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   registrationFormSchema: [],
 }));
 const currentPrompt = computed(() => {
-  if (pendingQuestion.value) {
-    return pendingQuestion.value;
+  if (isEmptyConversation.value) {
+    return '例：来週金曜BBQ、15:00-17:00、2000円/人（ざっくりでOK・一言でもOK）';
+  }
+  if (mode.value === 'operate') {
+    return '補足や修正メモがあれば入力してね（編集はフォームから）';
   }
   if (latestCoachPrompts.value.length) {
     return latestCoachPrompts.value[0];
   }
-  if (currentQuestionIndex.value >= questions.length) {
-    return '追加で伝えたいことや質問を入力してください';
-  }
-  return questions[currentQuestionIndex.value].prompt;
+  return '追加で伝えたいことがあれば入力してね';
 });
-
 watch(
   () => communityId.value,
   async () => {
-    introConversationStarted.value = false;
+    isLoadingLog.value = true;
     activeLogId.value = null;
     chatMessages.value = [];
     aiResult.value = null;
@@ -496,6 +767,7 @@ watch(
     } else {
       scrollChatToBottom(true);
     }
+    isLoadingLog.value = false;
   },
 );
 
@@ -507,6 +779,13 @@ const scrollChatToBottom = (force = false) => {
     }
   });
 };
+
+watch(
+  () => isCompareModeUi.value,
+  (val) => {
+    if (!val) showCandidateDetails.value = false;
+  },
+);
 
 const pushMessage = (
   role: ChatRole,
@@ -520,14 +799,33 @@ const pushMessage = (
   editorChecklist?: string[],
   writerSummary?: EventAssistantReply['writerSummary'],
   confirmQuestions?: string[],
-  extras?: { includeInContext?: boolean },
+  extras?: { includeInContext?: boolean; contentJson?: Record<string, unknown> | null; contentText?: string },
 ) => {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const sanitizeAssistantContent = (text: string) => {
+    const banned = ['AI 憲章', 'AI憲章', 'AI Constitution', 'SOCIALMORE AI'];
+    const containsBanned = banned.some((kw) => text.includes(kw));
+    if (containsBanned) {
+      return '続きましょう。イベント内容を簡単に教えてください。';
+    }
+    // avoid dumping very long system prompts
+    if (text.length > 500 && text.includes('Rules')) {
+      return '続けよう。1〜2行で教えてね。';
+    }
+    return text;
+  };
+  if (role === 'assistant' && type === 'text') {
+    content = sanitizeAssistantContent(content);
+  }
+  const clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const id = clientMessageId;
   chatMessages.value.push({
     id,
+    clientMessageId,
     role,
     type,
     content,
+    contentText: extras?.contentText ?? content,
+    contentJson: extras?.contentJson ?? null,
     createdAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
     payload,
     action,
@@ -538,23 +836,13 @@ const pushMessage = (
     writerSummary,
     confirmQuestions,
     includeInContext: extras?.includeInContext ?? true,
+    status: role === 'user' ? 'sent' : undefined,
   });
   if (chatMessages.value.length > 200) {
     chatMessages.value.shift();
   }
   scrollChatToBottom();
   return id;
-};
-
-const seedWelcomeMessages = () => {
-  if (chatMessages.value.some((msg) => msg.content === welcomeText)) return;
-  pushMessage('assistant', 'text', welcomeText);
-  const question = leadPrompts[0];
-  const messageId = pushMessage('assistant', 'text', question, undefined, undefined, [question], undefined, undefined, undefined, undefined, {
-    includeInContext: true,
-  });
-  pendingQuestion.value = question;
-  currentQuestionId.value = messageId;
 };
 
 const loadActiveCommunityDetail = async () => {
@@ -570,20 +858,6 @@ const loadActiveCommunityDetail = async () => {
   }
 };
 
-const startIntroConversation = async () => {
-  if (introConversationStarted.value) return;
-  introConversationStarted.value = true;
-  const community = activeCommunityDetail.value;
-  const aboutText = community?.description ? getLocalizedText(community.description) : '';
-  const communityName = community?.name ?? 'Tokyo Community Organizations Group';
-  const introPrompt = aboutText
-    ? `コミュニティ紹介：${communityName}\n${aboutText}\n\n上記の背景を踏まえて、主催者が最初のアイデアを話しやすいようCoachモードで歓迎し、最初の質問を投げかけてください。`
-    : 'コミュニティ紹介情報はありません。主催者を歓迎し、最初のアイデアを引き出す質問から始めてください。';
-  await requestAssistantReply(introPrompt, {
-    overrideSummary: `コミュニティ紹介: ${communityName}`,
-  });
-};
-
 const isComposing = ref(false);
 const MAX_CHAT_LINES = 3;
 const resizeChatInput = () => {
@@ -594,6 +868,13 @@ const resizeChatInput = () => {
   const maxHeight = lineHeight * MAX_CHAT_LINES + 10;
   el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
   el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+};
+
+const resetChatInputHeight = () => {
+  const el = chatInputRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.overflowY = 'hidden';
 };
 
 const insertLineBreak = () => {
@@ -607,14 +888,73 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
   if (!chatDraft.value.trim() || aiLoading.value) return;
   autoScrollEnabled.value = true;
   const content = chatDraft.value.trim();
+  const commitIntent =
+    lastDraftReady.value &&
+    lastDraftId.value &&
+    !isCommitted.value &&
+    /(就用这个吧?|可以开始了|按这个来|就这样|この内容で|この案で|これでいこう|これで進めて|これでOK|この内容で作って|この内容で作成|この案で作成)/i.test(
+      content,
+    );
+  const submitText = choiceQuestionState.value?.key
+    ? `【選択】${choiceQuestionState.value.key}:${content}`
+    : content;
   chatDraft.value = '';
   currentQuestionId.value = null;
+  nextTick(resetChatInputHeight);
   if (source === 'button') {
     chatInputRef.value?.blur();
     keyboardOffset.value = 0;
   }
-  pushMessage('user', 'text', content);
-  await handleChatAnswer(content);
+  if (choiceQuestionState.value?.key) {
+    const key = choiceQuestionState.value.key;
+    choiceQuestionState.value = null;
+    pushMessage(
+      'user',
+      'text',
+      submitText,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { contentText: content },
+    );
+  } else {
+    pushMessage('user', 'text', content);
+  }
+  if (commitIntent) {
+    isCommitted.value = true;
+    await requestAssistantReply(content, { action: 'confirm_draft' });
+    return;
+  }
+  if (mode.value === 'operate') {
+    pushMessage(
+      'assistant',
+      'text',
+      '補足ありがとう。編集はフォームでできるよ。',
+      undefined,
+      'direct-form',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { includeInContext: false },
+    );
+    await persistAssistantLog(currentStage.value, buildQaSummary(), {
+      status: 'ready',
+      promptVersion: lastPromptVersion.value,
+      turnCount: lastTurnCount.value,
+      language: lastLanguage.value,
+      draftId: lastDraftId.value ?? null,
+    });
+    return;
+  }
+  await handleChatAnswer(content, submitText);
 };
 
 const detectLanguage = (text: string) => {
@@ -630,7 +970,7 @@ const applyLanguageFromInput = (text: string) => {
   }
 };
 
-const handleChatAnswer = async (text: string) => {
+const handleChatAnswer = async (text: string, submitText?: string) => {
   applyLanguageFromInput(text);
   const question = questions[currentQuestionIndex.value];
   if (question) {
@@ -640,19 +980,108 @@ const handleChatAnswer = async (text: string) => {
     currentQuestionIndex.value += 1;
   }
   pendingQuestion.value = null;
-  await requestAssistantReply(text);
+  await requestAssistantReply(submitText ?? text);
 };
 
-const handleOptionSelect = async (option: string) => {
+const handleTitleSuggestionSelect = async (title: string) => {
+  if (!title || aiLoading.value) return;
+  autoScrollEnabled.value = true;
+  currentQuestionId.value = null;
+  const userText = `タイトルは「${title}」にします`;
+  pushMessage('user', 'text', userText);
+  await requestAssistantReply(userText);
+};
+
+const handleOptionSelect = async (option: string, action?: ChatMessage['action']) => {
   if (!option || aiLoading.value) return;
   autoScrollEnabled.value = true;
   currentQuestionId.value = null;
+  if (action === 'title-suggestion') {
+    await handleTitleSuggestionSelect(option);
+    return;
+  }
   pushMessage('user', 'text', option);
   await handleChatAnswer(option);
 };
 
-const requestAssistantReply = async (userText: string, options?: { overrideSummary?: string }) => {
+const toLocalizedContent = (text: string) => {
+  const value = text ?? '';
+  return {
+    original: value,
+    lang: 'ja',
+    translations: { ja: value, zh: value, en: value },
+  };
+};
+
+const buildProposalFromDraft = (
+  draft: EventAssistantReply['publicActivityDraft'] | undefined | null,
+  summary: string,
+): (GeneratedEventContent & { summary: string }) => {
+  const scheduleNoteParts: string[] = [];
+  if (draft?.schedule?.duration) scheduleNoteParts.push(`所要時間: ${draft.schedule.duration}`);
+  const notesParts = [draft?.signupNotes, draft?.targetAudience, draft?.ageRange, scheduleNoteParts.join(' / ')]
+    .filter(Boolean)
+    .map((item) => String(item));
+  const notesText = notesParts.join('\n');
+  const highlightsText = Array.isArray(draft?.highlights) ? draft?.highlights?.join(' / ') : '';
+  const mergedDescription =
+    draft?.shortDescription ||
+    draft?.detailedDescription ||
+    [highlightsText, draft?.targetAudience].filter(Boolean).join(' | ') ||
+    '';
+  const priceValue = draft?.price;
+  const capacityValue = draft?.capacity;
+  const infoNoteParts: string[] = [];
+  if (priceValue !== undefined && priceValue !== null && priceValue !== '') {
+    infoNoteParts.push(`料金: ${priceValue}`);
+  }
+  if (capacityValue !== undefined && capacityValue !== null && capacityValue !== '') {
+    infoNoteParts.push(`定員: ${capacityValue}`);
+  }
+  const checklistNotes = [notesText, infoNoteParts.join(' / ')].filter(Boolean).join('\n');
+  return {
+    title: toLocalizedContent(draft?.title || 'イベント案'),
+    description: toLocalizedContent(mergedDescription),
+    notes: toLocalizedContent(checklistNotes),
+    riskNotice: toLocalizedContent(''),
+    snsCaptions: {
+      line: { ja: '', zh: '', en: '' },
+      instagram: { ja: '', zh: '', en: '' },
+    },
+    logistics: draft?.schedule
+      ? {
+          startTime: draft.schedule.date || undefined,
+          endTime: undefined,
+          locationText: draft.schedule.location || undefined,
+          locationNote: draft.schedule.duration || undefined,
+        }
+      : undefined,
+    ticketTypes:
+      priceValue !== undefined && priceValue !== null && priceValue !== ''
+        ? [
+            {
+              name: '参加チケット',
+              price: Number(priceValue) || 0,
+              currency: 'JPY',
+            },
+          ]
+        : [],
+    requirements:
+      draft?.ageRange || draft?.targetAudience
+        ? [{ label: [draft?.ageRange, draft?.targetAudience].filter(Boolean).join(' / ') }]
+        : [],
+    registrationForm: [],
+    visibility: 'public',
+    summary,
+  };
+};
+
+const requestAssistantReply = async (
+  userText: string,
+  options?: { overrideSummary?: string; action?: EventAssistantRequest['action'] },
+) => {
   aiError.value = null;
+  const isSelectionAction = /【選択】/.test(userText);
   const qaSummary = options?.overrideSummary ?? buildQaSummary(userText);
   const { stage, prompt } = buildEventAssistantPrompt({
     draft: assistantDraftSnapshot.value,
@@ -670,81 +1099,206 @@ const requestAssistantReply = async (userText: string, options?: { overrideSumma
     style: getProfileValue(qaState.style, 'style'),
     details: promptDetails,
     conversation: conversationMessages,
+    action: options?.action,
   };
   aiLoading.value = true;
   try {
     const result = await requestEventAssistantReply(payload);
+    const state = (result.state as EventAssistantState) || result.status || 'collecting';
+    const stageTag: EventAssistantStage = state === 'ready' ? 'writer' : state === 'options' ? 'editor' : 'coach';
+    currentStage.value = stageTag;
     const steps = Array.isArray(result.thinkingSteps) ? result.thinkingSteps : [];
-    const nextQuestion = result.options?.[0] ?? null;
-    const optionList = nextQuestion ? [nextQuestion] : undefined;
-    lastAssistantStatus.value = result.status;
+    const isCompareMode =
+      result.inputMode === 'compare' ||
+      (Array.isArray(result.compareCandidates) && result.compareCandidates.length > 0);
+    const nextQuestionKey = result.nextQuestionKey ?? null;
+    const willOperate =
+      mode.value === 'operate' || result.modeHint === 'operate' || options?.action === 'confirm_draft';
+    const uiQuestionText =
+      typeof result.ui?.question?.text === 'string' ? result.ui.question.text.trim() : '';
+    const uiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
+    const uiOptions = Array.isArray(result.ui?.options) ? result.ui.options : [];
+    const derivedChoiceKey = nextQuestionKey ?? (isCompareMode ? 'activityType' : null);
+    const derivedChoiceQuestion =
+      derivedChoiceKey && uiOptions.length
+        ? {
+            key: derivedChoiceKey,
+            prompt: uiQuestionText || uiMessageText,
+            options: uiOptions,
+          }
+        : null;
+    const choiceQuestion = result.choiceQuestion ?? derivedChoiceQuestion;
+    const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
+    coachPromptState.value =
+      !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
+    lastAssistantStatus.value = state;
     lastPromptVersion.value = result.promptVersion;
     lastTurnCount.value = result.turnCount;
     lastLanguage.value = result.language;
-    if (result.stage && ['coach', 'editor', 'writer'].includes(result.stage)) {
-      currentStage.value = result.stage as EventAssistantStage;
-    }
     latestChecklist.value = result.editorChecklist ?? [];
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
-  const stageIsWriter = result.stage === 'writer';
-  const messageId = pushMessage(
-    'assistant',
-    'text',
-    result.message,
-    undefined,
-    undefined,
-    optionList,
-    steps,
-    result.coachPrompts,
-    result.editorChecklist,
-    stageIsWriter ? result.writerSummary : undefined,
-    result.confirmQuestions,
-  );
-    pendingQuestion.value = nextQuestion;
-    currentQuestionId.value = optionList ? messageId : null;
+    let messageId: string | null = null;
+    const canRenderBubble = !willOperate;
+    const shouldRenderQuestionBubble =
+      canRenderBubble && !isCompareMode && nextQuestionKey && uiQuestionText;
+    const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
+    const shouldRenderMessageBubble =
+      canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText;
+    if (shouldRenderQuestionBubble) {
+      messageId = pushMessage(
+        'assistant',
+        'text',
+        uiQuestionText,
+        undefined,
+        'system-safe',
+        undefined,
+        steps,
+        result.coachPrompts,
+        result.editorChecklist,
+        stageTag === 'writer' ? result.writerSummary : undefined,
+        result.confirmQuestions,
+        { contentJson: result as unknown as Record<string, unknown> },
+      );
+    } else if (shouldRenderCompareBubble || shouldRenderMessageBubble) {
+      messageId = pushMessage(
+        'assistant',
+        'text',
+        uiMessageText,
+        undefined,
+        'system-safe',
+        undefined,
+        steps,
+        result.coachPrompts,
+        result.editorChecklist,
+        stageTag === 'writer' ? result.writerSummary : undefined,
+        result.confirmQuestions,
+        { contentJson: result as unknown as Record<string, unknown> },
+      );
+    }
+    if (isSelectionAction && !messageId && !willOperate) {
+      const ackText = buildSelectionAck(nextQuestionKey, hasChoiceQuestion, isCompareMode);
+      messageId = pushMessage(
+        'assistant',
+        'text',
+        ackText,
+        undefined,
+        'system-safe',
+        undefined,
+        steps,
+        result.coachPrompts,
+        result.editorChecklist,
+        stageTag === 'writer' ? result.writerSummary : undefined,
+        result.confirmQuestions,
+        { contentJson: result as unknown as Record<string, unknown> },
+      );
+    }
+    pendingQuestion.value = shouldRenderQuestionBubble ? uiQuestionText : null;
+    // keep options bubble highlighted to drive user click
+    currentQuestionId.value =
+      messageId && (shouldRenderQuestionBubble || shouldRenderCompareBubble) ? messageId : null;
+    const titleSuggestions =
+      Array.isArray(result.titleSuggestions) && result.titleSuggestions.length > 0
+        ? result.titleSuggestions.filter((s) => !!s)
+        : [];
+    if (titleSuggestions.length && !willOperate) {
+      pushMessage(
+        'assistant',
+        'text',
+        'タイトル候補だよ。どれがいい？',
+        undefined,
+        'title-suggestion',
+        titleSuggestions as string[],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { includeInContext: false },
+      );
+    }
+    if (willOperate) {
+      mode.value = 'operate';
+      isCommitted.value = true;
+      miniPreviewState.value = null;
+      previewExpanded.value = false;
+      choiceQuestionState.value = null;
+      compareCandidatesState.value = null;
+      showCandidateDetails.value = false;
+      pendingQuestion.value = null;
+      currentQuestionId.value = null;
+    } else {
+      miniPreviewState.value = result.miniPreview ?? null;
+      choiceQuestionState.value = choiceQuestion?.options?.length ? choiceQuestion : null;
+      compareCandidatesState.value = result.compareCandidates ?? null;
+      showCandidateDetails.value = false;
+      previewExpanded.value = Boolean(
+        result.miniPreview?.bullets?.length &&
+          !choiceQuestion &&
+          result.inputMode !== 'compare' &&
+          !result.nextQuestionKey,
+      );
+    }
+    lastInputMode.value = result.inputMode ?? null;
+    lastDraftReady.value = Boolean(result.draftReady);
+    lastDraftId.value = result.draftReady ? result.draftId ?? null : null;
+    const shouldPushProposal =
+      Boolean(result.draftReady) &&
+      Boolean(result.draftId) &&
+      isCommitted.value &&
+      !seenDraftIds.value.includes(result.draftId as string);
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
-    const shouldPrepareProposal =
-      (result.status === 'ready' || result.status === 'options' || Boolean(result.proposal)) &&
-      result.stage === 'writer';
-    if (shouldPrepareProposal) {
-      const finalProposal =
-        result.proposal ??
-        (await generateEventContent({
-          baseLanguage: qaState.baseLanguage || 'ja',
-          topic: qaState.topic || 'コミュニティイベント',
-          audience: qaState.audience || '地域の仲間',
-          style: qaState.style || 'family-friendly',
-          details: qaSummary,
-        }));
-      preparedProposal = { ...finalProposal, summary: qaSummary };
+    if (shouldPushProposal) {
+      preparedProposal = buildProposalFromDraft(result.publicActivityDraft ?? null, qaSummary);
       aiResult.value = preparedProposal;
-      const title = extractText(preparedProposal.title);
-      const desc = extractText(preparedProposal.description);
-      pushMessage('assistant', 'proposal', '', {
-        title,
-        description: desc,
-        raw: aiResult.value,
-      });
-  } else {
-    aiResult.value = null;
-    pendingQuestion.value = null;
-  }
-    await persistAssistantLog(stage, qaSummary, {
-      status: result.status,
+      if (preparedProposal) {
+        const title = extractText(preparedProposal.title);
+        const desc = extractText(preparedProposal.description);
+        const msgId = pushMessage(
+          'assistant',
+          'proposal',
+          '',
+          {
+            title,
+            description: desc,
+            raw: preparedProposal,
+            applyEnabled: Boolean(result.applyEnabled),
+          },
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { includeInContext: false },
+        );
+        if (result.draftId) {
+          seenDraftIds.value.push(result.draftId);
+          lastShownDraftId.value = result.draftId;
+          lastMilestoneDraftId.value = result.draftId;
+          lastMilestoneMessageId.value = msgId;
+        }
+      }
+    } else if (state !== 'collecting') {
+      pendingQuestion.value = null;
+    }
+    await persistAssistantLog(stageTag, qaSummary, {
+      status: state,
       promptVersion: result.promptVersion,
       turnCount: result.turnCount,
       language: result.language,
-      options: result.options ?? [],
+      options: uiOptions.map((opt) => opt.label).filter(Boolean),
       coachPrompts: result.coachPrompts ?? [],
       editorChecklist: result.editorChecklist ?? [],
-      writerSummary: stageIsWriter ? result.writerSummary ?? null : null,
+      writerSummary: stageTag === 'writer' ? result.writerSummary ?? null : null,
+      ui: result.ui ?? null,
+      draftId: result.draftId,
     });
     if (preparedProposal) {
       addHistoryEntry(preparedProposal);
     }
   } catch (err) {
     aiError.value = err instanceof Error ? err.message : 'AI生成に失敗しました。少し時間を置いて再度お試しください。';
-    pushMessage('assistant', 'text', aiError.value ?? 'AI生成に失敗しました。');
+    pushMessage('assistant', 'text', aiError.value ?? 'AI生成に失敗しました。', undefined, 'system-safe');
   } finally {
     aiLoading.value = false;
     if (!pendingQuestion.value) {
@@ -765,6 +1319,8 @@ const persistAssistantLog = async (
     coachPrompts?: string[];
     editorChecklist?: string[];
     writerSummary?: EventAssistantReply['writerSummary'] | null;
+    ui?: EventAssistantReply['ui'] | null;
+    draftId?: string | null;
   },
 ) => {
   if (!communityId.value) return;
@@ -772,14 +1328,28 @@ const persistAssistantLog = async (
     savingLog.value = true;
     const plainMessages = chatMessages.value.map((msg) => ({
       id: msg.id,
+      clientMessageId: msg.clientMessageId ?? msg.id,
       role: msg.role,
       type: msg.type,
       content: msg.content,
+      contentText: msg.contentText ?? msg.content,
+      contentJson: msg.contentJson ?? null,
       createdAt: msg.createdAt,
+      serverCreatedAt: msg.serverCreatedAt ?? null,
+      action: msg.action ?? null,
+      status: msg.status ?? 'sent',
+      thinkingSteps: msg.thinkingSteps ?? null,
+      coachPrompts: msg.coachPrompts ?? null,
+      editorChecklist: msg.editorChecklist ?? null,
+      writerSummary: msg.writerSummary ?? null,
+      confirmQuestions: msg.confirmQuestions ?? null,
       payload: msg.payload
         ? {
             title: msg.payload.title ?? null,
             description: msg.payload.description ?? null,
+            raw: msg.payload.raw ?? null,
+            applyEnabled: msg.payload.applyEnabled ?? undefined,
+            assistantReply: msg.payload.assistantReply ?? null,
           }
         : null,
     }));
@@ -805,6 +1375,9 @@ const persistAssistantLog = async (
         coachPrompts: meta?.coachPrompts ?? [],
         editorChecklist: meta?.editorChecklist ?? [],
         writerSummary: meta?.writerSummary ?? null,
+        draftId: meta?.draftId ?? null,
+        mode: mode.value,
+        isCommitted: isCommitted.value,
       },
       logId: activeLogId.value,
     });
@@ -874,7 +1447,13 @@ const saveProposalDraft = (raw?: GeneratedEventContent & { summary?: string }) =
     ...drafts,
   ].slice(0, 10);
   localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
-  pushMessage('assistant', 'text', 'この案を下書きとして保存しました。履歴からいつでも復元できます。');
+  pushMessage(
+    'assistant',
+    'text',
+    'この案を下書きとして保存しました。履歴からいつでも復元できます。',
+    undefined,
+    'system-safe',
+  );
 };
 
 const applyProposalToForm = (raw?: (GeneratedEventContent & { summary?: string }) | string) => {
@@ -962,9 +1541,92 @@ const buildConversationMessages = () => {
     }));
 };
 
+const getMessageDisplayText = (msg: ChatMessage) => {
+  if (msg.role === 'user') return msg.contentText || msg.content || '';
+  return (
+    getAssistantDisplay({
+      content: msg.content,
+      contentText: msg.contentText,
+      contentJson: msg.contentJson ?? msg.payload?.assistantReply ?? null,
+      payload: msg.payload?.assistantReply ? { assistantReply: msg.payload.assistantReply } : undefined,
+    }).text || msg.contentText || ''
+  );
+};
+
 const isInProgressStatus = (status?: string | null) => {
   if (!status) return true;
   return status !== 'completed' && status !== 'ready';
+};
+
+const handleChipSelect = (template: string) => {
+  if (!template) return;
+  if (!chatDraft.value.trim()) {
+    chatDraft.value = template;
+  } else {
+    chatDraft.value = `${chatDraft.value.trim()} ${template}`;
+  }
+  nextTick(resizeChatInput);
+};
+
+const handleChoiceSelect = async (key: string, value: string) => {
+  if (!key || !value || aiLoading.value) return;
+  autoScrollEnabled.value = true;
+  const payload = `【選択】${key}:${value}`;
+  const label = choiceQuestionState.value?.options.find((opt) => opt.value === value)?.label;
+  const displayText = buildChoiceDisplayText(key, value, label);
+  pushMessage(
+    'user',
+    'text',
+    payload,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { contentText: displayText },
+  );
+  choiceQuestionState.value = null;
+  showCandidateDetails.value = false;
+  await requestAssistantReply(payload);
+};
+
+const handleSkipCompare = async () => {
+  if (aiLoading.value) return;
+  const payload = 'どれでもないので続けます';
+  pushMessage('user', 'text', payload, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
+    contentText: payload,
+  });
+  compareCandidatesState.value = null;
+  showCandidateDetails.value = false;
+  choiceQuestionState.value = null;
+  showCandidateDetails.value = false;
+  await requestAssistantReply(payload);
+};
+
+const openMilestonePreview = () => {
+  if (!canShowProposalUi.value) return;
+  const targetId = lastMilestoneMessageId.value;
+  if (targetId) {
+    const el = document.getElementById(`msg-${targetId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  const fallback = [...chatMessages.value].reverse().find((msg) => msg.type === 'proposal');
+  if (fallback) {
+    const el = document.getElementById(`msg-${fallback.id}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+  }
+  if (aiResult.value) {
+    openPlanPreview(aiResult.value);
+  }
 };
 
 const computeQuestionIndexFromQaState = () => {
@@ -984,25 +1646,146 @@ const resetQaState = () => {
   qaState.details = '';
 };
 
-const restoreFromLog = (log: ConsoleEventAssistantLog) => {
-  const mappedMessages: ChatMessage[] = (log.messages || []).map((msg) => ({
-    id: msg.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    role: msg.role === 'assistant' ? 'assistant' : 'user',
-    type: msg.type === 'proposal' ? 'proposal' : 'text',
-    content: msg.content || '',
-    createdAt:
-      msg.createdAt ||
-      new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-    payload:
-      msg.type === 'proposal' && msg.payload
-        ? {
-            title: (msg.payload as any).title ?? '',
-            description: (msg.payload as any).description ?? '',
-          }
-        : undefined,
-    includeInContext: true,
-  }));
-  chatMessages.value = mappedMessages.slice(-200);
+const closeActiveSession = async () => {
+  if (!communityId.value || !activeLogId.value) return;
+  try {
+    await saveEventAssistantLog(communityId.value, {
+      stage: currentStage.value,
+      summary: buildQaSummary(),
+      qaState: JSON.parse(JSON.stringify(qaState)),
+      messages: [],
+      aiResult: null,
+      status: 'completed',
+      promptVersion: lastPromptVersion.value,
+      turnCount: lastTurnCount.value,
+      language: lastLanguage.value,
+      logId: activeLogId.value,
+    });
+  } catch (err) {
+    console.warn('Failed to close active assistant session', err);
+  }
+};
+
+const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache' = 'server') => {
+  const mappedMessages: ChatMessage[] = (log.messages || [])
+    .filter((msg) => {
+      const role = (msg as any).role;
+      const content = (msg as any).content || '';
+      if (role === 'assistant' && LEGACY_INTRO_MESSAGES.has(content)) return false;
+      return true;
+    })
+    .map((msg) => ({
+      id: (msg as any).id || (msg as any).clientMessageId || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      clientMessageId: (msg as any).clientMessageId || (msg as any).id,
+      role: (msg as any).role === 'assistant' ? 'assistant' : 'user',
+      type: (msg as any).type === 'proposal' ? 'proposal' : 'text',
+      action: (msg as any).action ?? undefined,
+      contentText: (msg as any).contentText ?? (msg as any).content ?? '',
+      contentJson: (msg as any).contentJson ?? (msg as any).payload?.assistantReply ?? null,
+      content: (msg as any).content ?? '',
+      createdAt:
+        (msg as any).createdAt ||
+        new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+      serverCreatedAt: (msg as any).serverCreatedAt || null,
+      thinkingSteps: (msg as any).thinkingSteps ?? undefined,
+      coachPrompts: (msg as any).coachPrompts ?? undefined,
+      editorChecklist: (msg as any).editorChecklist ?? undefined,
+      writerSummary: (msg as any).writerSummary ?? undefined,
+      confirmQuestions: (msg as any).confirmQuestions ?? undefined,
+      payload:
+        (msg as any).type === 'proposal' && (msg as any).payload
+          ? {
+              title: (msg as any).payload?.title ?? '',
+              description: (msg as any).payload?.description ?? '',
+              raw: (msg as any).payload?.raw ?? null,
+              applyEnabled: (msg as any).payload?.applyEnabled ?? undefined,
+              assistantReply: (msg as any).payload?.assistantReply ?? null,
+            }
+          : undefined,
+      status: (msg as any).status ?? 'sent',
+      includeInContext: (msg as any).includeInContext !== false,
+    }));
+  const hydratedMessages = mappedMessages.map((msg) => {
+    if (msg.role !== 'user') return msg;
+    if (msg.contentText && msg.contentText !== msg.content) return msg;
+    const selectionDisplay = formatSelectionDisplay(msg.content || '');
+    if (!selectionDisplay) return msg;
+    return {
+      ...msg,
+      contentText: selectionDisplay,
+    };
+  });
+  const sanitizedMessages = hydratedMessages.map((msg) => {
+    if (msg.role !== 'assistant' || msg.type !== 'text') return msg;
+    if (msg.action && SAFE_ASSISTANT_ACTIONS.has(msg.action)) return msg;
+    const derived = getAssistantDisplay({
+      contentJson: msg.contentJson ?? msg.payload?.assistantReply ?? null,
+    }).text;
+    if (!derived) return msg;
+    return {
+      ...msg,
+      content: derived,
+      contentText: derived,
+      action: 'system-safe',
+      includeInContext: false,
+    };
+  });
+  const hasRenderableAssistantMessage = sanitizedMessages.some(
+    (msg) => msg.role === 'assistant' && (msg.type === 'proposal' || isSafeAssistantMessage(msg)),
+  );
+  const hasProposalMessage = sanitizedMessages.some((msg) => msg.type === 'proposal');
+  if (!hasRenderableAssistantMessage) {
+    const fallbackMeta = (log as any).meta ?? {};
+    const fallbackText = getAssistantDisplay({
+      contentJson: fallbackMeta.ui ? { ui: fallbackMeta.ui } : null,
+    }).text;
+    if (fallbackText && fallbackText.trim()) {
+      sanitizedMessages.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        role: 'assistant',
+        type: 'text',
+        content: fallbackText,
+        contentText: fallbackText,
+        contentJson: fallbackMeta ?? null,
+        action: 'system-safe',
+        createdAt:
+          (log as any).createdAt ||
+          new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+        includeInContext: false,
+        status: 'sent',
+      });
+    } else {
+      sanitizedMessages.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        role: 'assistant',
+        type: 'text',
+        content: '以前のAI返信が保存されていなかったため、ここから再開します。',
+        action: 'system-safe',
+        createdAt:
+          (log as any).createdAt ||
+          new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+        includeInContext: false,
+        status: 'sent',
+      });
+    }
+  }
+  // merge with existing (if any) by messageId/clientId, prefer restored data
+  const mergedMap = new Map<string, ChatMessage>();
+  const put = (m: ChatMessage) => {
+    const key = m.id || m.clientMessageId || `${m.createdAt}-${m.content}`;
+    mergedMap.set(key, m);
+  };
+  chatMessages.value.forEach((m) => put(m));
+  sanitizedMessages.slice(-200).forEach((m) => put(m));
+  chatMessages.value = Array.from(mergedMap.values())
+    .sort((a, b) => {
+      const ta = Date.parse(a.serverCreatedAt ?? a.createdAt ?? '');
+      const tb = Date.parse(b.serverCreatedAt ?? b.createdAt ?? '');
+      if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb;
+      return (a.clientMessageId || a.id).localeCompare(b.clientMessageId || b.id);
+    })
+    .slice(-200);
+  updateDebugCounts(source, chatMessages.value, log.messages);
   if (log.qaState) {
     qaState.baseLanguage = (log.qaState as any).baseLanguage || qaState.baseLanguage;
     qaState.topic = (log.qaState as any).topic || '';
@@ -1011,15 +1794,51 @@ const restoreFromLog = (log: ConsoleEventAssistantLog) => {
     qaState.details = (log.qaState as any).details || '';
   }
   currentQuestionIndex.value = computeQuestionIndexFromQaState();
-  lastAssistantStatus.value = (log.status as EventAssistantStatus) || 'collecting';
+  lastAssistantStatus.value = (log.status as EventAssistantState) || 'collecting';
   lastPromptVersion.value = log.promptVersion || lastPromptVersion.value;
   lastTurnCount.value = log.turnCount || 0;
   lastLanguage.value = (log.language as string) || lastLanguage.value;
   activeLogId.value = log.id;
-  introConversationStarted.value = true;
+  lastDraftReady.value = log.status === 'ready';
+  lastDraftId.value = log.status === 'ready' ? (log.meta as any)?.draftId ?? null : null;
+  lastInputMode.value = null;
+  mode.value = (log.meta as any)?.mode === 'operate' ? 'operate' : 'chat';
+  isCommitted.value = Boolean((log.meta as any)?.isCommitted) || hasProposalMessage;
   pendingQuestion.value = null;
   currentQuestionId.value = null;
+  miniPreviewState.value = null;
+  previewExpanded.value = false;
+  choiceQuestionState.value = null;
+  compareCandidatesState.value = null;
+  showCandidateDetails.value = false;
+  coachPromptState.value = null;
   scrollChatToBottom(true);
+};
+
+const updateDebugCounts = (
+  source: 'server' | 'cache',
+  messages: ChatMessage[],
+  rawPayload?: unknown,
+) => {
+  if (!isDebugEnabled.value) return;
+  const userCount = messages.filter((m) => m.role === 'user').length;
+  const assistantCount = messages.filter((m) => m.role === 'assistant').length;
+  let bytes: number | undefined;
+  if (rawPayload !== undefined) {
+    try {
+      bytes = JSON.stringify(rawPayload).length;
+    } catch {
+      bytes = undefined;
+    }
+  }
+  debugMessageCounts.value = {
+    total: messages.length,
+    user: userCount,
+    assistant: assistantCount,
+    source,
+    bytes,
+  };
+  console.debug('[assistant] loaded messages', debugMessageCounts.value);
 };
 
 const tryResumeConversation = async (existingLogs?: ConsoleEventAssistantLog[]) => {
@@ -1039,7 +1858,17 @@ const tryResumeConversation = async (existingLogs?: ConsoleEventAssistantLog[]) 
           new Date((a as any).updatedAt || a.createdAt).getTime(),
       );
     if (recentInProgress.length) {
-      restoreFromLog(recentInProgress[0]);
+      const candidate = recentInProgress[0];
+      if (communityId.value) {
+        try {
+          const fullLog = await fetchEventAssistantLog(communityId.value, candidate.id);
+          restoreFromLog(fullLog);
+          return true;
+        } catch (err) {
+          console.warn('Failed to fetch full log for resume', err);
+        }
+      }
+      restoreFromLog(candidate, 'cache');
       return true;
     }
   } catch (err) {
@@ -1049,6 +1878,8 @@ const tryResumeConversation = async (existingLogs?: ConsoleEventAssistantLog[]) 
 };
 
 const startNewConversation = () => {
+  // mark previous in-progress log as completed to avoid auto-resume
+  closeActiveSession();
   activeLogId.value = null;
   chatMessages.value = [];
   aiResult.value = null;
@@ -1058,10 +1889,23 @@ const startNewConversation = () => {
   aiError.value = null;
   latestChecklist.value = [];
   latestConfirmQuestions.value = [];
+  lastShownDraftId.value = null;
+  seenDraftIds.value = [];
+  lastMilestoneDraftId.value = null;
+  lastMilestoneMessageId.value = null;
+  lastDraftReady.value = false;
+  lastDraftId.value = null;
+  lastInputMode.value = null;
+  mode.value = 'chat';
+  isCommitted.value = false;
+  miniPreviewState.value = null;
+  previewExpanded.value = false;
+  choiceQuestionState.value = null;
+  compareCandidatesState.value = null;
+  showCandidateDetails.value = false;
+  coachPromptState.value = null;
   resetQaState();
-  introConversationStarted.value = false;
-  seedWelcomeMessages();
-  startIntroConversation();
+  chatDraft.value = '';
   // clear any sticky logId/newSession query to avoid unintended resume on refresh
   if (route.query.logId || route.query.newSession) {
     const nextQuery = { ...route.query };
@@ -1100,6 +1944,10 @@ const extractText = (content: any) => {
 };
 
 const goBack = () => {
+  if (backTarget.value) {
+    router.replace(backTarget.value);
+    return;
+  }
   router.back();
 };
 
@@ -1119,27 +1967,32 @@ const markSessionCompleted = async () => {
   lastAssistantStatus.value = 'completed';
 };
 
+type UndoSnapshot = {
+  formFields: Record<string, any>;
+  description: string;
+};
+const lastUndoSnapshot = ref<UndoSnapshot | null>(null);
+
 const goToForm = async (useAi: boolean) => {
   if (!communityId.value) return;
   if (useAi && aiResult.value) {
-    sessionStorage.setItem(
-      CONSOLE_AI_EVENT_DRAFT_KEY,
-      JSON.stringify({
-        title: extractText(aiResult.value.title),
-        subtitle: extractText(aiResult.value.subtitle),
-        description: extractText(aiResult.value.description),
-        notes: extractText(aiResult.value.notes),
-        riskNotice: extractText(aiResult.value.riskNotice),
-        logistics: aiResult.value.logistics ?? null,
-        ticketTypes: aiResult.value.ticketTypes ?? [],
-        requirements: aiResult.value.requirements ?? [],
-        registrationForm: aiResult.value.registrationForm ?? [],
-        visibility: aiResult.value.visibility ?? 'public',
-        checklist: latestChecklist.value,
-        confirmQuestions: latestConfirmQuestions.value,
-        generatedAt: Date.now(),
-      }),
-    );
+    const draft = aiResult.value;
+    const payload = {
+      title: extractText(draft.title),
+      subtitle: extractText(draft.subtitle),
+      description: extractText(draft.description),
+      notes: extractText(draft.notes),
+      riskNotice: extractText(draft.riskNotice),
+      logistics: draft.logistics ?? null,
+      ticketTypes: draft.ticketTypes ?? [],
+      requirements: draft.requirements ?? [],
+      registrationForm: draft.registrationForm ?? [],
+      visibility: draft.visibility ?? 'public',
+      checklist: latestChecklist.value,
+      confirmQuestions: latestConfirmQuestions.value,
+      generatedAt: Date.now(),
+    };
+    sessionStorage.setItem(CONSOLE_AI_EVENT_DRAFT_KEY, JSON.stringify(payload));
   } else {
     sessionStorage.removeItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   }
@@ -1155,6 +2008,7 @@ const goToForm = async (useAi: boolean) => {
 const removeScrollListener = ref<(() => void) | null>(null);
 
 onMounted(async () => {
+  isLoadingLog.value = true;
   await loadProfileDefaults();
   await communityStore.loadCommunities();
   if (communityId.value) {
@@ -1162,6 +2016,12 @@ onMounted(async () => {
   }
   loadHistoryEntries();
   await loadActiveCommunityDetail();
+  // If opened from history, set back target to console home
+  if (route.query.logId || route.query.source === 'history') {
+    backTarget.value = { name: 'ConsoleMobileHome' };
+  } else {
+    backTarget.value = null;
+  }
   let restored = false;
   let cachedLogs: ConsoleEventAssistantLog[] | null = null;
   if (!forceNewSession.value && communityId.value) {
@@ -1173,7 +2033,7 @@ onMounted(async () => {
     }
   }
   if (!forceNewSession.value && requestedLogId.value) {
-    const target =
+    let target =
       cachedLogs?.find((log) => log.id === requestedLogId.value) ??
       (await (async () => {
         if (!communityId.value) return null;
@@ -1185,6 +2045,13 @@ onMounted(async () => {
           return null;
         }
       })());
+    if (communityId.value && requestedLogId.value) {
+      try {
+        target = await fetchEventAssistantLog(communityId.value, requestedLogId.value);
+      } catch (err) {
+        console.warn('Failed to fetch full assistant log', err);
+      }
+    }
     if (target) {
       restoreFromLog(target);
       restored = true;
@@ -1193,10 +2060,10 @@ onMounted(async () => {
   if (!restored) {
     const resumed = await tryResumeConversation(cachedLogs ?? undefined);
     if (!resumed) {
-      seedWelcomeMessages();
-      await startIntroConversation();
+      startNewConversation();
     }
   }
+  isLoadingLog.value = false;
   nextTick(() => {
     const container = chatLogRef.value;
     if (!container) return;
@@ -1241,8 +2108,8 @@ onUnmounted(() => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
-  color: #0f172a;
+  background: #f7f7f8;
+  color: #111827;
   --keyboard-offset: 0px;
 }
 
@@ -1262,7 +2129,7 @@ onUnmounted(() => {
   position: sticky;
   top: 0;
   z-index: 35;
-  background: radial-gradient(circle at 20% 20%, #e4f0ff 0%, #f7f9fb 45%, #f4f2ff 100%);
+  background: #f7f7f8;
   display: flex;
   flex-direction: column;
 }
@@ -1271,27 +2138,34 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 12px 8px;
   z-index: 36;
 }
 
 .new-session-btn {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
-  border-radius: 12px;
-  padding: 8px 12px;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
-  font-weight: 700;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 0;
+  box-shadow: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .history-btn {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
-  border-radius: 12px;
-  padding: 8px;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 0;
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1300,6 +2174,16 @@ onUnmounted(() => {
 .chat-surface {
   flex: 1;
   min-height: 0;
+  background: #f7f7f8;
+}
+
+.guide-line {
+  font-size: 12px;
+  color: #6b7280;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  margin: 0 0 4px;
 }
 
 .chat-log {
@@ -1307,29 +2191,364 @@ onUnmounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px 14px 120px;
+  gap: 10px;
+  padding: 12px 14px 128px;
   box-sizing: border-box;
 }
 
+.intro-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px;
+  margin: 4px 0 8px;
+  box-shadow: none;
+  border: 1px solid #e5e7eb;
+  color: #111827;
+}
+
+.intro-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.intro-toggle {
+  border: none;
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.intro-more {
+  margin-top: 8px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chip {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+}
+
+.chip--recommended {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.mini-preview-card {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 13px;
+  color: #111827;
+}
+
+.mini-preview-toggle {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.mini-preview-toggle-btn {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 0;
+}
+
+.mini-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mini-preview-title {
+  font-weight: 700;
+  margin: 0;
+  font-size: 13px;
+}
+
+.mini-preview-close {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 0;
+}
+
+.mini-preview-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px;
+}
+
+.mini-preview-list li {
+  margin-bottom: 4px;
+}
+
+.mini-preview-note {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+
+.choice-block {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.choice-context {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: #111827;
+}
+
+.choice-prompt {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.choice-note {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 8px;
+}
+
+.choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.decision-block {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.decision-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin: 0 0 6px;
+}
+
+.decision-note {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 10px;
+}
+
+.decision-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.decision-toggle {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.candidate-details {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.candidate-detail-card {
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.candidate-tag {
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.candidate-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.candidate-badge {
+  font-size: 11px;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.candidate-meta {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.candidate-meta li {
+  margin-bottom: 2px;
+}
+
+.candidate-summary {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.decision-actions {
+  margin-top: 8px;
+}
+
+.decision-secondary {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.choice-helper {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 6px 0 0;
+}
+
+.coach-prompt {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 6px;
+}
+
+
+.entry-bar {
+  margin: 0 14px 8px;
+  padding: 6px 10px;
+  background: #ffffff;
+  border-radius: 10px;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+}
+
+.entry-button {
+  background: transparent;
+  border: none;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-session-btn.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.intro-eyebrow {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 4px;
+}
+
+.intro-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.intro-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  margin: 0 0 10px;
+}
+
+.intro-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .chat-bubble {
-  max-width: 92%;
-  padding: 12px 14px;
-  border-radius: 16px;
+  max-width: 78%;
+  padding: 10px 12px;
+  border-radius: 18px;
   box-sizing: border-box;
   word-break: break-word;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  box-shadow: none;
 }
 
 .chat-bubble--assistant {
   align-self: flex-start;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.05);
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  max-width: 100%;
 }
 
 .chat-bubble.is-current-question {
-  border-color: rgba(37, 99, 235, 0.4);
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.08);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .chat-bubble.is-previous {
@@ -1340,18 +2559,19 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  background: transparent;
 }
 
 .chat-bubble--assistant.chat-bubble--error {
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(254, 242, 242, 0.9);
+  border-color: rgba(239, 68, 68, 0.4);
+  background: #fef2f2;
   color: #b91c1c;
 }
 
 .chat-bubble--user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #111827, #0f172a);
-  color: #f8fafc;
+  background: #f2f3f5;
+  color: #111827;
   border: none;
 }
 
@@ -1370,8 +2590,8 @@ onUnmounted(() => {
 .inline-link {
   border: none;
   background: transparent;
-  color: #0ea5e9;
-  font-weight: 700;
+  color: #111827;
+  font-weight: 600;
   font-size: 13px;
   padding: 0;
   text-decoration: underline;
@@ -1380,22 +2600,22 @@ onUnmounted(() => {
 .chat-follow-up {
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(224, 231, 255, 0.6);
-  border: 1px dashed rgba(99, 102, 241, 0.4);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
 }
 
 .follow-up-label {
   margin: 0 0 4px;
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: #4338ca;
+  color: #6b7280;
   text-transform: uppercase;
 }
 
 .follow-up-text {
   margin: 0;
   font-weight: 700;
-  color: #312e81;
+  color: #111827;
   line-height: 1.5;
 }
 
@@ -1415,8 +2635,8 @@ onUnmounted(() => {
 
 .thinking-shell {
   border-radius: 14px;
-  background: rgba(244, 247, 255, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   padding: 10px 12px;
 }
 
@@ -1427,14 +2647,14 @@ onUnmounted(() => {
   align-items: center;
   border: none;
   background: transparent;
-  color: #475569;
-  font-weight: 700;
+  color: #6b7280;
+  font-weight: 600;
   padding: 0;
 }
 
 .hint-toggle__state {
   font-size: 12px;
-  color: #2563eb;
+  color: #6b7280;
 }
 
 .thinking-list {
@@ -1450,7 +2670,7 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  color: #0f172a;
+  color: #111827;
   font-size: 14px;
 }
 
@@ -1458,15 +2678,15 @@ onUnmounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #2563eb;
+  background: #9ca3af;
   margin-top: 6px;
   flex-shrink: 0;
 }
 
 .summary-block {
   border-radius: 14px;
-  background: rgba(255, 247, 237, 0.9);
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   padding: 10px 12px;
 }
 
@@ -1474,7 +2694,7 @@ onUnmounted(() => {
   margin: 0 0 6px;
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: #b45309;
+  color: #6b7280;
   text-transform: uppercase;
 }
 
@@ -1485,19 +2705,19 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 6px;
-  color: #7c2d12;
+  color: #374151;
 }
 
 .summary-list strong {
   display: block;
   font-size: 12px;
   text-transform: uppercase;
-  color: #b45309;
+  color: #6b7280;
 }
 
 .proposal-bubble {
-  background: linear-gradient(135deg, #eef2ff, #e0f2fe);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 16px;
   padding: 12px;
   display: flex;
@@ -1514,13 +2734,13 @@ onUnmounted(() => {
 .proposal-title {
   margin: 0;
   font-weight: 800;
-  color: #0f172a;
+  color: #111827;
   font-size: 15px;
 }
 
 .proposal-desc {
   margin: 0;
-  color: #1f2937;
+  color: #374151;
   white-space: pre-line;
   line-height: 1.55;
 }
@@ -1532,26 +2752,23 @@ onUnmounted(() => {
 }
 
 .ghost-link {
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #111827;
   border-radius: 999px;
   padding: 6px 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .chat-meta {
-  display: block;
-  margin-top: 6px;
-  font-size: 11px;
-  color: #94a3b8;
+  display: none;
 }
 
 .typing-dot {
   width: 8px;
   height: 8px;
   border-radius: 10px;
-  background: #cbd5e1;
+  background: #9ca3af;
   animation: dotPulse 1s infinite ease-in-out;
 }
 
@@ -1580,9 +2797,9 @@ onUnmounted(() => {
 
 .input-bar {
   padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);
-  background: rgba(255, 255, 255, 0.92);
-  border-top: 1px solid rgba(15, 23, 42, 0.05);
-  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.06);
+  background: #f7f7f8;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: none;
   transform: translateY(calc(var(--keyboard-offset, 0px) * -1));
   transition: transform 0.2s ease;
 }
@@ -1593,10 +2810,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 18px;
-  background: #f8fafc;
-  border: 1px solid rgba(15, 23, 42, 0.05);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: none;
 }
 
 .chat-input {
@@ -1604,7 +2821,7 @@ onUnmounted(() => {
   border: none;
   background: transparent;
   font-size: 15px;
-  color: #0f172a;
+  color: #111827;
   resize: none;
   line-height: 1.5;
   max-height: 96px;
@@ -1612,7 +2829,7 @@ onUnmounted(() => {
 }
 
 .chat-input::placeholder {
-  color: #94a3b8;
+  color: #9ca3af;
 }
 
 .chat-input:focus {
@@ -1624,12 +2841,12 @@ onUnmounted(() => {
   height: 44px;
   border-radius: 14px;
   border: none;
-  background: linear-gradient(135deg, #2563eb, #0ea5e9);
-  color: #fff;
+  background: #111827;
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
+  box-shadow: none;
 }
 
 .chat-send-icon {
@@ -1640,13 +2857,6 @@ onUnmounted(() => {
 
 .chat-send:disabled {
   opacity: 0.4;
-  box-shadow: none;
-}
-
-.input-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: #64748b;
 }
 
 .plan-preview-overlay {

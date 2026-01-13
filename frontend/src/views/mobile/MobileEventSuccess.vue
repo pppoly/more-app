@@ -22,7 +22,7 @@
       </div>
 
       <div class="actions">
-        <RouterLink class="btn primary" to="/me/events">マイイベントを見る</RouterLink>
+        <RouterLink class="btn primary" to="/me/events">マイチケットを見る</RouterLink>
         <RouterLink class="btn secondary" to="/events">イベント一覧へ戻る</RouterLink>
       </div>
     </div>

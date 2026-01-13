@@ -876,8 +876,9 @@ watch(
   width: 100%;
   border: none;
   background: transparent;
-  padding: 0;
+  padding: 2px 0;
   font-size: 16px;
+  line-height: 1.3;
   text-align: right;
   color: #0f172a;
   -webkit-appearance: none;
@@ -1290,7 +1291,7 @@ watch(
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   padding: 12px;
   z-index: 80;
@@ -1324,6 +1325,12 @@ watch(
   display: grid;
   place-items: center;
   color: #0f172a;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sheet-close::before {
+  content: '×';
 }
 .sheet-preview {
   padding: 12px 16px 0;

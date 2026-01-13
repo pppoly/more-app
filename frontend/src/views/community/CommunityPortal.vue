@@ -997,8 +997,8 @@ const toggleFollow = async () => {
 .event-list--scroll {
   flex-direction: row;
   overflow-x: auto;
-  padding: 2px 12px 8px;
-  margin: 0 -12px;
+  padding: 2px 0 8px;
+  margin: 0;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
 }

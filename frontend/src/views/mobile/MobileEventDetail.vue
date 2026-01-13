@@ -944,7 +944,7 @@ const showUiMessage = (text: string) => {
   }, 2000);
 };
 
-const handleFavoriteToggle = () => {
+const handleFavoriteToggle = async () => {
   if (!detail.value || !favoritePayload.value) return;
   if (!isLoggedIn.value) {
     if (typeof window !== 'undefined') {
@@ -954,8 +954,12 @@ const handleFavoriteToggle = () => {
     router.push({ name: 'organizer-apply', query: { redirect: route.fullPath } });
     return;
   }
-  favoritesStore.toggleFavorite(favoritePayload.value);
-  showUiMessage(isFavoriteEvent.value ? 'フォロー済みにしました' : 'フォローを解除しました');
+  try {
+    const res = await favoritesStore.toggleFavorite(favoritePayload.value);
+    showUiMessage(res.following ? 'フォロー済みにしました' : 'フォローを解除しました');
+  } catch (err) {
+    showUiMessage(err instanceof Error ? err.message : '操作に失敗しました');
+  }
 };
 
 const setSlide = (index: number) => {
@@ -1426,7 +1430,7 @@ watch(
         try {
           const pending = JSON.parse(pendingRaw);
           if (pending.id === detail.value.id && !favoritesStore.isFavorite(pending.id)) {
-            favoritesStore.addFavorite(pending);
+            void favoritesStore.addFavorite(pending);
           }
         } catch (error) {
           console.warn('Failed to process pending favorite', error);
@@ -2083,6 +2087,8 @@ watch(
   pointer-events: auto;
   position: relative;
   z-index: 1;
+  line-height: 1;
+  min-height: 32px;
 }
 .group-follow.is-locked {
   opacity: 0.6;

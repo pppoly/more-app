@@ -96,7 +96,7 @@ export const RESOURCE_SLOTS = [
   {
     id: 'mobile.eventList.cardFallbacks',
     label: 'イベント一覧カバーセット',
-    page: 'モバイル・イベント一覧/マイイベント',
+    page: 'モバイル・イベント一覧/マイチケット',
     pageId: 'mobile-event-list',
     position: 'イベントカードのカバー循環',
     description: 'イベントにカバー未設定の場合、リストから順番に背景として使用。',

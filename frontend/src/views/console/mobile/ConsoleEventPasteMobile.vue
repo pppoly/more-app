@@ -3,12 +3,12 @@
     <ConsoleTopBar v-if="!isLiffClientMode" title="下書きを貼り付ける" @back="goBack" />
 
     <section class="intro-card">
-      <p class="intro-title">{{ preview ? '内容をご確認ください' : '貼り付けるだけで OK' }}</p>
+      <p class="intro-title">{{ preview ? '受け取った内容を確認しよう' : 'まずは一言でOK' }}</p>
       <p class="intro-desc">
         {{
           preview
-            ? 'AI が読み取った内容を確認してください。修正が必要なら戻って編集できます。'
-            : 'AI がタイトルや説明を下書きに入れます。足りない部分は次の画面で微調整できます。'
+            ? 'ここから一緒に整えます。必要なら戻って書き足せます。'
+            : '完璧に書く必要はありません。思い出したことをそのまま貼ってください。'
         }}
       </p>
     </section>
@@ -17,10 +17,10 @@
       <textarea
         v-model="draft"
         class="draft-input"
-        placeholder="イベントのタイトル・説明・メモをそのまま貼り付けてください"
+        placeholder="例）土曜午前のヨガ。初心者向け。持ち物はタオル。場所は代々木公園 など"
         rows="12"
       ></textarea>
-      <p class="input-hint">言語・形式は自由。メモのままでも構いません。</p>
+      <p class="input-hint">箇条書きでも短文でもOK。あとから一緒に整えます。</p>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
@@ -50,7 +50,7 @@
         @click="preview ? proceedToForm() : confirmApply()"
       >
         <span v-if="loading">少々お待ちください…</span>
-        <span v-else>{{ preview ? 'この内容で次へ' : '次へ' }}</span>
+        <span v-else>{{ preview ? 'この内容で進む' : 'AIに見せてみる' }}</span>
       </button>
     </div>
   </div>

@@ -216,7 +216,7 @@ const formattedEvents = computed(() =>
     return {
       id: event.id,
       title: getLocalizedText(event.title, preferredLangs.value),
-      timeText: formatDateTime(event.startTime, event.endTime),
+      timeText: formatScheduleLine(event.startTime, event.endTime),
       communityName: event.community?.name ?? 'SOCIALMORE',
       capacityText,
       coverUrl: coverUrlForEvent(event),
@@ -251,15 +251,44 @@ const selectCategory = (id: string) => {
   activeCategoryId.value = id;
 };
 
-const formatDateTime = (start: string, end?: string | null) => {
-  const s = new Date(start);
-  const e = end ? new Date(end) : null;
-  const wd = ['日', '月', '火', '水', '木', '金', '土'][s.getDay()];
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const startText = `${s.getMonth() + 1}/${s.getDate()}(${wd}) ${pad(s.getHours())}:${pad(s.getMinutes())}`;
-  if (!e) return startText;
-  const endText = `${pad(e.getHours())}:${pad(e.getMinutes())}`;
-  return `${startText} – ${endText}`;
+const formatTime = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatLongDate = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString('ja-JP', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
+};
+
+const formatDayWithWeekday = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString('ja-JP', {
+    day: 'numeric',
+    weekday: 'short',
+  });
+};
+
+const formatScheduleLine = (start?: string, end?: string | null) => {
+  if (!start) return '';
+  const startDate = new Date(start);
+  const startText = `${formatLongDate(start)} ${formatTime(start)}`;
+  if (!end) {
+    return startText;
+  }
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) {
+    return `${formatLongDate(start)} ${formatTime(start)}〜${formatTime(end)}`;
+  }
+  const sameMonth =
+    startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth();
+  const endDateText = sameMonth ? formatDayWithWeekday(end) : formatLongDate(end);
+  return `${formatLongDate(start)} ${formatTime(start)}〜${endDateText} ${formatTime(end)}`;
 };
 
 const isSocialCategory = (category: string) => {

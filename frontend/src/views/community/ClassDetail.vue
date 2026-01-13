@@ -80,12 +80,12 @@
           </div>
           <div class="hero-text">
             <h1>申込が完了しました</h1>
-            <p>マイイベントで申込状況を確認できます</p>
+            <p>マイチケットで申込状況を確認できます</p>
           </div>
         </div>
 
         <div class="actions">
-          <button class="btn primary" type="button" @click="router.push({ name: 'my-events' })">マイイベントへ</button>
+          <button class="btn primary" type="button" @click="router.push({ name: 'my-events' })">マイチケットへ</button>
           <button class="btn secondary" type="button" @click="goBack">コース一覧に戻る</button>
         </div>
       </div>

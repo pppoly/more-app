@@ -498,6 +498,11 @@ const openPublicPage = () => {
 };
 
 const goBack = () => {
+  const source = typeof route.query.source === 'string' ? route.query.source : undefined;
+  if (source === 'home') {
+    router.push({ name: 'ConsoleMobileHome' });
+    return;
+  }
   if (communityId.value) {
     router.push({
       name: 'ConsoleMobileCommunityEvents',

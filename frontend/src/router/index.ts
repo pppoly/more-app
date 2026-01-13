@@ -904,8 +904,8 @@ const routes: RouteRecordRaw[] = [
     name: 'my-events',
     component: MyEvents,
     meta: {
-      title: 'マイイベント',
-      devPageName: 'マイイベント',
+      title: 'マイチケット',
+      devPageName: 'マイチケット',
       stackKey: 'mobile',
       hideTabbar: true,
       hideShellHeader: true,

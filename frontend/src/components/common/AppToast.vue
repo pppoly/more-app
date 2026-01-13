@@ -22,7 +22,7 @@ const items = computed(() => state.items);
 <style scoped>
 .toast-stack {
   position: fixed;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--toast-offset, 16px) + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -43,6 +43,7 @@ const items = computed(() => state.items);
   font-size: 14px;
   font-weight: 600;
   border: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: center;
 }
 
 .toast--success {
@@ -66,4 +67,3 @@ const items = computed(() => state.items);
   color: #1d4ed8;
 }
 </style>
-

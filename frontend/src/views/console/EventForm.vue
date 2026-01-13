@@ -298,7 +298,7 @@
         <div class="ios-form">
           <button
             type="button"
-            class="ios-row ios-row--action ios-row--textarea ios-row--rich-note"
+            class="ios-row ios-row--action ios-row--textarea ios-row--rich-note ios-row--required"
             @click="openRichTextEditor"
           >
             <span class="ios-label">イベント詳細</span>
@@ -1341,14 +1341,10 @@ const fetchPasteInsights = async (draft: string) => {
   pasteResultLoading.value = true;
   try {
     const res: EventAssistantReply = await requestEventAssistantReply(payload);
-    const raw = res.message || '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      pasteFilledFields.value = parsed.filled ?? pasteFilledFields.value;
-      pasteAdvice.value = parsed.advice ?? [];
-      pasteCompliance.value = parsed.compliance ?? [];
-    }
+    const adviceHints = Array.isArray(res.editorChecklist) ? res.editorChecklist.slice(0, 3) : [];
+    const complianceHints = Array.isArray(res.thinkingSteps) ? res.thinkingSteps.slice(0, 3) : [];
+    if (adviceHints.length) pasteAdvice.value = adviceHints;
+    if (complianceHints.length) pasteCompliance.value = complianceHints;
   } catch (err) {
     console.warn('fetchPasteInsights failed', err);
     if (!pasteAdvice.value.length) {
@@ -1801,7 +1797,6 @@ const applyAiDraft = (draft: any) => {
 };
 
 const loadAiDraftFromSession = () => {
-  if (isEdit.value) return false;
   const raw = sessionStorage.getItem(CONSOLE_AI_EVENT_DRAFT_KEY);
   if (!raw) return false;
   try {
@@ -3602,6 +3597,13 @@ const applyAssistantDraftFromStorage = () => {
 
 onMounted(async () => {
   setupMobileMediaQuery();
+  if (typeof document !== 'undefined') {
+    if (isMobileLayout.value) {
+      document.documentElement.style.setProperty('--toast-offset', '96px');
+    } else {
+      document.documentElement.style.removeProperty('--toast-offset');
+    }
+  }
   loadStoredLang();
   const draftApplied = await applyFormDraftFromStorage();
   // Use the draft first to avoid re-hydrating the whole form on return from note editor.
@@ -3623,6 +3625,18 @@ watch(
   async (val) => {
     if (val) {
       await handleEntryFromQuery();
+    }
+  },
+);
+
+watch(
+  () => isMobileLayout.value,
+  (val) => {
+    if (typeof document === 'undefined') return;
+    if (val) {
+      document.documentElement.style.setProperty('--toast-offset', '96px');
+    } else {
+      document.documentElement.style.removeProperty('--toast-offset');
     }
   },
 );
@@ -3653,6 +3667,9 @@ watch(
 );
 
 onUnmounted(() => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.removeProperty('--toast-offset');
+  }
   revokeLocalCoverPreviews();
   teardownMobileMediaQuery();
   if (saveStatusTimer) {
@@ -3760,12 +3777,12 @@ onActivated(() => {
   overflow: hidden;
 }
 .console-section--mobile {
-  padding: 0 0 90px;
+  padding: 0 0 128px;
 }
 .console-section--mobile .form {
   gap: 0.9rem;
   padding: 0 12px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
 }
 .console-section--mobile .ios-form {
   margin-bottom: 12px;
@@ -4164,6 +4181,18 @@ select {
   color: #b91c1c;
   padding: 6px 12px;
   font-size: 13px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.ios-field-card__delete:active {
+  background: rgba(220, 38, 38, 0.18);
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.2);
+  transform: translateY(1px);
+}
+
+.ios-field-card__delete:focus-visible {
+  outline: 2px solid rgba(220, 38, 38, 0.35);
+  outline-offset: 2px;
 }
 
 .ios-form--stack .ios-row {
@@ -4374,7 +4403,7 @@ select {
   color: #475569;
 }
 .console-section--mobile {
-  padding: 0 0 72px;
+  padding: 0 0 128px;
   background: #f5f7fb;
   gap: 0.75rem;
   overflow-x: hidden;
@@ -4524,6 +4553,10 @@ select {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.ios-row--required {
+  background: #f8fafc;
 }
 
 .ios-row:last-child {
@@ -5375,6 +5408,9 @@ select {
   overflow: hidden;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   margin-bottom: 10px;
+}
+.info-block .info-group {
+  box-shadow: none;
 }
 .info-group--secondary {
   border-color: #eef2f7;

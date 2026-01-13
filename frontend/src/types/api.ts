@@ -92,6 +92,15 @@ export interface EventGalleryItem {
   order: number;
 }
 
+export interface FavoriteEventItem {
+  id: string;
+  title: LocalizedContent;
+  startTime?: string;
+  endTime?: string | null;
+  locationText?: string | null;
+  coverImageUrl?: string | null;
+}
+
 export interface EventDetail {
   id: string;
   status: string;
@@ -481,10 +490,21 @@ export interface ConsoleEventRegistrationsResponse {
 
 export interface ConsoleEventAssistantMessage {
   id: string;
+  clientMessageId?: string;
   role: 'user' | 'assistant';
   type: 'text' | 'proposal';
   content: string;
+  contentText?: string | null;
+  contentJson?: Record<string, unknown> | null;
   createdAt: string;
+  serverCreatedAt?: string | null;
+  status?: 'pending' | 'sent' | 'failed';
+  action?: string | null;
+  thinkingSteps?: string[];
+  coachPrompts?: string[];
+  editorChecklist?: string[];
+  writerSummary?: EventAssistantReply['writerSummary'];
+  confirmQuestions?: string[];
   payload?: Record<string, unknown> | null;
 }
 
@@ -599,30 +619,121 @@ export interface EventAssistantMessage {
 
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
+  action?: 'confirm_draft';
 }
 
-export type EventAssistantStatus = 'collecting' | 'options' | 'ready';
+export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
+
+export interface EventAssistantOption {
+  title: string;
+  description?: string;
+  pros?: string;
+  cons?: string;
+}
+
+export interface EventAssistantPublicDraft {
+  title?: string;
+  shortDescription?: string;
+  detailedDescription?: string;
+  targetAudience?: string;
+  ageRange?: string;
+  highlights?: string[];
+  schedule?: { date?: string; duration?: string; location?: string };
+  price?: number | string | null;
+  capacity?: number | string | null;
+  signupNotes?: string;
+}
+
+export interface EventAssistantExecutionPlan {
+  objective?: string;
+  coreExperienceDesign?: string;
+  runOfShow?: string[];
+  materials?: string[];
+  staffing?: string[];
+  risksAndMitigation?: string[];
+  prepChecklist?: string[];
+}
 
 export interface EventAssistantReply {
-  status: EventAssistantStatus;
-  message: string;
-  options?: string[];
-  proposal?: GeneratedEventContent;
-  thinkingSteps?: string[];
-  stage?: 'coach' | 'editor' | 'writer';
-  coachPrompts?: string[];
-  editorChecklist?: string[];
-  writerSummary?: {
-    headline?: string;
-    audience?: string;
-    logistics?: string;
-    riskNotes?: string;
-    nextSteps?: string;
+  state: EventAssistantState;
+  status?: EventAssistantState;
+  message?: string;
+  ui?: {
+    message?: string;
+    question?: {
+      key:
+        | 'title'
+        | 'audience'
+        | 'activityType'
+        | 'time'
+        | 'location'
+        | 'price'
+        | 'capacity'
+        | 'details';
+      text: string;
+    };
+    options?: Array<{ label: string; value: string; recommended?: boolean }>;
   };
+  thinkingSteps?: string[];
+  coachPrompt?: string;
+  editorChecklist?: string[];
+  writerSummary?:
+    | string
+    | {
+        headline?: string;
+        audience?: string;
+        logistics?: string;
+        riskNotes?: string;
+        nextSteps?: string;
+      };
+  questions?: string[];
+  options?: string[]; // compatibility: textual options
+  optionDetails?: EventAssistantOption[];
+  publicActivityDraft?: EventAssistantPublicDraft;
+  internalExecutionPlan?: EventAssistantExecutionPlan;
   confirmQuestions?: string[];
+  coachPrompts?: string[];
+  optionTexts?: string[];
   promptVersion: string;
   language: string;
   turnCount: number;
+  stage?: 'coach' | 'editor' | 'writer';
+  slots?: {
+    title?: string;
+    audience?: string;
+    activityType?: string;
+    time?: string;
+    location?: string;
+    price?: string;
+    capacity?: string;
+    details?: string;
+  };
+  confidence?: Record<
+    'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details',
+    number
+  >;
+  draftReady?: boolean;
+  applyEnabled?: boolean;
+  draftId?: string;
+  intent?: 'create' | 'explore' | 'unknown';
+  titleSuggestions?: string[];
+  miniPreview?: { bullets: string[]; note?: string };
+  choiceQuestion?: {
+    key: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details';
+    prompt: string;
+    options: Array<{ label: string; value: string; recommended?: boolean }>;
+  };
+  compareCandidates?: Array<{
+    id: string;
+    summary: string;
+    activityType?: string;
+    time?: string;
+    price?: string;
+    notes?: string;
+  }>;
+  inputMode?: 'describe' | 'fill' | 'compare';
+  nextQuestionKey?: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details' | null;
+  modeHint?: 'chat' | 'operate';
 }
 
 export interface EventAssistantProfileDefaults {

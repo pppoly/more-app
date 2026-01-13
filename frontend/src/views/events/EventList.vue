@@ -39,7 +39,7 @@
           </div>
           <div class="event-card__body">
             <p class="event-card__title">{{ titleFor(event) }}</p>
-            <p class="event-card__meta">{{ formatDate(event.startTime) }}</p>
+            <p class="event-card__meta">{{ formatDateRange(event.startTime, event.endTime) }}</p>
             <p class="event-card__location">{{ event.locationText }}</p>
             <div class="event-card__footer">
               <span class="status-pill" :class="statusBadge(event).class">{{ statusBadge(event).text }}</span>
@@ -108,12 +108,22 @@ const filteredEvents = computed(() => {
 
 const titleFor = (event: EventSummary) => getLocalizedText(event.title);
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
+const formatDate = (value?: string | null) => {
+  if (!value) return '--';
+  return new Date(value).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
-    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
   });
+};
+
+const formatDateRange = (start?: string | null, end?: string | null) => {
+  if (!start) return '--';
+  const startText = formatDate(start);
+  if (!end) return startText;
+  return `${startText} 〜 ${formatDate(end)}`;
+};
 
 const statusBadge = (event: EventSummary) => {
   const { state, label } = getEventStatus(event);
