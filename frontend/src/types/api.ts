@@ -645,6 +645,7 @@ export interface EventAssistantPublicDraft {
   price?: number | string | null;
   capacity?: number | string | null;
   signupNotes?: string;
+  registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
   expertComment?: string;
 }
 
@@ -671,14 +672,15 @@ export interface EventAssistantReply {
         | 'activityType'
         | 'time'
         | 'location'
-        | 'price'
-        | 'capacity'
-        | 'details'
-        | 'visibility';
-      text: string;
-    };
-    options?: Array<{ label: string; value: string; recommended?: boolean }>;
-    mode?: 'explain' | 'collecting' | 'decision';
+      | 'price'
+      | 'capacity'
+      | 'details'
+      | 'visibility'
+      | 'registrationForm';
+    text: string;
+  };
+  options?: Array<{ label: string; value: string; recommended?: boolean }>;
+  mode?: 'explain' | 'collecting' | 'decision';
   };
   questionMeta?: {
     key:
@@ -690,7 +692,8 @@ export interface EventAssistantReply {
       | 'price'
       | 'capacity'
       | 'details'
-      | 'visibility';
+      | 'visibility'
+      | 'registrationForm';
     exampleLines: string[];
   };
   thinkingSteps?: string[];
@@ -727,9 +730,19 @@ export interface EventAssistantReply {
     capacity?: string;
     details?: string;
     visibility?: string;
+    registrationForm?: string;
   };
   confidence?: Record<
-    'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details' | 'visibility',
+    | 'title'
+    | 'audience'
+    | 'activityType'
+    | 'time'
+    | 'location'
+    | 'price'
+    | 'capacity'
+    | 'details'
+    | 'visibility'
+    | 'registrationForm',
     number
   >;
   draftReady?: boolean;

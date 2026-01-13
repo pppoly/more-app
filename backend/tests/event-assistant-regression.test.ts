@@ -6,6 +6,7 @@ import { getEventAssistantOutputSchema, validateAssistantOutput } from '../src/a
 import {
   buildFallbackQuestionText,
   detectUnsupportedCurrencyInput,
+  extractTokyoStartTimeIso,
   isDelegateAnswer,
   isDelegateTitleAnswer,
   shouldEnterExplainMode,
@@ -76,6 +77,12 @@ test('delegate title answer is detected', () => {
   assert.equal(isDelegateTitleAnswer('秋のBBQ交流会'), false);
 });
 
+test('extractTokyoStartTimeIso parses explicit date+time', () => {
+  const iso = extractTokyoStartTimeIso('2026年2月12日 15:30 開始');
+  assert.ok(iso);
+  assert.ok(iso?.startsWith('2026-02-12T06:30:00.000Z'));
+});
+
 
 test('collecting/compare drop draft fields', () => {
   const collectingPolicy = getEventAssistantPromptConfig('collecting');
@@ -125,7 +132,7 @@ test('machine fields from LLM are ignored by phase guard', () => {
   const payload = {
     ui: { question: { key: 'title', text: 'x' } },
     nextQuestionKey: 'title',
-    choiceQuestion: { key: 'audience', prompt: 'x', options: [{ label: 'A', value: 'A' }] },
+    choiceQuestion: { key: 'details', prompt: 'x', options: [{ label: 'A', value: 'A' }] },
     compareCandidates: [{ id: 'A', summary: 'A' }],
     inputMode: 'compare',
     draftReady: true,

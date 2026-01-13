@@ -138,7 +138,6 @@
               <div
                 v-else-if="msg.type === 'proposal' && canShowProposalUi"
                 class="proposal-bubble"
-                @click="msg.payload?.raw && openPlanPreview(msg.payload.raw)"
               >
                 <div class="proposal-head">
                   <p class="proposal-title">{{ msg.payload?.title }}</p>
@@ -146,7 +145,10 @@
                 </div>
                 <div class="proposal-actions" v-if="msg.payload?.raw">
                   <button type="button" class="ghost-link" @click.stop="openPlanPreview(msg.payload?.raw)">
-                    全文を見る
+                    下書きを開く
+                  </button>
+                  <button type="button" class="ghost-link" @click.stop="applyProposalToForm(msg.payload?.raw)">
+                    フォームで編集
                   </button>
                 </div>
               </div>
@@ -325,10 +327,6 @@
             </article>
             <div class="plan-preview-grid">
               <article>
-                <p class="plan-preview-subtitle">対象</p>
-                <p class="plan-preview-text">{{ previewTargetAudience }}</p>
-              </article>
-              <article>
                 <p class="plan-preview-subtitle">定員</p>
                 <p class="plan-preview-text">{{ previewCapacity }}</p>
               </article>
@@ -456,7 +454,7 @@ interface ChatMessage {
   createdAt: string;
   serverCreatedAt?: string;
   includeInContext?: boolean;
-  action?: 'direct-form' | 'title-suggestion' | 'system-safe' | 'welcome';
+  action?: 'direct-form' | 'title-suggestion' | 'system-safe' | 'welcome' | 'draft-anchor';
   status?: 'pending' | 'sent' | 'failed';
   options?: string[];
   thinkingSteps?: string[];
@@ -484,6 +482,7 @@ interface AssistantHistoryEntry {
 
 const HISTORY_STORAGE_KEY = 'console-ai-assistant-history';
 const DRAFT_STORAGE_KEY = 'console-ai-assistant-drafts';
+const DRAFT_CACHE_PREFIX = `${CONSOLE_AI_EVENT_DRAFT_KEY}:log:`;
 const RESUME_WINDOW_HOURS = 24;
 
 const route = useRoute();
@@ -515,15 +514,7 @@ const qaState = reactive({
 const questions = [
   {
     key: 'topic',
-    prompt: 'どんなイベントを企画していますか？（例：親子BBQ、言語交換など）',
-  },
-  {
-    key: 'audience',
-    prompt: '主な対象や届けたい人は誰ですか？',
-  },
-  {
-    key: 'style',
-    prompt: '雰囲気やスタイルはどうしたいですか？（family-friendly / casual など）',
+    prompt: 'どんなイベントを企画していますか？（例：映画鑑賞会、交流会など）',
   },
   {
     key: 'details',
@@ -621,8 +612,6 @@ const hasProposalMessage = computed(() => chatMessages.value.some((msg) => msg.t
 const showEntryBar = computed(() => canShowProposalUi.value && !hasProposalMessage.value);
 const isCompareModeUi = computed(() => computeIsCompareMode(lastInputMode.value, compareCandidatesState.value));
 const selectionLabelMap: Record<string, string> = {
-  activityType: 'イベントの形式',
-  audience: '対象',
   details: '雰囲気/ルール',
   time: '日時',
   location: '場所',
@@ -630,6 +619,7 @@ const selectionLabelMap: Record<string, string> = {
   title: 'タイトル',
   capacity: '定員',
   visibility: '公開範囲',
+  registrationForm: '申込フォーム',
   interrupt: '次の操作',
 };
 const confirmedAnswers = reactive<Record<string, string>>({});
@@ -664,15 +654,12 @@ const storeConfirmedAnswer = (key: string, value: string) => {
 const buildSafeWriterSummary = () => {
   const summary: {
     headline?: string;
-    audience?: string;
     logistics?: string;
     riskNotes?: string;
     nextSteps?: string;
   } = {};
   const titleValue = confirmedAnswers.title || qaState.topic;
-  const audienceValue = confirmedAnswers.audience || qaState.audience;
   if (titleValue) summary.headline = titleValue;
-  if (audienceValue) summary.audience = audienceValue;
   const logisticsParts = [confirmedAnswers.time, confirmedAnswers.location].filter(Boolean);
   if (logisticsParts.length) summary.logistics = logisticsParts.join(' / ');
   return summary;
@@ -681,11 +668,9 @@ const buildSafeWriterSummary = () => {
 const buildFallbackOverview = (answers: Record<string, string> | null) => {
   const parts: string[] = [];
   const titleValue = (answers?.title || qaState.topic || '').trim();
-  const audienceValue = (answers?.audience || qaState.audience || '').trim();
   const timeValue = (answers?.time || '').trim();
   const locationValue = (answers?.location || '').trim();
   if (titleValue) parts.push(`イベント: ${titleValue}`);
-  if (audienceValue) parts.push(`対象: ${audienceValue}`);
   if (timeValue) parts.push(`日時: ${timeValue}`);
   if (locationValue) parts.push(`場所: ${locationValue}`);
   return parts.join(' / ');
@@ -698,6 +683,60 @@ const pickPhaseMessage = (phase: 'collecting' | 'decision' | 'compare' | 'ready'
   return pool[index];
 };
 
+const cacheDraftForLog = (logId: string | null | undefined, draft: GeneratedEventContent & { summary?: string }) => {
+  if (!logId || !draft) return;
+  try {
+    localStorage.setItem(`${DRAFT_CACHE_PREFIX}${logId}`, JSON.stringify(draft));
+  } catch {
+    // ignore storage failure
+  }
+};
+
+const getCachedDraftForLog = (logId: string | null | undefined) => {
+  if (!logId) return null;
+  try {
+    const raw = localStorage.getItem(`${DRAFT_CACHE_PREFIX}${logId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as GeneratedEventContent & { summary?: string };
+  } catch {
+    return null;
+  }
+};
+
+const upsertDraftAnchor = (draft: GeneratedEventContent & { summary?: string }, logId?: string | null) => {
+  if (!draft) return;
+  const existing = chatMessages.value.find(
+    (msg) => msg.type === 'proposal' && msg.action === 'draft-anchor',
+  );
+  const title = extractText(draft.title);
+  const desc = extractText(draft.description);
+  const payload = {
+    title,
+    description: desc,
+    raw: draft,
+    applyEnabled: true,
+  };
+  if (existing) {
+    existing.payload = payload;
+    return;
+  }
+  pushMessage(
+    'assistant',
+    'proposal',
+    '',
+    payload,
+    'draft-anchor',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { includeInContext: false },
+  );
+  cacheDraftForLog(logId ?? activeLogId.value, draft);
+};
+
 const QUESTION_HELPERS: Record<
   string,
   {
@@ -706,11 +745,6 @@ const QUESTION_HELPERS: Record<
     foot?: string;
   }
 > = {
-  activityType: {
-    title: '例',
-    lines: ['BBQ / 交流会 / 勉強会', '小さな集まりでもOK'],
-    foot: '未定でもOK。ざっくりで大丈夫です。',
-  },
   title: {
     title: '例',
     lines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'],
@@ -724,11 +758,6 @@ const QUESTION_HELPERS: Record<
   location: {
     title: '例',
     lines: ['渋谷駅周辺 / 近くの公園', 'オンラインでもOK'],
-    foot: '未定でもOK。ざっくりで大丈夫です。',
-  },
-  audience: {
-    title: '例',
-    lines: ['友人・同僚向け', '初心者歓迎 / 初参加OK'],
     foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   price: {
@@ -750,6 +779,11 @@ const QUESTION_HELPERS: Record<
     title: '例',
     lines: ['公開 / 招待制', 'コミュニティ内限定'],
     foot: '後から変更できます。',
+  },
+  registrationForm: {
+    title: '例',
+    lines: ['氏名 / 電話 / メール', '希望チケットプラン'],
+    foot: '必要な項目だけでOKです。',
   },
 };
 
@@ -942,9 +976,6 @@ const previewPlanDescription = computed(() => {
   return buildFallbackOverview(confirmedAnswers) || extractText(planPreview.value?.notes) || '未設定';
 });
 const previewExpertComment = computed(() => extractText(planPreview.value?.expertComment) || '');
-const previewTargetAudience = computed(
-  () => extractText(planPreview.value?.targetAudience) || confirmedAnswers.audience || qaState.audience || '未設定',
-);
 const previewCapacity = computed(() => confirmedAnswers.capacity || '未設定');
 const previewRegistrationMethod = computed(() => '未設定');
 const previewCancellationPolicy = computed(() => '未設定');
@@ -963,7 +994,6 @@ const previewPriceText = computed(() => confirmedAnswers.price || '未設定');
 const readyDraftSummary = computed(() => {
   const draft = lastReadyDraft.value;
   const titleValue = draft?.title?.trim() || confirmedAnswers.title || qaState.topic || '未設定';
-  const audienceValue = draft?.targetAudience?.trim() || confirmedAnswers.audience || qaState.audience || '未設定';
   const scheduleDate = draft?.schedule?.date?.trim() || '';
   const scheduleDuration = draft?.schedule?.duration?.trim() || '';
   const scheduleStart = draft?.schedule?.startTime;
@@ -988,7 +1018,6 @@ const readyDraftSummary = computed(() => {
     { label: 'タイトル', value: titleValue },
     { label: '日時', value: timeValue },
     { label: '場所', value: locationValue },
-    { label: '対象', value: audienceValue },
     { label: '料金', value: priceValue },
     { label: '定員', value: capacityValue },
   ];
@@ -1021,8 +1050,6 @@ const formatDateTime = (value: string) => {
 const assistantDraftSnapshot = computed<Partial<EventDraft>>(() => ({
   title: qaState.topic || '',
   description: qaState.details || qaState.topic,
-  targetAudience: qaState.audience,
-  vibe: qaState.style,
   locationText: qaState.details,
   ticketTypes: [],
   registrationFormSchema: [],
@@ -1360,7 +1387,6 @@ const toLocalizedContent = (text: string) => {
 const isDraftMvp = (draft?: EventAssistantReply['publicActivityDraft'] | null) => {
   if (!draft) return false;
   const hasTitle = Boolean(draft.title && String(draft.title).trim());
-  const hasAudience = Boolean(draft.targetAudience && String(draft.targetAudience).trim());
   const hasDescription = Boolean(
     (draft.detailedDescription && String(draft.detailedDescription).trim()) ||
       (draft.shortDescription && String(draft.shortDescription).trim()),
@@ -1369,9 +1395,7 @@ const isDraftMvp = (draft?: EventAssistantReply['publicActivityDraft'] | null) =
   const hasLocation = Boolean(draft.schedule?.location && String(draft.schedule.location).trim());
   const hasPrice =
     draft.price !== undefined && draft.price !== null && String(draft.price).trim().length > 0;
-  const hasCapacityField = Object.prototype.hasOwnProperty.call(draft, 'capacity');
-  const hasNotesField = Object.prototype.hasOwnProperty.call(draft, 'signupNotes');
-  return hasTitle && hasAudience && hasDescription && hasTime && hasLocation && hasPrice && hasCapacityField && hasNotesField;
+  return hasTitle && hasDescription && hasTime && hasLocation && hasPrice;
 };
 
 const buildProposalFromDraft = (
@@ -1382,7 +1406,7 @@ const buildProposalFromDraft = (
 ): (GeneratedEventContent & { summary: string }) => {
   const scheduleNoteParts: string[] = [];
   if (draft?.schedule?.duration) scheduleNoteParts.push(`所要時間: ${draft.schedule.duration}`);
-  const notesParts = [draft?.signupNotes, draft?.targetAudience, draft?.ageRange, scheduleNoteParts.join(' / ')]
+  const notesParts = [draft?.signupNotes, scheduleNoteParts.join(' / ')]
     .filter(Boolean)
     .map((item) => String(item));
   const notesText = notesParts.join('\n');
@@ -1391,7 +1415,7 @@ const buildProposalFromDraft = (
   const mergedDescription =
     draft?.detailedDescription ||
     draft?.shortDescription ||
-    [highlightsText, draft?.targetAudience].filter(Boolean).join(' | ') ||
+    [highlightsText].filter(Boolean).join(' | ') ||
     fallbackOverview ||
     (fallbackDescription || '');
   const priceValue = draft?.price;
@@ -1443,11 +1467,8 @@ const buildProposalFromDraft = (
             },
           ]
         : [],
-    requirements:
-      draft?.ageRange || draft?.targetAudience
-        ? [{ label: [draft?.ageRange, draft?.targetAudience].filter(Boolean).join(' / ') }]
-        : [],
-    registrationForm: [],
+    requirements: draft?.requirements ?? [],
+    registrationForm: draft?.registrationForm ?? [],
     visibility: 'public',
     summary,
   };
@@ -1711,6 +1732,15 @@ const requestAssistantReply = async (
       isCommitted.value &&
       !seenDraftIds.value.includes(result.draftId as string);
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
+    if (draftReadyForUi && result.publicActivityDraft) {
+      const draftAnchor = buildProposalFromDraft(
+        result.publicActivityDraft,
+        qaSummary,
+        qaState.details || qaState.topic || '',
+        confirmedAnswers,
+      );
+      upsertDraftAnchor(draftAnchor, activeLogId.value ?? result.draftId ?? null);
+    }
     const expertComment = result.publicActivityDraft?.expertComment?.trim() || '';
     if (draftReadyForUi && expertComment && expertComment !== lastExpertComment.value) {
       lastExpertComment.value = expertComment;
@@ -1738,31 +1768,12 @@ const requestAssistantReply = async (
       );
       aiResult.value = preparedProposal;
       if (preparedProposal) {
-        const title = extractText(preparedProposal.title);
-        const desc = extractText(preparedProposal.description);
-        const msgId = pushMessage(
-          'assistant',
-          'proposal',
-          '',
-          {
-            title,
-            description: desc,
-            raw: preparedProposal,
-            applyEnabled: Boolean(result.applyEnabled),
-          },
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          { includeInContext: false },
-        );
+        upsertDraftAnchor(preparedProposal, activeLogId.value ?? result.draftId ?? null);
         if (result.draftId) {
           seenDraftIds.value.push(result.draftId);
           lastShownDraftId.value = result.draftId;
           lastMilestoneDraftId.value = result.draftId;
-          lastMilestoneMessageId.value = msgId;
+          lastMilestoneMessageId.value = chatMessages.value.find((msg) => msg.action === 'draft-anchor')?.id ?? null;
         }
       }
     } else if (state !== 'collecting') {
@@ -2011,17 +2022,17 @@ const loadProfileDefaults = async () => {
 const applyDefaultsToState = () => {
   if (!qaState.baseLanguage) qaState.baseLanguage = profileDefaults.value.baseLanguage;
   if (!qaState.topic) qaState.topic = profileDefaults.value.topic;
-  if (!qaState.audience) qaState.audience = profileDefaults.value.audience;
-  if (!qaState.style) qaState.style = profileDefaults.value.style;
 };
 
 const buildQaSummary = (latestInput?: string) => {
-  return `AIの理解：対象は「${getProfileValue(qaState.audience, 'audience')}」、イベントは「${getProfileValue(
-    qaState.topic,
-    'topic',
-  )}」、雰囲気は「${getProfileValue(qaState.style, 'style')}」。補足情報: ${
-    latestInput || qaState.details || '特記事項なし'
-  }`;
+  const parts: string[] = [];
+  const title = confirmedAnswers.title || getProfileValue(qaState.topic, 'topic');
+  if (title) parts.push(`タイトル: ${title}`);
+  if (confirmedAnswers.time) parts.push(`日時: ${confirmedAnswers.time}`);
+  if (confirmedAnswers.location) parts.push(`場所: ${confirmedAnswers.location}`);
+  if (confirmedAnswers.price) parts.push(`参加費: ${confirmedAnswers.price}`);
+  const extra = latestInput || qaState.details || '特記事項なし';
+  return `AIの理解：${parts.join(' / ') || '概要未設定'}。補足情報: ${extra}`;
 };
 
 const buildConversationContext = () => {
@@ -2248,8 +2259,6 @@ const openMilestonePreview = () => {
 const computeQuestionIndexFromQaState = () => {
   let filled = 0;
   if (qaState.topic) filled += 1;
-  if (qaState.audience) filled += 1;
-  if (qaState.style) filled += 1;
   if (qaState.details) filled += 1;
   return Math.min(filled, questions.length);
 };
@@ -2440,6 +2449,27 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   compareCandidatesState.value = null;
   showCandidateDetails.value = false;
   coachPromptState.value = null;
+  if (!hasProposalMessage) {
+    const fromLog = (log.aiResult as any) ?? null;
+    const cached = getCachedDraftForLog(log.id);
+    const fallbackDraft =
+      fromLog && typeof fromLog === 'object'
+        ? (fromLog as GeneratedEventContent & { summary?: string })
+        : cached;
+    if (fallbackDraft) {
+      upsertDraftAnchor(fallbackDraft, log.id);
+    } else if (lastReadyDraft.value) {
+      upsertDraftAnchor(
+        buildProposalFromDraft(
+          lastReadyDraft.value,
+          buildQaSummary(''),
+          qaState.details || qaState.topic || '',
+          confirmedAnswers,
+        ),
+        log.id,
+      );
+    }
+  }
   scrollChatToBottom(true);
 };
 

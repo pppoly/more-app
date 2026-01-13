@@ -136,6 +136,7 @@ export interface AiAssistantPublicDraft {
   price?: number | string | null;
   capacity?: number | string | null;
   signupNotes?: string;
+  registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
   expertComment?: string;
   facts_from_user?: Record<string, any>;
   assumptions?: Array<{ field: string; assumedValue: string; reason: string }>;
@@ -164,10 +165,36 @@ export type Slots = {
   capacity?: string;
   details?: string;
   visibility?: string;
+  registrationForm?: string;
 };
 
 export const detectUnsupportedCurrencyInput = (text: string) =>
   /元/.test(text) && !/円/.test(text) && !/日元/.test(text);
+
+export const extractTokyoStartTimeIso = (text: string) => {
+  if (!text) return null;
+  const dateMatch =
+    text.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/) ||
+    text.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  const timeMatch = text.match(/(\d{1,2})[:：](\d{2})/);
+  if (!dateMatch || !timeMatch) return null;
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+  const utc = new Date(Date.UTC(year, month - 1, day, hour - 9, minute, 0, 0));
+  return utc.toISOString();
+};
 
 const normalizePriceAnswer = (text: string): string | null => {
   const trimmed = text.trim();
@@ -190,6 +217,22 @@ const normalizeVisibilityAnswer = (text: string): string | null => {
   if (/非公開|プライベート|private|秘密/i.test(trimmed)) return '非公開';
   if (/公開|public/i.test(trimmed)) return '公開';
   return null;
+};
+
+const normalizeRegistrationFormAnswer = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/未定|おまかせ|任せる|不要|なし|不要です|不要だ/i.test(trimmed)) return trimmed;
+  const fields: string[] = [];
+  if (/氏名|名前|お名前/.test(trimmed)) fields.push('氏名');
+  if (/電話|携帯/.test(trimmed)) fields.push('電話番号');
+  if (/メール|メールアドレス/.test(trimmed)) fields.push('メール');
+  if (/住所/.test(trimmed)) fields.push('住所');
+  if (/年齢/.test(trimmed)) fields.push('年齢');
+  if (/性別/.test(trimmed)) fields.push('性別');
+  if (/チケット|プラン/.test(trimmed)) fields.push('チケットプラン');
+  if (fields.length) return fields.join(', ');
+  return trimmed;
 };
 
 const normalizeLocationAnswer = (text: string): string | null => {
@@ -238,33 +281,30 @@ export const buildFallbackQuestionText = (key?: keyof Slots | null) => {
       return '開催日時を教えてください。';
     case 'location':
       return '開催場所を教えてください。オンラインでもOKです。';
-    case 'audience':
-      return '誰向けのイベントですか？';
     case 'title':
       return 'イベントのタイトルを教えてください。';
     case 'details':
       return 'イベントの内容や雰囲気を教えてください。';
-    case 'activityType':
-      return 'どんな形式のイベントですか？';
     case 'capacity':
       return '定員はどれくらいですか？';
     case 'visibility':
       return '公開範囲はどうしますか？（例：公開 / 招待制）';
+    case 'registrationForm':
+      return '申込フォームで集めたい項目を教えてください。（例：氏名・電話・メール）';
     default:
       return '続けて教えてください。';
   }
 };
 
-const QUESTION_META_BY_KEY: Record<keyof Slots, { exampleLines: string[] }> = {
-  activityType: { exampleLines: ['BBQ / 交流会 / 勉強会', '小さな集まりでもOK'] },
+const QUESTION_META_BY_KEY: Partial<Record<keyof Slots, { exampleLines: string[] }>> = {
   title: { exampleLines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'] },
   time: { exampleLines: ['9/20(金) 19:00-21:00', '平日夜 2時間 くらい'] },
   location: { exampleLines: ['渋谷駅周辺 / 近くの公園', 'オンラインでもOK'] },
-  audience: { exampleLines: ['友人・同僚向け', '初心者歓迎 / 初参加OK'] },
   price: { exampleLines: ['無料 / 1000円', '材料費のみでもOK'] },
   capacity: { exampleLines: ['10人くらい', '少人数でもOK'] },
   details: { exampleLines: ['持ち物 / 服装 / 集合場所', '注意事項やルール'] },
   visibility: { exampleLines: ['公開 / 招待制', 'コミュニティ内限定'] },
+  registrationForm: { exampleLines: ['氏名 / 電話 / メール', '希望チケットプラン'] },
 };
 
 const buildQuestionMeta = (key?: keyof Slots | null) => {
@@ -289,12 +329,91 @@ export const isHelpIntent = (text: string) => {
   if (!text) return false;
   return (
     /これは何の機能|何をしているの|どう使うの|どう使えばいい|何をすればいい|なんで選ぶ|どういう意味|説明して/i.test(text) ||
-    /这个功能是干嘛|你在做什么|怎么用的|怎么用|怎么用啊|现在要我做什么|我该做什么|为什么要我选|什么意思|解释一下/i.test(text)
+    /这个功能是干嘛|你在做什么|怎么用的|怎么用|怎么用啊|现在要我做什么|我该做什么|为什么要我选|什么意思|解释一下|有什么用|有啥用/i.test(text) ||
+    /何のため|何に使う|何に使えば|用途は|使い方は/i.test(text)
   );
 };
 
 const ROUTER_CONFIDENCE_THRESHOLD = 0.62;
 const HELP_ROUTES = new Set(['HELP_SYSTEM', 'HELP_WHAT_NEXT', 'HELP_HOWTO']);
+
+type InitialParseResult = {
+  intent: 'EVENT_INFO' | 'HELP_SYSTEM' | 'HELP_WHAT_NEXT' | 'HELP_HOWTO' | 'CANCEL' | 'OTHER';
+  slots: Partial<Record<keyof Slots, string>>;
+  missing: (keyof Slots)[];
+  confidence: Partial<Record<keyof Slots, number>>;
+  language: 'ja' | 'zh' | 'en';
+};
+
+const INITIAL_PARSE_SCHEMA = {
+  name: 'initial_event_parse',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      intent: {
+        type: 'string',
+        enum: ['EVENT_INFO', 'HELP_SYSTEM', 'HELP_WHAT_NEXT', 'HELP_HOWTO', 'CANCEL', 'OTHER'],
+      },
+      slots: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          time: { type: 'string' },
+          location: { type: 'string' },
+          price: { type: 'string' },
+          capacity: { type: 'string' },
+          details: { type: 'string' },
+          visibility: { type: 'string' },
+          registrationForm: { type: 'string' },
+        },
+      },
+      missing: {
+        type: 'array',
+        items: {
+          type: 'string',
+          enum: ['title', 'time', 'location', 'price', 'capacity', 'details', 'visibility', 'registrationForm'],
+        },
+      },
+      confidence: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'number' },
+          time: { type: 'number' },
+          location: { type: 'number' },
+          price: { type: 'number' },
+          capacity: { type: 'number' },
+          details: { type: 'number' },
+          visibility: { type: 'number' },
+          registrationForm: { type: 'number' },
+        },
+      },
+      language: { type: 'string', enum: ['ja', 'zh', 'en'] },
+    },
+    required: ['intent', 'slots', 'missing', 'confidence', 'language'],
+  },
+} as const;
+
+const buildInitialParsePrompt = (params: {
+  conversation: Array<{ role: 'user' | 'assistant'; content: string }>;
+  userText: string;
+}) => {
+  const systemPrompt =
+    'You are a router+extractor for the first user message of an event assistant. ' +
+    'Return strict JSON only. Do NOT generate any user-facing message. ' +
+    'Extract possible slots (title/time/location/price/details/visibility/capacity/registrationForm). ' +
+    'If the user asks what this is/how to use, set intent to HELP_SYSTEM or HELP_HOWTO. ' +
+    'If user provides event info, set intent to EVENT_INFO. ' +
+    'Return missing keys based on your extraction. ' +
+    'Use the user language for the language field.';
+  const userPayload = {
+    userText: params.userText,
+    conversation: params.conversation.slice(-4),
+  };
+  return { systemPrompt, userPayload, schema: INITIAL_PARSE_SCHEMA };
+};
 
 export const shouldEnterExplainMode = (route?: RouterResult['route'] | null, confidence?: number | null) => {
   if (!route || typeof confidence !== 'number') return false;
@@ -649,29 +768,15 @@ export class AiService {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
     }
 
-    const requiredSlots: (keyof Slots)[] = ['title', 'audience', 'activityType'];
-    const primaryOptionalSlots: (keyof Slots)[] = ['time', 'location', 'price'];
-    const secondaryOptionalSlots: (keyof Slots)[] = ['capacity', 'details', 'visibility'];
-    const activityTypeChoiceLabels: Record<string, string> = {
-      casual_meetup: 'カジュアル交流（自由に話す）',
-      icebreakers: '自己紹介＋小グループ交流',
-      game_night: 'ゲーム/ボードゲーム中心',
-      language_exchange: 'Language Exchange（言語交換）',
-    };
-    const audienceChoiceLabels: Record<string, string> = {
-      friends: '友人・同僚向け',
-      family: '親子OK',
-      multilingual: '外国人歓迎（多言語）',
-      beginners: '初参加/初心者歓迎',
-    };
+    const requiredSlots: (keyof Slots)[] = ['title', 'time', 'location', 'price', 'details'];
+    const primaryOptionalSlots: (keyof Slots)[] = ['capacity', 'registrationForm', 'visibility'];
+    const secondaryOptionalSlots: (keyof Slots)[] = [];
     const detailsChoiceLines: Record<string, string> = {
       lively: '雰囲気：わいわい（飲み会っぽい）',
       calm_chat: '雰囲気：落ち着いた会話中心',
       potluck_drinks: '雰囲気：持ち寄り（ドリンク/軽食）',
       no_alcohol: '雰囲気：ノンアル中心',
     };
-    const formatActivityType = (value?: string) => (value ? activityTypeChoiceLabels[value] ?? value : value);
-    const formatAudience = (value?: string) => (value ? audienceChoiceLabels[value] ?? value : value);
 
     const normalizeSlotsForHash = (slots: Slots) => {
       const norm: Slots = {};
@@ -684,14 +789,13 @@ export class AiService {
       };
       const normalizeLocation = (v?: string) => (v ? v.replace(/\s+/g, ' ').trim() : v);
       norm.title = normalizeText(slots.title);
-      norm.audience = normalizeText(slots.audience);
-      norm.activityType = normalizeText(slots.activityType);
       norm.time = normalizeText(slots.time);
       norm.location = normalizeLocation(slots.location);
       norm.price = normalizePrice(slots.price);
       norm.capacity = normalizeText(slots.capacity);
       norm.details = normalizeText(slots.details);
       norm.visibility = normalizeText(slots.visibility);
+      norm.registrationForm = normalizeText(slots.registrationForm);
       return norm;
     };
 
@@ -862,9 +966,15 @@ export class AiService {
     };
 
     const buildStructuredSchedule = (text: string) => {
+      const explicitStart = extractTokyoStartTimeIso(text);
       const timeRange = parseTimeRangeFromText(text);
       const dateOnly = parseDateFromText(text);
-      if (!timeRange || !dateOnly) return null;
+      if (!timeRange || !dateOnly) {
+        if (explicitStart) {
+          return { startTime: explicitStart, endTime: undefined };
+        }
+        return null;
+      }
       const start = new Date(dateOnly);
       start.setHours(timeRange.start.hour, timeRange.start.minute, 0, 0);
       let end: Date | null = null;
@@ -992,8 +1102,6 @@ export class AiService {
 
     const buildTitleSuggestions = (hint: Slots): string[] => {
       const base = [];
-      if (hint.activityType) base.push(formatActivityType(hint.activityType));
-      if (hint.audience) base.push(formatAudience(hint.audience));
       if (hint.location) base.push(hint.location);
       const seeds = base.filter(Boolean).slice(0, 2).join('・');
       const templates = [
@@ -1023,6 +1131,7 @@ export class AiService {
         capacity: 0,
         details: 0,
         visibility: 0,
+        registrationForm: 0,
       };
       const setSlot = (key: keyof Slots, value?: string, conf?: number) => {
         if (!value) return;
@@ -1046,12 +1155,7 @@ export class AiService {
       // seed from payload
       // topic from payload is low-confidence unless user explicitly provides it later
       if (basePayload.topic?.trim()) {
-        // Do not treat default topic as confirmed title or activity type.
-        setSlot('activityType', basePayload.topic.trim(), 0.5);
-      }
-      // Do not treat default audience as confirmed.
-      if (basePayload.audience?.trim()) {
-        setSlot('audience', basePayload.audience, 0.5);
+        // Keep topic for LLM prompt only; do not map to slots.
       }
       if (basePayload.titleSeed?.trim()) {
         setSlot('title', basePayload.titleSeed.trim(), 0.8);
@@ -1082,6 +1186,62 @@ export class AiService {
 
       for (const msg of userMessages) {
         const text = msg.content || '';
+        const listLines = text
+          .split(/\n+/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        let parsedDate: string | null = null;
+        let parsedTime: string | null = null;
+        for (const line of listLines) {
+          const match = line.match(
+            /^[-*•]?\s*\**(イベント名|日付|時間|場所|参加人数|参加条件|参加費|料金|申込フォーム|申込項目)\**\s*[:：]\s*(.+)$/,
+          );
+          if (!match) continue;
+          const label = match[1];
+          const value = match[2].trim();
+          if (!value) continue;
+          if (label === 'イベント名') {
+            if (!isDelegateTitleAnswer(value)) setSlot('title', value, 0.9);
+            continue;
+          }
+          if (label === '日付') {
+            parsedDate = value;
+            continue;
+          }
+          if (label === '時間') {
+            parsedTime = value;
+            continue;
+          }
+          if (label === '場所') {
+            setSlot('location', value, /オンライン|zoom|teams|meet|line/i.test(value) ? 0.9 : 0.85);
+            continue;
+          }
+          if (label === '参加人数') {
+            setSlot('capacity', value, 0.7);
+            continue;
+          }
+          if (label === '参加条件') {
+            appendDetailLine(value, 0.75);
+            continue;
+          }
+          if (label === '申込フォーム' || label === '申込項目') {
+            setSlot('registrationForm', value, 0.75);
+            continue;
+          }
+          if (label === '参加費' || label === '料金') {
+            const normalizedPrice = normalizePriceAnswer(value);
+            if (normalizedPrice) {
+              setSlot('price', normalizedPrice, 0.85);
+            } else {
+              setSlot('price', value, 0.7);
+            }
+            continue;
+          }
+        }
+        if (parsedDate || parsedTime) {
+          const combined = [parsedDate, parsedTime].filter(Boolean).join(' ');
+          if (combined) setSlot('time', combined, 0.85);
+        }
         const selectionMatch = text.match(/【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/);
         if (selectionMatch?.[1] && selectionMatch?.[2]) {
           const rawKey = selectionMatch[1] as keyof Slots;
@@ -1100,15 +1260,6 @@ export class AiService {
             }
           }
           if (Object.prototype.hasOwnProperty.call(confidence, rawKey)) {
-            if (rawKey === 'activityType' && activityTypeChoiceLabels[rawValue]) {
-              setSlot('activityType', rawValue, 1);
-              appendDetailLine(`形式: ${activityTypeChoiceLabels[rawValue]}`, 1);
-              continue;
-            }
-            if (rawKey === 'audience' && audienceChoiceLabels[rawValue]) {
-              setSlot('audience', rawValue, 1);
-              continue;
-            }
             if (rawKey === 'details' && detailsChoiceLines[rawValue]) {
               appendDetailLine(detailsChoiceLines[rawValue], 1);
               continue;
@@ -1198,9 +1349,21 @@ export class AiService {
         if (capMatch?.[1]) {
           setSlot('capacity', capMatch[1], 0.7);
         }
-        // activity type keywords
-        if (/バーベキュー|bbq|ワークショップ|ＷＳ|ws|セミナー|講座|トーク|交流|交流会|勉強会|体験|ピクニック|マルシェ/i.test(text)) {
-          setSlot('activityType', text, 0.75);
+        // registration form hints
+        if (/申込フォーム|申込項目|質問項目|フォーム項目/.test(text)) {
+          setSlot('registrationForm', text, 0.7);
+        } else {
+          const fields: string[] = [];
+          if (/氏名|名前|お名前/.test(text)) fields.push('氏名');
+          if (/電話|携帯/.test(text)) fields.push('電話番号');
+          if (/メール|メールアドレス/.test(text)) fields.push('メール');
+          if (/住所|郵便/.test(text)) fields.push('住所');
+          if (/年齢/.test(text)) fields.push('年齢');
+          if (/性別/.test(text)) fields.push('性別');
+          if (/チケット|プラン/.test(text)) fields.push('チケットプラン');
+          if (fields.length && (confidence.registrationForm ?? 0) < 0.7) {
+            setSlot('registrationForm', fields.join(', '), 0.7);
+          }
         }
         const hasCjk = /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
         const minTitleLength = hasCjk ? 2 : 4;
@@ -1210,14 +1373,6 @@ export class AiService {
           if (candidate.length >= minTitleLength && candidate.length <= 40) {
             setSlot('title', candidate, 0.85);
           }
-        }
-        // audience hints
-        if (/親子|子ども|子供|家族|家庭|ファミリー|ファミリー向け|ファミリーOK/i.test(text)) {
-          setSlot('audience', 'family', Math.max(confidence.audience, 0.75));
-        } else if (/同学|同學|同事|朋友|友人|友達|同僚|クラスメート/i.test(text)) {
-          setSlot('audience', 'friends', Math.max(confidence.audience, 0.75));
-        } else if (/学生|社会人|ママ|パパ|シニア|若者|初心者/i.test(text)) {
-          setSlot('audience', text, Math.max(confidence.audience, 0.7));
         }
         if (text.length > 80 && (confidence.details ?? 0) < 0.6) {
           setSlot('details', text, 0.65);
@@ -1232,15 +1387,9 @@ export class AiService {
       const lower = sourceText.toLowerCase();
       const hasBBQ =
         /bbq|バーベキュー/.test(lower) ||
-        /bbq|バーベキュー/i.test(slotValues.activityType ?? '') ||
         /bbq|バーベキュー/i.test(slotValues.title ?? '') ||
         /bbq|バーベキュー/i.test(slotValues.details ?? '');
       if (hasBBQ) {
-        assumptions.push({
-          field: 'activityType',
-          assumedValue: 'BBQパーティー（屋外）',
-          reason: 'BBQの一般的な形式',
-        });
         if ((slotConfidence.location ?? 0) < 0.6) {
           assumptions.push({
             field: 'location',
@@ -1248,13 +1397,6 @@ export class AiService {
             reason: 'BBQの一般的な開催場所',
           });
         }
-      }
-      if ((slotConfidence.audience ?? 0) < 0.6) {
-        assumptions.push({
-          field: 'audience',
-          assumedValue: '友人・同僚向け',
-          reason: '一般的な想定',
-        });
       }
       return assumptions;
     };
@@ -1266,25 +1408,15 @@ export class AiService {
     ): AiAssistantMiniPreview | null => {
       const hasTime = (slotConfidence.time ?? 0) >= 0.6 && slotValues.time;
       const hasPrice = (slotConfidence.price ?? 0) >= 0.6 && slotValues.price;
-      const hasTopic = (slotConfidence.activityType ?? 0) >= 0.6 || (slotConfidence.title ?? 0) >= 0.6;
+      const hasTopic = (slotConfidence.title ?? 0) >= 0.6;
       if (!hasTime || !hasPrice || !hasTopic) return null;
       const bullets: string[] = [];
       const assumptionMap = new Map(assumptions.map((a) => [a.field, a.assumedValue]));
-      if ((slotConfidence.activityType ?? 0) >= 0.6 && slotValues.activityType) {
-        bullets.push(`タイプ: ${formatActivityType(slotValues.activityType)}`);
-      } else if (assumptionMap.has('activityType')) {
-        bullets.push(`タイプ: ${assumptionMap.get('activityType')}（暫定）`);
-      }
       if (hasTime && slotValues.time) {
         bullets.push(`日時: ${slotValues.time}`);
       }
       if (hasPrice && slotValues.price) {
         bullets.push(`料金: ${slotValues.price}`);
-      }
-      if ((slotConfidence.audience ?? 0) >= 0.6 && slotValues.audience) {
-        bullets.push(`対象: ${formatAudience(slotValues.audience)}`);
-      } else if (assumptionMap.has('audience')) {
-        bullets.push(`対象: ${assumptionMap.get('audience')}（暫定）`);
       }
       if ((slotConfidence.location ?? 0) >= 0.6 && slotValues.location) {
         bullets.push(`場所: ${slotValues.location}`);
@@ -1295,11 +1427,11 @@ export class AiService {
       const missingOrder: Array<{ key: keyof Slots; label: string }> = [
         { key: 'title', label: 'タイトル' },
         { key: 'location', label: '場所' },
-        { key: 'audience', label: '対象' },
         { key: 'time', label: '日時' },
         { key: 'price', label: '料金' },
         { key: 'capacity', label: '定員' },
         { key: 'details', label: '詳細' },
+        { key: 'registrationForm', label: '申込フォーム' },
       ];
       missingOrder.forEach(({ key, label }) => {
         if ((slotConfidence[key] ?? 0) >= 0.6 && slotValues[key]) return;
@@ -1352,7 +1484,7 @@ export class AiService {
       lastAskedSlot: keyof Slots | null,
     ): AiAssistantChoiceQuestion | null => {
       if (!key) return null;
-      const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details', 'visibility'];
+      const subjectiveKeys: (keyof Slots)[] = ['details', 'visibility'];
       if (!subjectiveKeys.includes(key)) return null;
       const hasSlotValue = Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
       const ambiguous = isAmbiguousAnswer(lastUserMessage) || isOptionRequest(lastUserMessage);
@@ -1360,30 +1492,6 @@ export class AiService {
       const noNewInfo = askedSame && noNewInfoForKey(key, prevSlots, prevConfidence, slotValues, slotConfidence);
       const shouldOfferChoices = !hasSlotValue || ambiguous || noNewInfo;
       if (!shouldOfferChoices) return null;
-      if (key === 'activityType') {
-        return {
-          key: 'activityType',
-          prompt: 'どの形式に近いですか？（おすすめ：カジュアル交流）',
-          options: [
-            { label: '🍺 カジュアル交流（自由に話す）', value: 'casual_meetup', recommended: true },
-            { label: '🤝 自己紹介＋小グループ交流', value: 'icebreakers' },
-            { label: '🎲 ゲーム/ボードゲーム中心', value: 'game_night' },
-            { label: '🌐 Language Exchange（言語交換）', value: 'language_exchange' },
-          ],
-        };
-      }
-      if (key === 'audience') {
-        return {
-          key: 'audience',
-          prompt: '誰向けにしますか？（おすすめ：友人・同僚）',
-          options: [
-            { label: '👥 友人・同僚向け', value: 'friends', recommended: true },
-            { label: '👨‍👩‍👧‍👦 親子OK', value: 'family' },
-            { label: '🌍 外国人歓迎（多言語）', value: 'multilingual' },
-            { label: '🧑‍🎓 初参加/初心者歓迎', value: 'beginners' },
-          ],
-        };
-      }
       if (key === 'details') {
         const recommendedPotluck =
           /ドリンク持参|持参|持ち寄り/.test(lastUserMessage) ||
@@ -1429,10 +1537,9 @@ export class AiService {
         time: `${dateText} 10:00-12:00`,
         location: 'オンライン',
         price: '無料',
-        audience: 'friends',
-        activityType: 'casual_meetup',
         visibility: 'public',
         capacity: '10',
+        registrationForm: '氏名,メール',
         details: language.startsWith('zh') ? '細節稍後再調整' : '詳細は後で調整します',
       } as const;
     };
@@ -1443,8 +1550,10 @@ export class AiService {
       if (/参加費|料金|価格|いくら|予算/.test(message) || /(price|fee|cost|budget)/.test(lower))
         return 'price';
       if (/タイトル|題名/.test(message) || /(title|name)/.test(lower)) return 'title';
-      if (/対象|誰向け|参加者/.test(message) || /(audience|who)/.test(lower)) return 'audience';
-      if (/形式|タイプ|どんなイベント/.test(message) || /(type|format)/.test(lower)) return 'activityType';
+      if (/定員|人数/.test(message)) return 'capacity';
+      if (/内容|詳細|説明|雰囲気/.test(message) || /(details|description)/.test(lower)) return 'details';
+      if (/申込フォーム|申込項目|質問項目|フォーム項目/.test(message) || /(registration|form)/.test(lower))
+        return 'registrationForm';
       if (/公開|非公開|招待|招待制|限定|邀请/.test(message) || /(visibility|private|public|invite)/.test(lower))
         return 'visibility';
       return null;
@@ -1488,11 +1597,39 @@ export class AiService {
       if (hasLeak || text.length > 400) return '';
       return text;
     };
-
     const conversation = (payload.conversation ?? []).slice(-12);
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
+    const parseInitialUserMessage = async (): Promise<InitialParseResult | null> => {
+      try {
+        if (!this.client) return null;
+        const parseRequest = buildInitialParsePrompt({
+          conversation: conversation.map((msg) => ({
+            role: msg.role === 'assistant' ? 'assistant' : 'user',
+            content: msg.content ?? '',
+          })),
+          userText: latestUserMessage,
+        });
+        const completion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0,
+          response_format: {
+            type: 'json_schema',
+            json_schema: parseRequest.schema,
+          },
+          messages: [
+            { role: 'system', content: parseRequest.systemPrompt },
+            { role: 'user', content: JSON.stringify(parseRequest.userPayload) },
+          ],
+        });
+        const raw = this.extractMessageContent(completion);
+        return raw ? (JSON.parse(raw) as InitialParseResult) : null;
+      } catch (err) {
+        console.warn('[AiService] initial_parse_failed', err);
+        return null;
+      }
+    };
     const interruptSelectionMatch = latestUserMessage.match(/【選択】\s*interrupt\s*[:：]\s*([a-z_]+)/i);
     const interruptChoice = interruptSelectionMatch?.[1]?.toLowerCase() ?? null;
     const metaCommentRaw = !interruptChoice && isMetaComment(latestUserMessage);
@@ -1546,12 +1683,36 @@ export class AiService {
         console.warn('[AiService] router_llm_failed', err);
       }
     }
+    const shouldInitialParse =
+      turnCount <= 1 &&
+      !interruptChoice &&
+      !isSelectionAction &&
+      !confirmDraft &&
+      !resumeCollecting &&
+      payload.uiMode !== 'explain' &&
+      !metaCommentRaw &&
+      Boolean(latestUserMessage.trim());
+    let initialParse: InitialParseResult | null = null;
+    if (shouldInitialParse) {
+      initialParse = await parseInitialUserMessage();
+    }
+    if (initialParse) {
+      console.info('[AiService] initial_parse', {
+        intent: initialParse.intent,
+        slots: Object.keys(initialParse.slots ?? {}),
+        missing: initialParse.missing,
+      });
+    }
     const persistExplainMode = payload.uiMode === 'explain' && !resumeCollecting;
+    const parsedHelpIntent = initialParse ? HELP_ROUTES.has(initialParse.intent) : false;
     const helpIntent =
       !resumeCollecting &&
-      (explicitHelpIntent || shouldEnterExplainMode(routerResult?.route, routerResult?.confidence) || persistExplainMode);
+      (explicitHelpIntent ||
+        shouldEnterExplainMode(routerResult?.route, routerResult?.confidence) ||
+        parsedHelpIntent ||
+        persistExplainMode);
     const metaComment = metaCommentRaw && !helpIntent && payload.uiMode !== 'explain';
-    const routedLanguage = routerResult?.language ?? detectedLanguage;
+    const routedLanguage = initialParse?.language ?? routerResult?.language ?? detectedLanguage;
     const lastAssistantMessage =
       [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
     const isReviseSelectStep = /どこを直したい|どこを修正/i.test(lastAssistantMessage || '');
@@ -1575,6 +1736,41 @@ export class AiService {
     const prevExtracted = extractSlots(prevConversation, payload);
     const prevSlots = prevExtracted.slots;
     const prevConfidence = prevExtracted.confidence;
+    const applyInitialParse = (parsed: InitialParseResult | null) => {
+      if (!parsed) return;
+      const parsedSlots = parsed.slots ?? {};
+      (Object.keys(parsedSlots) as (keyof Slots)[]).forEach((key) => {
+        const value = parsedSlots[key];
+        if (!value) return;
+        if (key === 'title') {
+          const trimmed = value.trim();
+          if (!trimmed || isDelegateTitleAnswer(trimmed)) return;
+          if (trimmed === latestUserMessage.trim()) return;
+        }
+        const conf = typeof parsed.confidence?.[key] === 'number' ? parsed.confidence?.[key] : 0.7;
+        if ((confidence[key] ?? 0) <= conf) {
+          slots[key] = value.trim();
+          confidence[key] = conf;
+        }
+      });
+      if (turnCount <= 1 && slots.details === latestUserMessage.trim() && !parsed.slots?.details) {
+        delete slots.details;
+        confidence.details = 0;
+      }
+      if (turnCount <= 1 && slots.title === latestUserMessage.trim() && !parsed.slots?.title) {
+        delete slots.title;
+        confidence.title = 0;
+      }
+    };
+    applyInitialParse(initialParse);
+    const initialMissingOverride =
+      turnCount <= 1 && initialParse?.missing?.length
+        ? initialParse.missing.filter((key) =>
+            ['title', 'time', 'location', 'price', 'capacity', 'details', 'visibility', 'registrationForm'].includes(
+              key,
+            ),
+          )
+        : null;
     const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
     const isInvalidTitleValue = (value?: string | null) => {
       if (!value) return true;
@@ -1588,11 +1784,10 @@ export class AiService {
       if (/日時|日程|時間/i.test(text)) return 'time';
       if (/場所|会場|ロケーション/i.test(text)) return 'location';
       if (/参加費|料金|価格|予算/i.test(text)) return 'price';
-      if (/対象|誰向け|オーディエンス/i.test(text)) return 'audience';
       if (/説明|内容|詳細|紹介/i.test(text)) return 'details';
       if (/公開|非公開|招待|限定/i.test(text)) return 'visibility';
       if (/定員|人数/i.test(text)) return 'capacity';
-      if (/形式|タイプ|カテゴリ/i.test(text)) return 'activityType';
+      if (/申込フォーム|申込項目|フォーム項目|質問項目/i.test(text)) return 'registrationForm';
       return null;
     };
 
@@ -1694,15 +1889,12 @@ export class AiService {
       const missing: (keyof Slots)[] = [];
       const timeSourceText = [source.time, latestUserMessage].filter(Boolean).join(' ');
       const structuredTime = buildStructuredSchedule(timeSourceText);
-      const hasTimeRange = Boolean(structuredTime?.startTime && structuredTime?.endTime);
+      const hasTimeRange = Boolean(structuredTime?.startTime);
       const hasTitle =
-        (source.title && (conf.title ?? 0) >= 0.6 && !isInvalidTitleValue(source.title)) ||
-        hit('activityType') ||
-        hit('details');
+        (source.title && (conf.title ?? 0) >= 0.6 && !isInvalidTitleValue(source.title)) || hit('details');
       if (!hasTitle) missing.push('title');
       if (!hasTimeRange) missing.push('time');
       if (!hit('location')) missing.push('location');
-      if (!hit('audience')) missing.push('audience');
       if (!hit('details')) missing.push('details');
       const hasPrice = hit('price') || isFreeText(source.price) || isFreeText(source.details);
       if (!hasPrice) missing.push('price');
@@ -1724,11 +1916,11 @@ export class AiService {
         const text = (msg.content || '').toLowerCase();
         if (/日時|いつ|日程/.test(text)) askedSet.add('time');
         if (/場所|どこ|会場|オンライン/.test(text)) askedSet.add('location');
-        if (/対象|誰向け|オーディエンス/.test(text)) askedSet.add('audience');
         if (/参加費|料金|有料|無料|価格|予算/.test(text)) askedSet.add('price');
         if (/公開|非公開|招待|招待制|限定|邀请/.test(text)) askedSet.add('visibility');
         if (/定員|人数/.test(text)) askedSet.add('capacity');
-        if (/形式|どんなイベント|タイプ/.test(text)) askedSet.add('activityType');
+        if (/内容|詳細|説明|雰囲気/.test(text)) askedSet.add('details');
+        if (/申込フォーム|申込項目|質問項目|フォーム項目/.test(text)) askedSet.add('registrationForm');
       });
     const lastUserAnswer = latestUserMessage.trim();
     const delegateDefaults = buildDelegateDefaults(routedLanguage);
@@ -1750,7 +1942,6 @@ export class AiService {
               title: undefined,
               shortDescription: '',
               detailedDescription: '',
-              targetAudience: slots.audience || undefined,
               schedule:
                 slots.time || slots.location
                   ? {
@@ -1794,14 +1985,6 @@ export class AiService {
             slots.location = delegateDefaults.location;
             confidence.location = Math.max(confidence.location ?? 0, 0.65);
             delegateApplied = true;
-          } else if (lastAskedSlot === 'audience') {
-            slots.audience = delegateDefaults.audience;
-            confidence.audience = Math.max(confidence.audience ?? 0, 0.65);
-            delegateApplied = true;
-          } else if (lastAskedSlot === 'activityType') {
-            slots.activityType = delegateDefaults.activityType;
-            confidence.activityType = Math.max(confidence.activityType ?? 0, 0.65);
-            delegateApplied = true;
           } else if (lastAskedSlot === 'visibility') {
             slots.visibility = delegateDefaults.visibility;
             confidence.visibility = Math.max(confidence.visibility ?? 0, 0.65);
@@ -1814,12 +1997,22 @@ export class AiService {
             slots.details = delegateDefaults.details;
             confidence.details = Math.max(confidence.details ?? 0, 0.6);
             delegateApplied = true;
+          } else if (lastAskedSlot === 'registrationForm') {
+            slots.registrationForm = delegateDefaults.registrationForm;
+            confidence.registrationForm = Math.max(confidence.registrationForm ?? 0, 0.6);
+            delegateApplied = true;
           }
         } else if (lastAskedSlot === 'price') {
           const normalized = normalizePriceAnswer(lastUserAnswer);
           if (normalized) {
             slots.price = normalized;
             confidence.price = Math.max(confidence.price ?? 0, 0.85);
+          }
+        } else if (lastAskedSlot === 'registrationForm') {
+          const normalized = normalizeRegistrationFormAnswer(lastUserAnswer);
+          if (normalized) {
+            slots.registrationForm = normalized;
+            confidence.registrationForm = Math.max(confidence.registrationForm ?? 0, 0.75);
           }
         } else if (lastAskedSlot === 'visibility') {
           const normalized = normalizeVisibilityAnswer(lastUserAnswer);
@@ -1865,15 +2058,14 @@ export class AiService {
 
     const pickNextQuestion = (missing: (keyof Slots)[]) => {
       const priority: (keyof Slots)[] = [
-        'activityType',
         'time',
         'location',
         'title',
-        'audience',
         'price',
+        'details',
         'visibility',
         'capacity',
-        'details',
+        'registrationForm',
       ];
       if (lastAskedSlot && missing.includes(lastAskedSlot)) return lastAskedSlot;
       for (const key of priority) {
@@ -1890,6 +2082,9 @@ export class AiService {
     const missingMvpKeys = baseDraftReady ? getMissingMvpKeys(slots, confidence) : [];
     let draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
     let missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
+    if (initialMissingOverride && initialMissingOverride.length) {
+      missingAll = initialMissingOverride;
+    }
     const forcedNextQuestionKey = continueEdit ? 'details' : hasUnsupportedCurrency ? 'price' : null;
     let nextQuestionKeyCandidate =
       forcedNextQuestionKey ?? (draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]));
@@ -1901,6 +2096,18 @@ export class AiService {
               detectAskedSlot(msg.content || '') === nextQuestionKeyCandidate,
           ).length
         : 0;
+    if (
+      askCount >= 2 &&
+      nextQuestionKeyCandidate &&
+      lastAskedSlot &&
+      nextQuestionKeyCandidate === lastAskedSlot
+    ) {
+      const remaining = missingAll.filter((key) => key !== lastAskedSlot) as (keyof Slots)[];
+      const fallback = remaining.length ? pickNextQuestion(remaining) : null;
+      if (fallback) {
+        nextQuestionKeyCandidate = fallback;
+      }
+    }
     const loopTriggered = Boolean(nextQuestionKeyCandidate && askCount >= 2);
     if (loopTriggered && nextQuestionKeyCandidate) {
       try {
@@ -1945,14 +2152,14 @@ export class AiService {
                   return '日時';
                 case 'location':
                   return '場所';
-                case 'audience':
-                  return '対象';
                 case 'details':
                   return '内容';
                 case 'title':
                   return 'タイトル';
                 case 'visibility':
                   return '公開範囲';
+                case 'registrationForm':
+                  return '申込フォーム';
                 default:
                   return null;
               }
@@ -2082,12 +2289,12 @@ export class AiService {
               return '日時';
             case 'location':
               return '場所';
-            case 'audience':
-              return '対象';
             case 'details':
               return '内容';
             case 'title':
               return 'タイトル';
+            case 'registrationForm':
+              return '申込フォーム';
             default:
               return null;
           }
@@ -2190,14 +2397,14 @@ export class AiService {
                   return '日時';
                 case 'location':
                   return '場所';
-                case 'audience':
-                  return '対象';
                 case 'details':
                   return '内容';
                 case 'title':
                   return 'タイトル';
                 case 'visibility':
                   return '公開範囲';
+                case 'registrationForm':
+                  return '申込フォーム';
                 default:
                   return null;
               }
@@ -2502,7 +2709,7 @@ export class AiService {
         ? `タイトルは「${autoGeneratedTitle}」にしました。あとで変更できます。`
         : '';
       const forcedQuestionText = continueEdit
-        ? 'どこを直したいですか？（日時/場所/参加費/説明/対象など）'
+        ? 'どこを直したいですか？（日時/場所/参加費/説明/定員/申込フォームなど）'
         : '';
       if (cleanUiQuestionText) {
         const askedSlot = detectAskedSlot(cleanUiQuestionText);
@@ -2598,6 +2805,15 @@ export class AiService {
           parsed.publicActivityDraft.schedule.endTime = sanitize(parsed.publicActivityDraft.schedule.endTime);
         }
         parsed.publicActivityDraft.signupNotes = sanitize(parsed.publicActivityDraft.signupNotes);
+        if (Array.isArray(parsed.publicActivityDraft.registrationForm)) {
+          parsed.publicActivityDraft.registrationForm = parsed.publicActivityDraft.registrationForm
+            .map((field) => ({
+              label: sanitize(field.label),
+              type: sanitize(field.type),
+              required: Boolean(field.required),
+            }))
+            .filter((field) => field.label && field.type);
+        }
         parsed.publicActivityDraft.expertComment = sanitize(parsed.publicActivityDraft.expertComment);
       }
       if (parsed.internalExecutionPlan) {
@@ -2645,9 +2861,6 @@ export class AiService {
       const draftBaseSlots = Object.keys(highConfSlots).length ? highConfSlots : slots;
       const buildExpertCommentFromSlots = (source: Slots): string => {
         const notes: string[] = [];
-        if (source.audience) {
-          notes.push(`対象が「${source.audience}」なので、参加者がイメージしやすいです。`);
-        }
         if (source.time && source.location) {
           notes.push('日時と場所が揃っているので、告知までがスムーズです。');
         } else if (!source.time || !source.location) {
@@ -2671,19 +2884,41 @@ export class AiService {
                 endTime: structuredSchedule?.endTime,
               }
             : undefined;
+        const parseRegistrationForm = (text?: string): Array<{ label: string; type: string; required?: boolean }> => {
+          if (!text) return [];
+          if (/不要|なし|未定/.test(text)) return [];
+          const parts = text
+            .split(/[,、/\\n]+/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+          const normalizeLabel = (raw: string) => raw.replace(/^\d+\.\s*/, '').trim();
+          const fields: Array<{ label: string; type: string; required?: boolean }> = [];
+          parts.forEach((raw) => {
+            const label = normalizeLabel(raw);
+            if (!label) return;
+            let type = 'text';
+            if (/メール|メールアドレス/i.test(label)) type = 'email';
+            else if (/電話|携帯/i.test(label)) type = 'phone';
+            else if (/日付|日時/i.test(label)) type = 'date';
+            else if (/チケット|プラン|コース/i.test(label)) type = 'select';
+            fields.push({ label, type });
+          });
+          return fields;
+        };
         const description = '';
         const price = source.price || (isFreeText(source.details) ? '無料' : undefined);
         return {
           title: title || undefined,
           shortDescription: description || undefined,
           detailedDescription: description || undefined,
-          targetAudience: source.audience || undefined,
+          targetAudience: undefined,
           ageRange: undefined,
           highlights: [],
           schedule,
           price,
           capacity: source.capacity || undefined,
           signupNotes: source.details || undefined,
+          registrationForm: parseRegistrationForm(source.registrationForm),
           expertComment: buildExpertCommentFromSlots(source),
         };
       };
@@ -2699,6 +2934,7 @@ export class AiService {
         if (!('price' in next)) next.price = fallback.price ?? undefined;
         if (!('capacity' in next)) next.capacity = fallback.capacity ?? undefined;
         if (!('signupNotes' in next)) next.signupNotes = fallback.signupNotes ?? undefined;
+        if (!('registrationForm' in next)) next.registrationForm = fallback.registrationForm ?? [];
         if (!('schedule' in next) || !next.schedule) {
           next.schedule = fallback.schedule ?? { date: undefined, startTime: undefined, endTime: undefined, location: undefined };
         } else {
@@ -2795,13 +3031,13 @@ export class AiService {
         stage: 'coach',
         language: payload.baseLanguage || 'ja',
         thinkingSteps: ['AI接続が不安定です', '必要な情報をもう1つ教えてください'],
-        coachPrompt: 'タイトル/対象/日時/場所/料金のいずれか1つだけ教えてください。',
+        coachPrompt: 'タイトル/日時/場所/参加費/内容のいずれか1つだけ教えてください。',
         editorChecklist: [],
         writerSummary: '',
         ui: {
           question: {
             key: 'title',
-            text: 'タイトル/対象/日時/場所/料金のいずれか1つだけ教えてください。',
+            text: 'タイトル/日時/場所/参加費/内容のいずれか1つだけ教えてください。',
           },
         },
         optionTexts: [],
@@ -2818,6 +3054,7 @@ export class AiService {
           capacity: 0,
           details: 0,
           visibility: 0,
+          registrationForm: 0,
         },
         draftReady: false,
         applyEnabled: false,

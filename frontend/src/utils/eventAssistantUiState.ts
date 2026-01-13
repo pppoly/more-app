@@ -49,16 +49,14 @@ export const buildAckText = (key: string | null | undefined, answer: string) => 
       return normalized ? `了解しました。日時は${normalized}ですね。` : '了解しました。日時を記録しました。';
     case 'location':
       return normalized ? `了解しました。場所は${normalized}ですね。` : '了解しました。場所を記録しました。';
-    case 'audience':
-      return normalized ? `了解しました。対象は${normalized}ですね。` : '了解しました。対象を記録しました。';
     case 'title':
       return normalized ? `了解しました。タイトルは「${normalized}」ですね。` : '了解しました。タイトルを記録しました。';
     case 'details':
       return normalized ? `了解しました。内容は「${normalized}」ですね。` : '了解しました。内容を記録しました。';
     case 'capacity':
       return normalized ? `了解しました。定員は${normalized}ですね。` : '了解しました。定員を記録しました。';
-    case 'activityType':
-      return normalized ? `了解しました。形式は${normalized}ですね。` : '了解しました。形式を記録しました。';
+    case 'registrationForm':
+      return normalized ? `了解しました。申込項目は「${normalized}」ですね。` : '了解しました。申込フォームを記録しました。';
     default:
       return '了解しました。';
   }

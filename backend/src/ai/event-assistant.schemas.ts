@@ -56,12 +56,24 @@ const publicDraftSchema: JsonSchema = {
     price: { type: 'string' },
     capacity: { type: 'string' },
     signupNotes: { type: 'string' },
+    registrationForm: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          label: { type: 'string' },
+          type: { type: 'string' },
+          required: { type: 'boolean' },
+        },
+        required: ['label', 'type'],
+      },
+    },
   },
   required: [
     'title',
     'shortDescription',
     'detailedDescription',
-    'targetAudience',
     'schedule',
     'price',
     'capacity',
@@ -132,14 +144,13 @@ const slotUpdateSchema: JsonSchema = baseObject(
 const slotUpdatesSchema: JsonSchema = baseObject(
   {
     title: slotUpdateSchema,
-    audience: slotUpdateSchema,
-    activityType: slotUpdateSchema,
     time: slotUpdateSchema,
     location: slotUpdateSchema,
     price: slotUpdateSchema,
     capacity: slotUpdateSchema,
     details: slotUpdateSchema,
     visibility: slotUpdateSchema,
+    registrationForm: slotUpdateSchema,
   },
   [],
 );

@@ -45,8 +45,8 @@ test('commit checkpoint appears only when draftReady and not committed', () => {
 
 test('choiceQuestion prefers machine options over ui.options', () => {
   const machineChoice = {
-    key: 'audience',
-    prompt: '誰向けにしますか？',
+    key: 'details',
+    prompt: '内容はどうしますか？',
     options: [
       { label: 'A', value: 'A' },
       { label: 'B', value: 'B' },
