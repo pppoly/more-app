@@ -10,6 +10,8 @@ import {
 } from './prompt.config';
 import { determinePromptPhase, enforcePhaseOutput } from './assistant-phase.guard';
 import { getEventAssistantOutputSchema, validateAssistantOutput } from './event-assistant.schemas';
+import { buildSlotNormalizerPrompt, SlotNormalizerResult } from './slot-normalizer';
+import { RouterResult, buildRouterPrompt } from './router-llm';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromptStoreService } from './prompt-store.service';
 
@@ -19,6 +21,7 @@ export interface GenerateEventContentDto {
   audience: string;
   style: string;
   details: string;
+  titleSeed?: string;
 }
 
 export interface AiLocalizedField {
@@ -62,7 +65,8 @@ export interface AssistantConversationMessage {
 
 export interface GenerateAssistantReplyDto extends GenerateEventContentDto {
   conversation?: AssistantConversationMessage[];
-  action?: 'confirm_draft' | 'continue_edit';
+  action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
+  uiMode?: 'explain' | 'collecting';
 }
 
 export type AssistantReplyState = 'collecting' | 'options' | 'ready';
@@ -98,6 +102,12 @@ export interface AiAssistantUiPayload {
   message?: string;
   question?: AiAssistantUiQuestion;
   options?: AiAssistantUiOption[];
+  mode?: 'explain' | 'collecting' | 'decision';
+}
+
+export interface AiAssistantQuestionMeta {
+  key: keyof Slots;
+  exampleLines: string[];
 }
 
 export interface AiAssistantChoiceQuestion {
@@ -153,9 +163,162 @@ export type Slots = {
   price?: string;
   capacity?: string;
   details?: string;
+  visibility?: string;
+};
+
+export const detectUnsupportedCurrencyInput = (text: string) =>
+  /元/.test(text) && !/円/.test(text) && !/日元/.test(text);
+
+const normalizePriceAnswer = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/無料|フリー|タダ|free|0円|0元/i.test(trimmed)) return '無料';
+  const currencyMatch = trimmed.match(
+    /(\d{1,5})\s*(円|日元|元)(?:\/人|\/名|\/per|\/person|\s*一人)?/,
+  );
+  if (currencyMatch?.[1]) return `${currencyMatch[1]}円`;
+  const numberOnly = trimmed.match(/^\d{1,5}$/);
+  if (numberOnly?.[0]) return `${numberOnly[0]}円`;
+  return null;
+};
+
+const normalizeVisibilityAnswer = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/招待|招待制|邀请/.test(trimmed)) return '招待制';
+  if (/限定|コミュニティ内|メンバー限定/.test(trimmed)) return 'コミュニティ内限定';
+  if (/非公開|プライベート|private|秘密/i.test(trimmed)) return '非公開';
+  if (/公開|public/i.test(trimmed)) return '公開';
+  return null;
+};
+
+const normalizeLocationAnswer = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/オンライン|zoom|teams|google meet|line/i.test(trimmed)) return 'オンライン';
+  return trimmed;
+};
+
+const normalizeTimeAnswer = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const timeRange = trimmed.match(/\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2}/);
+  if (timeRange?.[0]) return timeRange[0];
+  const cnRange = trimmed.match(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分)?.*(\d{1,2})\s*点/);
+  if (cnRange?.[0]) return cnRange[0];
+  return trimmed;
+};
+
+const isSafeTitleSuggestion = (title: string, rawInput: string) => {
+  const trimmed = title.trim();
+  if (trimmed.length < 4 || trimmed.length > 40) return false;
+  if (trimmed === rawInput.trim()) return false;
+  const lower = trimmed.toLowerCase();
+  const hasTimeToken =
+    /\d{1,2}[:：]\d{2}/.test(trimmed) ||
+    /\d{1,2}月\d{1,2}日/.test(trimmed) ||
+    /来週|今週|次の週|曜日|午前|午後|夜/.test(trimmed);
+  if (hasTimeToken) return false;
+  const overlap = rawInput && rawInput.includes(trimmed);
+  if (overlap && rawInput.length / trimmed.length > 1.5) return false;
+  return true;
+};
+
+const isValidIsoDateTime = (value?: string | null) => {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return !Number.isNaN(time);
+};
+
+export const buildFallbackQuestionText = (key?: keyof Slots | null) => {
+  switch (key) {
+    case 'price':
+      return '参加費はいくらですか？（例：1000円 / 無料）';
+    case 'time':
+      return '開催日時を教えてください。';
+    case 'location':
+      return '開催場所を教えてください。オンラインでもOKです。';
+    case 'audience':
+      return '誰向けのイベントですか？';
+    case 'title':
+      return 'イベントのタイトルを教えてください。';
+    case 'details':
+      return 'イベントの内容や雰囲気を教えてください。';
+    case 'activityType':
+      return 'どんな形式のイベントですか？';
+    case 'capacity':
+      return '定員はどれくらいですか？';
+    case 'visibility':
+      return '公開範囲はどうしますか？（例：公開 / 招待制）';
+    default:
+      return '続けて教えてください。';
+  }
+};
+
+const QUESTION_META_BY_KEY: Record<keyof Slots, { exampleLines: string[] }> = {
+  activityType: { exampleLines: ['BBQ / 交流会 / 勉強会', '小さな集まりでもOK'] },
+  title: { exampleLines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'] },
+  time: { exampleLines: ['9/20(金) 19:00-21:00', '平日夜 2時間 くらい'] },
+  location: { exampleLines: ['渋谷駅周辺 / 近くの公園', 'オンラインでもOK'] },
+  audience: { exampleLines: ['友人・同僚向け', '初心者歓迎 / 初参加OK'] },
+  price: { exampleLines: ['無料 / 1000円', '材料費のみでもOK'] },
+  capacity: { exampleLines: ['10人くらい', '少人数でもOK'] },
+  details: { exampleLines: ['持ち物 / 服装 / 集合場所', '注意事項やルール'] },
+  visibility: { exampleLines: ['公開 / 招待制', 'コミュニティ内限定'] },
+};
+
+const buildQuestionMeta = (key?: keyof Slots | null) => {
+  if (!key) return undefined;
+  const meta = QUESTION_META_BY_KEY[key];
+  if (!meta) return undefined;
+  return { key, exampleLines: meta.exampleLines };
 };
 
 export type Confidence = Record<keyof Slots, number>;
+
+export const isMetaComment = (text: string) => {
+  if (!text) return false;
+  return (
+    /ずっと|永遠|ループ|また同じ|何度も|なんで|なぜ|おかしい|どうなって|進まない|質問ばかり|やめて|止めて|やめたい|おかしくない|納得できない/i.test(
+      text,
+    ) || /为什么|为何|一直|循环|卡住|到不了|不想|别再问|停止/i.test(text)
+  );
+};
+
+export const isHelpIntent = (text: string) => {
+  if (!text) return false;
+  return (
+    /これは何の機能|何をしているの|どう使うの|どう使えばいい|何をすればいい|なんで選ぶ|どういう意味|説明して/i.test(text) ||
+    /这个功能是干嘛|你在做什么|怎么用的|怎么用|怎么用啊|现在要我做什么|我该做什么|为什么要我选|什么意思|解释一下/i.test(text)
+  );
+};
+
+const ROUTER_CONFIDENCE_THRESHOLD = 0.62;
+const HELP_ROUTES = new Set(['HELP_SYSTEM', 'HELP_WHAT_NEXT', 'HELP_HOWTO']);
+
+export const shouldEnterExplainMode = (route?: RouterResult['route'] | null, confidence?: number | null) => {
+  if (!route || typeof confidence !== 'number') return false;
+  return HELP_ROUTES.has(route) && confidence >= ROUTER_CONFIDENCE_THRESHOLD;
+};
+
+export const isDelegateAnswer = (text: string) => {
+  if (!text) return false;
+  return (
+    /任せる|おまかせ|お任せ|適当に決めて|決めておいて|好きに決めて|決めていい|自由に決めて/i.test(text) ||
+    /你决定|帮我决定|随便|看着办|你来定|你来决定/i.test(text)
+  );
+};
+
+export const isDelegateTitleAnswer = (text: string) => {
+  if (!text) return false;
+  return (
+    isDelegateAnswer(text) ||
+    /タイトル|題名|名前|ネーミング/.test(text) &&
+      /考えて|考えといて|考えておいて|決めて|作って|おまかせ|任せる/.test(text) ||
+    /标题|標題|题名|名稱|名字/.test(text) && /(想|帮我想|起|给我想|决定)/.test(text) ||
+    /帮我想一个|帮我取个|你帮我想|你来取/i.test(text)
+  );
+};
 
 interface AiAssistantReplyPayload {
   state: AssistantReplyState;
@@ -174,6 +337,9 @@ interface AiAssistantReplyPayload {
   titleSuggestions?: string[];
   inputMode?: AssistantInputMode;
   nextQuestionKey?: keyof Slots | null;
+  questionMeta?: AiAssistantQuestionMeta;
+  uiMode?: 'explain' | 'collect' | 'decision';
+  autoTitle?: string;
   publicActivityDraft?: AiAssistantPublicDraft;
   internalExecutionPlan?: AiAssistantExecutionPlan;
   slots?: Slots;
@@ -485,7 +651,7 @@ export class AiService {
 
     const requiredSlots: (keyof Slots)[] = ['title', 'audience', 'activityType'];
     const primaryOptionalSlots: (keyof Slots)[] = ['time', 'location', 'price'];
-    const secondaryOptionalSlots: (keyof Slots)[] = ['capacity', 'details'];
+    const secondaryOptionalSlots: (keyof Slots)[] = ['capacity', 'details', 'visibility'];
     const activityTypeChoiceLabels: Record<string, string> = {
       casual_meetup: 'カジュアル交流（自由に話す）',
       icebreakers: '自己紹介＋小グループ交流',
@@ -525,6 +691,7 @@ export class AiService {
       norm.price = normalizePrice(slots.price);
       norm.capacity = normalizeText(slots.capacity);
       norm.details = normalizeText(slots.details);
+      norm.visibility = normalizeText(slots.visibility);
       return norm;
     };
 
@@ -855,6 +1022,7 @@ export class AiService {
         price: 0,
         capacity: 0,
         details: 0,
+        visibility: 0,
       };
       const setSlot = (key: keyof Slots, value?: string, conf?: number) => {
         if (!value) return;
@@ -878,13 +1046,15 @@ export class AiService {
       // seed from payload
       // topic from payload is low-confidence unless user explicitly provides it later
       if (basePayload.topic?.trim()) {
-        setSlot('title', basePayload.topic.trim(), 0.5);
-        // Do not treat default topic as confirmed activity type.
+        // Do not treat default topic as confirmed title or activity type.
         setSlot('activityType', basePayload.topic.trim(), 0.5);
       }
       // Do not treat default audience as confirmed.
       if (basePayload.audience?.trim()) {
         setSlot('audience', basePayload.audience, 0.5);
+      }
+      if (basePayload.titleSeed?.trim()) {
+        setSlot('title', basePayload.titleSeed.trim(), 0.8);
       }
       if (basePayload.details?.trim()) {
         setSlot('details', basePayload.details.trim(), 0.7);
@@ -1018,6 +1188,11 @@ export class AiService {
         } else if (/無料|フリー|タダ|free/i.test(text)) {
           setSlot('price', 'free', 0.8);
         }
+        // visibility detection
+        const normalizedVisibility = normalizeVisibilityAnswer(text);
+        if (normalizedVisibility) {
+          setSlot('visibility', normalizedVisibility, 0.7);
+        }
         // capacity detection
         const capMatch = text.match(/(\d{1,3})\s*(名|人)/);
         if (capMatch?.[1]) {
@@ -1027,24 +1202,14 @@ export class AiService {
         if (/バーベキュー|bbq|ワークショップ|ＷＳ|ws|セミナー|講座|トーク|交流|交流会|勉強会|体験|ピクニック|マルシェ/i.test(text)) {
           setSlot('activityType', text, 0.75);
         }
-        const hasSelectionTag = /【選択】/.test(text);
-        const hasTimeLike =
-          /\d{1,2}[:：]\d{2}/.test(text) || /平日夜|週末|土曜|日曜|金曜|午後|午前|来週|今週/.test(text);
-        const hasPriceLike = /\d{2,5}\s*円/.test(text) || /無料|フリー|0円|タダ|free/i.test(text);
         const hasCjk = /[\u3040-\u30ff\u4e00-\u9fff]/.test(text);
         const minTitleLength = hasCjk ? 2 : 4;
-        // possible title phrase (short, non-question, not time/price/selection)
-        if (
-          (confidence.title ?? 0) < 0.6 &&
-          text.length >= minTitleLength &&
-          text.length <= 40 &&
-          !/[?？]/.test(text) &&
-          !/(日時|場所|時間|料金|価格|free|無料|どこ|いつ)/i.test(text) &&
-          !hasSelectionTag &&
-          !hasTimeLike &&
-          !hasPriceLike
-        ) {
-          setSlot('title', text, 0.7);
+        const explicitTitleMatch = text.match(/タイトル[:：]\s*(.+)/) ?? text.match(/タイトルは(.+)/);
+        if (explicitTitleMatch?.[1]) {
+          const candidate = explicitTitleMatch[1].trim();
+          if (candidate.length >= minTitleLength && candidate.length <= 40) {
+            setSlot('title', candidate, 0.85);
+          }
         }
         // audience hints
         if (/親子|子ども|子供|家族|家庭|ファミリー|ファミリー向け|ファミリーOK/i.test(text)) {
@@ -1187,7 +1352,7 @@ export class AiService {
       lastAskedSlot: keyof Slots | null,
     ): AiAssistantChoiceQuestion | null => {
       if (!key) return null;
-      const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details'];
+      const subjectiveKeys: (keyof Slots)[] = ['activityType', 'audience', 'details', 'visibility'];
       if (!subjectiveKeys.includes(key)) return null;
       const hasSlotValue = Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
       const ambiguous = isAmbiguousAnswer(lastUserMessage) || isOptionRequest(lastUserMessage);
@@ -1235,18 +1400,53 @@ export class AiService {
           ],
         };
       }
+      if (key === 'visibility') {
+        return {
+          key: 'visibility',
+          prompt: '公開範囲はどうしますか？（おすすめ：公開）',
+          options: [
+            { label: '🌍 公開', value: 'public', recommended: true },
+            { label: '👥 コミュニティ内限定', value: 'community_only' },
+            { label: '🔒 招待制', value: 'invite_only' },
+            { label: '🙈 非公開', value: 'private' },
+          ],
+        };
+      }
       return null;
     };
     const hitSlot = (key: keyof Slots, slotValues: Slots, slotConfidence: Confidence) =>
       Boolean(slotValues[key]) && (slotConfidence[key] ?? 0) >= 0.6;
+    const buildDelegateDefaults = (language: string) => {
+      const now = new Date();
+      const nextSaturdayOffset = (6 - now.getDay() + 7) % 7 || 7;
+      const nextSaturday = new Date(now);
+      nextSaturday.setDate(now.getDate() + nextSaturdayOffset);
+      const yyyy = nextSaturday.getFullYear();
+      const mm = String(nextSaturday.getMonth() + 1).padStart(2, '0');
+      const dd = String(nextSaturday.getDate()).padStart(2, '0');
+      const dateText = `${yyyy}-${mm}-${dd}`;
+      return {
+        time: `${dateText} 10:00-12:00`,
+        location: 'オンライン',
+        price: '無料',
+        audience: 'friends',
+        activityType: 'casual_meetup',
+        visibility: 'public',
+        capacity: '10',
+        details: language.startsWith('zh') ? '細節稍後再調整' : '詳細は後で調整します',
+      } as const;
+    };
     const detectAskedSlot = (message: string): keyof Slots | null => {
       const lower = message.toLowerCase();
       if (/日時|いつ|何時|日程|時間/.test(message) || /(time|when)/.test(lower)) return 'time';
       if (/場所|どこ|会場|オンライン/.test(message) || /(where|location)/.test(lower)) return 'location';
-      if (/料金|価格|いくら/.test(message) || /(price|fee|cost)/.test(lower)) return 'price';
+      if (/参加費|料金|価格|いくら|予算/.test(message) || /(price|fee|cost|budget)/.test(lower))
+        return 'price';
       if (/タイトル|題名/.test(message) || /(title|name)/.test(lower)) return 'title';
       if (/対象|誰向け|参加者/.test(message) || /(audience|who)/.test(lower)) return 'audience';
       if (/形式|タイプ|どんなイベント/.test(message) || /(type|format)/.test(lower)) return 'activityType';
+      if (/公開|非公開|招待|招待制|限定|邀请/.test(message) || /(visibility|private|public|invite)/.test(lower))
+        return 'visibility';
       return null;
     };
     const sanitizeAssistantQuestion = (
@@ -1293,14 +1493,77 @@ export class AiService {
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
+    const interruptSelectionMatch = latestUserMessage.match(/【選択】\s*interrupt\s*[:：]\s*([a-z_]+)/i);
+    const interruptChoice = interruptSelectionMatch?.[1]?.toLowerCase() ?? null;
+    const metaCommentRaw = !interruptChoice && isMetaComment(latestUserMessage);
+    const isSelectionAction = /【選択】/.test(latestUserMessage);
     const detectedLanguage = this.detectLanguage(latestUserMessage, payload.baseLanguage);
+    const confirmDraft = payload.action === 'confirm_draft';
+    const continueEdit = payload.action === 'continue_edit';
+    const resumeCollecting = payload.action === 'resume_collecting';
+    const explicitHelpIntent = !interruptChoice && isHelpIntent(latestUserMessage);
     const inputMode = detectInputMode(latestUserMessage);
-    const extracted = extractSlots(conversation, payload);
+    const lastUserIndex = (() => {
+      for (let i = conversation.length - 1; i >= 0; i -= 1) {
+        if (conversation[i].role === 'user') return i;
+      }
+      return -1;
+    })();
+    let routerResult: RouterResult | null = null;
+    const shouldRouteIntent =
+      !explicitHelpIntent &&
+      !interruptChoice &&
+      !isSelectionAction &&
+      !confirmDraft &&
+      !resumeCollecting &&
+      payload.uiMode !== 'explain' &&
+      !metaCommentRaw &&
+      Boolean(latestUserMessage.trim());
+    if (shouldRouteIntent) {
+      try {
+        const routerRequest = buildRouterPrompt({
+          conversation: conversation.map((msg) => ({
+            role: msg.role === 'assistant' ? 'assistant' : 'user',
+            content: msg.content ?? '',
+          })),
+          userText: latestUserMessage,
+        });
+        const routerCompletion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0,
+          response_format: {
+            type: 'json_schema',
+            json_schema: routerRequest.schema,
+          },
+          messages: [
+            { role: 'system', content: routerRequest.systemPrompt },
+            { role: 'user', content: JSON.stringify(routerRequest.userPayload) },
+          ],
+        });
+        const routerRaw = this.extractMessageContent(routerCompletion);
+        routerResult = routerRaw ? (JSON.parse(routerRaw) as RouterResult) : null;
+      } catch (err) {
+        console.warn('[AiService] router_llm_failed', err);
+      }
+    }
+    const persistExplainMode = payload.uiMode === 'explain' && !resumeCollecting;
+    const helpIntent =
+      !resumeCollecting &&
+      (explicitHelpIntent || shouldEnterExplainMode(routerResult?.route, routerResult?.confidence) || persistExplainMode);
+    const metaComment = metaCommentRaw && !helpIntent && payload.uiMode !== 'explain';
+    const routedLanguage = routerResult?.language ?? detectedLanguage;
+    const lastAssistantMessage =
+      [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
+    const isReviseSelectStep = /どこを直したい|どこを修正/i.test(lastAssistantMessage || '');
+    const conversationForSlots =
+      (metaComment || helpIntent || isReviseSelectStep) && lastUserIndex >= 0
+        ? conversation.slice(0, lastUserIndex)
+        : conversation;
+    const extracted = extractSlots(conversationForSlots, payload);
     const slots = extracted.slots;
     const confidence = extracted.confidence;
     const intent = extracted.intent;
-    const confirmDraft = payload.action === 'confirm_draft';
-    const continueEdit = payload.action === 'continue_edit';
+    const hasUnsupportedCurrency = detectUnsupportedCurrencyInput(latestUserMessage);
     const effectiveInputMode: AssistantInputMode = continueEdit ? 'fill' : inputMode;
     const compareCandidatesForPrompt =
       effectiveInputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
@@ -1308,23 +1571,136 @@ export class AiService {
       effectiveInputMode === 'compare' && compareCandidatesForPrompt.length < 2
         ? 'describe'
         : effectiveInputMode;
-    const lastUserIndex = (() => {
-      for (let i = conversation.length - 1; i >= 0; i -= 1) {
-        if (conversation[i].role === 'user') return i;
-      }
-      return -1;
-    })();
     const prevConversation = lastUserIndex >= 0 ? conversation.slice(0, lastUserIndex) : conversation;
     const prevExtracted = extractSlots(prevConversation, payload);
     const prevSlots = prevExtracted.slots;
     const prevConfidence = prevExtracted.confidence;
     const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
+    const isInvalidTitleValue = (value?: string | null) => {
+      if (!value) return true;
+      return isDelegateTitleAnswer(value);
+    };
     const isFreeText = (value?: string | null) => /無料|free/i.test(value ?? '');
+
+    const parseReviseField = (text: string): keyof Slots | null => {
+      if (!text) return null;
+      if (/タイトル|題名|名前|ネーミング/i.test(text)) return 'title';
+      if (/日時|日程|時間/i.test(text)) return 'time';
+      if (/場所|会場|ロケーション/i.test(text)) return 'location';
+      if (/参加費|料金|価格|予算/i.test(text)) return 'price';
+      if (/対象|誰向け|オーディエンス/i.test(text)) return 'audience';
+      if (/説明|内容|詳細|紹介/i.test(text)) return 'details';
+      if (/公開|非公開|招待|限定/i.test(text)) return 'visibility';
+      if (/定員|人数/i.test(text)) return 'capacity';
+      if (/形式|タイプ|カテゴリ/i.test(text)) return 'activityType';
+      return null;
+    };
+
+    if (helpIntent) {
+      const explainMessage =
+        routedLanguage.startsWith('zh')
+          ? '这是一个帮助你创建活动的助手。我会确认日期、地点、费用等关键信息，方便生成活动草稿。你可以继续回答当前问题，或者稍后手动编辑表单。'
+          : routedLanguage === 'en'
+          ? 'This assistant helps you create an event. I confirm key details like time, place, and fee to draft the event. You can continue answering or edit the form later.'
+          : 'これはイベント作成を手伝うアシスタントです。日時・場所・参加費など必要な情報を確認して草案を作ります。続ける場合は今の質問に答えてください。';
+      return {
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'help-intent-v1',
+        language: routedLanguage,
+        turnCount,
+        thinkingSteps: ['ヘルプ意図を検知しました'],
+        editorChecklist: [],
+        writerSummary: undefined,
+        message: explainMessage,
+        ui: {
+          message: explainMessage,
+          mode: 'explain',
+        },
+        choiceQuestion: undefined,
+        compareCandidates: [],
+        inputMode: 'describe',
+        nextQuestionKey: null,
+        slots,
+        confidence,
+        draftReady: false,
+        applyEnabled: false,
+        draftId: undefined,
+        intent: intent,
+        modeHint: 'chat',
+        uiMode: 'explain',
+      };
+    }
+
+    if (isReviseSelectStep) {
+      const selectedKey = parseReviseField(latestUserMessage);
+      if (!selectedKey) {
+        return {
+          status: 'collecting',
+          state: 'collecting',
+          stage: 'coach',
+          promptVersion: 'revise-select-v1',
+          language: routedLanguage,
+          turnCount,
+          thinkingSteps: ['修正項目を選びます'],
+          editorChecklist: [],
+          writerSummary: undefined,
+          message: '',
+          ui: {
+            message: '直したい項目を教えてください。（例：日時 / 場所 / 参加費 / 説明 / 対象）',
+          },
+          choiceQuestion: undefined,
+          compareCandidates: [],
+          inputMode: 'fill',
+          nextQuestionKey: null,
+          slots,
+          confidence,
+          draftReady: false,
+          applyEnabled: false,
+          draftId: undefined,
+          intent: intent,
+          modeHint: 'chat',
+        };
+      }
+      return {
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'revise-select-v1',
+        language: routedLanguage,
+        turnCount,
+        thinkingSteps: ['修正項目を受け取りました'],
+        editorChecklist: [],
+        writerSummary: undefined,
+        message: '',
+        ui: {
+          question: { key: selectedKey, text: buildFallbackQuestionText(selectedKey) },
+        },
+        choiceQuestion: undefined,
+        compareCandidates: [],
+        inputMode: 'fill',
+        nextQuestionKey: selectedKey,
+        slots,
+        confidence,
+        draftReady: false,
+        applyEnabled: false,
+        draftId: undefined,
+        intent: intent,
+        modeHint: 'chat',
+      };
+    }
     const getMissingMvpKeys = (source: Slots, conf: Confidence): (keyof Slots)[] => {
       const missing: (keyof Slots)[] = [];
-      const hasTitle = (source.title && (conf.title ?? 0) >= 0.6) || hit('activityType') || hit('details');
+      const timeSourceText = [source.time, latestUserMessage].filter(Boolean).join(' ');
+      const structuredTime = buildStructuredSchedule(timeSourceText);
+      const hasTimeRange = Boolean(structuredTime?.startTime && structuredTime?.endTime);
+      const hasTitle =
+        (source.title && (conf.title ?? 0) >= 0.6 && !isInvalidTitleValue(source.title)) ||
+        hit('activityType') ||
+        hit('details');
       if (!hasTitle) missing.push('title');
-      if (!hit('time')) missing.push('time');
+      if (!hasTimeRange) missing.push('time');
       if (!hit('location')) missing.push('location');
       if (!hit('audience')) missing.push('audience');
       if (!hit('details')) missing.push('details');
@@ -1339,9 +1715,8 @@ export class AiService {
     const isCompareMode = normalizedInputMode === 'compare';
     const baseDraftReady = !isCompareMode && (confirmDraft || fastPath || slowPath);
 
-    const lastAssistantMessage =
-      [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
-    const lastAskedSlot = lastAssistantMessage ? detectAskedSlot(lastAssistantMessage) : null;
+    // explain mode is handled before slot updates
+    const lastAskedSlot = isReviseSelectStep ? null : detectAskedSlot(lastAssistantMessage);
     const askedSet = new Set<keyof Slots>();
     conversation
       .filter((msg) => msg.role === 'assistant')
@@ -1350,10 +1725,144 @@ export class AiService {
         if (/日時|いつ|日程/.test(text)) askedSet.add('time');
         if (/場所|どこ|会場|オンライン/.test(text)) askedSet.add('location');
         if (/対象|誰向け|オーディエンス/.test(text)) askedSet.add('audience');
-        if (/料金|有料|無料|価格/.test(text)) askedSet.add('price');
+        if (/参加費|料金|有料|無料|価格|予算/.test(text)) askedSet.add('price');
+        if (/公開|非公開|招待|招待制|限定|邀请/.test(text)) askedSet.add('visibility');
         if (/定員|人数/.test(text)) askedSet.add('capacity');
         if (/形式|どんなイベント|タイプ/.test(text)) askedSet.add('activityType');
       });
+    const lastUserAnswer = latestUserMessage.trim();
+    const delegateDefaults = buildDelegateDefaults(routedLanguage);
+    let delegateApplied = false;
+    let autoGeneratedTitle: string | null = null;
+    if (lastAskedSlot && lastUserAnswer && !isReviseSelectStep) {
+      const selectionPattern = /【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/;
+      if (!selectionPattern.test(lastUserAnswer)) {
+        const recoveredPrice = normalizePriceAnswer(lastUserAnswer);
+        if (recoveredPrice && lastAskedSlot !== 'price') {
+          slots.price = recoveredPrice;
+          confidence.price = Math.max(confidence.price ?? 0, 0.85);
+        } else if (lastAskedSlot === 'title' && isDelegateTitleAnswer(lastUserAnswer)) {
+          delegateApplied = true;
+          try {
+            const timeSourceText = slots.time ?? '';
+            const structuredSchedule = buildStructuredSchedule(timeSourceText);
+            const draftBase: AiAssistantPublicDraft = {
+              title: undefined,
+              shortDescription: '',
+              detailedDescription: '',
+              targetAudience: slots.audience || undefined,
+              schedule:
+                slots.time || slots.location
+                  ? {
+                      date: slots.time || undefined,
+                      location: slots.location || undefined,
+                      startTime: structuredSchedule?.startTime,
+                      endTime: structuredSchedule?.endTime,
+                    }
+                  : undefined,
+              price: slots.price || (isFreeText(slots.details) ? '無料' : undefined),
+              capacity: slots.capacity || undefined,
+              signupNotes: slots.details || undefined,
+            };
+            const suggestions =
+              (await this.generateTitleSuggestions(draftBase as AiAssistantPublicDraft, routedLanguage)) ||
+              buildTitleSuggestions(slots);
+            const candidate = suggestions?.[0]?.trim() || '';
+            if (candidate && isSafeTitleSuggestion(candidate, latestUserMessage)) {
+              slots.title = candidate;
+              confidence.title = Math.max(confidence.title ?? 0, 0.8);
+              autoGeneratedTitle = candidate;
+            }
+          } catch (err) {
+            const fallback = buildTitleSuggestions(slots)[0];
+            if (fallback) {
+              slots.title = fallback;
+              confidence.title = Math.max(confidence.title ?? 0, 0.7);
+              autoGeneratedTitle = fallback;
+            }
+          }
+        } else if (isDelegateAnswer(lastUserAnswer)) {
+          if (lastAskedSlot === 'price') {
+            slots.price = delegateDefaults.price;
+            confidence.price = Math.max(confidence.price ?? 0, 0.7);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'time') {
+            slots.time = delegateDefaults.time;
+            confidence.time = Math.max(confidence.time ?? 0, 0.65);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'location') {
+            slots.location = delegateDefaults.location;
+            confidence.location = Math.max(confidence.location ?? 0, 0.65);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'audience') {
+            slots.audience = delegateDefaults.audience;
+            confidence.audience = Math.max(confidence.audience ?? 0, 0.65);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'activityType') {
+            slots.activityType = delegateDefaults.activityType;
+            confidence.activityType = Math.max(confidence.activityType ?? 0, 0.65);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'visibility') {
+            slots.visibility = delegateDefaults.visibility;
+            confidence.visibility = Math.max(confidence.visibility ?? 0, 0.65);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'capacity') {
+            slots.capacity = delegateDefaults.capacity;
+            confidence.capacity = Math.max(confidence.capacity ?? 0, 0.6);
+            delegateApplied = true;
+          } else if (lastAskedSlot === 'details') {
+            slots.details = delegateDefaults.details;
+            confidence.details = Math.max(confidence.details ?? 0, 0.6);
+            delegateApplied = true;
+          }
+        } else if (lastAskedSlot === 'price') {
+          const normalized = normalizePriceAnswer(lastUserAnswer);
+          if (normalized) {
+            slots.price = normalized;
+            confidence.price = Math.max(confidence.price ?? 0, 0.85);
+          }
+        } else if (lastAskedSlot === 'visibility') {
+          const normalized = normalizeVisibilityAnswer(lastUserAnswer);
+          if (normalized) {
+            slots.visibility = normalized;
+            confidence.visibility = Math.max(confidence.visibility ?? 0, 0.8);
+          }
+        } else if (lastAskedSlot === 'location') {
+          const normalized = normalizeLocationAnswer(lastUserAnswer);
+          if (normalized) {
+            slots.location = normalized;
+            confidence.location = Math.max(confidence.location ?? 0, 0.75);
+          }
+        } else if (lastAskedSlot === 'time') {
+          const normalized = normalizeTimeAnswer(lastUserAnswer);
+          if (normalized) {
+            slots.time = normalized;
+            confidence.time = Math.max(confidence.time ?? 0, 0.75);
+          }
+        } else if (!slots[lastAskedSlot] && !delegateApplied && !isDelegateTitleAnswer(lastUserAnswer)) {
+          slots[lastAskedSlot] = lastUserAnswer;
+          confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.7);
+        }
+      }
+    }
+
+    if (interruptChoice === 'skip' && lastAskedSlot) {
+      slots[lastAskedSlot] = slots[lastAskedSlot] || '未定';
+      confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.6);
+    }
+
+    const recentTurns: Array<{ key: string; answer: string }> = [];
+    let pendingKey: string | null = null;
+    conversation.slice(-12).forEach((msg) => {
+      if (msg.role === 'assistant') {
+        const key = detectAskedSlot(msg.content || '');
+        if (key) pendingKey = key;
+      } else if (msg.role === 'user' && pendingKey) {
+        recentTurns.push({ key: pendingKey, answer: msg.content });
+        pendingKey = null;
+      }
+    });
+
     const pickNextQuestion = (missing: (keyof Slots)[]) => {
       const priority: (keyof Slots)[] = [
         'activityType',
@@ -1362,6 +1871,7 @@ export class AiService {
         'title',
         'audience',
         'price',
+        'visibility',
         'capacity',
         'details',
       ];
@@ -1378,10 +1888,176 @@ export class AiService {
     const missingRequired = requiredSlots.filter((k) => !hit(k));
     const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !hit(k));
     const missingMvpKeys = baseDraftReady ? getMissingMvpKeys(slots, confidence) : [];
-    const draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
-    const missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
-    const forcedNextQuestionKey = continueEdit ? 'details' : null;
-    const nextQuestionKeyCandidate = forcedNextQuestionKey ?? (draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]));
+    let draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
+    let missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
+    const forcedNextQuestionKey = continueEdit ? 'details' : hasUnsupportedCurrency ? 'price' : null;
+    let nextQuestionKeyCandidate =
+      forcedNextQuestionKey ?? (draftReady ? null : pickNextQuestion(missingAll as (keyof Slots)[]));
+    const askCount =
+      nextQuestionKeyCandidate
+        ? conversation.filter(
+            (msg) =>
+              msg.role === 'assistant' &&
+              detectAskedSlot(msg.content || '') === nextQuestionKeyCandidate,
+          ).length
+        : 0;
+    const loopTriggered = Boolean(nextQuestionKeyCandidate && askCount >= 2);
+    if (loopTriggered && nextQuestionKeyCandidate) {
+      try {
+        const normalizerRequest = buildSlotNormalizerPrompt({
+          rawUserText: latestUserMessage,
+          currentSlots: slots,
+          currentNextQuestionKey: nextQuestionKeyCandidate,
+          recentTurns,
+        });
+        const normalizerCompletion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0,
+          response_format: {
+            type: 'json_schema',
+            json_schema: normalizerRequest.schema,
+          },
+          messages: [
+            { role: 'system', content: normalizerRequest.systemPrompt },
+            { role: 'user', content: JSON.stringify(normalizerRequest.userPayload) },
+          ],
+        });
+        const normalizerRaw = this.extractMessageContent(normalizerCompletion);
+        const normalizerResult = normalizerRaw
+          ? (JSON.parse(normalizerRaw) as SlotNormalizerResult)
+          : null;
+        if (normalizerResult) {
+          console.info('[AiService] loop_breaker_triggered', {
+            key: nextQuestionKeyCandidate,
+            askCount,
+            intent: normalizerResult.intent,
+            updates: normalizerResult.updates,
+            ambiguities: normalizerResult.ambiguities,
+          });
+          if (normalizerResult.intent && normalizerResult.intent !== 'answer') {
+            const missingKeys = getMissingMvpKeys(slots, confidence);
+            const missingLabels = missingKeys
+              .map((key) => {
+              switch (key) {
+                case 'price':
+                  return '参加費';
+                case 'time':
+                  return '日時';
+                case 'location':
+                  return '場所';
+                case 'audience':
+                  return '対象';
+                case 'details':
+                  return '内容';
+                case 'title':
+                  return 'タイトル';
+                case 'visibility':
+                  return '公開範囲';
+                default:
+                  return null;
+              }
+              })
+              .filter(Boolean)
+              .join('・');
+            const statusText = missingLabels ? `今は「${missingLabels}」が未確定です。` : '必要な情報はそろっています。';
+            return {
+              status: 'collecting',
+              state: 'collecting',
+              stage: 'coach',
+              promptVersion: 'interrupt-v1',
+              language: detectedLanguage,
+              turnCount,
+              thinkingSteps: ['ユーザーの意見を受け止めました'],
+              editorChecklist: [],
+              writerSummary: undefined,
+              message: statusText,
+              ui: {
+                message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
+              },
+              choiceQuestion: {
+                key: 'interrupt' as keyof Slots,
+                prompt: 'どう進めますか？',
+                options: [
+                  { label: '続けて質問に答える', value: 'continue', recommended: true },
+                  { label: 'この質問はスキップ', value: 'skip' },
+                  { label: 'いま下書きを見る', value: 'preview' },
+                  { label: 'フォームを手動で編集', value: 'manual' },
+                ],
+              },
+              compareCandidates: [],
+              inputMode: normalizedInputMode,
+              nextQuestionKey: null,
+              slots,
+              confidence,
+              draftReady: false,
+              applyEnabled: false,
+              draftId: undefined,
+              intent: intent,
+              modeHint: 'chat',
+            };
+          }
+          const updated = normalizerResult.updates?.[nextQuestionKeyCandidate];
+          if (updated?.normalizedValue || updated?.value) {
+            const value = updated.normalizedValue || updated.value;
+            slots[nextQuestionKeyCandidate] = value ?? slots[nextQuestionKeyCandidate];
+            confidence[nextQuestionKeyCandidate] = Math.max(confidence[nextQuestionKeyCandidate] ?? 0, 0.85);
+          }
+          if (normalizerResult.shouldCloseSlot) {
+            confidence[nextQuestionKeyCandidate] = Math.max(confidence[nextQuestionKeyCandidate] ?? 0, 0.85);
+          }
+          if (normalizerResult.ambiguities?.length) {
+            const ambiguity = normalizerResult.ambiguities.find(
+              (item) => item.slotKey === nextQuestionKeyCandidate,
+            );
+            if (ambiguity?.candidates?.length) {
+              return {
+                status: 'collecting',
+                state: 'collecting',
+                stage: 'coach',
+                promptVersion: 'loop-breaker-v1',
+                language: detectedLanguage,
+                turnCount,
+                thinkingSteps: ['確認が必要です'],
+                editorChecklist: [],
+                writerSummary: undefined,
+                message: '',
+                ui: {
+                  message: ambiguity.questionSuggestion || 'どちらが近いですか？',
+                },
+                choiceQuestion: {
+                  key: nextQuestionKeyCandidate,
+                  prompt: ambiguity.questionSuggestion || 'どちらが近いですか？',
+                  options: ambiguity.candidates.slice(0, 4).map((candidate, idx) => ({
+                    label: candidate,
+                    value: candidate,
+                    recommended: idx === 0,
+                  })),
+                },
+                compareCandidates: [],
+                inputMode: normalizedInputMode,
+                nextQuestionKey: null,
+                slots,
+                confidence,
+                draftReady: false,
+                applyEnabled: false,
+                draftId: undefined,
+                intent: intent,
+                modeHint: 'chat',
+              };
+            }
+          }
+          missingMvpKeys.length = 0;
+          missingMvpKeys.push(...(baseDraftReady ? getMissingMvpKeys(slots, confidence) : []));
+          draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
+          missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
+          if (nextQuestionKeyCandidate && (confidence[nextQuestionKeyCandidate] ?? 0) >= 0.6) {
+            nextQuestionKeyCandidate = pickNextQuestion(missingAll as (keyof Slots)[]);
+          }
+        }
+      } catch (err) {
+        console.warn('[AiService] slot_normalizer_failed', err);
+      }
+    }
     const decisionChoiceCandidate =
       !draftReady && !isCompareMode && !continueEdit
         ? buildDecisionChoiceQuestion(
@@ -1395,6 +2071,182 @@ export class AiService {
           )
         : null;
     const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
+    if (metaComment) {
+      const missingKeys = getMissingMvpKeys(slots, confidence);
+      const missingLabels = missingKeys
+        .map((key) => {
+          switch (key) {
+            case 'price':
+              return '参加費';
+            case 'time':
+              return '日時';
+            case 'location':
+              return '場所';
+            case 'audience':
+              return '対象';
+            case 'details':
+              return '内容';
+            case 'title':
+              return 'タイトル';
+            default:
+              return null;
+          }
+        })
+        .filter(Boolean)
+        .join('・');
+      const statusText = missingLabels ? `今は「${missingLabels}」が未確定です。` : '必要な情報はそろっています。';
+      return {
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'interrupt-v1',
+        language: detectedLanguage,
+        turnCount,
+        thinkingSteps: ['ユーザーの意見を受け止めました'],
+        editorChecklist: [],
+        writerSummary: undefined,
+        message: statusText,
+        ui: {
+          message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
+        },
+        choiceQuestion: {
+          key: 'interrupt' as keyof Slots,
+          prompt: 'どう進めますか？',
+          options: [
+            { label: '続けて質問に答える', value: 'continue', recommended: true },
+            { label: 'この質問はスキップ', value: 'skip' },
+            { label: 'いま下書きを見る', value: 'preview' },
+            { label: 'フォームを手動で編集', value: 'manual' },
+          ],
+        },
+        compareCandidates: [],
+        inputMode: 'describe',
+        nextQuestionKey: null,
+        slots,
+        confidence,
+        draftReady: false,
+        applyEnabled: false,
+        draftId: undefined,
+        intent: intent,
+        modeHint: 'chat',
+      };
+    }
+    const applyNormalizerUpdates = (result: SlotNormalizerResult | null) => {
+      if (!result) return;
+      Object.entries(result.updates || {}).forEach(([key, update]) => {
+        if (!update) return;
+        const slotKey = key as keyof Slots;
+        const normalizedValue = update.normalizedValue || update.value;
+        if (normalizedValue) {
+          slots[slotKey] = normalizedValue;
+        }
+        if (typeof update.confidenceDelta === 'number') {
+          confidence[slotKey] = Math.min(1, Math.max(confidence[slotKey] ?? 0, update.confidenceDelta));
+        }
+      });
+      if (result.shouldCloseSlot && nextQuestionKeyCandidate) {
+        confidence[nextQuestionKeyCandidate] = Math.max(confidence[nextQuestionKeyCandidate] ?? 0, 0.85);
+      }
+    };
+
+    const shouldRunNormalizer =
+      turnCount <= 1 &&
+      Boolean(latestUserMessage.trim()) &&
+      !metaComment &&
+      !helpIntent &&
+      !continueEdit;
+    if (shouldRunNormalizer) {
+      try {
+        const normalizerRequest = buildSlotNormalizerPrompt({
+          rawUserText: latestUserMessage,
+          currentSlots: slots,
+          currentNextQuestionKey: nextQuestionKeyCandidate ?? null,
+          recentTurns,
+        });
+        const normalizerCompletion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0,
+          response_format: {
+            type: 'json_schema',
+            json_schema: normalizerRequest.schema,
+          },
+          messages: [
+            { role: 'system', content: normalizerRequest.systemPrompt },
+            { role: 'user', content: JSON.stringify(normalizerRequest.userPayload) },
+          ],
+        });
+        const normalizerRaw = this.extractMessageContent(normalizerCompletion);
+        const normalizerResult = normalizerRaw
+          ? (JSON.parse(normalizerRaw) as SlotNormalizerResult)
+          : null;
+        if (normalizerResult?.intent && normalizerResult.intent !== 'answer') {
+          const missingKeys = getMissingMvpKeys(slots, confidence);
+          const missingLabels = missingKeys
+            .map((key) => {
+              switch (key) {
+                case 'price':
+                  return '参加費';
+                case 'time':
+                  return '日時';
+                case 'location':
+                  return '場所';
+                case 'audience':
+                  return '対象';
+                case 'details':
+                  return '内容';
+                case 'title':
+                  return 'タイトル';
+                case 'visibility':
+                  return '公開範囲';
+                default:
+                  return null;
+              }
+            })
+            .filter(Boolean)
+            .join('・');
+          const statusText = missingLabels ? `今は「${missingLabels}」が未確定です。` : '必要な情報はそろっています。';
+          return {
+            status: 'collecting',
+            state: 'collecting',
+            stage: 'coach',
+            promptVersion: 'interrupt-v1',
+            language: detectedLanguage,
+            turnCount,
+            thinkingSteps: ['ユーザーの意見を受け止めました'],
+            editorChecklist: [],
+            writerSummary: undefined,
+            message: statusText,
+            ui: {
+              message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
+            },
+            choiceQuestion: {
+              key: 'interrupt' as keyof Slots,
+              prompt: 'どう進めますか？',
+              options: [
+                { label: '続けて質問に答える', value: 'continue', recommended: true },
+                { label: 'この質問はスキップ', value: 'skip' },
+                { label: 'いま下書きを見る', value: 'preview' },
+                { label: 'フォームを手動で編集', value: 'manual' },
+              ],
+            },
+            compareCandidates: [],
+            inputMode: normalizedInputMode,
+            nextQuestionKey: null,
+            slots,
+            confidence,
+            draftReady: false,
+            applyEnabled: false,
+            draftId: undefined,
+            intent: intent,
+            modeHint: 'chat',
+          };
+        }
+        applyNormalizerUpdates(normalizerResult);
+      } catch (err) {
+        console.warn('[AiService] slot_normalizer_failed', err);
+      }
+    }
+
     const promptPhase: EventAssistantPromptPhase = continueEdit
       ? 'decision'
       : determinePromptPhase({
@@ -1404,6 +2256,7 @@ export class AiService {
           hasDecisionChoice: Boolean(decisionChoiceCandidate),
         });
     const promptConfig = getEventAssistantPromptConfig(promptPhase);
+    const shouldUseMainLlm = promptPhase === 'ready' || promptPhase === 'operate';
     const promptParams: Record<string, string> = {
       latest_message: latestUserMessage || '',
       phase: promptPhase,
@@ -1418,64 +2271,95 @@ export class AiService {
 
     try {
       const outputSchema = getEventAssistantOutputSchema(promptPhase);
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        temperature: 0.45,
-        response_format: {
-          type: 'json_schema',
-          json_schema: outputSchema,
-        },
-        messages: [
-          {
-            role: 'system',
-            content: resolvedPrompt.systemPrompt,
-          },
-          {
-            role: 'user',
-            content: JSON.stringify({
-              profile: {
-                baseLanguage: payload.baseLanguage,
-                topic: payload.topic,
-                audience: payload.audience,
-                style: payload.style,
-              },
-              phase: promptPhase,
-              conversation,
-              turnCount,
-              latestUserMessage,
-              inputMode: normalizedInputMode,
-              draftReady,
-              nextQuestionKey: nextQuestionKeyCandidate,
-              compareCandidates: compareCandidatesForPrompt,
-              slots,
-              confidence,
-              assumptions,
-              targetLanguage: detectedLanguage,
-              instruction,
-            }),
-          },
-        ],
-      });
-
-      const raw = this.extractMessageContent(completion);
       let parsed: AiAssistantReplyPayload;
-      try {
-        parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
-      } catch (err) {
-        // Fallback to safe collecting state instead of 500
+      if (!shouldUseMainLlm) {
         const fallbackKey = nextQuestionKeyCandidate ?? 'title';
+        const fallbackQuestionText = buildFallbackQuestionText(fallbackKey);
+        const compareChoiceQuestion = isCompareMode
+          ? buildCompareChoiceQuestion(compareCandidatesForPrompt)
+          : null;
+        const decisionChoice = decisionChoiceCandidate ?? null;
         parsed = {
           state: 'collecting',
           language: detectedLanguage,
           thinkingSteps: ['ヒアリングを続けます'],
-          coachPrompt: 'イベントの概要を教えてください',
-          ui: {
-            question: {
-              key: fallbackKey,
-              text: 'イベントについて簡単に教えてください。',
-            },
-          },
+          coachPrompt: '必要な情報を確認しています',
+          ui:
+            promptPhase === 'decision'
+              ? { message: '近いものがあれば選んでください。' }
+              : promptPhase === 'compare'
+              ? { message: 'どちらが近いですか？' }
+              : {
+                  question: {
+                    key: fallbackKey,
+                    text: fallbackQuestionText,
+                  },
+                },
+          choiceQuestion: compareChoiceQuestion ?? decisionChoice ?? undefined,
+          compareCandidates: compareCandidatesForPrompt,
+          inputMode: normalizedInputMode,
+          nextQuestionKey:
+            promptPhase === 'collecting' ? nextQuestionKeyCandidate : null,
         };
+      } else {
+        const completion = await this.client.chat.completions.create({
+          model: this.model,
+          temperature: 0.45,
+          response_format: {
+            type: 'json_schema',
+            json_schema: outputSchema,
+          },
+          messages: [
+            {
+              role: 'system',
+              content: resolvedPrompt.systemPrompt,
+            },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                profile: {
+                  baseLanguage: payload.baseLanguage,
+                  topic: payload.topic,
+                  audience: payload.audience,
+                  style: payload.style,
+                },
+                phase: promptPhase,
+                conversation,
+                turnCount,
+                latestUserMessage,
+                inputMode: normalizedInputMode,
+                draftReady,
+                nextQuestionKey: nextQuestionKeyCandidate,
+                compareCandidates: compareCandidatesForPrompt,
+                slots,
+                confidence,
+                assumptions,
+                targetLanguage: detectedLanguage,
+                instruction,
+              }),
+            },
+          ],
+        });
+
+        const raw = this.extractMessageContent(completion);
+        try {
+          parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
+        } catch (err) {
+          // Fallback to safe collecting state instead of 500
+          const fallbackKey = nextQuestionKeyCandidate ?? 'title';
+          parsed = {
+            state: 'collecting',
+            language: detectedLanguage,
+            thinkingSteps: ['ヒアリングを続けます'],
+            coachPrompt: 'イベントの概要を教えてください',
+            ui: {
+              question: {
+                key: fallbackKey,
+                text: 'イベントについて簡単に教えてください。',
+              },
+            },
+          };
+        }
       }
       const { cleaned: phaseCleaned, removed: phaseRemoved } = enforcePhaseOutput(
         parsed as unknown as Record<string, unknown>,
@@ -1596,8 +2480,8 @@ export class AiService {
             }))
             .filter((o) => o.label && o.value)
         : [];
-      const cleanUiQuestionText = isDecisionPhase ? '' : sanitize(parsed.ui?.question?.text);
-      const cleanUiMessage = sanitize(parsed.ui?.message);
+      let cleanUiQuestionText = isDecisionPhase ? '' : sanitize(parsed.ui?.question?.text);
+      let cleanUiMessage = sanitize(parsed.ui?.message);
       const cleanDecisionChoice = decisionChoiceCandidate
         ? {
             key: decisionChoiceCandidate.key,
@@ -1611,10 +2495,28 @@ export class AiService {
               .filter((o) => o.label && o.value),
           }
         : null;
+      if (hasUnsupportedCurrency) {
+        cleanUiMessage = '金額は円で入力してください。例：1000円 / 無料';
+      }
+      const autoTitleNotice = autoGeneratedTitle
+        ? `タイトルは「${autoGeneratedTitle}」にしました。あとで変更できます。`
+        : '';
       const forcedQuestionText = continueEdit
         ? 'どこを直したいですか？（日時/場所/参加費/説明/対象など）'
         : '';
-      const finalQuestionText = forcedQuestionText || cleanDecisionChoice?.prompt || cleanUiQuestionText;
+      if (cleanUiQuestionText) {
+        const askedSlot = detectAskedSlot(cleanUiQuestionText);
+        if (askedSlot && uiQuestionKey && askedSlot !== uiQuestionKey) {
+          cleanUiQuestionText = '';
+        }
+      }
+      let finalQuestionText = forcedQuestionText || cleanDecisionChoice?.prompt || cleanUiQuestionText;
+      if (!finalQuestionText && nextQuestionKey) {
+        finalQuestionText = buildFallbackQuestionText(nextQuestionKey);
+      }
+      if (autoTitleNotice && finalQuestionText && nextQuestionKey && nextQuestionKey !== 'title') {
+        finalQuestionText = `${autoTitleNotice}\n${finalQuestionText}`;
+      }
       const cleanUiQuestion =
         finalQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: finalQuestionText } : undefined;
       const cleanUi: AiAssistantUiPayload | undefined =
@@ -1757,7 +2659,7 @@ export class AiService {
         return notes.filter(Boolean).join(' ');
       };
       const buildDraftFromSlots = (source: Slots, timeSourceText: string): AiAssistantPublicDraft => {
-        const title = source.title || source.activityType || source.details || '';
+        const title = source.title || '';
         const structuredSchedule = buildStructuredSchedule(timeSourceText);
         const schedule =
           source.time || source.location
@@ -1769,7 +2671,7 @@ export class AiService {
                 endTime: structuredSchedule?.endTime,
               }
             : undefined;
-        const description = source.details || '';
+        const description = '';
         const price = source.price || (isFreeText(source.details) ? '無料' : undefined);
         return {
           title: title || undefined,
@@ -1819,6 +2721,15 @@ export class AiService {
             ...(parsed.publicActivityDraft.schedule ?? {}),
           },
         };
+        if (parsed.publicActivityDraft.schedule) {
+          const schedule = parsed.publicActivityDraft.schedule;
+          if (schedule.startTime && !isValidIsoDateTime(schedule.startTime)) {
+            schedule.startTime = fallbackDraft.schedule?.startTime;
+          }
+          if (schedule.endTime && !isValidIsoDateTime(schedule.endTime)) {
+            schedule.endTime = fallbackDraft.schedule?.endTime;
+          }
+        }
         parsed.publicActivityDraft = ensureDraftMvpShape(parsed.publicActivityDraft, fallbackDraft);
       }
       const shouldSuggestTitles =
@@ -1831,6 +2742,13 @@ export class AiService {
           );
         } catch (err) {
           parsed.titleSuggestions = buildTitleSuggestions(draftBaseSlots);
+        }
+        const candidateTitle = parsed.titleSuggestions?.[0]?.trim() || '';
+        if (candidateTitle && isSafeTitleSuggestion(candidateTitle, latestUserMessage)) {
+          parsed.publicActivityDraft = {
+            ...(parsed.publicActivityDraft ?? {}),
+            title: candidateTitle,
+          };
         }
       }
       const draftId =
@@ -1856,8 +2774,10 @@ export class AiService {
         choiceQuestion: cleanChoiceQuestion,
         compareCandidates: cleanCompareCandidates,
         titleSuggestions: cleanTitleSuggestions,
+        autoTitle: autoGeneratedTitle ?? undefined,
         inputMode: normalizedInputMode,
         nextQuestionKey,
+        questionMeta: buildQuestionMeta(nextQuestionKey),
         slots,
         confidence,
         draftReady,
@@ -1897,6 +2817,7 @@ export class AiService {
           price: 0,
           capacity: 0,
           details: 0,
+          visibility: 0,
         },
         draftReady: false,
         applyEnabled: false,

@@ -88,15 +88,17 @@
             >
               <div v-if="msg.type === 'text'" class="chat-stack">
                 <p class="chat-text">{{ getMessageDisplayText(msg) }}</p>
-                <div v-if="getQuestionHelper(msg)" class="question-helper">
-                  <p class="question-helper-title">{{ getQuestionHelper(msg)?.title }}</p>
-                  <ul class="question-helper-list">
-                    <li v-for="(line, idx) in getQuestionHelper(msg)?.lines" :key="`helper-${msg.id}-${idx}`">
-                      {{ line }}
-                    </li>
-                  </ul>
-                  <p class="question-helper-foot">未定でもOK。ざっくりで大丈夫です。</p>
-                </div>
+              <div v-if="getQuestionHelper(msg)" class="question-helper">
+                <p class="question-helper-title">{{ getQuestionHelper(msg)?.title }}</p>
+                <ul class="question-helper-list">
+                  <li v-for="(line, idx) in getQuestionHelper(msg)?.lines" :key="`helper-${msg.id}-${idx}`">
+                    {{ line }}
+                  </li>
+                </ul>
+                <p v-if="getQuestionHelper(msg)?.foot" class="question-helper-foot">
+                  {{ getQuestionHelper(msg)?.foot }}
+                </p>
+              </div>
                 <button
                   v-if="msg.action === 'direct-form'"
                   type="button"
@@ -154,7 +156,7 @@
         </template>
 
         <div
-          v-if="mode === 'chat' && !canShowProposalUi && isCompareModeUi && choiceQuestionState"
+          v-if="mode === 'chat' && !canShowProposalUi && !explainMode && isCompareModeUi && choiceQuestionState"
           class="decision-block"
         >
           <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
@@ -199,7 +201,7 @@
           </div>
         </div>
         <div
-          v-if="mode === 'chat' && !canShowProposalUi && !isCompareModeUi && choiceQuestionState"
+          v-if="mode === 'chat' && !canShowProposalUi && !explainMode && !isCompareModeUi && choiceQuestionState"
           class="choice-block"
         >
           <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
@@ -216,6 +218,14 @@
               {{ opt.label }}
             </button>
           </div>
+        </div>
+        <div v-if="mode === 'chat' && explainMode" class="explain-actions">
+          <button type="button" class="explain-button primary" @click="handleExplainContinue">
+            {{ explainLabels.continue }}
+          </button>
+          <button type="button" class="explain-button" @click="handleExplainBack">
+            {{ explainLabels.back }}
+          </button>
         </div>
         <div v-if="mode === 'chat' && shouldShowCommitCheckpoint" class="commit-block">
           <div v-if="readyDraftSummary.length" class="draft-summary">
@@ -305,6 +315,10 @@
               <p class="plan-preview-subtitle">概要（短文）</p>
               <p class="plan-preview-text">{{ previewShortDescription }}</p>
             </article>
+            <article v-if="previewExpertComment" class="plan-preview-section">
+              <p class="plan-preview-subtitle">AIコメント</p>
+              <p class="plan-preview-text">{{ previewExpertComment }}</p>
+            </article>
             <article class="plan-preview-section">
               <p class="plan-preview-subtitle">詳細</p>
               <p class="plan-preview-text">{{ previewDetailedDescription || previewPlanDescription }}</p>
@@ -374,6 +388,7 @@
           </div>
           <div class="plan-preview-actions">
             <button
+              v-if="isCommitted"
               type="button"
               class="preview-primary"
               :disabled="!planPreview"
@@ -381,10 +396,6 @@
             >
               フォームに反映
             </button>
-            <button type="button" class="preview-secondary" :disabled="!planPreview" @click="saveProposalDraft(planPreview)">
-              下書きを保存
-            </button>
-            <button type="button" class="preview-ghost" @click="returnToChat">続けて編集</button>
             <button type="button" class="preview-ghost" @click="closePlanPreview">閉じる</button>
           </div>
         </section>
@@ -425,6 +436,7 @@ import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 import { getAssistantDisplay } from '../../../utils/assistantDisplay';
 import {
+  buildAckText,
   computeShouldShowCommitCheckpoint,
   isCompareMode as computeIsCompareMode,
   resolveChoiceQuestionState,
@@ -543,6 +555,7 @@ const keyboardOffset = ref(0);
 const autoScrollEnabled = ref(true);
 const currentQuestionId = ref<string | null>(null);
 const lastQuestionKey = ref<string | null>(null);
+const lastQuestionKeyPending = ref(false);
 const backTarget = ref<{ name: string; params?: Record<string, any> } | null>(null);
 const lastShownDraftId = ref<string | null>(null);
 const seenDraftIds = ref<string[]>([]);
@@ -556,23 +569,27 @@ const lastReadyDraft = ref<EventAssistantReply['publicActivityDraft'] | null>(nu
 const lastNextQuestionKey = ref<string | null>(null);
 const lastInputMode = ref<EventAssistantReply['inputMode'] | null>(null);
 const mode = ref<'chat' | 'operate'>('chat');
+const explainMode = ref(false);
+const explainLanguage = ref<'ja' | 'zh' | 'en'>('ja');
+const titleSeed = ref<string | null>(null);
 const isCommitted = ref(false);
 const isReadyState = computed(() => lastAssistantStatus.value === 'ready');
+const isCompletedState = computed(() => lastAssistantStatus.value === 'completed');
 const phaseTemplates: Record<'collecting' | 'decision' | 'compare' | 'ready' | 'operate', string[]> = {
   collecting: [
-    '受け取りました。次も教えてください。',
-    '了解です。続けてお願いします。',
-    'ありがとう。次のことも聞かせてください。',
+    '受け取りました。',
+    '了解しました。',
+    'ありがとうございます。',
   ],
   decision: [
-    '了解です。続けて聞かせてください。',
-    'そうですね。次に進みましょう。',
-    'いいですね。続けて教えてください。',
+    '了解しました。',
+    '受け取りました。',
+    'ありがとうございます。',
   ],
   compare: [
-    '今の内容から、こういう見方もできます。',
-    'まだ決めなくて大丈夫です。参考にしてください。',
-    'いったん整理だけします。判断はあとでOKです。',
+    'いったん整理します。',
+    '近いものを選んでください。',
+    '参考になる候補です。',
   ],
   ready: [
     'ここまでの内容を一度まとめました。まだ確定ではありません。',
@@ -582,18 +599,23 @@ const phaseTemplates: Record<'collecting' | 'decision' | 'compare' | 'ready' | '
   operate: ['作成しました。次の操作に進めます。', '反映しました。次に進めます。', '実行しました。次の手順へ進めます。'],
 };
 const canShowProposalUi = computed(
-  () => isReadyState.value && lastDraftReady.value && Boolean(lastReadyDraft.value) && isCommitted.value,
+  () =>
+    (isReadyState.value || isCompletedState.value) &&
+    lastDraftReady.value &&
+    (Boolean(aiResult.value) || Boolean(lastReadyDraft.value)),
 );
-const shouldShowCommitCheckpoint = computed(() =>
-  isReadyState.value &&
-  computeShouldShowCommitCheckpoint({
-    mode: mode.value,
-    draftReady: lastDraftReady.value,
-    nextQuestionKey: lastNextQuestionKey.value,
-    isCommitted: isCommitted.value,
-    hasChoiceQuestion: Boolean(choiceQuestionState.value),
-    isCompareMode: isCompareModeUi.value,
-  }),
+const shouldShowCommitCheckpoint = computed(
+  () =>
+    !explainMode.value &&
+    isReadyState.value &&
+    computeShouldShowCommitCheckpoint({
+      mode: mode.value,
+      draftReady: lastDraftReady.value,
+      nextQuestionKey: lastNextQuestionKey.value,
+      isCommitted: isCommitted.value,
+      hasChoiceQuestion: Boolean(choiceQuestionState.value),
+      isCompareMode: isCompareModeUi.value,
+    }),
 );
 const hasProposalMessage = computed(() => chatMessages.value.some((msg) => msg.type === 'proposal'));
 const showEntryBar = computed(() => canShowProposalUi.value && !hasProposalMessage.value);
@@ -607,6 +629,8 @@ const selectionLabelMap: Record<string, string> = {
   price: '料金',
   title: 'タイトル',
   capacity: '定員',
+  visibility: '公開範囲',
+  interrupt: '次の操作',
 };
 const confirmedAnswers = reactive<Record<string, string>>({});
 const currentSlotKey = ref<string | null>(null);
@@ -679,45 +703,64 @@ const QUESTION_HELPERS: Record<
   {
     title: string;
     lines: string[];
+    foot?: string;
   }
 > = {
   activityType: {
     title: '例',
     lines: ['BBQ / 交流会 / 勉強会', '小さな集まりでもOK'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   title: {
     title: '例',
     lines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   time: {
     title: '例',
     lines: ['9/20(金) 19:00-21:00', '平日夜 2時間 くらい'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   location: {
     title: '例',
     lines: ['渋谷駅周辺 / 近くの公園', 'オンラインでもOK'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   audience: {
     title: '例',
     lines: ['友人・同僚向け', '初心者歓迎 / 初参加OK'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   price: {
     title: '例',
     lines: ['無料 / 1000円', '材料費のみでもOK'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   capacity: {
     title: '例',
     lines: ['10人くらい', '少人数でもOK'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
   },
   details: {
     title: 'ヒント',
     lines: ['持ち物 / 服装 / 集合場所', '注意事項やルール'],
+    foot: '未定でもOK。ざっくりで大丈夫です。',
+  },
+  visibility: {
+    title: '例',
+    lines: ['公開 / 招待制', 'コミュニティ内限定'],
+    foot: '後から変更できます。',
   },
 };
 
 const getQuestionHelper = (msg: ChatMessage) => {
   if (msg.role !== 'assistant') return null;
+  if (msg.id !== currentQuestionId.value) return null;
   const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+  const meta = contentJson?.questionMeta;
+  if (meta?.key && meta.exampleLines?.length) {
+    return { title: '例', lines: meta.exampleLines, foot: '未定でもOK。ざっくりで大丈夫です。' };
+  }
   const key = contentJson?.ui?.question?.key;
   if (!key) return null;
   return QUESTION_HELPERS[key] ?? null;
@@ -898,6 +941,7 @@ const previewPlanDescription = computed(() => {
   if (text) return text;
   return buildFallbackOverview(confirmedAnswers) || extractText(planPreview.value?.notes) || '未設定';
 });
+const previewExpertComment = computed(() => extractText(planPreview.value?.expertComment) || '');
 const previewTargetAudience = computed(
   () => extractText(planPreview.value?.targetAudience) || confirmedAnswers.audience || qaState.audience || '未設定',
 );
@@ -952,6 +996,14 @@ const readyDraftSummary = computed(() => {
 const formatTicketPrice = (price?: number) => {
   if (price == null) return '無料';
   return `¥${price.toLocaleString('ja-JP')}`;
+};
+const parsePriceToNumber = (value?: string | number | null) => {
+  if (value == null) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const digits = String(value).replace(/[^\d]/g, '');
+  if (!digits) return null;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 const formatDateTime = (value: string) => {
   try {
@@ -1123,6 +1175,7 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
   autoScrollEnabled.value = true;
   const content = chatDraft.value.trim();
   const commitIntent =
+    !explainMode.value &&
     lastDraftReady.value &&
     !isCommitted.value &&
     /(就用这个吧?|可以开始了|按这个来|就这样|この内容で|この案で|これでいこう|これで進めて|これでOK|この内容で作って|この内容で作成|この案で作成)/i.test(
@@ -1141,6 +1194,7 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
   if (choiceQuestionState.value?.key) {
     const key = choiceQuestionState.value.key;
     choiceQuestionState.value = null;
+    lastQuestionKeyPending.value = false;
     pushMessage(
       'user',
       'text',
@@ -1157,6 +1211,7 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
     );
   } else {
     pushMessage('user', 'text', content);
+    lastQuestionKeyPending.value = false;
   }
   if (commitIntent) {
     isCommitted.value = true;
@@ -1197,6 +1252,14 @@ const detectLanguage = (text: string) => {
   return 'ja';
 };
 
+const isLocalHelpIntent = (text: string) => {
+  if (!text) return false;
+  return (
+    /これは何の機能|何をしているの|どう使うの|どう使えばいい|何をすればいい|なんで選ぶ|どういう意味|説明して/i.test(text) ||
+    /这个功能是干嘛|你在做什么|怎么用的|怎么用|怎么用啊|现在要我做什么|我该做什么|为什么要我选|什么意思|解释一下/i.test(text)
+  );
+};
+
 const applyLanguageFromInput = (text: string) => {
   const detected = detectLanguage(text);
   if (detected && qaState.baseLanguage !== detected) {
@@ -1204,14 +1267,57 @@ const applyLanguageFromInput = (text: string) => {
   }
 };
 
+const buildExplainMessage = (lang: 'ja' | 'zh' | 'en') => {
+  if (lang === 'zh') {
+    return '这是一个帮助你创建活动的助手。我会确认日期、地点、费用等关键信息，方便生成活动草稿。你可以继续回答当前问题，或者稍后手动编辑表单。';
+  }
+  if (lang === 'en') {
+    return 'This assistant helps you create an event. I confirm key details like time, place, and fee to draft the event. You can continue answering or edit the form later.';
+  }
+  return 'これはイベント作成を手伝うアシスタントです。日時・場所・参加費など必要な情報を確認して草案を作ります。続ける場合は今の質問に答えてください。';
+};
+
+const ensureExplainBubble = (lang: 'ja' | 'zh' | 'en') => {
+  const message = buildExplainMessage(lang);
+  const last = chatMessages.value[chatMessages.value.length - 1];
+  if (last?.role === 'assistant' && last.type === 'text' && last.content === message) {
+    return;
+  }
+  pushMessage(
+    'assistant',
+    'text',
+    message,
+    undefined,
+    'system-safe',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { includeInContext: false },
+  );
+};
+
 const handleChatAnswer = async (text: string, submitText?: string) => {
   applyLanguageFromInput(text);
+  const shouldStayExplain = explainMode.value || isLocalHelpIntent(text);
+  if (shouldStayExplain) {
+    explainMode.value = true;
+    explainLanguage.value = detectLanguage(text) as 'ja' | 'zh' | 'en';
+    pendingQuestion.value = null;
+    await requestAssistantReply(submitText ?? text);
+    return;
+  }
   const question = questions[currentQuestionIndex.value];
   if (question) {
     (qaState as any)[question.key] = text;
   }
   if (currentSlotKey.value) {
     storeConfirmedAnswer(currentSlotKey.value, text);
+    if (currentSlotKey.value === 'title') {
+      titleSeed.value = text;
+    }
     currentSlotKey.value = null;
   }
   if (currentQuestionIndex.value < questions.length - 1) {
@@ -1332,7 +1438,7 @@ const buildProposalFromDraft = (
         ? [
             {
               name: '参加チケット',
-              price: Number(priceValue) || 0,
+              price: parsePriceToNumber(priceValue) ?? 0,
               currency: 'JPY',
             },
           ]
@@ -1369,8 +1475,10 @@ const requestAssistantReply = async (
     audience: getProfileValue(qaState.audience, 'audience'),
     style: getProfileValue(qaState.style, 'style'),
     details: promptDetails,
+    titleSeed: titleSeed.value ?? undefined,
     conversation: conversationMessages,
     action: options?.action,
+    uiMode: explainMode.value ? 'explain' : 'collecting',
   };
   aiLoading.value = true;
   try {
@@ -1391,16 +1499,36 @@ const requestAssistantReply = async (
     const rawUiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
     let uiMessageText = rawUiMessageText;
     const uiOptions = Array.isArray(result.ui?.options) ? result.ui.options : [];
-    const choiceQuestion = resolveChoiceQuestionState({
-      inputMode: result.inputMode ?? null,
-      compareCandidates: result.compareCandidates ?? null,
-      machineChoiceQuestion: result.choiceQuestion ?? null,
-      uiMessage: rawUiMessageText,
-      uiOptions,
-    });
+    const isExplainMode = result.uiMode === 'explain' || result.ui?.mode === 'explain';
+    explainMode.value = isExplainMode;
+    if (isExplainMode) {
+      explainLanguage.value = (result.language as 'ja' | 'zh' | 'en') || 'ja';
+    }
+    const stickyExplain = explainMode.value && options?.action !== 'resume_collecting';
+    if (stickyExplain && !isExplainMode) {
+      explainMode.value = true;
+      explainLanguage.value = (result.language as 'ja' | 'zh' | 'en') || explainLanguage.value;
+      ensureExplainBubble(explainLanguage.value);
+      return;
+    }
+    if (isExplainMode) {
+      ensureExplainBubble(explainLanguage.value);
+    }
+    if (result.autoTitle && result.autoTitle.trim()) {
+      titleSeed.value = result.autoTitle.trim();
+    }
+    const choiceQuestion = isExplainMode
+      ? null
+      : resolveChoiceQuestionState({
+          inputMode: result.inputMode ?? null,
+          compareCandidates: result.compareCandidates ?? null,
+          machineChoiceQuestion: result.choiceQuestion ?? null,
+          uiMessage: rawUiMessageText,
+          uiOptions,
+        });
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
     coachPromptState.value =
-      !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
+      !isExplainMode && !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
     lastAssistantStatus.value = state;
     lastPromptVersion.value = result.promptVersion;
     lastTurnCount.value = result.turnCount;
@@ -1412,7 +1540,8 @@ const requestAssistantReply = async (
     const hasMvpDraft = isDraftMvp(result.publicActivityDraft ?? null);
     const draftReadyForUi = effectiveDraftReady && hasMvpDraft;
     const shouldHoldCommit = draftReadyForUi && !isCommitted.value && !willOperate;
-    const isDuplicateQuestionKey = Boolean(nextQuestionKey && lastQuestionKey.value === nextQuestionKey);
+    const isDuplicateQuestionKey =
+      Boolean(nextQuestionKey && lastQuestionKey.value === nextQuestionKey && lastQuestionKeyPending.value);
     if (uiQuestionText && !nextQuestionKey) {
       console.warn('[EventAssistant] ui.question ignored because nextQuestionKey is null', { uiQuestionText });
     }
@@ -1450,8 +1579,33 @@ const requestAssistantReply = async (
       ? 'ready'
       : 'collecting';
     const phaseMessage = pickPhaseMessage(phase, result.turnCount);
+    const shouldAckPrevious =
+      canRenderBubble &&
+      !isCompareMode &&
+      lastQuestionKey.value &&
+      lastQuestionKey.value !== nextQuestionKey &&
+      !hasChoiceQuestion &&
+      !shouldHoldCommit &&
+      !uiMessageText;
+    if (shouldAckPrevious) {
+      pushMessage(
+        'assistant',
+        'text',
+        buildAckText(lastQuestionKey.value, userText),
+        undefined,
+        'system-safe',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { includeInContext: false },
+      );
+    }
     if (canAppendQuestionBubble) {
       lastQuestionKey.value = nextQuestionKey ?? null;
+      lastQuestionKeyPending.value = true;
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1467,7 +1621,7 @@ const requestAssistantReply = async (
         { contentJson: result as unknown as Record<string, unknown> },
       );
     } else if (shouldRenderCompareBubble || shouldRenderMessageBubble) {
-      uiMessageText = phaseMessage;
+      uiMessageText = uiMessageText || phaseMessage;
       messageId = pushMessage(
         'assistant',
         'text',
@@ -1614,7 +1768,19 @@ const requestAssistantReply = async (
     } else if (state !== 'collecting') {
       pendingQuestion.value = null;
     }
-    await persistAssistantLog(stageTag, qaSummary, {
+    const aiResultForLog =
+      !aiResult.value && draftReadyForUi && result.publicActivityDraft
+        ? buildProposalFromDraft(
+            result.publicActivityDraft,
+            qaSummary,
+            qaState.details || qaState.topic || '',
+            confirmedAnswers,
+          )
+        : null;
+    await persistAssistantLog(
+      stageTag,
+      qaSummary,
+      {
       status: state,
       promptVersion: result.promptVersion,
       turnCount: result.turnCount,
@@ -1625,7 +1791,9 @@ const requestAssistantReply = async (
       writerSummary: stageTag === 'writer' ? buildSafeWriterSummary() : null,
       ui: result.ui ?? null,
       draftId: result.draftId,
-    });
+      },
+      aiResultForLog,
+    );
     if (preparedProposal) {
       addHistoryEntry(preparedProposal);
     }
@@ -1655,6 +1823,7 @@ const persistAssistantLog = async (
     ui?: EventAssistantReply['ui'] | null;
     draftId?: string | null;
   },
+  aiResultOverride?: GeneratedEventContent | null,
 ) => {
   if (!communityId.value) return;
   try {
@@ -1686,17 +1855,19 @@ const persistAssistantLog = async (
           }
         : null,
     }));
+    const aiResultPayload = aiResultOverride ?? aiResult.value;
     const saved = await saveEventAssistantLog(communityId.value, {
       stage,
       summary,
       qaState: JSON.parse(JSON.stringify(qaState)),
       messages: plainMessages,
-      aiResult: aiResult.value
+      aiResult: aiResultPayload
         ? {
-            title: aiResult.value.title,
-            description: aiResult.value.description,
-            notes: aiResult.value.notes,
-            riskNotice: aiResult.value.riskNotice,
+            title: aiResultPayload.title,
+            description: aiResultPayload.description,
+            notes: aiResultPayload.notes,
+            riskNotice: aiResultPayload.riskNotice,
+            expertComment: (aiResultPayload as any).expertComment ?? null,
           }
         : null,
       promptVersion: meta?.promptVersion,
@@ -1896,13 +2067,21 @@ const resolvePhaseForMessage = (msg: ChatMessage): 'collecting' | 'decision' | '
 };
 
 const getMessageDisplayText = (msg: ChatMessage) => {
-  if (msg.role === 'user') return msg.contentText || msg.content || '';
+  if (msg.role === 'user') {
+    if (msg.contentText) return msg.contentText;
+    const selectionDisplay = formatSelectionDisplay(msg.content || '');
+    return selectionDisplay || msg.content || '';
+  }
   const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
   const questionText = contentJson?.ui?.question?.text;
   if (questionText && msg.content === questionText) {
     return msg.content;
   }
   if (contentJson && msg.type === 'text') {
+    const uiMessage = contentJson.ui?.message;
+    if (uiMessage && msg.content === uiMessage) {
+      return msg.content;
+    }
     const phase = resolvePhaseForMessage(msg);
     return pickPhaseMessage(phase, contentJson.turnCount);
   }
@@ -1924,6 +2103,17 @@ const isInProgressStatus = (status?: string | null) => {
   return status !== 'completed' && status !== 'ready';
 };
 
+const explainLabels = computed(() => {
+  switch (explainLanguage.value) {
+    case 'zh':
+      return { continue: '继续创建活动', back: '返回' };
+    case 'en':
+      return { continue: 'Continue creating', back: 'Back' };
+    default:
+      return { continue: 'イベント作成を続ける', back: 'やめる / 戻る' };
+  }
+});
+
 const handleChipSelect = (template: string) => {
   if (!template) return;
   if (!chatDraft.value.trim()) {
@@ -1934,13 +2124,42 @@ const handleChipSelect = (template: string) => {
   nextTick(resizeChatInput);
 };
 
+const handleExplainContinue = async () => {
+  if (aiLoading.value) return;
+  explainMode.value = false;
+  const payload = '【選択】interrupt:continue';
+  pushMessage(
+    'user',
+    'text',
+    payload,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { contentText: explainLabels.value.continue },
+  );
+  await requestAssistantReply(payload, { action: 'resume_collecting' });
+};
+
+const handleExplainBack = () => {
+  explainMode.value = false;
+  goBack();
+};
+
 const handleChoiceSelect = async (key: string, value: string) => {
   if (!key || !value || aiLoading.value) return;
   autoScrollEnabled.value = true;
   const label = choiceQuestionState.value?.options.find((opt) => opt.value === value)?.label;
   storeConfirmedAnswer(key, label ?? value);
   const payload = `【選択】${key}:${value}`;
-  const displayText = buildChoiceDisplayText(key, value, label);
+  const displayText =
+    key === 'interrupt'
+      ? `次の操作を「${label ?? value}」にしました`
+      : buildChoiceDisplayText(key, value, label);
   pushMessage(
     'user',
     'text',
@@ -1955,6 +2174,13 @@ const handleChoiceSelect = async (key: string, value: string) => {
     undefined,
     { contentText: displayText },
   );
+  lastQuestionKeyPending.value = false;
+  if (key === 'interrupt' && value === 'preview') {
+    openMilestonePreview();
+  }
+  if (key === 'interrupt' && value === 'manual') {
+    goToForm(false);
+  }
   choiceQuestionState.value = null;
   showCandidateDetails.value = false;
   await requestAssistantReply(payload);
@@ -2035,6 +2261,8 @@ const resetQaState = () => {
   qaState.style = '';
   qaState.details = '';
   lastExpertComment.value = null;
+  explainMode.value = false;
+  explainLanguage.value = 'ja';
   Object.keys(confirmedAnswers).forEach((key) => {
     delete confirmedAnswers[key];
   });
@@ -2402,7 +2630,7 @@ const goToForm = async (useAi: boolean) => {
         ? [
             {
               name: '参加チケット',
-              price: Number(confirmedAnswers.price) || 0,
+              price: parsePriceToNumber(confirmedAnswers.price) ?? 0,
               currency: 'JPY',
             },
           ]
@@ -2839,6 +3067,29 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.explain-actions {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 8px;
+}
+
+.explain-button {
+  appearance: none;
+  border: 1px solid #d7dde5;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2f3b4a;
+}
+
+.explain-button.primary {
+  background: #1f2d3d;
+  border-color: #1f2d3d;
+  color: #fff;
 }
 
 .decision-block {

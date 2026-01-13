@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import { enforcePhaseOutput, determinePromptPhase } from '../src/ai/assistant-phase.guard';
 import { getEventAssistantPromptConfig } from '../src/ai/prompt.config';
 import { getEventAssistantOutputSchema, validateAssistantOutput } from '../src/ai/event-assistant.schemas';
+import {
+  buildFallbackQuestionText,
+  detectUnsupportedCurrencyInput,
+  isDelegateAnswer,
+  isDelegateTitleAnswer,
+  shouldEnterExplainMode,
+} from '../src/ai/ai.service';
 
 test('decision schema forbids ui.question/options', () => {
   const schema = getEventAssistantOutputSchema('decision').schema;
@@ -20,6 +27,55 @@ test('compare schema forbids ui.options', () => {
   assert.ok(Object.keys(uiProps).length > 0);
   assert.equal('options' in uiProps, false);
 });
+
+test('detectUnsupportedCurrencyInput catches 元 and ignores 円', () => {
+  assert.equal(detectUnsupportedCurrencyInput('1000元'), true);
+  assert.equal(detectUnsupportedCurrencyInput('1000円'), false);
+  assert.equal(detectUnsupportedCurrencyInput('無料'), false);
+});
+
+test('fallback question text returns price prompt', () => {
+  assert.ok(buildFallbackQuestionText('price').includes('参加費'));
+});
+
+test('normalize price inputs are accepted as yen', () => {
+  assert.equal(detectUnsupportedCurrencyInput('1000日元'), false);
+  assert.equal(detectUnsupportedCurrencyInput('1000元'), true);
+});
+
+test('meta comment is detected and returns interrupt response', async () => {
+  const serviceModule = await import('../src/ai/ai.service');
+  const isMetaComment = (serviceModule as any).isMetaComment as (text: string) => boolean;
+  assert.equal(isMetaComment('なんでずっと質問ばかりなの？'), true);
+});
+
+test('help intent is detected', async () => {
+  const serviceModule = await import('../src/ai/ai.service');
+  const isHelpIntent = (serviceModule as any).isHelpIntent as (text: string) => boolean;
+  assert.equal(isHelpIntent('这个功能是干嘛的？'), true);
+  assert.equal(isHelpIntent('これは何の機能？'), true);
+});
+
+test('router explain mode respects confidence threshold', () => {
+  assert.equal(shouldEnterExplainMode('HELP_SYSTEM', 0.7), true);
+  assert.equal(shouldEnterExplainMode('HELP_HOWTO', 0.7), true);
+  assert.equal(shouldEnterExplainMode('HELP_WHAT_NEXT', 0.62), true);
+  assert.equal(shouldEnterExplainMode('HELP_SYSTEM', 0.5), false);
+  assert.equal(shouldEnterExplainMode('EVENT_INFO', 0.9), false);
+});
+
+test('delegate answer is detected', () => {
+  assert.equal(isDelegateAnswer('おまかせでお願いします'), true);
+  assert.equal(isDelegateAnswer('你决定吧'), true);
+  assert.equal(isDelegateAnswer('1000円'), false);
+});
+
+test('delegate title answer is detected', () => {
+  assert.equal(isDelegateTitleAnswer('你帮我想一个好标题吧'), true);
+  assert.equal(isDelegateTitleAnswer('タイトルはおまかせで'), true);
+  assert.equal(isDelegateTitleAnswer('秋のBBQ交流会'), false);
+});
+
 
 test('collecting/compare drop draft fields', () => {
   const collectingPolicy = getEventAssistantPromptConfig('collecting');

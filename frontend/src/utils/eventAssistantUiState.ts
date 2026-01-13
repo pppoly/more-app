@@ -35,6 +35,35 @@ type MessageSummary = {
   content?: string | null;
 };
 
+const normalizeAckValue = (value: string) => {
+  const firstLine = value.split('\n')[0]?.trim() || '';
+  return firstLine.length > 32 ? `${firstLine.slice(0, 32)}…` : firstLine;
+};
+
+export const buildAckText = (key: string | null | undefined, answer: string) => {
+  const normalized = normalizeAckValue(answer);
+  switch (key) {
+    case 'price':
+      return normalized ? `了解しました。参加費は${normalized}ですね。` : '了解しました。参加費を記録しました。';
+    case 'time':
+      return normalized ? `了解しました。日時は${normalized}ですね。` : '了解しました。日時を記録しました。';
+    case 'location':
+      return normalized ? `了解しました。場所は${normalized}ですね。` : '了解しました。場所を記録しました。';
+    case 'audience':
+      return normalized ? `了解しました。対象は${normalized}ですね。` : '了解しました。対象を記録しました。';
+    case 'title':
+      return normalized ? `了解しました。タイトルは「${normalized}」ですね。` : '了解しました。タイトルを記録しました。';
+    case 'details':
+      return normalized ? `了解しました。内容は「${normalized}」ですね。` : '了解しました。内容を記録しました。';
+    case 'capacity':
+      return normalized ? `了解しました。定員は${normalized}ですね。` : '了解しました。定員を記録しました。';
+    case 'activityType':
+      return normalized ? `了解しました。形式は${normalized}ですね。` : '了解しました。形式を記録しました。';
+    default:
+      return '了解しました。';
+  }
+};
+
 export const isCompareMode = (
   inputMode?: EventAssistantReply['inputMode'] | null,
   compareCandidates?: EventAssistantReply['compareCandidates'] | null,

@@ -611,6 +611,7 @@ export interface GenerateEventCopyInput {
   audience: string;
   style: string;
   details: string;
+  titleSeed?: string;
 }
 
 export interface EventAssistantMessage {
@@ -620,7 +621,8 @@ export interface EventAssistantMessage {
 
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
-  action?: 'confirm_draft' | 'continue_edit';
+  action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
+  uiMode?: 'explain' | 'collecting';
 }
 
 export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
@@ -671,10 +673,25 @@ export interface EventAssistantReply {
         | 'location'
         | 'price'
         | 'capacity'
-        | 'details';
+        | 'details'
+        | 'visibility';
       text: string;
     };
     options?: Array<{ label: string; value: string; recommended?: boolean }>;
+    mode?: 'explain' | 'collecting' | 'decision';
+  };
+  questionMeta?: {
+    key:
+      | 'title'
+      | 'audience'
+      | 'activityType'
+      | 'time'
+      | 'location'
+      | 'price'
+      | 'capacity'
+      | 'details'
+      | 'visibility';
+    exampleLines: string[];
   };
   thinkingSteps?: string[];
   coachPrompt?: string;
@@ -709,9 +726,10 @@ export interface EventAssistantReply {
     price?: string;
     capacity?: string;
     details?: string;
+    visibility?: string;
   };
   confidence?: Record<
-    'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details',
+    'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details' | 'visibility',
     number
   >;
   draftReady?: boolean;
@@ -719,6 +737,7 @@ export interface EventAssistantReply {
   draftId?: string;
   intent?: 'create' | 'explore' | 'unknown';
   titleSuggestions?: string[];
+  autoTitle?: string;
   miniPreview?: { bullets: string[]; note?: string };
   choiceQuestion?: {
     key: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details';
@@ -736,6 +755,7 @@ export interface EventAssistantReply {
   inputMode?: 'describe' | 'fill' | 'compare';
   nextQuestionKey?: 'title' | 'audience' | 'activityType' | 'time' | 'location' | 'price' | 'capacity' | 'details' | null;
   modeHint?: 'chat' | 'operate';
+  uiMode?: 'explain' | 'collect' | 'decision';
 }
 
 export interface EventAssistantProfileDefaults {

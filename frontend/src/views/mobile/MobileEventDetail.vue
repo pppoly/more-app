@@ -1029,6 +1029,15 @@ const toggleFollow = async () => {
     router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
     return;
   }
+  const notifyFollowChange = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('more_my_communities_follow_change', String(Date.now()));
+      }
+    } catch (err) {
+      console.warn('follow change marker failed', err);
+    }
+  };
   try {
     if (isFollowingCommunity.value) {
       const res = await unfollowCommunity(communityIdForFollow.value);
@@ -1040,11 +1049,13 @@ const toggleFollow = async () => {
       }
       isFollowingCommunity.value = !!res.following;
       followLocked.value = !!res.locked;
+      notifyFollowChange();
       showUiMessage('フォローを解除しました');
     } else {
       const res = await followCommunity(communityIdForFollow.value);
       isFollowingCommunity.value = !!res.following;
       followLocked.value = !!res.locked;
+      notifyFollowChange();
       showUiMessage('フォローしました');
     }
   } catch (err) {

@@ -1982,6 +1982,7 @@ const getLocalizedText = (field: any) => {
 
 const toLocalInput = (value?: string | Date | null) => {
   if (!value) return '';
+  if (typeof value === 'string' && value.includes('Invalid Date')) return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const pad = (num: number) => String(num).padStart(2, '0');

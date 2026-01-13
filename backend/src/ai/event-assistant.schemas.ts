@@ -119,6 +119,53 @@ const uiReadySchema: JsonSchema = baseObject({
   message: uiMessageSchema,
 });
 
+const slotUpdateSchema: JsonSchema = baseObject(
+  {
+    value: { type: 'string' },
+    normalizedValue: { type: 'string' },
+    confidenceDelta: { type: 'number' },
+    evidenceText: { type: 'string' },
+  },
+  [],
+);
+
+const slotUpdatesSchema: JsonSchema = baseObject(
+  {
+    title: slotUpdateSchema,
+    audience: slotUpdateSchema,
+    activityType: slotUpdateSchema,
+    time: slotUpdateSchema,
+    location: slotUpdateSchema,
+    price: slotUpdateSchema,
+    capacity: slotUpdateSchema,
+    details: slotUpdateSchema,
+    visibility: slotUpdateSchema,
+  },
+  [],
+);
+
+const slotAmbiguitySchema: JsonSchema = baseObject(
+  {
+    slotKey: { type: 'string' },
+    candidates: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 4 },
+    questionSuggestion: { type: 'string' },
+  },
+  ['slotKey', 'candidates'],
+);
+
+export const SLOT_NORMALIZER_SCHEMA: JsonSchemaWrapper = {
+  name: 'EventAssistantSlotNormalizer',
+  schema: baseObject(
+    {
+      intent: { type: 'string' },
+      updates: slotUpdatesSchema,
+      ambiguities: { type: 'array', items: slotAmbiguitySchema },
+      shouldCloseSlot: { type: 'boolean' },
+    },
+    ['intent', 'updates', 'ambiguities', 'shouldCloseSlot'],
+  ),
+};
+
 export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
   EventAssistantPromptPhase,
   JsonSchemaWrapper

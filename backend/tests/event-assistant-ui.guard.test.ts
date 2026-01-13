@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildAckText,
   computeShouldShowCommitCheckpoint,
   resolveChoiceQuestionState,
   shouldAppendQuestionBubble,
@@ -104,4 +105,9 @@ test('question bubble is not appended when last message is identical', () => {
     shouldRender: true,
   });
   assert.equal(shouldAppend, false);
+});
+
+test('buildAckText formats price response', () => {
+  const ack = buildAckText('price', '1000円');
+  assert.ok(ack.includes('参加費'));
 });
