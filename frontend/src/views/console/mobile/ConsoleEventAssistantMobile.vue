@@ -203,11 +203,11 @@
           </div>
         </div>
         <div
-          v-if="mode === 'chat' && !canShowProposalUi && !explainMode && !isCompareModeUi && choiceQuestionState"
+          v-if="mode === 'chat' && !canShowProposalUi && !explainMode && !isCompareModeUi && shouldShowChoiceBlock"
           class="choice-block"
         >
           <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
-          <p class="choice-helper">近いものがあれば選んでください。なければ、そのまま入力してOKです。</p>
+          <p class="choice-helper">{{ choiceHelperText }}</p>
           <div class="choice-options">
             <button
               v-for="(opt, idx) in choiceQuestionState.options"
@@ -875,6 +875,17 @@ const miniPreviewState = ref<EventAssistantReply['miniPreview'] | null>(null);
 const choiceQuestionState = ref<EventAssistantReply['choiceQuestion'] | null>(null);
 const compareCandidatesState = ref<EventAssistantReply['compareCandidates'] | null>(null);
 const showCandidateDetails = ref(false);
+const isInterruptChoice = computed(() => choiceQuestionState.value?.key === 'interrupt');
+const isConfirmChoice = computed(() => String(choiceQuestionState.value?.key ?? '').startsWith('confirm_'));
+const shouldShowChoiceBlock = computed(() => {
+  if (!choiceQuestionState.value?.options?.length) return false;
+  return isInterruptChoice.value || isConfirmChoice.value;
+});
+const choiceHelperText = computed(() => {
+  if (isInterruptChoice.value) return '続け方を選んでください。';
+  if (isConfirmChoice.value) return '内容が合っているか選んでください。';
+  return '近いものがあれば選んでください。なければ、そのまま入力してOKです。';
+});
 const getCandidateId = (opt: { label: string; value: string }) => {
   const labelMatch = opt.label.match(/(?:候補|解釈)([A-Z])/i);
   if (labelMatch?.[1]) return labelMatch[1].toUpperCase();

@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { redactText } from './redact';
 import type { EventAssistantDailySummary, EventAssistantEnv, EventAssistantTurnLog, FailureType } from './types';
@@ -10,15 +11,33 @@ const resolveEnv = (): EventAssistantEnv => {
   return 'dev';
 };
 
+const findBackendRoot = () => {
+  let current = __dirname;
+  for (let i = 0; i < 6; i += 1) {
+    const pkgPath = path.join(current, 'package.json');
+    if (fsSync.existsSync(pkgPath)) {
+      try {
+        const raw = fsSync.readFileSync(pkgPath, 'utf-8');
+        const pkg = JSON.parse(raw) as { name?: string };
+        if (pkg.name === 'more-app-backend') return current;
+      } catch {
+        // ignore parse errors
+      }
+    }
+    current = path.dirname(current);
+  }
+  return null;
+};
+
 export const resolveLogDir = () => {
   const base = process.env.EVENT_ASSISTANT_LOG_DIR;
   if (base && base.trim()) return base.trim();
-  if (resolveEnv() === 'prod') return '/data/logs/event-assistant';
-  const cwd = process.cwd();
-  if (cwd.endsWith(path.sep + 'backend')) {
-    return path.resolve(cwd, '.logs/event-assistant');
+  const backendRoot = findBackendRoot();
+  if (backendRoot) {
+    return path.join(backendRoot, '.logs/event-assistant');
   }
-  return path.resolve(cwd, 'backend/.logs/event-assistant');
+  if (resolveEnv() === 'prod') return '/data/logs/event-assistant';
+  return path.resolve(process.cwd(), '.logs/event-assistant');
 };
 
 const ensureDir = async (dir: string) => {

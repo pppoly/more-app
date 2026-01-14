@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveLogDir } from '../src/ai/diagnostics/logger';
 
-const logDir = process.env.EVENT_ASSISTANT_LOG_DIR || path.resolve(process.cwd(), '.logs/event-assistant');
+const logDir = resolveLogDir();
 const day = new Date().toISOString().slice(0, 10);
 const summaryPath = path.join(logDir, `event-assistant-${day}.summary.json`);
 
