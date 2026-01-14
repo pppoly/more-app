@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ClassesService } from './classes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateClassDto, UpdateClassDto } from './dto/create-class.dto';
@@ -23,6 +25,17 @@ export class ClassesConsoleController {
   @Patch('classes/:classId')
   updateClass(@Req() req: any, @Param('classId') classId: string, @Body() body: UpdateClassDto) {
     return this.classesService.updateClass(req.user.id, classId, body);
+  }
+
+  @Post('classes/:classId/cover')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  uploadCover(@Req() req: any, @Param('classId') classId: string, @UploadedFile() file: Express.Multer.File) {
+    return this.classesService.uploadClassCover(req.user.id, classId, file);
   }
 
   @Delete('classes/:classId')

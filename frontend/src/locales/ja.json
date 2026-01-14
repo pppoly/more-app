@@ -199,6 +199,9 @@
     "eventRegister": {
       "title": "イベント申込"
     },
+    "eventCheckout": {
+      "title": "支払い内容の確認"
+    },
     "settings": {
       "title": "一般設定",
       "language": {

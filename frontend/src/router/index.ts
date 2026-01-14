@@ -26,7 +26,13 @@ import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
 import { useAuthSheets } from '../composables/useAuthSheets';
 import { fetchOrganizerPayoutPolicyStatus } from '../api/client';
-import { beginNav, beginNavPending, endNavPending, syncHistoryPos } from '../composables/useNavStack';
+import {
+  beginNav,
+  beginNavPending,
+  clearPopstateBackPending,
+  endNavPending,
+  syncHistoryPos,
+} from '../composables/useNavStack';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -118,6 +124,7 @@ const routes: RouteRecordRaw[] = [
       hideShellActions: true,
       keepAlive: true,
       devPageName: 'イベント一覧',
+      navTransition: 'none',
     },
   },
   {
@@ -135,6 +142,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       flushContent: true,
       devPageName: 'イベント詳細',
+      forceNavDir: 'forward',
     },
     props: true,
   },
@@ -167,6 +175,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       flushContent: true,
       devPageName: '申込確認',
+      forceNavDir: 'forward',
     },
     props: true,
   },
@@ -288,6 +297,7 @@ const routes: RouteRecordRaw[] = [
       fixedPage: true,
       hideShellHeader: true,
       devPageName: 'マイページ',
+      navTransition: 'none',
     },
   },
   {
@@ -303,6 +313,7 @@ const routes: RouteRecordRaw[] = [
       hideShellHeader: true,
       flushContent: true,
       devPageName: '設定',
+      forceNavDir: 'forward',
     },
   },
   {
@@ -319,6 +330,7 @@ const routes: RouteRecordRaw[] = [
       flushContent: true,
       keepAlive: true,
       devPageName: 'コミュニティ広場',
+      forceNavDir: 'forward',
     },
   },
   {
@@ -330,6 +342,7 @@ const routes: RouteRecordRaw[] = [
       layout: 'console-mobile',
       stackKey: 'mobile',
       devPageName: 'Console モバイルシェル',
+      navTransition: 'none',
     },
     children: [
       {
@@ -343,6 +356,7 @@ const routes: RouteRecordRaw[] = [
           devPageName: 'Console-ホーム',
           hideShellHeader: true,
           flushContent: true,
+          navTransition: 'none',
         },
       },
       {
@@ -910,6 +924,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
+      forceNavDir: 'forward',
     },
   },
   {
@@ -923,6 +938,7 @@ const routes: RouteRecordRaw[] = [
       hideTabbar: true,
       hideShellHeader: true,
       flushContent: true,
+      forceNavDir: 'forward',
     },
   },
   {
@@ -1027,6 +1043,10 @@ const applyPageTitle = async (to: any) => {
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    return { left: 0, top: 0 };
+  },
 });
 
 let replacePending = false;
@@ -1037,6 +1057,7 @@ router.replace = ((to) => {
 }) as typeof router.replace;
 const originalPush = router.push.bind(router);
 router.push = ((to) => {
+  clearPopstateBackPending();
   if (typeof to === 'object' && to && 'replace' in to && (to as any).replace) {
     replacePending = true;
   }

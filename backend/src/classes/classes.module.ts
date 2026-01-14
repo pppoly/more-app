@@ -4,9 +4,10 @@ import { ClassesConsoleController } from './classes.console.controller';
 import { ClassesService } from './classes.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { AssetModule } from '../asset/asset.module';
 
 @Module({
-  imports: [PrismaModule, PaymentsModule],
+  imports: [PrismaModule, PaymentsModule, AssetModule],
   controllers: [ClassesController, ClassesConsoleController],
   providers: [ClassesService],
   exports: [ClassesService],

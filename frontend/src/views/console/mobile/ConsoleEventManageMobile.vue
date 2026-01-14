@@ -503,6 +503,12 @@ const goBack = () => {
     router.push({ name: 'ConsoleMobileHome' });
     return;
   }
+  const historyState = router.options?.history?.state as { back?: string } | undefined;
+  const backPath = historyState?.back;
+  if (backPath && backPath.startsWith('/console') && !backPath.includes('/communities/')) {
+    router.push({ name: 'ConsoleMobileHome' });
+    return;
+  }
   if (communityId.value) {
     router.push({
       name: 'ConsoleMobileCommunityEvents',

@@ -137,7 +137,7 @@
           <header class="sheet-head">
             <p class="sheet-title">タグを選択（最大5つ）</p>
             <button type="button" class="sheet-close" @click="tagSheetOpen = false">
-              <span class="i-lucide-x"></span>
+              ×
             </button>
           </header>
           <div class="tag-sheet">
@@ -176,7 +176,7 @@
           <header class="sheet-head">
             <p class="sheet-title">公開範囲を選択</p>
             <button type="button" class="sheet-close" @click="visibilitySheetOpen = false">
-              <span class="i-lucide-x"></span>
+              ×
             </button>
           </header>
           <div class="visible-list">
@@ -1329,9 +1329,6 @@ watch(
   line-height: 1;
 }
 
-.sheet-close::before {
-  content: '×';
-}
 .sheet-preview {
   padding: 12px 16px 0;
 }
@@ -1410,9 +1407,9 @@ watch(
   border: 1px solid rgba(15, 23, 42, 0.12);
 }
 .primary-btn {
-  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  background: #0090d9;
   color: #fff;
-  box-shadow: 0 12px 25px rgba(37, 99, 235, 0.25);
+  box-shadow: none;
 }
 .primary-btn:disabled {
   opacity: 0.6;

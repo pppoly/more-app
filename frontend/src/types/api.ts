@@ -177,6 +177,7 @@ export interface Lesson {
   endAt?: string | null;
   capacity?: number | null;
   status: string;
+  registrationCount?: number;
 }
 
 export interface ClassSummary {
@@ -184,6 +185,7 @@ export interface ClassSummary {
   communityId: string;
   title: string;
   description?: string | null;
+  coverImageUrl?: string | null;
   locationName?: string | null;
   priceYenPerLesson: number;
   defaultCapacity?: number | null;

@@ -183,6 +183,7 @@ model Class {
   communityId       String
   title             Json
   description       Json?
+  coverImageUrl     String?
   locationName      String?
   priceYenPerLesson Int
   defaultCapacity   Int?

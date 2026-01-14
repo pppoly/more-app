@@ -23,11 +23,11 @@
         <p class="kpi-value">¥{{ summaryTotals.paidTotal.toLocaleString() }}</p>
       </div>
       <div v-if="summaryTotals.unpaidTotal > 0" class="kpi">
-        <p class="kpi-label">未払い合計</p>
+        <p class="kpi-label">支払い待ち合計</p>
         <p class="kpi-value">¥{{ summaryTotals.unpaidTotal.toLocaleString() }}</p>
       </div>
       <div v-if="summaryTotals.refundingCount > 0" class="kpi">
-        <p class="kpi-label">返金中</p>
+        <p class="kpi-label">返金処理中</p>
         <p class="kpi-value">{{ summaryTotals.refundingCount }}件</p>
       </div>
     </section>
@@ -59,9 +59,9 @@
             activeFilter === 'paid'
               ? '支払い済みの申込はありません'
               : activeFilter === 'unpaid'
-                ? '未払いの申込はありません'
+                ? '支払い待ちの申込はありません'
                 : activeFilter === 'refund'
-                  ? '返金中の申込はありません'
+                  ? '返金処理中の申込はありません'
                   : 'まだ申込がありません'
           }}
         </p>
@@ -84,7 +84,7 @@
               </div>
             </div>
             <div class="status-block">
-              <span class="badge" :class="badgeClass(reg.normalizedStatus)">{{ reg.statusLabel }}</span>
+              <span class="badge" :class="badgeClass(reg)">{{ reg.statusLabel }}</span>
               <p v-if="reg.amountYen !== null" class="amount">¥{{ reg.amountYen.toLocaleString() }}</p>
               <p v-else class="amount hint">代表者が支払い</p>
             </div>
@@ -130,8 +130,8 @@ const activeFilter = ref<'all' | 'paid' | 'unpaid' | 'refund'>('all');
 const filterOptions = [
   { value: 'all', label: 'すべて' },
   { value: 'paid', label: '支払い済み' },
-  { value: 'unpaid', label: '未払い' },
-  { value: 'refund', label: '返金中' },
+  { value: 'unpaid', label: '支払い待ち' },
+  { value: 'refund', label: '返金処理中' },
 ];
 
 const load = async () => {
@@ -156,8 +156,8 @@ type NormalizedStatus = 'paid' | 'unpaid' | 'refunding' | 'refunded' | 'failed';
 
 const normalizeStatus = (raw?: string): NormalizedStatus => {
   const s = (raw || '').toLowerCase();
-  if (s.includes('refund')) return 'refunding';
   if (s.includes('refunded')) return 'refunded';
+  if (s.includes('refund')) return 'refunding';
   if (s.includes('paid') || s.includes('succeeded')) return 'paid';
   if (s.includes('fail')) return 'failed';
   return 'unpaid';
@@ -165,8 +165,8 @@ const normalizeStatus = (raw?: string): NormalizedStatus => {
 
 const statusLabelMap: Record<NormalizedStatus, string> = {
   paid: '支払い済み',
-  unpaid: '未払い',
-  refunding: '返金中',
+  unpaid: '支払い待ち',
+  refunding: '返金処理中',
   refunded: '返金済み',
   failed: '支払い失敗',
 };
@@ -175,11 +175,12 @@ const normalizeRegistration = (reg: RegistrationItem) => {
   const normalizedStatus = normalizeStatus(reg.paymentStatus || reg.status);
   const amountField = typeof reg.amount === 'number' ? reg.amount : (reg as any).paidAmount;
   const amountYen = typeof amountField === 'number' && amountField > 0 ? amountField : null;
+  const isCancelRequested = reg.status === 'cancel_requested';
   return {
     ...reg,
     normalizedStatus,
     amountYen,
-    statusLabel: statusLabelMap[normalizedStatus] ?? '状態不明',
+    statusLabel: isCancelRequested ? 'キャンセル待ち' : statusLabelMap[normalizedStatus] ?? '状態不明',
   };
 };
 
@@ -190,7 +191,9 @@ const filteredRegistrations = computed(() => {
   if (activeFilter.value === 'paid') list = list.filter((r) => r.normalizedStatus === 'paid');
   if (activeFilter.value === 'unpaid') list = list.filter((r) => r.normalizedStatus === 'unpaid');
   if (activeFilter.value === 'refund')
-    list = list.filter((r) => r.normalizedStatus === 'refunding' || r.normalizedStatus === 'refunded');
+    list = list.filter(
+      (r) => r.status === 'cancel_requested' || r.normalizedStatus === 'refunding' || r.normalizedStatus === 'refunded',
+    );
   return list;
 });
 
@@ -203,7 +206,8 @@ const summaryTotals = computed(() => {
   list.forEach((reg) => {
     if (reg.amountYen && reg.normalizedStatus === 'paid') paidTotal += reg.amountYen;
     if (reg.amountYen && reg.normalizedStatus === 'unpaid') unpaidTotal += reg.amountYen;
-    if (reg.normalizedStatus === 'refunding' || reg.normalizedStatus === 'refunded') refundingCount += 1;
+    if (reg.status === 'cancel_requested' || reg.normalizedStatus === 'refunding' || reg.normalizedStatus === 'refunded')
+      refundingCount += 1;
   });
   return { totalCount, paidTotal, unpaidTotal, refundingCount };
 });
@@ -235,10 +239,11 @@ const statusLabel = (status: string) => {
   return '受付中';
 };
 
-const badgeClass = (status: NormalizedStatus) => {
-  if (status === 'refunding' || status === 'refunded') return 'badge warn';
-  if (status === 'paid') return 'badge success';
-  if (status === 'unpaid') return 'badge muted';
+const badgeClass = (reg: ReturnType<typeof normalizeRegistration>) => {
+  if (reg.status === 'cancel_requested') return 'badge warn';
+  if (reg.normalizedStatus === 'refunding' || reg.normalizedStatus === 'refunded') return 'badge warn';
+  if (reg.normalizedStatus === 'paid') return 'badge success';
+  if (reg.normalizedStatus === 'unpaid') return 'badge muted';
   return 'badge muted';
 };
 </script>
@@ -306,6 +311,10 @@ const badgeClass = (status: NormalizedStatus) => {
   padding: 8px 12px;
   border-radius: 999px;
   font-weight: 700;
+  min-width: 88px;
+  text-align: center;
+  justify-content: center;
+  display: inline-flex;
 }
 .chip-filter.active {
   background: #2563eb;

@@ -42,7 +42,7 @@
             </div>
           </Transition>
         </RouterView>
-        <div v-if="navPending" class="nav-loading" role="status" aria-live="polite" aria-busy="true">
+        <div v-if="showNavOverlay" class="nav-loading" role="status" aria-live="polite" aria-busy="true">
           <div class="entry-loading">
             <span class="entry-loading__spinner" aria-hidden="true"></span>
             <p class="entry-loading__text">読み込み中…</p>
@@ -118,6 +118,7 @@ import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
 import { APP_TARGET } from '../config';
+import { setNextTransitionOverride } from '../composables/useNavStack';
 import { isLineInAppBrowser } from '../utils/liff';
 import { getTransitionName, restoreScroll, saveScroll, useNavPending } from '../composables/useNavStack';
 
@@ -224,6 +225,10 @@ const showHeader = computed(() => {
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 const routeReady = ref(false);
+const showNavOverlay = computed(() => {
+  if (showTabbar.value) return false;
+  return navPending.value;
+});
 
 const handlePrimaryAction = () => {
   if (user.value) {
@@ -240,6 +245,7 @@ const goAdmin = () => {
 
 const go = (path: string) => {
   if (route.path === path) return;
+  setNextTransitionOverride('none');
   router.push(path);
 };
 
@@ -393,6 +399,7 @@ watch(
   display: flex;
   flex-direction: column;
   background: #f3f4f6;
+  --app-bg: #f3f4f6;
   color: #0f172a;
   overflow-x: hidden;
   overflow-y: visible;

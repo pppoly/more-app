@@ -11,7 +11,7 @@ import { Queue } from 'bullmq';
 import { IMAGE_QUEUE_NAME, PROCESS_IMAGE_JOB } from './image.queue';
 import type { Express } from 'express';
 
-const ALLOWED_RESOURCE_TYPES = ['community', 'event', 'user-avatar', 'event-gallery', 'banner'];
+const ALLOWED_RESOURCE_TYPES = ['community', 'event', 'class', 'user-avatar', 'event-gallery', 'banner'];
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const MAX_SIZE = 20 * 1024 * 1024; // 20MB
 

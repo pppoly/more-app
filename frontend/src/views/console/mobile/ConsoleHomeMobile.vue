@@ -85,7 +85,7 @@
     <section class="task-tip" :class="{ 'task-tip--empty': !hasCommunity }">
       <p class="task-title">現在のフォーカス</p>
       <p class="task-text">
-        {{ hasCommunity ? nextActionHint : 'まずコミュニティを登録し、プロフィールを整えましょう。' }}
+        {{ focusMessage }}
       </p>
     </section>
 
@@ -191,7 +191,7 @@
           <header class="picker-head">
             <p class="picker-title">コミュニティを切り替え</p>
             <button type="button" class="picker-close" @click="closeCommunityPicker">
-              <span class="i-lucide-x"></span>
+              <span aria-hidden="true">×</span>
             </button>
           </header>
           <div class="picker-list">
@@ -395,6 +395,36 @@ const isFreePlan = computed(() => planLabel.value.toLowerCase().includes('free')
 const planDisplay = computed(() => (isFreePlan.value ? 'Free · コミュニティ1つまで' : planLabel.value));
 const canCreateCommunity = computed(() => !isFreePlan.value || managedCommunities.value.length < 1);
 const aiMinutesSaved = ref<number | null>(null);
+const hasPublishedEvent = computed(() =>
+  events.value.some(
+    (event) => event.status === 'open' && (event.visibility === 'public' || event.visibility === 'unlisted'),
+  ),
+);
+const nearestUpcomingEvent = computed(() => {
+  const now = Date.now();
+  const upcoming = events.value
+    .filter(
+      (event) =>
+        event.status === 'open' &&
+        (event.visibility === 'public' || event.visibility === 'unlisted') &&
+        new Date(event.startTime).getTime() > now,
+    )
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  return upcoming[0] ?? null;
+});
+const isWithinThreeDays = computed(() => {
+  if (!nearestUpcomingEvent.value) return false;
+  const start = new Date(nearestUpcomingEvent.value.startTime).getTime();
+  if (Number.isNaN(start)) return false;
+  const diff = start - Date.now();
+  return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+});
+const focusMessage = computed(() => {
+  if (!hasCommunity.value) return 'まずコミュニティを登録し、プロフィールを整えましょう。';
+  if (!hasPublishedEvent.value) return 'まずはイベントを1本作成して、仲間に共有してみましょう';
+  if (isWithinThreeDays.value) return 'もうすぐ開催だね。準備チェックしよう。';
+  return 'そろそろ募集はじめよう。';
+});
 const nextActionHint = computed(() => {
   if (!hasCommunity.value) return 'コミュニティを登録して、プロフィールを整えましょう';
   if (events.value.length) return '次のイベントのタイトルと日程を決めて公開準備を進めましょう';
@@ -1212,8 +1242,10 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .action-icon img {
-  width: 56px;
-  height: 56px;
+  width: 32px;
+  height: 32px;
+  display: block;
+  margin: 0 auto;
 }
 
 .action-title {
@@ -1221,6 +1253,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-size: 13px;
   font-weight: 700;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .action-tile.is-disabled {
@@ -1294,8 +1329,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .picker-head {
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 12px;
 }
@@ -1305,11 +1341,23 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-weight: 600;
 }
 .picker-close {
+  position: absolute;
+  right: 0;
   border: none;
   background: rgba(15, 23, 42, 0.05);
   border-radius: 12px;
   width: 32px;
   height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: #0f172a;
+}
+.picker-close span {
+  display: block;
+  line-height: 1;
 }
 .picker-list {
   display: flex;
@@ -1317,14 +1365,14 @@ const normalizeLogoUrl = (raw?: string | null) => {
   gap: 12px;
 }
 .picker-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
   align-items: center;
+  column-gap: 12px;
   padding: 12px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid transparent;
-  gap: 12px;
 }
 .picker-item.is-active {
   border-color: #0ea5e9;
@@ -1339,6 +1387,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.35);
+  justify-self: center;
 }
 .picker-avatar img {
   width: 100%;
@@ -1351,6 +1400,11 @@ const normalizeLogoUrl = (raw?: string | null) => {
   min-width: 0;
   display: grid;
   gap: 2px;
+  justify-items: center;
+  text-align: center;
+}
+.picker-item .i-lucide-check {
+  justify-self: center;
 }
 .picker-name {
   margin: 0;

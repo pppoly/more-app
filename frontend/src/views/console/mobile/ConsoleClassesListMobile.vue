@@ -22,7 +22,7 @@
           <div class="empty-body">
             <p class="state-title">教室を作成して、定期講座を始めましょう</p>
             <p class="state-sub">まず教室を作成し、あとでレッスンの日程を追加できます</p>
-                <button class="primary large" type="button" @click="goCreate">教室を作成</button>
+            <button class="primary large" type="button" @click="goCreate">教室を作成</button>
             <p class="hint">作成後に、レッスンの日程を追加できます</p>
           </div>
         </div>
@@ -199,7 +199,7 @@ const displayTitle = (title: any) => {
   width: 100%;
   max-width: 320px;
   height: 48px;
-  align-self: stretch;
+  align-self: center;
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -231,6 +231,7 @@ const displayTitle = (title: any) => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  text-align: center;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -245,9 +246,10 @@ const displayTitle = (title: any) => {
   border-radius: 12px;
   padding: 12px;
   line-height: 1.5;
-  text-align: left;
+  text-align: center;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
 }
 .info-text {
@@ -262,7 +264,7 @@ const displayTitle = (title: any) => {
 .empty-body {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   gap: 8px;
   width: 100%;
 }

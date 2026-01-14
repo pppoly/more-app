@@ -14,6 +14,24 @@
       <section class="group">
         <p class="group-title">教室基本情報</p>
         <label class="field">
+          <div class="field-row">
+            <span class="field-label">カバー画像（16:9）</span>
+            <div class="cover-upload">
+            <div class="cover-drop">
+              <input ref="coverInput" type="file" accept="image/*" class="sr-only" @change="handleCoverUpload" />
+              <div v-if="coverPreview" class="cover-preview">
+                <img :src="coverPreview" alt="" />
+              </div>
+                <div v-else class="cover-empty">
+                  <span class="i-lucide-image-plus"></span>
+                  <p>{{ uploadingCover ? '処理中…' : 'タップしてアップロード' }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="hint">自動で中央を16:9に切り抜きます</p>
+        </label>
+        <label class="field">
           <span>タイトル *</span>
           <input
             v-model="form.title"
@@ -27,7 +45,8 @@
           <span>説明</span>
           <textarea
             v-model="form.description"
-            rows="2"
+            rows="5"
+            class="description-input"
             placeholder="例：買い物の会話や電話のかけ方など、生活に役立つ日本語を学びます。"
           ></textarea>
         </label>
@@ -70,10 +89,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { createConsoleClass, fetchConsoleClasses, updateConsoleClass } from '../../../api/client';
+import { createConsoleClass, fetchConsoleClasses, updateConsoleClass, uploadClassCover } from '../../../api/client';
 import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
 
 const route = useRoute();
 const router = useRouter();
@@ -90,6 +110,75 @@ const form = ref({
   priceYenPerLesson: 0,
   defaultCapacity: null as number | null,
 });
+const coverInput = ref<HTMLInputElement | null>(null);
+const coverPreview = ref<string | null>(null);
+const pendingCoverFile = ref<File | null>(null);
+const uploadingCover = ref(false);
+
+const cropImage = (file: File, aspectRatio: number, targetWidth: number) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const { width, height } = img;
+        let cropWidth = width;
+        let cropHeight = cropWidth / aspectRatio;
+        if (cropHeight > height) {
+          cropHeight = height;
+          cropWidth = cropHeight * aspectRatio;
+        }
+        const startX = (width - cropWidth) / 2;
+        const startY = (height - cropHeight) / 2;
+        const outputWidth = Math.min(targetWidth, cropWidth);
+        const outputHeight = outputWidth / aspectRatio;
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas not supported'));
+          return;
+        }
+        ctx.drawImage(img, startX, startY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+        resolve(canvas.toDataURL('image/jpeg', 0.86));
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+
+const dataUrlToFile = async (dataUrl: string, filename: string) => {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+};
+
+const handleCoverUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file || uploadingCover.value) return;
+  uploadingCover.value = true;
+  try {
+    const dataUrl = await cropImage(file, 16 / 9, 1280);
+    coverPreview.value = dataUrl;
+    const uploadFile = await dataUrlToFile(dataUrl, `class-cover-${Date.now()}.jpg`);
+    if (isEdit.value && classId.value) {
+      const { imageUrl } = await uploadClassCover(classId.value, uploadFile);
+      coverPreview.value = resolveAssetUrl(imageUrl);
+      pendingCoverFile.value = null;
+    } else {
+      pendingCoverFile.value = uploadFile;
+    }
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    uploadingCover.value = false;
+    if (target) target.value = '';
+  }
+};
 
 const handleSubmit = async () => {
   try {
@@ -101,6 +190,15 @@ const handleSubmit = async () => {
     } else {
       const res = await createConsoleClass(form.value);
       createdId = (res as any)?.id ?? null;
+    }
+    if (createdId && pendingCoverFile.value) {
+      try {
+        const { imageUrl } = await uploadClassCover(createdId, pendingCoverFile.value);
+        coverPreview.value = resolveAssetUrl(imageUrl);
+        pendingCoverFile.value = null;
+      } catch (err) {
+        console.warn(err);
+      }
     }
     toast.show('教室を作成しました');
     if (!isEdit.value) {
@@ -142,6 +240,7 @@ const loadExisting = async () => {
     form.value.locationName = target.locationName || '';
     form.value.priceYenPerLesson = target.priceYenPerLesson || 0;
     form.value.defaultCapacity = target.defaultCapacity ?? null;
+    coverPreview.value = target.coverImageUrl ? resolveAssetUrl(target.coverImageUrl) : null;
   } catch (err: any) {
     toast.show(err?.message ?? '読み込みに失敗しました');
   } finally {
@@ -176,6 +275,9 @@ onMounted(() => {
   width: 100%;
   box-sizing: border-box;
 }
+.group + .group {
+  margin-top: 14px;
+}
 .group-title {
   margin: 0 0 8px;
   font-weight: 700;
@@ -186,6 +288,17 @@ onMounted(() => {
   flex-direction: column;
   gap: 6px;
   font-weight: 600;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.field-label {
+  font-weight: 600;
+  color: #0f172a;
+  min-width: 110px;
 }
 input,
 textarea {
@@ -201,14 +314,72 @@ input:focus,
 textarea:focus {
   outline: 2px solid #c7d2fe;
 }
+.cover-upload {
+  display: flex;
+  justify-content: flex-end;
+  flex: 1;
+}
+.cover-drop {
+  width: 140px;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.cover-drop:hover {
+  border-color: rgba(37, 99, 235, 0.5);
+  background: #eef2ff;
+}
+.cover-preview {
+  width: 100%;
+  height: 100%;
+}
+.cover-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+.cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.description-input {
+  min-height: 140px;
+}
 .input-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
+}
+.input-row input {
+  flex: 1;
+  min-width: 0;
 }
 .suffix {
   font-weight: 700;
   color: #0f172a;
+  white-space: nowrap;
 }
 .hint {
   margin: 0;

@@ -11,12 +11,14 @@ import { CreateClassDto, UpdateClassDto } from './dto/create-class.dto';
 import { BatchCreateLessonsDto } from './dto/create-lessons.dto';
 import { CreateClassRegistrationDto } from './dto/create-registration.dto';
 import { PaymentsService } from '../payments/payments.service';
+import { AssetService } from '../asset/asset.service';
 
 @Injectable()
 export class ClassesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
+    private readonly assetService: AssetService,
   ) {}
 
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
@@ -66,6 +68,11 @@ export class ClassesService {
           where: { status: 'scheduled', startAt: { gte: new Date() } },
           orderBy: { startAt: 'asc' },
           take: 20,
+          include: {
+            registrations: {
+              select: { id: true },
+            },
+          },
         },
       },
     });
@@ -75,7 +82,13 @@ export class ClassesService {
       ...rest,
       title: this.getLocalizedText(cls.title),
       description: this.getLocalizedText(cls.description),
-      upcomingLessons: lessons,
+      upcomingLessons: lessons.map((lesson) => {
+        const { registrations, ...restLesson } = lesson;
+        return {
+          ...restLesson,
+          registrationCount: registrations?.length ?? 0,
+        };
+      }),
     };
   }
 
@@ -246,6 +259,31 @@ export class ClassesService {
     return this.prisma.class.update({ where: { id: classId }, data });
   }
 
+  async uploadClassCover(userId: string, classId: string, file: Express.Multer.File | undefined) {
+    const cls = await this.prisma.class.findUnique({ where: { id: classId } });
+    if (!cls) throw new NotFoundException('Class not found');
+    await this.assertCommunityManager(userId, cls.communityId);
+    if (!file) {
+      throw new BadRequestException('ファイルが必要です');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('画像のみアップロードできます');
+    }
+    const { asset, publicUrl } = await this.assetService.uploadImageFromBuffer({
+      userId,
+      tenantId: cls.communityId,
+      resourceType: 'class',
+      resourceId: classId,
+      role: 'cover',
+      file,
+    });
+    await this.prisma.class.update({
+      where: { id: classId },
+      data: { coverImageUrl: publicUrl },
+    });
+    return { assetId: asset.id, imageUrl: publicUrl, variants: asset.variants ?? null };
+  }
+
   async deleteClass(userId: string, classId: string) {
     const cls = await this.prisma.class.findUnique({ where: { id: classId } });
     if (!cls) throw new NotFoundException('Class not found');
@@ -277,14 +315,71 @@ export class ClassesService {
   async cancelLesson(userId: string, lessonId: string) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
-      include: { class: true },
+      include: {
+        class: true,
+        registrations: {
+          include: { payment: true },
+        },
+      },
     });
     if (!lesson) throw new NotFoundException('Lesson not found');
     await this.assertCommunityManager(userId, lesson.class.communityId);
-    return this.prisma.lesson.update({
+    if (!lesson.registrations.length) {
+      throw new BadRequestException('申込がないためキャンセルできません');
+    }
+    if (lesson.status === 'cancelled') {
+      return { lessonId: lesson.id, status: 'cancelled' };
+    }
+
+    const paidRegistrations = lesson.registrations.filter((reg) => reg.paymentStatus === 'paid');
+    const freeRegistrations = lesson.registrations.filter(
+      (reg) => reg.paymentStatus !== 'paid' && reg.status !== 'rejected',
+    );
+    const refundResults: Array<{ registrationId: string; status: string; error?: string }> = [];
+
+    for (const reg of paidRegistrations) {
+      try {
+        const payment = reg.payment ?? (await this.prisma.payment.findFirst({ where: { registrationId: reg.id } }));
+        if (!payment) {
+          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'No payment found' });
+          continue;
+        }
+        if (payment.method !== 'stripe') {
+          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'Unsupported payment method' });
+          continue;
+        }
+        await this.paymentsService.refundStripePayment(userId, payment.id, 'lesson_cancelled');
+        await this.prisma.eventRegistration.update({
+          where: { id: reg.id },
+          data: { status: 'refunded', paymentStatus: 'refunded', noShow: false, attended: false },
+        });
+        refundResults.push({ registrationId: reg.id, status: 'refunded' });
+      } catch (err) {
+        refundResults.push({
+          registrationId: reg.id,
+          status: 'refund_failed',
+          error: err instanceof Error ? err.message : 'Refund failed',
+        });
+        await this.prisma.eventRegistration.update({
+          where: { id: reg.id },
+          data: { status: 'pending_refund', paymentStatus: reg.paymentStatus },
+        });
+      }
+    }
+
+    if (freeRegistrations.length) {
+      await this.prisma.eventRegistration.updateMany({
+        where: { id: { in: freeRegistrations.map((r) => r.id) } },
+        data: { status: 'cancelled', noShow: false, attended: false },
+      });
+    }
+
+    await this.prisma.lesson.update({
       where: { id: lessonId },
       data: { status: 'cancelled' },
     });
+
+    return { lessonId: lesson.id, status: 'cancelled', refunds: refundResults };
   }
 
   async deleteLesson(userId: string, lessonId: string) {
@@ -294,10 +389,13 @@ export class ClassesService {
     });
     if (!lesson) throw new NotFoundException('Lesson not found');
     await this.assertCommunityManager(userId, lesson.class.communityId);
-    return this.prisma.lesson.update({
-      where: { id: lessonId },
-      data: { status: 'archived' },
+    const registrationCount = await this.prisma.eventRegistration.count({
+      where: { lessonId },
     });
+    if (registrationCount > 0) {
+      throw new BadRequestException('申込があるため削除できません');
+    }
+    return this.prisma.lesson.delete({ where: { id: lessonId } });
   }
 
   async getLessonRegistrations(userId: string, lessonId: string) {

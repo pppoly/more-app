@@ -3,7 +3,12 @@ import MobileEvents from '../views/mobile/MobileEvents.vue';
 import MobileEventDetail from '../views/mobile/MobileEventDetail.vue';
 import MobileMe from '../views/mobile/MobileMe.vue';
 import Login from '../views/auth/Login.vue';
-import { beginNav, beginNavPending, endNavPending } from '../composables/useNavStack';
+import {
+  beginNav,
+  beginNavPending,
+  clearPopstateBackPending,
+  endNavPending,
+} from '../composables/useNavStack';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/events' },
@@ -37,6 +42,10 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory('/liff'),
   routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    return { left: 0, top: 0 };
+  },
 });
 
 let replacePending = false;
@@ -47,6 +56,7 @@ router.replace = ((to) => {
 }) as typeof router.replace;
 const originalPush = router.push.bind(router);
 router.push = ((to) => {
+  clearPopstateBackPending();
   if (typeof to === 'object' && to && 'replace' in to && (to as any).replace) {
     replacePending = true;
   }

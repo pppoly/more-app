@@ -17,7 +17,7 @@ import { buildIdempotencyKey } from './idempotency.util';
 import { computeMerchantNet, computeProportionalAmount } from './settlement.utils';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
-const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 30);
+const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15);
 const PAYMENT_PENDING_TIMEOUT_MS =
   Number.isFinite(PAYMENT_PENDING_TIMEOUT_MINUTES) && PAYMENT_PENDING_TIMEOUT_MINUTES > 0
     ? PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000
@@ -63,6 +63,25 @@ export class PaymentsService {
     return Date.now() - payment.createdAt.getTime() > PAYMENT_PENDING_TIMEOUT_MS;
   }
 
+  async expireOverduePendingPayments() {
+    if (!PAYMENT_PENDING_TIMEOUT_MS) return;
+    const cutoff = new Date(Date.now() - PAYMENT_PENDING_TIMEOUT_MS);
+    const candidates = await this.prisma.payment.findMany({
+      where: {
+        status: 'pending',
+        method: 'stripe',
+        createdAt: { lt: cutoff },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+    if (!candidates.length) return;
+    for (const payment of candidates) {
+      await this.expirePendingPayment(payment);
+    }
+    this.logger.log(`Expired ${candidates.length} pending payments`);
+  }
+
   private async expirePendingPayment(payment: Payment) {
     try {
       if (payment.stripeCheckoutSessionId && this.stripeService.enabled) {
@@ -83,7 +102,7 @@ export class PaymentsService {
       if (payment.registrationId) {
         await this.prisma.eventRegistration.updateMany({
           where: { id: payment.registrationId, paymentStatus: { not: 'paid' } },
-          data: { paymentStatus: 'unpaid' },
+          data: { paymentStatus: 'cancelled', status: 'cancelled' },
         });
       }
       this.logger.log(`Expired pending payment: payment=${payment.id}, registration=${payment.registrationId ?? 'n/a'}`);
@@ -549,6 +568,9 @@ export class PaymentsService {
     if (registration.paymentStatus === 'paid') {
       throw new BadRequestException('Registration already paid');
     }
+    if (registration.status === 'cancelled' && registration.paymentStatus !== 'paid') {
+      throw new BadRequestException('支払い期限が切れました。再度申込してください。');
+    }
 
     const amount = registration.amount ?? 0;
     if (amount <= 0) {
@@ -581,10 +603,10 @@ export class PaymentsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    let activePending = existingPending;
+    const activePending = existingPending;
     if (activePending && this.isPendingPaymentExpired(activePending)) {
       await this.expirePendingPayment(activePending);
-      activePending = null;
+      throw new BadRequestException('支払い期限が切れました。再度申込してください。');
     }
 
     if (activePending?.stripeCheckoutSessionId) {
@@ -645,8 +667,10 @@ export class PaymentsService {
     const titleSource = event ? event.title : lesson?.class.title;
     const eventTitle = this.getLocalizedText(titleSource) || 'MORE Class';
 
-    // Expire Checkout after 30 minutes to avoid long-held pending locks.
-    const expiresAt = Math.floor(Date.now() / 1000) + 30 * 60;
+    // Expire Checkout after the pending timeout window to avoid long-held locks.
+    const expiresAt =
+      Math.floor(Date.now() / 1000) +
+      (PAYMENT_PENDING_TIMEOUT_MINUTES > 0 ? PAYMENT_PENDING_TIMEOUT_MINUTES * 60 : 15 * 60);
     // Prepare local payment first to bind metadata
     const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
     const payment = await this.prisma.payment.upsert({

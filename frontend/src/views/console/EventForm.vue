@@ -459,7 +459,7 @@
             ref="sectionConfig"
           >
             <ConsoleTopBar
-              v-if="isMobileLayout"
+              v-if="isMobileLayout && !isLiffClientMode"
               title="追加設定"
               @back="closeAdvancedPage"
             >
@@ -3197,6 +3197,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
   submitting.value = true;
   actionLoading.value = status;
   error.value = null;
+  await nextTick();
   const isDraft = status === 'draft';
 
   const now = new Date();

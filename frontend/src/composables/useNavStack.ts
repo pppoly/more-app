@@ -13,6 +13,7 @@ let lastPos: number | null = null;
 let dir: NavDir = 'forward';
 let popstateBackPending = false;
 let popstateBound = false;
+let transitionOverride: 'none' | 'fade' | 'push' | 'pop' | null = null;
 const scrollMap = new Map<string, number>();
 const MAX_SCROLL_ENTRIES = 50;
 const navPending = ref(false);
@@ -90,6 +91,12 @@ export const beginNav = (
 };
 
 export const getDir = () => dir;
+export const clearPopstateBackPending = () => {
+  popstateBackPending = false;
+};
+export const setNextTransitionOverride = (value: 'none' | 'fade' | 'push' | 'pop') => {
+  transitionOverride = value;
+};
 
 export const beginNavPending = (delayMs: number = NAV_PENDING_DELAY_MS) => {
   if (navPendingTimer) {
@@ -125,7 +132,18 @@ export const syncHistoryPos = () => {
 
 export const getTransitionName = (route: RouteLike) => {
   if (route.meta?.navType === 'modal') return 'modal-up';
+  if (transitionOverride) {
+    const override = transitionOverride;
+    transitionOverride = null;
+    if (override === 'none') return 'page-none';
+    if (override === 'fade') return 'page-fade';
+    return override === 'pop' ? 'page-pop' : 'page-push';
+  }
   if (dir === 'back') return 'page-pop';
+  if (route.meta?.navTransition === 'none') return 'page-none';
+  if (route.meta?.navTransition === 'fade') return 'page-fade';
+  if (route.meta?.forceNavDir === 'forward') return 'page-push';
+  if (route.meta?.forceNavDir === 'back') return 'page-pop';
   if (dir === 'forward') return 'page-push';
   return 'page-fade';
 };

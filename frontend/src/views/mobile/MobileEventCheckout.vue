@@ -9,14 +9,27 @@
 
     <section v-else-if="detail" class="body">
       <div class="summary">
-        <p class="summary-label">イベント</p>
+        <p class="summary-label">申込内容</p>
         <p class="summary-title">{{ detail.title }}</p>
         <p class="summary-line">{{ detail.timeText }}</p>
-        <p class="summary-amount">{{ amountText }}</p>
+      </div>
+
+      <div class="summary summary--payment">
+        <p class="summary-label">支払い内容</p>
+        <div class="payment-list">
+          <div class="payment-item">
+            <p class="payment-name">チケット</p>
+            <p class="payment-value">{{ ticketNameText }}</p>
+          </div>
+          <div class="payment-item">
+            <p class="payment-name">参加費</p>
+            <p class="payment-value payment-value--amount">{{ amountText }}</p>
+          </div>
+        </div>
       </div>
 
       <div v-if="refundPolicyText" class="summary summary--refund">
-        <p class="summary-label">返金ルール</p>
+        <p class="summary-label">キャンセル・返金ルール（本申込の参加費について）</p>
         <p class="summary-line summary-line--wrap">{{ refundPolicyText }}</p>
       </div>
 
@@ -120,6 +133,15 @@ const amountText = computed(() => {
   return amount === 0 ? '無料' : currencyFormatter.format(amount);
 });
 
+const ticketNameText = computed(() => {
+  const ticketTypes = event.value?.ticketTypes ?? [];
+  if (!ticketTypes.length) return '通常';
+  const draft = loadDraftPayload();
+  const targetId = pendingPayment.value?.ticketTypeId ?? draft?.ticketTypeId ?? ticketTypes[0].id;
+  const ticket = ticketTypes.find((entry) => entry.id === targetId) ?? ticketTypes[0];
+  return ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '通常';
+});
+
 const hasPaidTicket = computed(
   () => event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
 );
@@ -137,6 +159,12 @@ const resolveRegistrationWindow = (ev: EventDetail | null) => {
 };
 
 const registrationWindow = computed(() => resolveRegistrationWindow(event.value));
+
+const isFreeEvent = computed(() => {
+  const prices = event.value?.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+  if (!prices.length) return true;
+  return Math.max(...prices) === 0;
+});
 
 const ctaLabel = computed(() => {
   const amount = pendingPayment.value?.amount ?? null;
@@ -257,7 +285,14 @@ const loadEvent = async () => {
 onMounted(() => {
   // ここでは主催者申請ページへはリダイレクトせず、利用者がそのまま申し込みできるようにする。
   // 未ログインの場合は後続の API で認証エラーとなるので、フロント側で適宜ログイン誘導を行う。
-  loadEvent();
+  loadEvent().then(() => {
+    if (event.value && isFreeEvent.value) {
+      const payload = buildSuccessPayload('free');
+      if (payload) {
+        goToSuccessPage(payload);
+      }
+    }
+  });
   pendingPayment.value = loadPendingPayment();
   void hydratePendingPayment();
 });
@@ -415,6 +450,44 @@ const formatDate = (value: string) => {
 
 .summary--refund {
   background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: none;
+}
+.summary--payment {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+.payment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.payment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.payment-name {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.payment-value {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.payment-value--amount {
+  font-size: 15px;
+  font-weight: 800;
+  color: #22c55e;
 }
 
 .summary-amount {

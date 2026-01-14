@@ -71,7 +71,7 @@
             <p class="portal-action__title">教室 / Classes</p>
             <p class="portal-action__desc">毎週の教室・講座の一覧</p>
           </div>
-          <span v-if="classesCount !== null" class="badge">{{ classesCount }}</span>
+          <span v-if="classesCount !== null" class="badge">{{ classesCount }} 教室</span>
           <span class="i-lucide-chevron-right"></span>
         </button>
       </article>
@@ -498,6 +498,7 @@ const toggleFollow = async () => {
   --chip-border: rgba(255, 255, 255, 0.35);
   --hero-overlay-from: rgba(15, 23, 42, 0.22);
   --hero-overlay-to: rgba(15, 23, 42, 0.55);
+  --portal-card-shadow: none;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 48%, #f8fafc 100%);
   min-height: 100vh;
   min-height: 100dvh;
@@ -679,12 +680,12 @@ const toggleFollow = async () => {
   height: 76px;
   border-radius: 18px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.9);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  border: none;
 }
 .portal-hero__avatar img,
 .portal-hero__avatar span {
@@ -694,14 +695,14 @@ const toggleFollow = async () => {
   height: 100%;
   object-fit: cover;
   display: block;
-  border-radius: 50%;
+  border-radius: inherit;
 }
 .portal-hero__avatar span {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(59, 130, 246, 0.28));
-  color: #0f172a;
+  background: #f1f5f9;
+  color: #334155;
   font-weight: 800;
 }
 
@@ -710,7 +711,7 @@ const toggleFollow = async () => {
   background: #fff;
   border-radius: 18px;
   padding: 20px 18px 18px;
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--portal-card-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -723,7 +724,7 @@ const toggleFollow = async () => {
   border: 1px solid #e5e7eb;
   background: linear-gradient(135deg, #f8fafc, #f1f5f9);
   border-radius: 14px;
-  padding: 12px;
+  padding: 8px 12px 0;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 10px;
@@ -733,11 +734,11 @@ const toggleFollow = async () => {
 .portal-action-btn--solo {
   background: #fff;
   border-color: #e2e8f0;
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.1);
+  box-shadow: var(--portal-card-shadow);
 }
 .portal-action__icon {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   border-radius: 12px;
   background: #eef2ff;
   display: inline-flex;
@@ -747,14 +748,22 @@ const toggleFollow = async () => {
   font-size: 18px;
 }
 .portal-action__icon-image {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   display: block;
 }
 .portal-action__title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
+}
+.portal-action__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 72px;
+  align-items: center;
+  text-align: center;
 }
 .portal-action__desc {
   margin: 2px 0 0;
@@ -815,7 +824,7 @@ const toggleFollow = async () => {
   background: #fff;
   border-radius: 18px;
   padding: 16px 18px;
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--portal-card-shadow);
 }
 .member-row {
   display: flex;
@@ -883,7 +892,7 @@ const toggleFollow = async () => {
   background: #fff;
   border-radius: 16px;
   padding: 16px 16px 18px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--portal-card-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1023,7 +1032,7 @@ const toggleFollow = async () => {
   background: #fff;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--portal-card-shadow);
   border: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;

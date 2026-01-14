@@ -136,7 +136,7 @@ import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
 import { APP_TARGET } from '../../config';
 
-type FilterTabId = 'upcoming' | 'past' | 'all';
+type FilterTabId = 'upcoming' | 'past' | 'refund' | 'all';
 
 const router = useRouter();
 const events = ref<MyEventItem[]>([]);
@@ -149,8 +149,7 @@ const qrVisible = ref(false);
 const qrTicket = ref<MyEventItem | null>(null);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref<string | null>(null);
-// 統一して LIFF 表示を優先（ブラウザでも同じ見た目に）
-const isLiffClientMode = computed(() => true);
+const isLiffClientMode = computed(() => isLiffClient());
 const resourceConfigStore = useResourceConfig();
 const { confirm: confirmDialog } = useConfirm();
 const { slotMap } = resourceConfigStore;
@@ -257,8 +256,12 @@ const sortedEvents = computed(() =>
   [...events.value].sort((a, b) => getStartTime(b).getTime() - getStartTime(a).getTime()),
 );
 
+const isPaymentCancelledTicket = (item: MyEventItem) =>
+  item.status === 'cancelled' && item.paymentStatus === 'cancelled' && (item.amount ?? 0) > 0;
+
 const isEligibleTicket = (item: MyEventItem) => {
   if (item.status === 'rejected') return false;
+  if (isPaymentCancelledTicket(item)) return false;
   if (item.status === 'pending' || item.status === 'pending_payment') return true;
   const amount = item.amount ?? 0;
   const paymentOk = isPaidStatus(item) || isRefundedStatus(item) || isRefundingStatus(item) || item.status === 'cancelled';
@@ -268,15 +271,20 @@ const isEligibleTicket = (item: MyEventItem) => {
 
 const eligibleEvents = computed(() => sortedEvents.value.filter((item) => isEligibleTicket(item)));
 
+const isRefundOrCancel = (item: MyEventItem) =>
+  isRefundingStatus(item) || isRefundedStatus(item) || isCancelledStatus(item);
+
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
-  { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) },
-  { id: 'past', label: '参加済み', matcher: (item) => !isUpcoming(item) },
+  { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) && !item.attended },
+  { id: 'past', label: '参加済み', matcher: (item) => item.attended && !isRefundOrCancel(item) },
+  { id: 'refund', label: 'キャンセル', matcher: (item) => isRefundOrCancel(item) },
   { id: 'all', label: 'すべて', matcher: () => true },
 ];
 
 const filterCounts = computed(() => ({
-  upcoming: eligibleEvents.value.filter((item) => isUpcoming(item)).length,
-  past: eligibleEvents.value.filter((item) => !isUpcoming(item)).length,
+  upcoming: eligibleEvents.value.filter((item) => isUpcoming(item) && !item.attended).length,
+  past: eligibleEvents.value.filter((item) => item.attended && !isRefundOrCancel(item)).length,
+  refund: eligibleEvents.value.filter((item) => isRefundOrCancel(item)).length,
   all: eligibleEvents.value.length,
 }));
 
@@ -335,9 +343,14 @@ const groupedEvents = computed(() => {
     if (!groups[gid]) groups[gid] = [];
     groups[gid].push(item);
   });
-  if (groups.upcoming_paid) {
-    groups.upcoming_paid.sort((a, b) => getStartTime(a).getTime() - getStartTime(b).getTime());
-  }
+  const now = Date.now();
+  Object.keys(groups).forEach((key) => {
+    groups[key].sort((a, b) => {
+      const aDiff = Math.abs(getStartTime(a).getTime() - now);
+      const bDiff = Math.abs(getStartTime(b).getTime() - now);
+      return aDiff - bDiff;
+    });
+  });
   const ordered = groupOrder
     .map((g) => ({ ...g, items: groups[g.id] || [] }))
     .filter((g) => g.items.length > 0);
@@ -370,7 +383,7 @@ const statusLabel = (item: MyEventItem) => {
     pending_payment: '支払い待ち',
     approved: '確認済み',
     rejected: '却下',
-    paid: '支払い完了',
+    paid: '支払い済み',
     refunded: '返金済み',
     pending_refund: '返金処理中',
     cancel_requested: 'キャンセル申請中',
@@ -405,7 +418,7 @@ const paymentLabel = (item: MyEventItem) => {
   if (isPendingStatus(item)) return '審査待ち';
   if (item.status === 'rejected') return '却下';
   if (item.status === 'cancelled') return 'キャンセル';
-  if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? '無料' : '支払い完了';
+  if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? '無料' : '支払い済み';
   if ((item.amount ?? 0) === 0) return '無料';
   return '支払い状況確認中';
 };
@@ -493,12 +506,14 @@ const paymentBadgeLabel = (item: MyEventItem) => {
 const emptyStateTitle = computed(() => {
   if (activeTab.value === 'upcoming') return '参加予定がまだありません';
   if (activeTab.value === 'past') return 'まだ履歴がありません';
+  if (activeTab.value === 'refund') return 'キャンセルの記録がありません';
   return '申込記録がありません';
 });
 
 const emptyStateMessage = computed(() => {
   if (activeTab.value === 'upcoming') return '申し込みイベントの最新状況を追跡できます。';
   if (activeTab.value === 'past') return '参加済みのイベントがここに表示されます。';
+  if (activeTab.value === 'refund') return 'キャンセルの状況がここに表示されます。';
   return '気になるイベントを探してみましょう。';
 });
 
@@ -577,6 +592,7 @@ const cancelRegistration = async (item: MyEventItem) => {
     events.value = events.value.map((event) =>
       event.registrationId === item.registrationId ? { ...event, status: nextStatus } : event,
     );
+    await refreshEventsSilent();
     if (nextStatus === 'cancel_requested') {
       showBanner('info', 'キャンセル申請を受け付けました。有料イベントは主催者確認後に処理されます。');
     } else if (nextStatus === 'pending_refund') {
@@ -707,12 +723,12 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 
 .segmented-control {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   background: #e2e8f0;
   padding: 6px;
   border-radius: 999px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 14px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .segmented-button {
@@ -720,17 +736,18 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   border-radius: 999px;
   background: transparent;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: #475569;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .segmented-button__count {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: inherit;
   opacity: 0.8;
@@ -796,7 +813,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
   background: #fff;
   border-radius: 24px;
   padding: 20px 18px 18px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -820,7 +837,7 @@ const isRefunding = (item: MyEventItem) => isRefundingStatus(item);
 }
 .ticket-card--refunding {
   border: 1px dashed rgba(234, 88, 12, 0.8);
-  box-shadow: 0 12px 28px rgba(234, 88, 12, 0.16);
+  box-shadow: none;
 }
 
 .ticket-card__void-stamp {

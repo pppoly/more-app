@@ -10,7 +10,6 @@
         </div>
         <div class="me-hero__info">
           <p class="me-hero__title">{{ user?.name || 'ゲスト' }}</p>
-          <p class="me-hero__subtitle">{{ isOrganizer ? '主催者' : '一般ユーザー' }}</p>
         </div>
       </div>
     </section>
@@ -80,7 +79,6 @@ const { t } = useI18n();
 const toast = useToast();
 
 const isLoggedIn = computed(() => Boolean(user.value));
-const isOrganizer = computed(() => Boolean(user.value?.isOrganizer));
 const userInitials = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?? 'A');
 
 const goMyEvents = () => router.push({ name: 'my-events' });

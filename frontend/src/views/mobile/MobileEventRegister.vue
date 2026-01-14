@@ -27,22 +27,18 @@
         </div>
         <div class="summary-title-row">
           <h1 class="summary-title">{{ detail.title }}</h1>
-          <span class="price-chip">{{ detail.priceText }}</span>
         </div>
       </article>
 
-      <article class="ticket-line">
+      <article class="ticket-line ticket-line--choice">
         <div>
-          <p class="line-label">チケット</p>
+          <p class="line-label">{{ hasMultipleTickets ? 'チケット選択' : '参加チケット' }}</p>
           <p class="line-value">{{ selectedTicket?.name || '参加チケット' }}</p>
+          <p class="line-fee">
+            参加費：<span class="line-fee__amount">{{ ticketPriceText }}</span>
+          </p>
         </div>
-      </article>
-
-      <article v-if="refundPolicyText" class="ticket-line ticket-line--refund">
-        <div>
-          <p class="line-label">返金ルール</p>
-          <p class="line-value line-value--wrap">{{ refundPolicyText }}</p>
-        </div>
+        <span class="line-meta">{{ hasMultipleTickets ? '選択してください' : '変更する（任意）' }}</span>
       </article>
 
       <p v-if="registrationUnavailableReason" class="ios-notice">
@@ -121,6 +117,14 @@
               </p>
             </div>
           </div>
+        </div>
+      </article>
+
+      <article v-if="refundPolicyText" class="ticket-line ticket-line--refund">
+        <div>
+          <p class="line-label">キャンセル・返金ルール（参考）</p>
+          <p class="line-value line-value--wrap">{{ refundPolicyText }}</p>
+          <p class="line-note">※支払い前に再確認できます</p>
         </div>
       </article>
 
@@ -262,6 +266,11 @@ const selectedTicket = computed(() => {
     name: ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '参加チケット',
     price: ticket.price ?? 0,
   };
+});
+const hasMultipleTickets = computed(() => (event.value?.ticketTypes?.length ?? 0) > 1);
+const ticketPriceText = computed(() => {
+  const price = selectedTicket.value?.price ?? 0;
+  return price === 0 ? '無料' : currencyFormatter.format(price);
 });
 const requiresPayment = computed(() => (selectedTicket.value?.price ?? 0) > 0);
 const resolveRegistrationWindow = (ev: EventDetail | null) => {
@@ -626,6 +635,15 @@ const formatDate = (value: string) => {
   align-items: center;
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
 }
+.ticket-line--choice {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.line-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
 
 .line-label {
   margin: 0;
@@ -638,10 +656,31 @@ const formatDate = (value: string) => {
   font-weight: 600;
   color: #0f172a;
 }
+.line-fee {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #475569;
+}
+.line-fee__amount {
+  font-weight: 700;
+  color: #22c55e;
+}
 
 .ticket-line--refund .line-value {
   font-size: 13px;
   color: #475569;
+}
+.line-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.ticket-line--refund {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .line-value--wrap {

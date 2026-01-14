@@ -4,13 +4,18 @@
 
     <div v-if="classDetail" class="hero">
       <div class="hero-bg"></div>
-      <div class="hero-body">
-        <p class="class-label">現在の教室</p>
-        <p class="class-title">{{ classDetail.title }}</p>
-        <p class="class-meta">
-          ¥{{ classDetail.priceYenPerLesson.toLocaleString() }} / 回・定員 {{ classDetail.defaultCapacity ?? '未設定' }}
-        </p>
-        <button class="primary add-btn" type="button" @click="openSheet">＋ レッスンを追加</button>
+      <div class="hero-content">
+        <div class="hero-body">
+          <p class="class-label">現在の教室</p>
+          <p class="class-title">{{ classDetail.title }}</p>
+          <p class="class-meta">
+            ¥{{ classDetail.priceYenPerLesson.toLocaleString() }} / 回・定員 {{ classDetail.defaultCapacity ?? '未設定' }}
+          </p>
+          <button class="primary add-btn" type="button" @click="openSheet">＋ レッスンを追加</button>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <img :src="heroImageSrc" alt="" />
+        </div>
       </div>
     </div>
     <p v-if="showTopBar" class="page-hint">この教室で開催する、各回のレッスン日程を管理します</p>
@@ -55,10 +60,18 @@
                   type="button"
                   @click.stop="confirmCancel(lesson)"
                   :disabled="lesson.status === 'cancelled'"
+                  v-if="(lesson.registrationCount ?? 0) > 0"
                 >
                   {{ lesson.status === 'cancelled' ? 'キャンセル済' : 'キャンセル' }}
                 </button>
-                <button class="ghost danger" type="button" @click.stop="removeLesson(lesson.id)">削除</button>
+                <button
+                  v-if="(lesson.registrationCount ?? 0) === 0"
+                  class="ghost danger"
+                  type="button"
+                  @click.stop="removeLesson(lesson.id)"
+                >
+                  削除
+                </button>
               </div>
             </div>
           </div>
@@ -123,6 +136,8 @@ import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import IosDateTimePicker from '../../../components/common/IosDateTimePicker.vue';
+import heroPlaceholder from '../../../assets/images/default-event.svg';
+import { resolveAssetUrl } from '../../../utils/assetUrl';
 
 const route = useRoute();
 const router = useRouter();
@@ -132,16 +147,36 @@ const classDetail = ref<ClassDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const submitting = ref(false);
+const toLocalInput = (date: Date) => {
+  const pad = (num: number) => String(num).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+const parseLocalInput = (value: string) => {
+  if (!value) return new Date();
+  const [datePart, timePart] = value.split('T');
+  if (!datePart || !timePart) return new Date(value);
+  const [year, month, day] = datePart.split('-').map((v) => Number(v));
+  const [hours, minutes] = timePart.split(':').map((v) => Number(v));
+  if ([year, month, day, hours, minutes].some((v) => Number.isNaN(v))) {
+    return new Date(value);
+  }
+  return new Date(year, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0, 0, 0);
+};
 const defaultStart = () => {
   const d = new Date();
   d.setMinutes(d.getMinutes() + 60);
   d.setSeconds(0, 0);
-  return d.toISOString().slice(0, 16);
+  return toLocalInput(d);
 };
 const defaultEnd = (startIso: string) => {
-  const d = new Date(startIso || Date.now());
-  d.setHours(d.getHours() + 2);
-  return d.toISOString().slice(0, 16);
+  const d = parseLocalInput(startIso);
+  d.setHours(d.getHours() + 1);
+  return toLocalInput(d);
 };
 
 const batchRows = ref<Array<{ startAt: string; endAt?: string; capacity?: number | null }>>([
@@ -149,6 +184,9 @@ const batchRows = ref<Array<{ startAt: string; endAt?: string; capacity?: number
 ]);
 const showSheet = ref(false);
 const showTopBar = computed(() => !isLineInAppBrowser());
+const heroImageSrc = computed(() =>
+  classDetail.value?.coverImageUrl ? resolveAssetUrl(classDetail.value.coverImageUrl) : heroPlaceholder,
+);
 
 const formatLesson = (startAt: string) => {
   const d = new Date(startAt);
@@ -214,7 +252,12 @@ const cancel = async (lessonId: string) => {
 
 const confirmCancel = async (lesson: Lesson) => {
   if (lesson.status === 'cancelled') return;
-  if (!window.confirm('このレッスンをキャンセルしますか？')) return;
+  if (
+    !window.confirm(
+      'このレッスンをキャンセルしますか？参加者がいる場合は自動で返金され、履歴は残ります。',
+    )
+  )
+    return;
   await cancel(lesson.id);
 };
 
@@ -281,11 +324,37 @@ const goBack = () => {
     linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(37, 99, 235, 0.1));
   pointer-events: none;
 }
+.hero-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .hero-body {
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
   gap: 4px;
+}
+.hero-visual {
+  width: 132px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  border-radius: 14px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+  flex: 0 0 auto;
+}
+.hero-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .class-label {
   margin: 0;
@@ -462,8 +531,14 @@ const goBack = () => {
 }
 .badge-stack {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 .card-actions {
   display: flex;

@@ -558,6 +558,18 @@ export async function updateConsoleClass(classId: string, payload: Partial<{
   return data;
 }
 
+export async function uploadClassCover(classId: string, file: File): Promise<{ imageUrl: string }> {
+  if (!classId) {
+    throw new Error('classId is required to upload cover');
+  }
+  const data = await uploadFiles<{ imageUrl: string }>(`/console/classes/${classId}/cover`, [file], {
+    fieldName: 'file',
+    allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytes: 5 * 1024 * 1024,
+  });
+  return data;
+}
+
 export async function deleteConsoleClass(classId: string) {
   const { data } = await apiClient.delete(`/console/classes/${classId}`);
   return data;

@@ -33,7 +33,7 @@
               <p class="lesson-meta">{{ statusLabel(lesson.status) }}</p>
             </div>
             <div class="lesson-side">
-              <span class="lesson-capacity" v-if="lesson.capacity">定員: {{ lesson.capacity }}</span>
+              <span class="lesson-capacity">{{ capacityText(lesson) }}</span>
               <span class="pill small" v-if="lesson.status !== 'scheduled'">{{ statusLabel(lesson.status) }}</span>
               <span class="pill small success" v-else-if="registeredLessons.has(lesson.id)">申込済み</span>
               <span class="pill small selected" v-else-if="lesson.id === selectedLessonId">選択中</span>
@@ -160,6 +160,19 @@ const displaySecondary = (cls: any) => {
 const selectedLesson = computed(() =>
   detail.value?.upcomingLessons.find((l) => l.id === selectedLessonId.value),
 );
+const defaultLessonDurationMinutes = computed(() => {
+  const lessons = detail.value?.upcomingLessons ?? [];
+  for (const lesson of lessons) {
+    if (!lesson.endAt) continue;
+    const start = new Date(lesson.startAt);
+    const end = new Date(lesson.endAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    if (end > start) {
+      return Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+    }
+  }
+  return null;
+});
 
 const formatLesson = (startAt: string) => {
   const d = new Date(startAt);
@@ -173,20 +186,35 @@ const formatLesson = (startAt: string) => {
 const formatRange = (lesson: Lesson) => {
   if (!lesson) return '';
   const start = new Date(lesson.startAt);
-  const end = lesson.endAt ? new Date(lesson.endAt) : null;
+  let end = lesson.endAt ? new Date(lesson.endAt) : null;
   const day = ['日', '月', '火', '水', '木', '金', '土'][start.getDay()];
   const startText = `${start.getMonth() + 1}/${start.getDate()}(${day}) ${start
     .getHours()
     .toString()
     .padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+  if (!end || Number.isNaN(end.getTime()) || end <= start) {
+    const fallbackMinutes = defaultLessonDurationMinutes.value;
+    if (fallbackMinutes && fallbackMinutes > 0) {
+      end = new Date(start.getTime() + fallbackMinutes * 60 * 1000);
+    } else {
+      end = null;
+    }
+  }
   const endText = end
     ? `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`
     : '';
-  const duration =
+  const durationMinutes =
     end && end > start
-      ? `${Math.round((end.getTime() - start.getTime()) / (1000 * 60))}分`
-      : '';
+      ? Math.round((end.getTime() - start.getTime()) / (1000 * 60))
+      : defaultLessonDurationMinutes.value ?? null;
+  const duration = durationMinutes && durationMinutes > 0 ? `${durationMinutes}分` : '';
   return endText ? `${startText} 〜 ${endText}${duration ? `（${duration}）` : ''}` : startText;
+};
+
+const capacityText = (lesson: Lesson) => {
+  const fallback = detail.value?.defaultCapacity ?? null;
+  const capacity = lesson.capacity ?? fallback;
+  return `定員: ${capacity ?? '未設定'}`;
 };
 
 const statusLabel = (status: string) => {
@@ -565,9 +593,11 @@ const goBack = () => {
   font-size: 13px;
 }
 .lesson-side {
-  display: flex;
+  display: grid;
   align-items: center;
-  gap: 8px;
+  justify-items: end;
+  gap: 6px;
+  min-width: 96px;
 }
 .lesson-capacity {
   font-size: 12px;
@@ -575,6 +605,8 @@ const goBack = () => {
   background: #e5e7eb;
   padding: 2px 8px;
   border-radius: 999px;
+  min-width: 74px;
+  text-align: center;
 }
 .empty {
   text-align: center;

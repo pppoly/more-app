@@ -517,10 +517,10 @@ onActivated(() => {
 .card-body {
   padding: 8px 12px 10px;
   display: grid;
-  gap: 4px;
+  row-gap: 0;
 }
 .title {
-  margin: 0 0 2px;
+  margin: 0;
   font-size: 16px;
   font-weight: 720;
   color: #0f172a;
@@ -543,6 +543,7 @@ onActivated(() => {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  margin-bottom: 0;
 }
 .status-chip {
   padding: 4px 8px;
@@ -556,23 +557,26 @@ onActivated(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 0;
 }
 .location {
-  margin: 2px 0 0;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: #4b5563;
+  margin-bottom: 4px;
 }
 .byline {
-  margin: 0 0 2px;
+  margin: 0;
   font-size: 11px;
   color: #6b7280;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+  padding-left: 6px;
 }
 .byline::before {
   content: '';

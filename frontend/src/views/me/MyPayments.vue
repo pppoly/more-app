@@ -39,11 +39,13 @@
           <div class="summary-main">
             <p class="event-title">{{ record.eventTitle }}</p>
             <p class="event-date">{{ formatDate(record.eventDate) }}</p>
-            <p class="event-chip">{{ record.phase }}</p>
+            <div class="summary-badges">
+              <p class="event-chip">{{ record.phase }}</p>
+              <span class="status-chip" :class="statusClass(record)">{{ statusText(record) }}</span>
+            </div>
           </div>
           <div class="summary-side">
             <p class="amount">¥{{ formatYen(record.amount) }}</p>
-            <span class="status-chip" :class="statusClass(record)">{{ statusText(record) }}</span>
             <div v-if="debugMode" class="debug">
               <p>status: {{ record.status }}</p>
               <p>paymentStatus: {{ record.paymentStatus }}</p>
@@ -58,11 +60,16 @@
           </div>
           <div class="detail-row">
             <span class="detail-label">支払い日時</span>
-            <span class="detail-value">{{ formatDateTime(record.paidAt) }}</span>
+            <span class="detail-value">{{ isPaymentPending(record) ? '未支払い' : formatDateTime(record.paidAt) }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">取引ID</span>
             <span class="detail-value monospace">{{ record.registrationId }}</span>
+          </div>
+          <div v-if="isPaymentPending(record)" class="detail-action">
+            <button type="button" class="pay-btn" :disabled="payingId === record.registrationId" @click="resumePayment(record)">
+              {{ payingId === record.registrationId ? '処理中…' : '支払いへ進む' }}
+            </button>
           </div>
           <div v-if="record.refundStatus" class="detail-refund">
             <div class="detail-row">
@@ -87,7 +94,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchMyEvents } from '../../api/client';
+import { createStripeCheckout, fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
@@ -95,7 +102,7 @@ import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
 import { APP_TARGET } from '../../config';
 
-type FilterId = 'all' | 'paid' | 'refunded';
+type FilterId = 'all' | 'paid' | 'pending' | 'refunded';
 
 interface PaymentRecord {
   registrationId: string;
@@ -121,6 +128,7 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const records = ref<PaymentRecord[]>([]);
 const activeFilter = ref<FilterId>('all');
+const payingId = ref<string | null>(null);
 
 const formatYen = (value: number) => value.toLocaleString('ja-JP');
 const formatDate = (value?: string | null) => {
@@ -147,6 +155,7 @@ const statusText = (rec: PaymentRecord) => {
   const refunded = rec.refundedAmount ?? 0;
   const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
   const refundingLike = ['cancel_requested', 'cancelled', 'pending_refund', 'processing_refund'];
+  if (rec.paymentStatus === 'cancelled' || rec.status === 'cancelled') return '支払いキャンセル';
   if (refundingLike.includes(rec.status)) return '返金処理中';
   if (rec.status === 'cancel_requested') return '返金処理中';
   if (rec.status === 'cancelled' && total > 0) return '返金処理中';
@@ -155,7 +164,7 @@ const statusText = (rec: PaymentRecord) => {
     return refunded >= total && total > 0 ? '返金済み（全額）' : `返金済み（一部 ¥${formatYen(refunded)})`;
   }
   if (rec.paymentStatus === 'refunded') return '返金済み（全額）';
-  if (paidLike.includes(rec.paymentStatus || '') || paidLike.includes(rec.status)) return '支払い完了';
+  if (paidLike.includes(rec.paymentStatus || '') || paidLike.includes(rec.status)) return '支払い済み';
   return '支払い待ち';
 };
 
@@ -169,8 +178,27 @@ const statusClass = (rec: PaymentRecord) => {
   const text = statusText(rec);
   if (text.includes('返金処理中')) return 'chip chip--warn';
   if (text.includes('返金済み')) return 'chip chip--info';
-  if (text.includes('支払い完了')) return 'chip chip--ok';
+  if (text.includes('支払い済み')) return 'chip chip--ok';
+  if (text.includes('支払いキャンセル')) return 'chip chip--muted';
   return 'chip';
+};
+
+const isPaymentPending = (rec: PaymentRecord) => statusText(rec) === '支払い待ち';
+
+const resumePayment = async (rec: PaymentRecord) => {
+  if (payingId.value) return;
+  payingId.value = rec.registrationId;
+  try {
+    const { checkoutUrl } = await createStripeCheckout(rec.registrationId);
+    window.location.href = checkoutUrl;
+  } catch (err) {
+    const message =
+      (err as any)?.response?.data?.message ||
+      (err instanceof Error ? err.message : '支払いを再開できませんでした。');
+    window.alert(Array.isArray(message) ? message.join('\n') : message);
+  } finally {
+    payingId.value = null;
+  }
 };
 
 const buildPhase = (event: MyEventItem['event'], lesson: MyEventItem['lesson']) => {
@@ -247,15 +275,17 @@ onMounted(() => {
 
 const filterTabs = computed(() => {
   const paidRecords = records.value.filter((rec) => (rec.amount ?? 0) > 0);
-  const counts: Record<FilterId, number> = { all: paidRecords.length, paid: 0, refunded: 0 };
+  const counts: Record<FilterId, number> = { all: paidRecords.length, paid: 0, pending: 0, refunded: 0 };
   paidRecords.forEach((rec) => {
     const text = statusText(rec);
-    if (text.includes('支払い完了')) counts.paid += 1;
+    if (text.includes('支払い済み')) counts.paid += 1;
+    if (text.includes('支払い待ち')) counts.pending += 1;
     if (text.includes('返金')) counts.refunded += 1;
   });
   return [
     { id: 'all' as FilterId, label: 'すべて', count: counts.all },
-    { id: 'paid' as FilterId, label: '支払い完了', count: counts.paid },
+    { id: 'paid' as FilterId, label: '支払い済み', count: counts.paid },
+    { id: 'pending' as FilterId, label: '支払い待ち', count: counts.pending },
     { id: 'refunded' as FilterId, label: '返金あり', count: counts.refunded },
   ];
 });
@@ -264,7 +294,9 @@ const filteredRecords = computed(() => {
   const paidRecords = records.value.filter((rec) => (rec.amount ?? 0) > 0);
   if (activeFilter.value === 'all') return paidRecords;
   if (activeFilter.value === 'paid')
-    return paidRecords.filter((rec) => statusText(rec).includes('支払い完了'));
+    return paidRecords.filter((rec) => statusText(rec).includes('支払い済み'));
+  if (activeFilter.value === 'pending')
+    return paidRecords.filter((rec) => statusText(rec).includes('支払い待ち'));
   return paidRecords.filter((rec) => statusText(rec).includes('返金'));
 });
 
@@ -328,7 +360,7 @@ const goBack = () => {
 .filters {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin: 8px 0 16px;
 }
 
@@ -336,10 +368,14 @@ const goBack = () => {
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   border-radius: 999px;
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 6px 8px;
+  font-size: 11px;
   color: #0f172a;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .filter-chip--active {
@@ -428,9 +464,16 @@ const goBack = () => {
   font-size: 12px;
   color: #475569;
 }
+.summary-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
 
 .event-chip {
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 12px;
   color: #0f172a;
   background: #e2e8f0;
@@ -481,6 +524,10 @@ const goBack = () => {
   background: #fef9c3;
   color: #854d0e;
 }
+.chip--muted {
+  background: #f1f5f9;
+  color: #64748b;
+}
 
 .payment-detail {
   padding: 0 14px 14px;
@@ -491,18 +538,39 @@ const goBack = () => {
 }
 
 .detail-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  column-gap: 8px;
   font-size: 13px;
   color: #0f172a;
 }
 
 .detail-label {
   color: #475569;
+  text-align: left;
 }
 
 .detail-value {
   font-weight: 600;
+  text-align: right;
+}
+.detail-action {
+  display: flex;
+  justify-content: flex-end;
+}
+.pay-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #0ea5e9;
+  color: #fff;
+}
+.pay-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .monospace {

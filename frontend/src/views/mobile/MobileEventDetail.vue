@@ -91,7 +91,6 @@
                 <!-- follow/favorite action temporarily hidden -->
               </div>
             </div>
-            <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
 
@@ -119,12 +118,6 @@
               </div>
               <div
                 class="event-schedule"
-                :class="{ 'is-clickable': Boolean(calendarLink) }"
-                :role="calendarLink ? 'button' : undefined"
-                :tabindex="calendarLink ? 0 : -1"
-                @click="openCalendar"
-                @keydown.enter.prevent="openCalendar"
-                @keydown.space.prevent="openCalendar"
               >
                 <p class="event-schedule__line" :title="scheduleLine">
                   {{ scheduleLine }}
@@ -150,10 +143,10 @@
         </section>
 
         <section class="event-section" v-if="shouldShowParticipants">
-          <div class="m-event-card">
-          <div class="event-progress-head">
+          <div class="m-event-card event-card-balanced">
+            <div class="event-progress-head">
               <span>{{ detail.capacityText }}</span>
-          </div>
+            </div>
             <div class="event-progress">
               <div class="event-progress__bar" :style="{ width: `${detail.regProgress}%` }"></div>
             </div>
@@ -200,17 +193,34 @@
                 :disabled="followLocked"
                 @click="toggleFollow"
               >
-                <span v-if="followLocked" class="i-lucide-lock"></span>
-                <span v-else-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
-                <span v-else class="i-lucide-bell-plus"></span>
-                {{ followLocked ? 'メンバー' : isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+                <span class="group-follow__icon">
+                  <span v-if="followLocked" class="i-lucide-lock"></span>
+                  <span v-else-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
+                  <span v-else class="i-lucide-bell-plus"></span>
+                </span>
+                <span class="group-follow__label">
+                  {{ followLocked ? 'メンバー' : isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+                </span>
               </button>
             </div>
           </div>
         </section>
 
+        <div
+          v-if="showPaymentBanner"
+          class="event-cta-banner"
+          :class="paymentBannerTone"
+          :style="{ bottom: bannerOffset }"
+        >
+          <span class="event-cta-banner__icon i-lucide-clock-8" aria-hidden="true"></span>
+          <div class="event-cta-banner__text">
+            <p class="event-cta-banner__title">{{ paymentBannerTitle }}</p>
+            <p class="event-cta-banner__note">{{ paymentBannerNote }}</p>
+          </div>
+        </div>
+
         <section class="event-section">
-          <div class="m-event-card event-about">
+          <div class="m-event-card event-about event-card-balanced">
             <div class="event-about__header">About</div>
             <div class="event-about__divider" aria-hidden="true"></div>
             <div
@@ -222,7 +232,7 @@
         </section>
 
         <section class="event-section" v-if="refundPolicyText">
-          <div class="m-event-card event-about">
+          <div class="m-event-card event-about event-card-balanced">
             <div class="event-about__header">返金ルール</div>
             <div class="event-about__divider" aria-hidden="true"></div>
             <p class="m-text-body">{{ refundPolicyText }}</p>
@@ -239,7 +249,7 @@
         </section>
       </main>
 
-      <footer class="event-footer">
+      <footer class="event-footer" ref="eventFooterRef">
         <div class="price-block">
           <p class="price">{{ detail.priceText }}</p>
         </div>
@@ -287,7 +297,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   createMockPayment,
@@ -547,6 +557,53 @@ const computeCtaState = () => {
 const ctaState = computed(computeCtaState);
 const ctaLabel = computed(() => ctaState.value.label);
 const isCtaDisabled = computed(() => ctaState.value.disabled || checkingRegistration.value);
+const paymentHoldStartedAt = computed(() => {
+  if (!registrationItem.value) return null;
+  const raw = registrationItem.value.paymentCreatedAt ?? registrationItem.value.createdAt ?? null;
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isNaN(ms) ? null : ms;
+});
+const paymentHoldDeadline = computed(() => {
+  if (!paymentHoldStartedAt.value) return null;
+  return paymentHoldStartedAt.value + 15 * 60 * 1000;
+});
+const paymentHoldRemainingMs = computed(() => {
+  if (!paymentHoldDeadline.value) return null;
+  return paymentHoldDeadline.value - nowTs.value;
+});
+const formatCountdown = (ms: number) => {
+  const clamped = Math.max(0, ms);
+  const totalSeconds = Math.floor(clamped / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+const showPaymentBanner = computed(() => registrationStatus.value === 'pending_payment');
+const paymentBannerTone = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value !== null && paymentHoldRemainingMs.value <= 0) {
+    return 'is-expired';
+  }
+  return 'is-pending';
+});
+const paymentBannerTitle = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value === null) return 'お支払い待ちです';
+  if (paymentHoldRemainingMs.value <= 0) return 'お支払い期限が過ぎました';
+  return `お支払い待ち（残り ${formatCountdown(paymentHoldRemainingMs.value)}）`;
+});
+const paymentBannerNote = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value !== null && paymentHoldRemainingMs.value <= 0) {
+    return 'この申込は自動キャンセルされました。再度お申し込みください。';
+  }
+  return '15分以内に支払わないと自動キャンセルされます。';
+});
+const bannerOffset = computed(() => {
+  const base = footerHeight.value || 64;
+  return `calc(${base + 8}px + env(safe-area-inset-bottom, 0px))`;
+});
 const debugState = computed(() => ({
   eventLifecycle: eventLifecycle.value,
   registrationWindow: registrationWindow.value,
@@ -678,19 +735,6 @@ const heroBackgroundStyle = computed(() =>
       }
     : {},
 );
-
-const calendarLink = computed(() => {
-  if (!detail.value || !event.value?.startTime) return '';
-  const start = formatCalendarDate(event.value.startTime);
-  const end = formatCalendarDate(event.value.endTime ?? event.value.startTime);
-  if (!start || !end) return '';
-  const title = encodeURIComponent(detail.value.title);
-  const location = encodeURIComponent(detail.value.locationText ?? '');
-  const description = encodeURIComponent(
-    getLocalizedText(event.value.description ?? event.value.title, preferredLangs.value) ?? detail.value.title,
-  );
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&location=${location}&details=${description}`;
-});
 
 const dateOptions = computed(() => {
   if (!event.value) return [];
@@ -982,11 +1026,6 @@ const markCoverBroken = (slide: { id?: string; imageUrl?: string }, index: numbe
     ...brokenCovers.value,
     [slideKey(slide, index)]: true,
   };
-};
-
-const openCalendar = () => {
-  if (!calendarLink.value) return;
-  window.open(calendarLink.value, '_blank');
 };
 
 const communityIdForFollow = computed(
@@ -1406,6 +1445,22 @@ const formatScheduleLine = (start?: string, end?: string) => {
 };
 
 const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+const toastOffsetBackup = ref<string | null>(null);
+const TOAST_OFFSET_PX = '84px';
+const eventFooterRef = ref<HTMLElement | null>(null);
+const TOAST_OFFSET_GAP = 12;
+const footerHeight = ref(0);
+const nowTs = ref(Date.now());
+let countdownTimer: number | null = null;
+const resizeHandler = () => {
+  if (typeof document === 'undefined') return;
+  if (!eventFooterRef.value) return;
+  const height = eventFooterRef.value.offsetHeight;
+  if (height > 0) {
+    footerHeight.value = height;
+    document.documentElement.style.setProperty('--toast-offset', `${height + TOAST_OFFSET_GAP}px`);
+  }
+};
 
 const pad = (value: number) => value.toString().padStart(2, '0');
 
@@ -1417,7 +1472,30 @@ const formatCalendarDate = (value?: string) => {
   )}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
 };
 
-onMounted(loadEvent);
+onMounted(async () => {
+  loadEvent();
+  if (typeof document !== 'undefined') {
+    toastOffsetBackup.value = document.documentElement.style.getPropertyValue('--toast-offset');
+    document.documentElement.style.setProperty('--toast-offset', TOAST_OFFSET_PX);
+    await nextTick();
+    resizeHandler();
+    window.addEventListener('resize', resizeHandler);
+  }
+});
+
+onUnmounted(() => {
+  if (typeof document === 'undefined') return;
+  if (countdownTimer) {
+    window.clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  window.removeEventListener('resize', resizeHandler);
+  if (toastOffsetBackup.value) {
+    document.documentElement.style.setProperty('--toast-offset', toastOffsetBackup.value);
+  } else {
+    document.documentElement.style.removeProperty('--toast-offset');
+  }
+});
 
 watch(
   () => [user.value?.id, eventId.value],
@@ -1426,6 +1504,26 @@ watch(
       checkRegistrationStatus();
     } else {
       registrationItem.value = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  showPaymentBanner,
+  (value) => {
+    if (!value) {
+      if (countdownTimer) {
+        window.clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      return;
+    }
+    nowTs.value = Date.now();
+    if (!countdownTimer) {
+      countdownTimer = window.setInterval(() => {
+        nowTs.value = Date.now();
+      }, 1000);
     }
   },
   { immediate: true },
@@ -1633,22 +1731,16 @@ watch(
   flex: 1;
   min-width: 0;
 }
-.event-schedule.is-clickable {
-  cursor: pointer;
-}
-.event-schedule.is-clickable:active {
-  opacity: 0.7;
-}
-
 
 .event-schedule__line {
   margin: 0;
-  font-size: clamp(12px, 4vw, 18px);
+  font-size: clamp(11px, 3.6vw, 16px);
   font-weight: 500;
   color: var(--m-color-text-secondary);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: -0.01em;
 }
 
 .event-location-title {
@@ -1659,6 +1751,49 @@ watch(
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+.event-cta-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  z-index: 12;
+  border: 1px solid transparent;
+}
+.event-cta-banner.is-pending {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+.event-cta-banner.is-expired {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+.event-cta-banner__icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-top: 1px;
+}
+.event-cta-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.event-cta-banner__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.event-cta-banner__note {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 
@@ -1838,10 +1973,10 @@ watch(
 }
 
 .event-hero-info {
-  padding: 12px 16px 6px;
+  padding: 12px 16px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .event-hero-info .m-text-event-title-main {
@@ -2004,6 +2139,15 @@ watch(
 .event-about {
   overflow: visible;
 }
+.event-card-balanced {
+  padding: 14px 16px;
+}
+.event-card-balanced .event-about__divider {
+  margin: 8px 0 10px;
+}
+.event-card-balanced .event-progress {
+  margin-top: 10px;
+}
 .event-about__header {
   font-size: 14px;
   font-weight: 600;
@@ -2091,15 +2235,33 @@ watch(
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   background: rgba(15, 23, 42, 0.05);
   color: var(--m-color-text-primary);
   flex-shrink: 0;
   pointer-events: auto;
   position: relative;
   z-index: 1;
-  line-height: 1;
+  line-height: 1.2;
   min-height: 32px;
+}
+.group-follow__icon {
+  position: absolute;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+.group-follow__icon .i-lucide-lock,
+.group-follow__icon .i-lucide-bell-minus,
+.group-follow__icon .i-lucide-bell-plus {
+  display: inline-flex;
+  align-items: center;
+}
+.group-follow__label {
+  width: 100%;
+  text-align: center;
+  line-height: 1.2;
 }
 .group-follow.is-locked {
   opacity: 0.6;
