@@ -193,6 +193,13 @@
       "meta": "How we handle your data"
     }
   },
+  "about": {
+    "title": "App info",
+    "version": {
+      "label": "Version",
+      "meta": "Build number"
+    }
+  },
   "localeSheet": {
     "title": "Choose display language",
     "subtitle": "Changing this may affect how titles are shown",

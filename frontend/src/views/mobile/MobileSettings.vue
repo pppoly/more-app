@@ -41,6 +41,18 @@
       </div>
     </section>
 
+    <section class="settings-section">
+      <h2 class="m-section-title">{{ t('mobile.settings.about.title') }}</h2>
+      <div class="settings-list">
+        <div class="settings-item settings-item--static">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.about.version.label') }}</p>
+            <p class="settings-item__meta">{{ buildVersion }}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="settings-section" v-if="isLoggedIn">
       <h2 class="m-section-title">{{ t('header.default') }}</h2>
       <div class="settings-list">
@@ -104,6 +116,7 @@ import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
 import { APP_TARGET } from '../../config';
+import { BUILD_VERSION } from '../../version';
 
 const router = useRouter();
 const { logout, user, setUserProfile } = useAuth();
@@ -111,6 +124,7 @@ const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const buildVersion = BUILD_VERSION;
 
 const isLoggedIn = computed(() => Boolean(user.value));
 
@@ -218,6 +232,9 @@ const selectLocale = async (locale: string) => {
 .settings-item--danger {
   background: #fff5f5;
   color: #b91c1c;
+}
+.settings-item--static {
+  cursor: default;
 }
 
 .settings-item__label {

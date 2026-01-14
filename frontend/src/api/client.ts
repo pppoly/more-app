@@ -721,7 +721,11 @@ export async function verifyEmailLoginCode(email: string, code: string): Promise
   return data;
 }
 
-export async function updateProfile(payload: { name?: string; preferredLocale?: string }): Promise<UserProfile> {
+export async function updateProfile(payload: {
+  name?: string;
+  preferredLocale?: string;
+  email?: string;
+}): Promise<UserProfile> {
   const { data } = await apiClient.post<UserProfile>('/me/profile', payload);
   return data;
 }

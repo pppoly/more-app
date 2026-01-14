@@ -64,7 +64,7 @@ const handleDevLogin = async () => {
   loading.value = true;
   try {
     await auth.loginDev(devName.value.trim());
-    await finishLoginFlow('dev');
+    await finishLoginFlow('email');
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'ログインに失敗しました';
   } finally {

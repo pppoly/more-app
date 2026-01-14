@@ -136,7 +136,7 @@
                 </div>
               </div>
               <div
-                v-else-if="msg.type === 'proposal' && canShowProposalUi"
+                v-else-if="msg.type === 'proposal' && (canShowProposalUi || msg.action === 'draft-anchor')"
                 class="proposal-bubble"
               >
                 <div class="proposal-head">
@@ -238,11 +238,17 @@
                 <span>{{ item.value }}</span>
               </li>
             </ul>
+            <details v-if="readyDraftExpertComment" class="draft-expert">
+              <summary>🤖 AIからのコメント（参考・公開されません）</summary>
+              <p>{{ readyDraftExpertComment }}</p>
+            </details>
           </div>
+          <p class="commit-helper">内容を確認したら、作成できます。</p>
           <p class="commit-title">この内容で進めるか、もう少し調整するかを選んでください。</p>
           <button type="button" class="commit-preview" @click="openMilestonePreview">
             下書きをプレビュー
           </button>
+          <p class="commit-note">※ 作成後も内容はいつでも編集できます。すぐに公開されることはありません。</p>
           <div class="commit-actions">
             <button type="button" class="commit-primary" @click="handleCommitDraft">
               この内容で作成する
@@ -392,9 +398,9 @@
               :disabled="!planPreview"
               @click="applyProposalToForm(planPreview)"
             >
-              フォームに反映
+              フォームへ進む
             </button>
-            <button type="button" class="preview-ghost" @click="closePlanPreview">閉じる</button>
+            <button type="button" class="preview-ghost" @click="returnToChat">修正に戻る</button>
           </div>
         </section>
       </div>
@@ -434,6 +440,7 @@ import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 import { getAssistantDisplay } from '../../../utils/assistantDisplay';
+import { evaluateDraftVisibility } from '../../../utils/draftAnchor';
 import {
   buildAckText,
   computeShouldShowCommitCheckpoint,
@@ -456,6 +463,7 @@ interface ChatMessage {
   serverCreatedAt?: string;
   includeInContext?: boolean;
   action?: 'direct-form' | 'title-suggestion' | 'system-safe' | 'welcome' | 'draft-anchor';
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt' | 'frontend.machine' | 'frontend.explain';
   status?: 'pending' | 'sent' | 'failed';
   options?: string[];
   thinkingSteps?: string[];
@@ -492,6 +500,11 @@ const communityStore = useConsoleCommunityStore();
 const toast = useToast();
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const isDebugEnabled = computed(() => import.meta.env.DEV);
+const isEventAssistantDebug = computed(() => {
+  const flag = import.meta.env.VITE_EVENT_ASSISTANT_DEBUG;
+  const windowFlag = (window as any)?.EVENT_ASSISTANT_DEBUG;
+  return flag === '1' || windowFlag === '1';
+});
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
@@ -503,6 +516,9 @@ const debugMessageCounts = ref<{
   source: 'server' | 'cache';
   bytes?: number;
 } | null>(null);
+const createSessionId = () => `ea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const assistantSessionId = ref<string>(createSessionId());
+const lastRequestId = ref<string | null>(null);
 
 const qaState = reactive({
   baseLanguage: 'ja',
@@ -738,7 +754,7 @@ const upsertDraftAnchor = (draft: GeneratedEventContent & { summary?: string }, 
     undefined,
     undefined,
     undefined,
-    { includeInContext: false },
+    { includeInContext: false, contentJson: { publicActivityDraft: draft } },
   );
   cacheDraftForLog(logId ?? activeLogId.value, draft);
 };
@@ -1004,6 +1020,7 @@ const previewPlanDescription = computed(() => {
   return buildFallbackOverview(confirmedAnswers) || extractText(planPreview.value?.notes) || '未設定';
 });
 const previewExpertComment = computed(() => extractText(planPreview.value?.expertComment) || '');
+const readyDraftExpertComment = computed(() => lastExpertComment.value || '');
 const previewCapacity = computed(() => confirmedAnswers.capacity || '未設定');
 const previewRegistrationMethod = computed(() => '未設定');
 const previewCancellationPolicy = computed(() => '未設定');
@@ -1141,6 +1158,7 @@ const pushMessage = (
   writerSummary?: EventAssistantReply['writerSummary'],
   confirmQuestions?: string[],
   extras?: { includeInContext?: boolean; contentJson?: Record<string, unknown> | null; contentText?: string },
+  messageSource?: ChatMessage['messageSource'],
 ) => {
   const sanitizeAssistantContent = (text: string) => {
     const banned = ['AI 憲章', 'AI憲章', 'AI Constitution', 'SOCIALMORE AI'];
@@ -1170,6 +1188,7 @@ const pushMessage = (
     createdAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
     payload,
     action,
+    messageSource,
     options,
     thinkingSteps: steps && steps.length ? steps : undefined,
     coachPrompts,
@@ -1184,6 +1203,52 @@ const pushMessage = (
   }
   scrollChatToBottom();
   return id;
+};
+
+const pushAssistantMessageOnce = (
+  text: string,
+  action: ChatMessage['action'],
+  messageSource: ChatMessage['messageSource'],
+  optionsPayload?: string[],
+  extras?: { includeInContext?: boolean; contentJson?: Record<string, unknown> | null },
+  stepsPayload?: string[],
+  coachPromptsPayload?: string[],
+  editorChecklistPayload?: string[],
+  writerSummaryPayload?: EventAssistantReply['writerSummary'],
+  confirmQuestionsPayload?: string[],
+  turnKeys?: Set<string>,
+) => {
+  const key = `${action ?? 'assistant'}:${text}`;
+  if (turnKeys?.has(key)) return null;
+  const last = chatMessages.value[chatMessages.value.length - 1];
+  if (last?.role === 'assistant' && last.content === text && last.action === action) {
+    return null;
+  }
+  if (isEventAssistantDebug.value && !messageSource) {
+    console.warn('[EventAssistant][warn]', {
+      requestId: lastRequestId.value,
+      conversationId: activeLogId.value ?? assistantSessionId.value ?? null,
+      message: 'missing_message_source',
+      action,
+      text,
+    });
+  }
+  turnKeys?.add(key);
+  return pushMessage(
+    'assistant',
+    'text',
+    text,
+    undefined,
+    action,
+    optionsPayload,
+    stepsPayload,
+    coachPromptsPayload,
+    editorChecklistPayload,
+    writerSummaryPayload,
+    confirmQuestionsPayload,
+    extras,
+    messageSource,
+  );
 };
 
 const loadActiveCommunityDetail = async () => {
@@ -1274,17 +1339,10 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
     return;
   }
   if (mode.value === 'operate') {
-    pushMessage(
-      'assistant',
-      'text',
+    pushAssistantMessageOnce(
       '補足ありがとう。編集はフォームでできるよ。',
-      undefined,
       'direct-form',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+      'frontend.machine',
       undefined,
       { includeInContext: false },
     );
@@ -1334,21 +1392,10 @@ const buildExplainMessage = (lang: 'ja' | 'zh' | 'en') => {
 
 const ensureExplainBubble = (lang: 'ja' | 'zh' | 'en') => {
   const message = buildExplainMessage(lang);
-  const last = chatMessages.value[chatMessages.value.length - 1];
-  if (last?.role === 'assistant' && last.type === 'text' && last.content === message) {
-    return;
-  }
-  pushMessage(
-    'assistant',
-    'text',
+  pushAssistantMessageOnce(
     message,
-    undefined,
     'system-safe',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    'frontend.explain',
     undefined,
     { includeInContext: false },
   );
@@ -1511,7 +1558,11 @@ const requestAssistantReply = async (
   options?: { overrideSummary?: string; action?: EventAssistantRequest['action'] },
 ) => {
   aiError.value = null;
+  const turnMessageKeys = new Set<string>();
   const isSelectionAction = /【選択】/.test(userText);
+  const requestId = `ea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const conversationId = activeLogId.value ?? assistantSessionId.value ?? null;
+  lastRequestId.value = requestId;
   const qaSummary = options?.overrideSummary ?? buildQaSummary(userText);
   const { stage, prompt } = buildEventAssistantPrompt({
     draft: assistantDraftSnapshot.value,
@@ -1532,6 +1583,8 @@ const requestAssistantReply = async (
     conversation: conversationMessages,
     action: options?.action,
     uiMode: explainMode.value ? 'explain' : 'collecting',
+    requestId,
+    conversationId: conversationId ?? undefined,
   };
   aiLoading.value = true;
   try {
@@ -1551,6 +1604,16 @@ const requestAssistantReply = async (
       typeof result.ui?.question?.text === 'string' ? result.ui.question.text.trim() : '';
     const rawUiMessageText = typeof result.ui?.message === 'string' ? result.ui.message.trim() : '';
     let uiMessageText = rawUiMessageText;
+    const backendMessageSource = result.messageSource;
+    if (isEventAssistantDebug.value && !backendMessageSource) {
+      console.warn('[EventAssistant][warn]', {
+        requestId,
+        conversationId,
+        message: 'missing_message_source_backend',
+        promptVersion: result.promptVersion,
+      });
+    }
+    const uiMessageSource = backendMessageSource ?? 'backend.ui';
     const uiOptions = Array.isArray(result.ui?.options) ? result.ui.options : [];
     const isExplainMode = result.uiMode === 'explain' || result.ui?.mode === 'explain';
     explainMode.value = isExplainMode;
@@ -1589,7 +1652,7 @@ const requestAssistantReply = async (
     latestChecklist.value = result.editorChecklist ?? [];
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
     let messageId: string | null = null;
-    const canRenderBubble = !willOperate;
+    const canRenderBubble = !willOperate && !isExplainMode;
     const hasMvpDraft = isDraftMvp(result.publicActivityDraft ?? null);
     const draftReadyForUi = effectiveDraftReady && hasMvpDraft;
     const shouldHoldCommit = draftReadyForUi && !isCommitted.value && !willOperate;
@@ -1643,70 +1706,66 @@ const requestAssistantReply = async (
       !shouldHoldCommit &&
       !uiMessageText;
     if (shouldAckPrevious) {
-      pushMessage(
-        'assistant',
-        'text',
+      pushAssistantMessageOnce(
         buildAckText(lastQuestionKey.value, userText),
-        undefined,
         'system-safe',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
+        'frontend.machine',
         undefined,
         { includeInContext: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        turnMessageKeys,
       );
     }
     if (canAppendQuestionBubble) {
       lastQuestionKey.value = nextQuestionKey ?? null;
       lastQuestionKeyPending.value = true;
-      messageId = pushMessage(
-        'assistant',
-        'text',
+      messageId = pushAssistantMessageOnce(
         uiQuestionText,
-        undefined,
         'system-safe',
+        uiMessageSource,
         undefined,
+        { contentJson: result as unknown as Record<string, unknown> },
         steps,
         result.coachPrompts,
         result.editorChecklist,
         stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
-        { contentJson: result as unknown as Record<string, unknown> },
+        turnMessageKeys,
       );
     } else if (shouldRenderCompareBubble || shouldRenderMessageBubble) {
       uiMessageText = uiMessageText || phaseMessage;
-      messageId = pushMessage(
-        'assistant',
-        'text',
+      messageId = pushAssistantMessageOnce(
         uiMessageText,
-        undefined,
         'system-safe',
+        uiMessageSource,
         undefined,
+        { contentJson: result as unknown as Record<string, unknown> },
         steps,
         result.coachPrompts,
         result.editorChecklist,
         stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
-        { contentJson: result as unknown as Record<string, unknown> },
+        turnMessageKeys,
       );
     }
-    if (isSelectionAction && !messageId && !willOperate) {
+    if (isSelectionAction && !messageId && !willOperate && canRenderBubble) {
       const ackText = phaseMessage || buildSelectionAck(nextQuestionKey, hasChoiceQuestion, isCompareMode);
-      messageId = pushMessage(
-        'assistant',
-        'text',
+      messageId = pushAssistantMessageOnce(
         ackText,
-        undefined,
         'system-safe',
+        'frontend.machine',
         undefined,
+        { contentJson: result as unknown as Record<string, unknown> },
         steps,
         result.coachPrompts,
         result.editorChecklist,
         stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
         result.confirmQuestions,
-        { contentJson: result as unknown as Record<string, unknown> },
+        turnMessageKeys,
       );
     }
     pendingQuestion.value = canAppendQuestionBubble ? uiQuestionText : null;
@@ -1718,19 +1777,18 @@ const requestAssistantReply = async (
         ? result.titleSuggestions.filter((s) => !!s)
         : [];
     if (titleSuggestions.length && !willOperate) {
-      pushMessage(
-        'assistant',
-        'text',
+      pushAssistantMessageOnce(
         'タイトル候補だよ。どれがいい？',
-        undefined,
         'title-suggestion',
+        'frontend.machine',
         titleSuggestions as string[],
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
         { includeInContext: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        turnMessageKeys,
       );
     }
     if (willOperate) {
@@ -1766,7 +1824,7 @@ const requestAssistantReply = async (
       isCommitted.value &&
       !seenDraftIds.value.includes(result.draftId as string);
     let preparedProposal: (GeneratedEventContent & { summary: string }) | null = null;
-    if (draftReadyForUi && result.publicActivityDraft) {
+    if (result.publicActivityDraft) {
       const draftAnchor = buildProposalFromDraft(
         result.publicActivityDraft,
         qaSummary,
@@ -1778,20 +1836,6 @@ const requestAssistantReply = async (
     const expertComment = result.publicActivityDraft?.expertComment?.trim() || '';
     if (draftReadyForUi && expertComment && expertComment !== lastExpertComment.value) {
       lastExpertComment.value = expertComment;
-      pushMessage(
-        'assistant',
-        'text',
-        expertComment,
-        undefined,
-        'system-safe',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { includeInContext: false },
-      );
     }
     if (shouldPushProposal) {
       preparedProposal = buildProposalFromDraft(
@@ -1814,7 +1858,7 @@ const requestAssistantReply = async (
       pendingQuestion.value = null;
     }
     const aiResultForLog =
-      !aiResult.value && draftReadyForUi && result.publicActivityDraft
+      !aiResult.value && result.publicActivityDraft
         ? buildProposalFromDraft(
             result.publicActivityDraft,
             qaSummary,
@@ -1844,7 +1888,11 @@ const requestAssistantReply = async (
     }
   } catch (err) {
     aiError.value = err instanceof Error ? err.message : 'AI生成に失敗しました。少し時間を置いて再度お試しください。';
-    pushMessage('assistant', 'text', aiError.value ?? 'AI生成に失敗しました。', undefined, 'system-safe');
+    pushAssistantMessageOnce(
+      aiError.value ?? 'AI生成に失敗しました。',
+      'system-safe',
+      'frontend.machine',
+    );
   } finally {
     aiLoading.value = false;
     if (!pendingQuestion.value) {
@@ -1881,6 +1929,7 @@ const persistAssistantLog = async (
       content: msg.content,
       contentText: msg.contentText ?? msg.content,
       contentJson: msg.contentJson ?? null,
+      messageSource: msg.messageSource ?? null,
       createdAt: msg.createdAt,
       serverCreatedAt: msg.serverCreatedAt ?? null,
       action: msg.action ?? null,
@@ -2252,6 +2301,7 @@ const handleCommitDraft = async () => {
   }
   isCommitted.value = true;
   pushMessage('user', 'text', content);
+  openMilestonePreview();
   await requestAssistantReply(content, { action: 'confirm_draft' });
 };
 
@@ -2346,6 +2396,7 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
       role: (msg as any).role === 'assistant' ? 'assistant' : 'user',
       type: (msg as any).type === 'proposal' ? 'proposal' : 'text',
       action: (msg as any).action ?? undefined,
+      messageSource: (msg as any).messageSource ?? undefined,
       contentText: (msg as any).contentText ?? (msg as any).content ?? '',
       contentJson: (msg as any).contentJson ?? (msg as any).payload?.assistantReply ?? null,
       content: (msg as any).content ?? '',
@@ -2465,6 +2516,7 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   lastTurnCount.value = log.turnCount || 0;
   lastLanguage.value = (log.language as string) || lastLanguage.value;
   activeLogId.value = log.id;
+  assistantSessionId.value = log.id || assistantSessionId.value;
   const restoredDraft = [...chatMessages.value]
     .reverse()
     .map((msg) => (msg.contentJson ?? (msg.payload as any)?.assistantReply ?? null) as Record<string, any> | null)
@@ -2483,13 +2535,22 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   compareCandidatesState.value = null;
   showCandidateDetails.value = false;
   coachPromptState.value = null;
-  if (!hasProposalMessage) {
-    const fromLog = (log.aiResult as any) ?? null;
-    const cached = getCachedDraftForLog(log.id);
-    const fallbackDraft =
-      fromLog && typeof fromLog === 'object'
-        ? (fromLog as GeneratedEventContent & { summary?: string })
-        : cached;
+  const fromLog = (log.aiResult as any) ?? null;
+  const cached = getCachedDraftForLog(log.id);
+  const fallbackDraft =
+    fromLog && typeof fromLog === 'object'
+      ? (fromLog as GeneratedEventContent & { summary?: string })
+      : cached;
+  const hasDraftAnchorMessage = chatMessages.value.some(
+    (msg) => msg.type === 'proposal' && msg.action === 'draft-anchor',
+  );
+  const visibility = evaluateDraftVisibility({
+    hasDraftInMessages: Boolean(restoredDraft),
+    hasLastReadyDraft: Boolean(lastReadyDraft.value),
+    hasMvpDraft: isDraftMvp(lastReadyDraft.value ?? null),
+    draftReadyForUi: Boolean(lastDraftReady.value && isDraftMvp(lastReadyDraft.value ?? null)),
+  });
+  if (visibility.shouldShowDraftAnchor && !hasDraftAnchorMessage) {
     if (fallbackDraft) {
       upsertDraftAnchor(fallbackDraft, log.id);
     } else if (lastReadyDraft.value) {
@@ -2504,6 +2565,7 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
       );
     }
   }
+  logDraftVisibilityTrace('restore');
   scrollChatToBottom(true);
 };
 
@@ -2531,6 +2593,46 @@ const updateDebugCounts = (
     bytes,
   };
   console.debug('[assistant] loaded messages', debugMessageCounts.value);
+};
+
+const logDraftVisibilityTrace = (label: string) => {
+  if (!isEventAssistantDebug.value) return;
+  const hasDraftInMessages = chatMessages.value.some((msg) => {
+    const reply = msg.contentJson as { publicActivityDraft?: unknown } | null;
+    return Boolean(reply?.publicActivityDraft);
+  });
+  const hasLastReadyDraft = Boolean(lastReadyDraft.value);
+  const hasMvpDraft = isDraftMvp(lastReadyDraft.value ?? null);
+  const draftReadyForUi = Boolean(lastDraftReady.value && hasMvpDraft);
+  const visibility = evaluateDraftVisibility({
+    hasDraftInMessages,
+    hasLastReadyDraft,
+    hasMvpDraft,
+    draftReadyForUi,
+  });
+  const conversationId = activeLogId.value ?? assistantSessionId.value ?? null;
+  console.info('[EventAssistant][debug]', {
+    requestId: lastRequestId.value,
+    conversationId,
+    message: 'draft_visibility_trace',
+    label,
+    hasDraftInMessages,
+    hasLastReadyDraft,
+    hasMvpDraft,
+    draftReadyForUi,
+  });
+  if (visibility.hasMismatch) {
+    console.warn('[EventAssistant][warn]', {
+      requestId: lastRequestId.value,
+      conversationId,
+      message: 'draft_visibility_mismatch',
+      label,
+      hasDraftInMessages,
+      hasLastReadyDraft,
+      hasMvpDraft,
+      draftReadyForUi,
+    });
+  }
 };
 
 const tryResumeConversation = async (existingLogs?: ConsoleEventAssistantLog[]) => {
@@ -2573,6 +2675,7 @@ const startNewConversation = () => {
   // mark previous in-progress log as completed to avoid auto-resume
   closeActiveSession();
   activeLogId.value = null;
+  assistantSessionId.value = createSessionId();
   chatMessages.value = [];
   aiResult.value = null;
   pendingQuestion.value = null;
@@ -2606,6 +2709,7 @@ const startNewConversation = () => {
     delete (nextQuery as any).newSession;
     router.replace({ query: nextQuery });
   }
+  logDraftVisibilityTrace('init');
 };
 
 const getProfileValue = (value: string | undefined | null, key: keyof typeof profileDefaults.value) => {
@@ -3322,6 +3426,36 @@ onUnmounted(() => {
   margin-bottom: 2px;
 }
 
+.draft-expert {
+  margin-top: 10px;
+  border-top: 1px dashed #e5e7eb;
+  padding-top: 8px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.draft-expert summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #111827;
+  list-style: none;
+}
+
+.draft-expert summary::-webkit-details-marker {
+  display: none;
+}
+
+.draft-expert p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.commit-helper {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 .commit-title {
   font-size: 13px;
   font-weight: 600;
@@ -3345,6 +3479,12 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.commit-note {
+  margin: 8px 0 10px;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .commit-primary {

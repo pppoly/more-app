@@ -145,6 +145,13 @@
       "meta": "个人信息处理方式"
     }
   },
+  "about": {
+    "title": "应用信息",
+    "version": {
+      "label": "版本号",
+      "meta": "构建编号"
+    }
+  },
   "localeSheet": {
     "title": "选择界面语言",
     "subtitle": "更换后会影响内容展示顺序",

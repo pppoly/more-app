@@ -436,9 +436,10 @@ const statDisplay = computed(() => {
       ? 'まだありません'
       : monthRevenueText.value
     : 'まだありません';
+  const activeEvents = events.value.filter((event) => event.status !== 'cancelled');
   const eventCountText = hasCommunity.value
-    ? events.value.length
-      ? `${events.value.length} 件`
+    ? activeEvents.length
+      ? `${activeEvents.length} 件`
       : 'まだありません'
     : 'まだありません';
   const registrationRaw = stats.value.registrationCount;

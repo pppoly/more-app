@@ -230,7 +230,7 @@ const routes: RouteRecordRaw[] = [
     name: 'auth-setup',
     component: () => import('../views/auth/SetupProfile.vue'),
     meta: {
-      title: '受け取り設定',
+      title: 'アカウント設定',
       layout: 'mobile-user',
       stackKey: 'mobile',
       mobileOnly: true,

@@ -223,6 +223,13 @@
       "meta": "個人情報の取り扱い"
     }
   },
+  "about": {
+    "title": "アプリ情報",
+    "version": {
+      "label": "バージョン",
+      "meta": "ビルド番号"
+    }
+  },
   "localeSheet": {
     "title": "表示言語を選択",
     "subtitle": "変更すると表示順などに影響します",

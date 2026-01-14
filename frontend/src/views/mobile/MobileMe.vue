@@ -6,6 +6,9 @@
           <button class="me-hero__avatar" type="button" @click="handleAvatarTap" :disabled="avatarUploading">
             <div v-if="avatarUploading" class="me-hero__avatar-spinner"></div>
             <AppAvatar :src="user?.avatarUrl" :name="user?.name" :size="80" />
+            <span class="me-hero__avatar-badge" aria-hidden="true">
+              <span class="i-lucide-camera"></span>
+            </span>
           </button>
         </div>
         <div class="me-hero__info">
@@ -258,6 +261,21 @@ const handleCropConfirm = async (blob: Blob) => {
   backdrop-filter: blur(2px);
   animation: pulse 1s infinite ease-in-out;
   border-radius: 50%;
+}
+.me-hero__avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #0f172a;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
 }
 
 .me-hero__avatar:disabled {

@@ -27,15 +27,16 @@
         <p v-if="nameError" class="status name-status">{{ nameError }}</p>
       </div>
 
-      <div v-if="userId" class="user-id-block">
-        <p class="user-id-label">あなたのID</p>
-        <div class="user-id-chip">
-          <span class="i-lucide-hash"></span>
-          <span class="chip-text">{{ userId }}</span>
-          <button type="button" @click="copyUserId">
-            {{ userIdCopied ? 'コピーしました' : 'コピー' }}
-          </button>
-        </div>
+      <div class="email-block">
+        <p class="email-label">メールアドレス（任意）</p>
+        <input
+          v-model="emailDraft"
+          type="email"
+          placeholder="example@domain.com"
+          @input="emailTouched = true; emailError = ''"
+        />
+        <p class="email-hint">コミュニティのサービス情報をメールで受け取れます。</p>
+        <p v-if="emailError" class="status">{{ emailError }}</p>
       </div>
     </div>
 
@@ -54,50 +55,23 @@
       @change="onAvatarFileSelected"
     />
 
-    <teleport to="body">
-      <transition name="fade">
-        <div v-if="showCropper" class="setup-overlay">
-          <div class="setup-overlay__panel">
-            <p class="overlay-title">アバターを切り抜き</p>
-            <div
-              class="cropper-viewport"
-              @pointerdown.prevent="startDrag"
-              @pointermove.prevent="onDrag"
-              @pointerup="endDrag"
-              @pointerleave="endDrag"
-            >
-              <div class="cropper-image-base">
-                <div class="cropper-image-shift" :style="cropShiftStyle">
-                  <img
-                    v-if="cropSource"
-                    :src="cropSource"
-                    :style="cropImageStyle"
-                    draggable="false"
-                  />
-                </div>
-              </div>
-              <div class="cropper-mask"></div>
-            </div>
-            <div class="slider-row">
-              <input
-                type="range"
-                min="1"
-                max="3"
-                step="0.01"
-                v-model.number="cropScale"
-                @input="clampOffsets"
-              />
-            </div>
-            <div class="overlay-actions">
-              <button type="button" class="ghost" @click="cancelCropper">キャンセル</button>
-              <button type="button" class="primary" :disabled="avatarUploading" @click="applyCropper">
-                {{ avatarUploading ? 'アップロード中…' : 'このアバターを使う' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </transition>
+    <ImageCropperModal
+      :model-value="showCropper"
+      :src="cropSource"
+      :aspect-ratio="1"
+      :result-width="400"
+      result-type="image/png"
+      :loading="avatarUploading"
+      title="アバターを切り抜き"
+      confirm-text="このアバターを使う"
+      cancel-text="キャンセル"
+      :show-circle-guide="true"
+      @update:modelValue="(val) => (showCropper = val)"
+      @confirm="handleCropConfirm"
+      @cancel="cancelCropper"
+    />
 
+    <teleport to="body">
       <transition name="fade">
         <div v-if="nameEditorVisible" class="setup-overlay">
           <div class="setup-overlay__panel">
@@ -105,6 +79,7 @@
             <input
               ref="nameInput"
               v-model="nameDraft"
+              class="name-input"
               type="text"
               maxlength="40"
               placeholder="ニックネームを入力してください"
@@ -130,10 +105,7 @@ import { useAuth } from '../../composables/useAuth';
 import { updateProfile, uploadMyAvatar } from '../../api/client';
 import defaultAvatarSvg from '../../assets/images/default-avatar.svg';
 import { validateAvatarFile } from '../../utils/validateAvatarFile';
-import { processAvatarImage } from '../../utils/processAvatarImage';
-
-const CROPPER_VIEWPORT = 280;
-const CROPPER_RESULT = 720;
+import ImageCropperModal from '../../components/ImageCropperModal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -161,6 +133,9 @@ const nameEditorVisible = ref(false);
 const nameDraft = ref('');
 const nameEditorError = ref('');
 const nameInput = ref<HTMLInputElement | null>(null);
+const emailDraft = ref(user.value?.email ?? '');
+const emailError = ref('');
+const emailTouched = ref(false);
 
 const avatarError = ref('');
 const avatarUploading = ref(false);
@@ -197,6 +172,14 @@ watch(
     avatarError.value = '';
   },
 );
+watch(
+  () => user.value?.email,
+  (next) => {
+    if (!emailTouched.value) {
+      emailDraft.value = next ?? '';
+    }
+  },
+);
 
 const ensureLoggedIn = () => {
   if (!user.value) {
@@ -210,27 +193,7 @@ const handleAvatarTap = () => {
 };
 
 const cropSource = ref<string | null>(null);
-const cropImage = ref<HTMLImageElement | null>(null);
-const cropScale = ref(1.2);
-const cropOffset = ref({ x: 0, y: 0 });
-const cropBaseWidth = ref(0);
-const cropBaseHeight = ref(0);
 const showCropper = ref(false);
-const dragging = ref(false);
-const dragStart = ref({ x: 0, y: 0 });
-const dragOrigin = ref({ x: 0, y: 0 });
-
-const cropShiftStyle = computed(() => ({
-  width: `${cropBaseWidth.value}px`,
-  height: `${cropBaseHeight.value}px`,
-  transform: `translate(${cropOffset.value.x}px, ${cropOffset.value.y}px)`,
-}));
-
-const cropImageStyle = computed(() => ({
-  width: `${cropBaseWidth.value}px`,
-  height: `${cropBaseHeight.value}px`,
-  transform: `scale(${cropScale.value})`,
-}));
 
 const onAvatarFileSelected = async (event: Event) => {
   const target = event.target as HTMLInputElement | null;
@@ -238,15 +201,14 @@ const onAvatarFileSelected = async (event: Event) => {
   if (!file) return;
   try {
     avatarError.value = '';
-    // 自動処理：検証と圧縮裁剪でユーザー操作を省略
     await validateAvatarFile(file, { requireSquare: false });
-    const processed = await processAvatarImage(file, { size: CROPPER_RESULT });
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      loadCropImage(result);
+      cropSource.value = result;
+      showCropper.value = true;
     };
-    reader.readAsDataURL(processed);
+    reader.readAsDataURL(file);
   } catch (err) {
     avatarError.value =
       err instanceof Error
@@ -257,137 +219,24 @@ const onAvatarFileSelected = async (event: Event) => {
   }
 };
 
-const loadCropImage = (source: string) => {
-  const img = new Image();
-  img.onload = () => {
-    cropSource.value = source;
-    cropImage.value = img;
-    const coverScale = Math.max(CROPPER_VIEWPORT / img.naturalWidth, CROPPER_VIEWPORT / img.naturalHeight);
-    cropBaseWidth.value = img.naturalWidth * coverScale;
-    cropBaseHeight.value = img.naturalHeight * coverScale;
-    cropScale.value = 1.2;
-    cropOffset.value = { x: 0, y: 0 };
-    clampOffsets();
-    showCropper.value = true;
-  };
-  img.src = source;
-};
-
-const startDrag = (event: PointerEvent) => {
-  if (!showCropper.value) return;
-  dragging.value = true;
-  dragStart.value = { x: event.clientX, y: event.clientY };
-  dragOrigin.value = { ...cropOffset.value };
-  (event.currentTarget as HTMLElement | null)?.setPointerCapture(event.pointerId);
-};
-
-const onDrag = (event: PointerEvent) => {
-  if (!dragging.value) return;
-  const deltaX = event.clientX - dragStart.value.x;
-  const deltaY = event.clientY - dragStart.value.y;
-  cropOffset.value = {
-    x: dragOrigin.value.x + deltaX,
-    y: dragOrigin.value.y + deltaY,
-  };
-  clampOffsets();
-};
-
-const endDrag = (event: PointerEvent) => {
-  if (!dragging.value) return;
-  dragging.value = false;
-  (event.currentTarget as HTMLElement | null)?.releasePointerCapture(event.pointerId);
-};
-
-const clampOffsets = () => {
-  const maxX = Math.max(0, (cropBaseWidth.value * cropScale.value - CROPPER_VIEWPORT) / 2);
-  const maxY = Math.max(0, (cropBaseHeight.value * cropScale.value - CROPPER_VIEWPORT) / 2);
-  cropOffset.value = {
-    x: Math.min(maxX, Math.max(-maxX, cropOffset.value.x)),
-    y: Math.min(maxY, Math.max(-maxY, cropOffset.value.y)),
-  };
-};
-
 const cancelCropper = () => {
   showCropper.value = false;
   cropSource.value = null;
-  cropImage.value = null;
 };
 
-const applyCropper = async () => {
-  if (!cropImage.value) return;
+const handleCropConfirm = async (blob: Blob) => {
   avatarUploading.value = true;
   try {
-    // 裁剪エリアから最終アップロード用 Blob を生成
-    const blob = await createCroppedBlob();
     const file = new File([blob], `avatar-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
     const profile = await uploadMyAvatar(file);
     setUserProfile(profile);
     avatarError.value = '';
-    showCropper.value = false;
-    cropSource.value = null;
-    cropImage.value = null;
+    cancelCropper();
   } catch (err) {
     avatarError.value = 'アバターのアップロードに失敗しました。別の写真で試すか時間をおいてください。';
   } finally {
     avatarUploading.value = false;
   }
-};
-
-const createCroppedBlob = () => {
-  return new Promise<Blob>((resolve, reject) => {
-    const image = cropImage.value;
-    if (!image) {
-      reject(new Error('No image to crop'));
-      return;
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = CROPPER_RESULT;
-    canvas.height = CROPPER_RESULT;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      reject(new Error('キャンバスを作成できませんでした'));
-      return;
-    }
-
-    const effectiveScale =
-      (Math.max(CROPPER_VIEWPORT / image.naturalWidth, CROPPER_VIEWPORT / image.naturalHeight) *
-        cropScale.value);
-    const cropNaturalWidth = CROPPER_VIEWPORT / effectiveScale;
-    const cropNaturalHeight = CROPPER_VIEWPORT / effectiveScale;
-
-    const centerX = image.naturalWidth / 2 - cropOffset.value.x / effectiveScale;
-    const centerY = image.naturalHeight / 2 - cropOffset.value.y / effectiveScale;
-
-    let sourceX = centerX - cropNaturalWidth / 2;
-    let sourceY = centerY - cropNaturalHeight / 2;
-
-    sourceX = Math.max(0, Math.min(image.naturalWidth - cropNaturalWidth, sourceX));
-    sourceY = Math.max(0, Math.min(image.naturalHeight - cropNaturalHeight, sourceY));
-
-    ctx.drawImage(
-      image,
-      sourceX,
-      sourceY,
-      cropNaturalWidth,
-      cropNaturalHeight,
-      0,
-      0,
-      CROPPER_RESULT,
-      CROPPER_RESULT,
-    );
-
-    canvas.toBlob(
-      (blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error('切り抜きに失敗しました'));
-        }
-      },
-      'image/jpeg',
-      0.86,
-    );
-  });
 };
 
 const handleNameTap = () => {
@@ -445,8 +294,20 @@ const confirmSetup = async () => {
     handleNameTap();
     return;
   }
+  const normalizedEmail = emailDraft.value.trim().toLowerCase();
+  if (normalizedEmail) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      emailError.value = 'メールアドレスの形式を確認してください';
+      return;
+    }
+  }
   confirming.value = true;
   try {
+    if (normalizedEmail && normalizedEmail !== (user.value?.email ?? '').toLowerCase()) {
+      const profile = await updateProfile({ email: normalizedEmail });
+      setUserProfile(profile);
+      emailError.value = '';
+    }
     await fetchCurrentUser();
     await router.replace(redirectUrl.value);
   } catch (err) {
@@ -460,24 +321,6 @@ const skipSetup = () => {
   router.replace(redirectUrl.value);
 };
 
-const userId = computed(() => user.value?.id || '');
-const userIdCopied = ref(false);
-let copyTimer: ReturnType<typeof setTimeout> | null = null;
-
-const copyUserId = async () => {
-  if (!userId.value) return;
-  try {
-    await navigator.clipboard.writeText(userId.value);
-    userIdCopied.value = true;
-    if (copyTimer) clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => {
-      userIdCopied.value = false;
-    }, 1500);
-  } catch (err) {
-    console.error('Failed to copy user id', err);
-  }
-};
-
 onMounted(() => {
   ensureLoggedIn();
   if (!displayName.value && requiresName.value) {
@@ -486,8 +329,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  dragging.value = false;
-  if (copyTimer) clearTimeout(copyTimer);
 });
 </script>
 
@@ -525,7 +366,7 @@ onUnmounted(() => {
 .avatar-circle {
   width: 210px;
   height: 210px;
-  border-radius: 10px;
+  border-radius: 50%;
   border: none;
   background: transparent;
   position: relative;
@@ -533,6 +374,8 @@ onUnmounted(() => {
   cursor: pointer;
   transition: transform 0.2s ease, border-color 0.2s ease;
   padding: 0;
+  display: grid;
+  place-items: center;
 }
 
 .avatar-circle:active {
@@ -542,8 +385,8 @@ onUnmounted(() => {
 .avatar-image {
   width: 100%;
   height: 100%;
-  border-radius: 10px;
-  object-fit: cover;
+  border-radius: 50%;
+  object-fit: contain;
   display: block;
 }
 
@@ -639,48 +482,31 @@ onUnmounted(() => {
   font-size: 14px;
 }
 
-.user-id-chip {
-  margin-top: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.12);
-  color: #0369a1;
+.email-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, 100%);
+  text-align: left;
+}
+.email-label {
+  margin: 0;
   font-size: 13px;
-}
-
-.user-id-chip .chip-text {
   font-weight: 600;
-  letter-spacing: 0.02em;
+  color: #0f172a;
 }
-
-.user-id-chip button {
-  border: none;
-  background: rgba(14, 165, 233, 0.18);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-weight: 600;
-  color: #0369a1;
-  cursor: pointer;
-  white-space: nowrap;
+.email-block input {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  width: 100%;
+  box-sizing: border-box;
 }
-
-.user-id-block {
-  text-align: center;
-}
-
-.user-id-label {
-  margin: 18px 0 4px;
-  font-size: 13px;
-  color: #475569;
-  letter-spacing: 0.08em;
-}
-
-.user-id-chip--floating button {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+.email-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .status {
@@ -717,6 +543,15 @@ onUnmounted(() => {
   font-size: 18px;
   font-weight: 600;
   color: #0f172a;
+}
+.name-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 16px;
+  min-height: 44px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .cropper-viewport {

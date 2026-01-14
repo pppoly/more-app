@@ -8,7 +8,7 @@
     }"
   >
     <img :src="resolved" :alt="name || 'avatar'" />
-    <span v-if="!src" class="fallback">{{ initial }}</span>
+    <span v-if="!src && !resolved" class="fallback">{{ initial }}</span>
   </div>
 </template>
 

@@ -51,6 +51,10 @@
   - Event ID now tracked via query/params; after first create, route is replaced with ?eventId so subsequent saves update same event.
 - Paste flow (ConsoleEventPasteMobile): removed textarea hint; added loading state on “下一步”; calls extractEventDraft before navigating and stores result for the form.
 - Event list/management (mobile): tapping a draft in ConsoleCommunityEventsMobile opens the mobile form with eventId to continue editing; manage page edit button also routes to mobile form with eventId.
+- Event Assistant observability keys updated:
+  - WARN: `missing_keys_mismatch_danger` (inferred ⊄ explicit)
+  - DEBUG: `missing_keys_mismatch_conservative` (explicit ⊃ inferred)
+  - WARN: `llm_call_blocked` (LLM call gated by truth table/budget)
 
 ### Compliance Review Queue (No Changes Applied)
 - LINE 品牌使用合规性：仅文字引用是否符合品牌规范、是否需要额外声明（refs: frontend/src/views/auth/Login.vue, frontend/src/components/common/LiffOpenPrompt.vue, frontend/src/components/common/LineRedirectOverlay.vue, frontend/src/views/mobile/MobileEventDetail.vue）

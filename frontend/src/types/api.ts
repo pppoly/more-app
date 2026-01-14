@@ -6,10 +6,16 @@ export interface LocalizedContent {
 export interface UserProfile {
   id: string;
   name: string;
+  email?: string | null;
+  phone?: string | null;
   language?: string | null;
   preferredLocale?: string | null;
   prefecture?: string | null;
   avatarUrl?: string | null;
+  authProviders?: string[];
+  emailVerifiedAt?: string | null;
+  phoneVerifiedAt?: string | null;
+  lastLoginAt?: string | null;
   isOrganizer?: boolean;
   isAdmin?: boolean;
 }
@@ -629,6 +635,8 @@ export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
   action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
   uiMode?: 'explain' | 'collecting';
+  requestId?: string;
+  conversationId?: string;
 }
 
 export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
@@ -819,6 +827,7 @@ export interface EventAssistantReply {
     | null;
   modeHint?: 'chat' | 'operate';
   uiMode?: 'explain' | 'collect' | 'decision';
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt';
 }
 
 export interface EventAssistantProfileDefaults {
