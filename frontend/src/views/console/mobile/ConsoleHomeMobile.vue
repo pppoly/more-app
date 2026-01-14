@@ -1242,8 +1242,8 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .action-icon img {
-  width: 32px;
-  height: 32px;
+  width: 56px;
+  height: 56px;
   display: block;
   margin: 0 auto;
 }
