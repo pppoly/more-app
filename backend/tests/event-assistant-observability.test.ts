@@ -166,20 +166,28 @@ test('1) 起手清单抽取后不提示日時未確定', async () => {
 test('2) 混中日输入 time/price inferred 完成', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
-    initialParse: () => ({
-      intent: 'EVENT_INFO',
-      slots: { time: '1/23 17-23', price: '一人4000' },
-      missing: ['title', 'location', 'details'],
-      confidence: { time: 0.7, price: 0.7 },
-      language: 'zh',
-      firstReplyKey: 'ASK_TITLE',
-    }),
+    initialParse: () => buildDefaultInitialParse('zh'),
   });
   await withCapturedLogs(async () => {
     const reply = await service.generateAssistantReply(buildPayload('1/23 17-23 一人4000') as any);
     assert.notEqual(reply.nextQuestionKey, 'time');
     assert.notEqual(reply.nextQuestionKey, 'price');
   });
+});
+
+test('2-1) 候选时间会触发确认 선택', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const text = [
+    'イベント名: テスト会',
+    '日時: 平日夜',
+    '場所: 渋谷',
+    '参加費: 1000円',
+    '参加条件: 友人同僚',
+  ].join('\n');
+  const reply = await service.generateAssistantReply(buildPayload(text) as any);
+  assert.equal(Boolean(reply.choiceQuestion?.key?.startsWith('confirm_')), true);
 });
 
 test('3) 委托标题不会写入原句为 title', async () => {
@@ -326,11 +334,12 @@ test('5-1) title 委托记录 title_suggestions ledger', async () => {
   assert.ok(titleCalls.length >= 1);
 });
 
-test('5-2) ready 阶段 title_suggestions 走 ledger 且被阻断', async () => {
+test('5-2) ready 阶段不触发 title_suggestions', async () => {
   const service = createService({
     main: () => ({ ui: { message: 'ready-ok' } }),
   });
   const text = [
+    'イベント名: BBQ交流会',
     '日付: 1/23',
     '時間: 17:00-19:00',
     '場所: 渋谷',
@@ -344,8 +353,7 @@ test('5-2) ready 阶段 title_suggestions 走 ledger 且被阻断', async () => 
     await service.generateAssistantReply(buildPayload(text) as any);
   });
   const titleCalls = infos.filter((args) => args[1]?.name === 'title_suggestions');
-  assert.ok(titleCalls.length >= 1);
-  assert.equal(titleCalls[0]?.[1]?.allowed, false);
+  assert.equal(titleCalls.length, 0);
 });
 
 test('6) edit 단계未定输入不会写入字段且不会跳到日時', async () => {

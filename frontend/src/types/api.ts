@@ -634,9 +634,13 @@ export interface EventAssistantMessage {
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
   action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
+  uiAction?: 'confirm_draft' | 'continue_edit' | 'open_preview' | 'go_form' | null;
   uiMode?: 'explain' | 'collecting';
   requestId?: string;
   conversationId?: string;
+  messageId?: string;
+  clientLocale?: string;
+  clientTimezone?: string;
 }
 
 export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
@@ -785,20 +789,7 @@ export interface EventAssistantReply {
   autoTitle?: string;
   miniPreview?: { bullets: string[]; note?: string };
   choiceQuestion?: {
-    key:
-      | 'title'
-      | 'time'
-      | 'location'
-      | 'price'
-      | 'capacity'
-      | 'details'
-      | 'visibility'
-      | 'registrationForm'
-      | 'requireApproval'
-      | 'enableWaitlist'
-      | 'requireCheckin'
-      | 'refundPolicy'
-      | 'riskNotice';
+    key: string;
     prompt: string;
     options: Array<{ label: string; value: string; recommended?: boolean }>;
   };
