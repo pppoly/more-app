@@ -6,15 +6,26 @@ const day = new Date().toISOString().slice(0, 10);
 const summaryPath = path.join(logDir, `event-assistant-${day}.summary.json`);
 
 const readSummary = async () => {
-  const raw = await fs.readFile(summaryPath, 'utf-8');
-  return JSON.parse(raw) as {
+  try {
+    const raw = await fs.readFile(summaryPath, 'utf-8');
+    return JSON.parse(raw) as {
     totalTurns: number;
     failureTypeCounts: Record<string, number>;
     topMissingKeys: Record<string, number>;
     topNextQuestionKeys: Record<string, number>;
     topParserFailures: { time: number; price: number };
     topExamples: Record<string, Array<{ userText: string }>>;
-  };
+    };
+  } catch {
+    return {
+      totalTurns: 0,
+      failureTypeCounts: {},
+      topMissingKeys: {},
+      topNextQuestionKeys: {},
+      topParserFailures: { time: 0, price: 0 },
+      topExamples: {},
+    };
+  }
 };
 
 const topKeys = (map: Record<string, number>, limit = 5) =>
@@ -53,6 +64,10 @@ const buildPrompt = (summary: Awaited<ReturnType<typeof readSummary>>) => {
 
 const run = async () => {
   const summary = await readSummary();
+  if (summary.totalTurns === 0) {
+    console.info('No summary for today yet:', summaryPath);
+    return;
+  }
   console.info('Total Turns:', summary.totalTurns);
   console.info('Top 5 failures:', topKeys(summary.failureTypeCounts));
   console.info('Top 5 parser misses:', summary.topParserFailures);
