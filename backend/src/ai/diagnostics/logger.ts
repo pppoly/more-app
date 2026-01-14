@@ -53,7 +53,7 @@ const getLogPaths = (day: string) => {
   };
 };
 
-const defaultSummary = (day: string, env: EventAssistantEnv): EventAssistantDailySummary => ({
+  const defaultSummary = (day: string, env: EventAssistantEnv): EventAssistantDailySummary => ({
   day,
   env,
   totalTurns: 0,
@@ -68,6 +68,8 @@ const defaultSummary = (day: string, env: EventAssistantEnv): EventAssistantDail
     STAGE_MISMATCH: [],
     ACTION_NO_EFFECT: [],
     DRAFT_INCONSISTENT: [],
+    NON_EVENT_INPUT: [],
+    NEXT_QUESTION_MISSING: [],
   },
 });
 
@@ -81,6 +83,9 @@ const appendExample = (
   failureType: FailureType,
   entry: EventAssistantTurnLog,
 ) => {
+  if (!summary.topExamples[failureType]) {
+    summary.topExamples[failureType] = [];
+  }
   const list = summary.topExamples[failureType];
   if (list.length >= 5) return;
   list.push({

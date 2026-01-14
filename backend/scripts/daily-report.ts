@@ -5,6 +5,7 @@ import { resolveLogDir } from '../src/ai/diagnostics/logger';
 const logDir = resolveLogDir();
 const day = new Date().toISOString().slice(0, 10);
 const summaryPath = path.join(logDir, `event-assistant-${day}.summary.json`);
+const evalPath = path.join(logDir, `event-assistant-${day}.eval.json`);
 
 const readSummary = async () => {
   try {
@@ -26,6 +27,20 @@ const readSummary = async () => {
       topParserFailures: { time: 0, price: 0 },
       topExamples: {},
     };
+  }
+};
+
+const readEval = async () => {
+  try {
+    const raw = await fs.readFile(evalPath, 'utf-8');
+    return JSON.parse(raw) as {
+      parse: { time: { attempts: number; ok: number; rate: number }; price: { attempts: number; ok: number; rate: number } };
+      nextQuestionKeyNullWithMissing: number;
+      saidButMissing: number;
+      nonEventInput: number;
+    };
+  } catch {
+    return null;
   }
 };
 
@@ -65,6 +80,7 @@ const buildPrompt = (summary: Awaited<ReturnType<typeof readSummary>>) => {
 
 const run = async () => {
   const summary = await readSummary();
+  const evalReport = await readEval();
   if (summary.totalTurns === 0) {
     console.info('No summary for today yet:', summaryPath);
     return;
@@ -73,6 +89,12 @@ const run = async () => {
   console.info('Top 5 failures:', topKeys(summary.failureTypeCounts));
   console.info('Top 5 parser misses:', summary.topParserFailures);
   console.info('Top 5 repeat questions:', topKeys(summary.topNextQuestionKeys));
+  if (evalReport) {
+    console.info('Eval parse rates:', evalReport.parse);
+    console.info('Eval nextQuestionKey null w/ missing:', evalReport.nextQuestionKeyNullWithMissing);
+    console.info('Eval said but missing:', evalReport.saidButMissing);
+    console.info('Eval non-event input:', evalReport.nonEventInput);
+  }
   const prompt = buildPrompt(summary);
   const outputPath = path.join(logDir, `event-assistant-${day}.optimize-prompt.txt`);
   await fs.writeFile(outputPath, prompt, 'utf-8');

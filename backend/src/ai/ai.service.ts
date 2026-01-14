@@ -119,7 +119,7 @@ export interface AiAssistantQuestionMeta {
 }
 
 export interface AiAssistantChoiceQuestion {
-  key: keyof Slots | `confirm_${keyof Slots}`;
+  key: keyof Slots | `confirm_${keyof Slots}` | 'confirm_currency';
   prompt: string;
   options: Array<{ label: string; value: string; recommended?: boolean }>;
 }
@@ -764,6 +764,7 @@ export interface TranslateTextResult {
 
 @Injectable()
 export class AiService {
+  private lastConversationId: string | null = null;
   private readonly client: OpenAI | null;
   private readonly model: string;
    // simple in-memory cache: key => { [targetLang]: translated }
@@ -807,6 +808,28 @@ export class AiService {
     phase: EventAssistantPromptPhase,
     params: Record<string, string>,
   ): Promise<{ systemPrompt: string; instruction: string; version: string }> {
+    const constitutionMode = String(process.env.EVENT_ASSISTANT_CONSTITUTION_MODE || 'off').toLowerCase();
+    const isCollectPhase = phase === 'collecting' || phase === 'decision' || phase === 'compare';
+    const allowConstitution = constitutionMode !== 'off' && (phase === 'ready' || phase === 'operate');
+    const stripConstitution = (text: string) => {
+      if (!text) return text;
+      const forbiddenMarkers = [
+        'SOCIALMORE AI 憲章',
+        'AIの理解：',
+        '--- Assistant Prompt ---',
+        '--- Conversation ---',
+        'Current stage:',
+      ];
+      return text
+        .split('\n')
+        .filter(
+          (line) =>
+            !forbiddenMarkers.some((marker) => line.includes(marker)) &&
+            !/Fields still missing/i.test(line),
+        )
+        .join('\n')
+        .trim();
+    };
     const config = getEventAssistantPromptConfig(phase);
     const promptId = config.promptId;
     if (!promptId) {
@@ -833,14 +856,18 @@ export class AiService {
       };
     }
     const allowedParams = Array.isArray(promptDef.params) ? promptDef.params : undefined;
-    const systemPrompt = promptDef.system
+    let systemPrompt = promptDef.system
       ? this.applyPromptParams(promptDef.system, params, allowedParams)
       : this.applyPromptParams(config.systemPrompt, params);
     const instructionTemplate =
       typeof promptDef.instructions === 'string' && promptDef.instructions.trim().length > 0
         ? promptDef.instructions
         : config.instruction;
-    const instruction = this.applyPromptParams(instructionTemplate, params, allowedParams);
+    let instruction = this.applyPromptParams(instructionTemplate, params, allowedParams);
+    if (!allowConstitution || isCollectPhase) {
+      systemPrompt = stripConstitution(systemPrompt);
+      instruction = stripConstitution(instruction);
+    }
     const version = promptDef.version || config.version;
     return { systemPrompt, instruction, version };
   }
@@ -1188,6 +1215,15 @@ export class AiService {
       return next;
     };
 
+    const getNowForParsing = () => {
+      const override = process.env.EVENT_ASSISTANT_NOW;
+      if (override) {
+        const parsed = new Date(override);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+      }
+      return getBaseDateInTimezone(clientTimezone);
+    };
+
     const parseDateFromText = (text: string) => {
       if (!text) return null;
       const ymdMatch = text.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
@@ -1207,7 +1243,7 @@ export class AiService {
       }
       const slashMatch = text.match(/(\d{1,2})\/(\d{1,2})/);
       if (slashMatch) {
-        const base = getBaseDateInTimezone(clientTimezone);
+        const base = getNowForParsing();
         const year = base.getFullYear();
         const month = Number(slashMatch[1]) - 1;
         const day = Number(slashMatch[2]);
@@ -1281,13 +1317,94 @@ export class AiService {
       return null;
     };
 
+    const parseZhNumber = (value: string) => {
+      const map: Record<string, number> = {
+        一: 1,
+        二: 2,
+        三: 3,
+        四: 4,
+        五: 5,
+        六: 6,
+        七: 7,
+        八: 8,
+        九: 9,
+        十: 10,
+      };
+      if (/^\d{1,2}$/.test(value)) return Number(value);
+      if (value === '十') return 10;
+      if (value.length === 2 && value.startsWith('十')) {
+        return 10 + (map[value[1]] ?? 0);
+      }
+      if (value.length === 2 && value.endsWith('十')) {
+        return (map[value[0]] ?? 0) * 10;
+      }
+      if (value.length === 3 && value[1] === '十') {
+        return (map[value[0]] ?? 0) * 10 + (map[value[2]] ?? 0);
+      }
+      return map[value] ?? null;
+    };
+
+    const parseZhRelativeRange = (text: string) => {
+      if (!text) return null;
+      const weekdayMatch = text.match(/下周|下星期/);
+      const dayMatch = text.match(/(?:下周|下星期)?\s*([一二三四五六日天])/);
+      if (!weekdayMatch || !dayMatch) return null;
+      const dayToken = dayMatch[1];
+      const weekdayMap: Record<string, number> = {
+        日: 0,
+        天: 0,
+        一: 1,
+        二: 2,
+        三: 3,
+        四: 4,
+        五: 5,
+        六: 6,
+      };
+      const weekday = weekdayMap[dayToken];
+      const base = getNowForParsing();
+      const baseWeekday = base.getDay();
+      const mondayOffset = baseWeekday === 0 ? -6 : 1 - baseWeekday;
+      const nextWeekMonday = new Date(base);
+      nextWeekMonday.setDate(base.getDate() + mondayOffset + 7);
+      const target = new Date(nextWeekMonday);
+      const weekdayOffset = weekday === 0 ? 6 : weekday - 1;
+      target.setDate(nextWeekMonday.getDate() + weekdayOffset);
+      const rangeMatch = text.match(/(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?\s*(到|〜|~|-|－)\s*(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?/);
+      if (!rangeMatch) return null;
+      const startPeriod = rangeMatch[1] ?? rangeMatch[5] ?? '';
+      const endPeriod = rangeMatch[5] ?? startPeriod;
+      const startNum = parseZhNumber(rangeMatch[2]);
+      const endNum = parseZhNumber(rangeMatch[6]);
+      if (!startNum || !endNum) return null;
+      const startMinute = rangeMatch[3] === '半' ? 30 : 0;
+      const endMinute = rangeMatch[7] === '半' ? 30 : 0;
+      const normalizeHour = (hour: number, period: string) => {
+        if (/下午|晚上/.test(period) && hour < 12) return hour + 12;
+        if (/中午/.test(period) && hour < 12) return hour + 12;
+        return hour;
+      };
+      const start = new Date(target);
+      start.setHours(normalizeHour(startNum, startPeriod), startMinute, 0, 0);
+      const end = new Date(target);
+      end.setHours(normalizeHour(endNum, endPeriod), endMinute, 0, 0);
+      return { start, end };
+    };
+
     const buildStructuredSchedule = (text: string) => {
+      const zhRange = parseZhRelativeRange(text);
+      if (zhRange) {
+        return {
+          startTime: zhRange.start.toISOString(),
+          endTime: zhRange.end.toISOString(),
+          source: 'zh_relative',
+        };
+      }
       const explicitStart = extractTokyoStartTimeIso(text);
       const timeRange = parseTimeRangeFromText(text);
       const dateOnly = parseDateFromText(text);
       if (!timeRange || !dateOnly) {
         if (explicitStart) {
-          return { startTime: explicitStart, endTime: undefined };
+          return { startTime: explicitStart, endTime: undefined, source: 'explicit' };
         }
         return null;
       }
@@ -1304,6 +1421,7 @@ export class AiService {
       return {
         startTime: start.toISOString(),
         endTime: end ? end.toISOString() : undefined,
+        source: 'rule',
       };
     };
 
@@ -1311,6 +1429,77 @@ export class AiService {
       if (/[作办办]活動|イベントを?作|開催|公開|募集|申し込みフォーム|申込フォーム|作成|掲載|告知/i.test(text)) return 'create';
       if (/見たい|試す|体験だけ|デモ|見学/i.test(text)) return 'explore';
       return 'unknown';
+    };
+
+    const containsConstitutionMarkers = (text: string) => {
+      const markers = [
+        'AIの理解：',
+        '--- Assistant Prompt ---',
+        'SOCIALMORE AI 憲章',
+        '--- Conversation ---',
+        'You are the SOCIALMORE',
+        'Current stage:',
+      ];
+      return markers.some((marker) => text.includes(marker));
+    };
+
+    const sanitizeParseText = (text: string) => {
+      if (!text) return '';
+      if (containsConstitutionMarkers(text)) return '';
+      const singleLine = text.split('\n')[0] ?? '';
+      return singleLine.slice(0, 200).trim();
+    };
+
+    const sanitizeParserInput = (
+      text: string,
+      kind: 'time' | 'price',
+    ): { text: string; source: 'userText' | 'rejected' } => {
+      if (!text) return { text: '', source: 'rejected' };
+      const trimmed = text.trim();
+      if (containsConstitutionMarkers(trimmed)) {
+        return { text: '', source: 'rejected' };
+      }
+      const lineCount = trimmed.split('\n').length;
+      if (lineCount >= 3) {
+        return { text: '', source: 'rejected' };
+      }
+      if (trimmed.length > 240) {
+        return { text: '', source: 'rejected' };
+      }
+      const collapsed = trimmed.replace(/\s+/g, ' ').trim();
+      const limited = collapsed.slice(0, 240).trim();
+      if (!limited) {
+        return { text: '', source: 'rejected' };
+      }
+      return { text: limited, source: 'userText' };
+    };
+
+    const isLikelyShellOutput = (text: string) => {
+      if (!text) return false;
+      const hasPrompt = /\w+@\w+:[^\n]*\$\s/.test(text);
+      const hasCommand = /(^|\n)\s*(pm2|ls|cat|npm|node|cd)\s+/i.test(text);
+      const hasPath = /\/opt\/|No such file or directory/i.test(text);
+      const hasManyLines = text.split('\n').length >= 3;
+      return (hasPrompt && hasManyLines) || (hasCommand && hasManyLines) || (hasPath && hasManyLines);
+    };
+
+    const isProbableYuanSlip = (input: {
+      rawText: string;
+      locale: string;
+      timezone: string;
+      amount: number | null;
+      unitRaw: string;
+    }) => {
+      if (!input.rawText.includes('元')) return false;
+      const locale = input.locale.toLowerCase();
+      const hasCjk = /[\u4e00-\u9fff]/.test(input.rawText);
+      const looksZh = locale.startsWith('zh') || (hasCjk && !locale.startsWith('en'));
+      const hasLatinCurrency = /(CNY|RMB|USD|EUR|JPY)/i.test(input.rawText);
+      if (!looksZh || hasLatinCurrency) return false;
+      const inTokyo = input.timezone === 'Asia/Tokyo';
+      if (!inTokyo) return false;
+      if (!input.amount) return false;
+      return input.amount >= 1 && input.amount <= 200000 && input.unitRaw === '元';
     };
 
     const detectInputMode = (text: string): AssistantInputMode => {
@@ -1432,6 +1621,7 @@ export class AiService {
     };
 
     type SlotOrigin = 'explicit' | 'inferred' | 'llm' | 'selection';
+    let priceCurrencyChoice: 'jpy' | 'cny' | 'reenter' | null = null;
     const extractSlots = (
       conversationMessages: AssistantConversationMessage[],
       basePayload: GenerateAssistantReplyDto,
@@ -1439,7 +1629,7 @@ export class AiService {
       slots: Slots;
       confidence: Confidence;
       intent: AssistantIntent;
-      flags: { hasRulePaste: boolean };
+      flags: { hasRulePaste: boolean; fieldRouterSelection: keyof Slots | 'other' | null };
       origins: Partial<Record<keyof Slots, SlotOrigin>>;
       confirmations: Partial<Record<keyof Slots, boolean>>;
       denials: Partial<Record<keyof Slots, boolean>>;
@@ -1493,31 +1683,20 @@ export class AiService {
         setSlot('title', basePayload.titleSeed.trim(), 0.8, 'inferred');
       }
       if (basePayload.details?.trim()) {
-        setSlot('details', basePayload.details.trim(), 0.7, 'inferred');
-        const priceMatch = basePayload.details.match(/(\d{1,5})\s*円(?:\/人)?/);
-        if (priceMatch?.[1]) {
-          const amount = Number(priceMatch[1]);
-          if (!Number.isNaN(amount)) {
-            if (amount === 0) {
-              setSlot('price', 'free', 0.7, 'inferred');
-            } else {
-              setSlot('price', priceMatch[0].replace(/\s+/g, ''), 0.75, 'inferred');
-            }
-          }
-        } else if (/無料|フリー|タダ|free/i.test(basePayload.details)) {
-          setSlot('price', 'free', 0.7, 'inferred');
-        }
-        if (/オンライン|zoom|teams|google meet|line/i.test(basePayload.details)) {
-          setSlot('location', 'online', 0.7, 'inferred');
+        const safeSeed = sanitizeParseText(basePayload.details.trim());
+        if (safeSeed) {
+          setSlot('details', safeSeed, 0.7, 'inferred');
         }
       }
 
       const userMessages = conversationMessages.filter((msg) => msg.role === 'user');
       let hasRulePaste = false;
+      let fieldRouterSelection: keyof Slots | 'other' | null = null;
       const allUserText = userMessages.map((m) => m.content || '').join(' ');
 
       for (const msg of userMessages) {
         const text = msg.content || '';
+        const safeText = sanitizeParseText(text);
         const listLines = text
           .split(/\n+/)
           .map((line) => line.trim())
@@ -1526,7 +1705,7 @@ export class AiService {
         let parsedTime: string | null = null;
         for (const line of listLines) {
           const match = line.match(
-            /^[-*•]?\s*\**(イベント名|日付|時間|場所|参加人数|参加条件|参加費|料金|申込フォーム|申込項目|公開範囲|参加承認|承認|キャンセル待ち|待機リスト|チェックイン|検票|返金ポリシー|注意事項)\**\s*[:：]\s*(.+)$/,
+            /^[-*•]?\s*\**(イベント名|日付|日時|時間|場所|参加人数|参加条件|参加費|料金|申込フォーム|申込項目|公開範囲|参加承認|承認|キャンセル待ち|待機リスト|チェックイン|検票|返金ポリシー|注意事項)\**\s*[:：]\s*(.+)$/,
           );
           if (!match) continue;
           const label = match[1];
@@ -1536,7 +1715,7 @@ export class AiService {
             if (!isDelegateTitleAnswer(value)) setSlot('title', value, 0.9, 'explicit');
             continue;
           }
-          if (label === '日付') {
+          if (label === '日付' || label === '日時') {
             parsedDate = value;
             continue;
           }
@@ -1600,7 +1779,10 @@ export class AiService {
         }
         if (parsedDate || parsedTime) {
           const combined = [parsedDate, parsedTime].filter(Boolean).join(' ');
-          if (combined) setSlot('time', combined, 0.85, 'explicit');
+          if (combined) {
+            const isVague = /平日夜|週末|午後|午前|夜/.test(combined);
+            setSlot('time', combined, isVague ? 0.55 : 0.85, 'explicit');
+          }
         }
         const selectionMatch = text.match(/【選択】\s*([a-zA-Z_]+)\s*[:：]\s*(.+)/);
         if (selectionMatch?.[1] && selectionMatch?.[2]) {
@@ -1609,6 +1791,40 @@ export class AiService {
           const isConfirmKey = rawKey.startsWith('confirm_');
           const normalizedKey = isConfirmKey ? rawKey.replace('confirm_', '') : rawKey;
           const targetKey = normalizedKey as keyof Slots;
+          if (rawKey === 'confirm_currency') {
+            const normalizedValue = rawValue.toLowerCase();
+            if (normalizedValue.startsWith('confirm_jpy')) {
+              const amountMatch = normalizedValue.match(/confirm_jpy_(\d{1,6})/);
+              const amount = amountMatch?.[1] ? Number(amountMatch[1]) : null;
+              if (amount && !Number.isNaN(amount)) {
+                setSlot('price', `${amount}円`, 0.9, 'explicit');
+                confirmations.price = true;
+              } else if (slots.price) {
+                setSlot('price', slots.price.replace(/元/g, '円'), 0.8, 'explicit');
+                confirmations.price = true;
+              }
+              priceCurrencyChoice = 'jpy';
+            } else if (normalizedValue === 'confirm_cny') {
+              priceCurrencyChoice = 'cny';
+            } else if (normalizedValue === 'reenter_price') {
+              priceCurrencyChoice = 'reenter';
+            }
+            continue;
+          }
+          if (rawKey === 'confirm_time') {
+            const normalizedValue = rawValue.toLowerCase();
+            if (
+              normalizedValue === 'time' ||
+              normalizedValue === 'location' ||
+              normalizedValue === 'price' ||
+              normalizedValue === 'title'
+            ) {
+              fieldRouterSelection = normalizedValue as keyof Slots;
+            } else if (normalizedValue === 'other') {
+              fieldRouterSelection = 'other';
+            }
+            continue;
+          }
           const normalizedValue = rawValue.toLowerCase();
           const isYes = /^(はい|yes|y|ok|了解|是|对|好)$/i.test(normalizedValue);
           const isNo = /^(いいえ|no|n|不|不是|否|不要)$/i.test(normalizedValue);
@@ -1643,11 +1859,11 @@ export class AiService {
         }
 
         // time detection
-        const timeRangeMatch = text.match(/(\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2})/);
+        const timeRangeMatch = safeText.match(/(\d{1,2}[:：]\d{2}\s*[-〜~]\s*\d{1,2}[:：]\d{2})/);
         const cnTimeTokenRegex = /(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分)?/g;
-        const cnTokens = Array.from(text.matchAll(cnTimeTokenRegex));
-        const hasPm = /下午|晚上|夜/.test(text);
-        const hasAm = /上午|早上/.test(text);
+        const cnTokens = Array.from(safeText.matchAll(cnTimeTokenRegex));
+        const hasPm = /下午|晚上|夜/.test(safeText);
+        const hasAm = /上午|早上/.test(safeText);
         const normalizeHour = (hour: number) => {
           if (hasPm && hour < 12) return hour + 12;
           if (hasAm && hour === 12) return 0;
@@ -1667,12 +1883,12 @@ export class AiService {
           if (!start || !end) return null;
           return `${start}-${end}`;
         })();
-        const cnDayMatch = text.match(
+        const cnDayMatch = safeText.match(
           /(下周|下星期|本周|本週|这周|這周|今周|今週)?\s*(?:周|星期)?\s*([一二三四五六日天1234567])/,
         );
         const timeDateMatch =
-          text.match(/(\d{4}-\d{2}-\d{2}(?:\s*\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}日(?:\s*\d{1,2}[:：]\d{2})?)/) ??
-          text.match(/(\d{1,2}\/\d{1,2}(?:\s*\d{1,2}[:：]\d{2})?)/);
+          safeText.match(/(\d{4}-\d{2}-\d{2}(?:\s*\d{1,2}[:：]\d{2})?|\d{1,2}月\d{1,2}日(?:\s*\d{1,2}[:：]\d{2})?)/) ??
+          safeText.match(/(\d{1,2}\/\d{1,2}(?:\s*\d{1,2}[:：]\d{2})?)/);
         if (timeRangeMatch?.[1]) {
           setSlot('time', timeRangeMatch[1], 0.75, 'explicit');
         } else if (cnRangeFromTokens) {
@@ -1680,24 +1896,24 @@ export class AiService {
           setSlot('time', `${dayPrefix}${cnRangeFromTokens}`.trim(), 0.75, 'explicit');
         } else if (timeDateMatch?.[0]) {
           setSlot('time', timeDateMatch[0], 0.75, 'explicit');
-        } else if (/平日夜|週末|土曜|日曜|金曜|午後|午前/.test(text)) {
-          setSlot('time', text.match(/(平日夜|週末|土曜|日曜|金曜|午後|午前)/)?.[0], 0.65, 'inferred');
+        } else if (/平日夜|週末|土曜|日曜|金曜|午後|午前/.test(safeText)) {
+          setSlot('time', safeText.match(/(平日夜|週末|土曜|日曜|金曜|午後|午前)/)?.[0], 0.65, 'inferred');
         }
         // location detection
-        if (/オンライン|zoom|teams|meet|line/i.test(text)) {
+        if (/オンライン|zoom|teams|meet|line/i.test(safeText)) {
           setSlot('location', 'online', 0.8, 'explicit');
         } else {
           const locMatch =
-            text.match(/([\u4e00-\u9fff]{1,6}(市|区|區|县|縣|町|村))/) ??
-            text.match(/([ぁ-んァ-ン\u4e00-\u9fff]{1,6}(駅|駅前))/) ??
-            text.match(/(渋谷|新宿|池袋|東京|大阪|名古屋|福岡|札幌|横浜|神戸|京都|仙台|那覇|千葉|埼玉|神奈川)/);
+            safeText.match(/([\u4e00-\u9fff]{1,6}(市|区|區|县|縣|町|村))/) ??
+            safeText.match(/([ぁ-んァ-ン\u4e00-\u9fff]{1,6}(駅|駅前))/) ??
+            safeText.match(/(渋谷|新宿|池袋|東京|大阪|名古屋|福岡|札幌|横浜|神戸|京都|仙台|那覇|千葉|埼玉|神奈川)/);
           if (locMatch?.[0]) {
             setSlot('location', locMatch[0], 0.7, 'explicit');
           }
         }
         // price detection
-        const priceMatch = text.match(/(\d{1,5})\s*(円|元)(?:\/人)?/);
-        const perPersonMatch = text.match(/(一人|每人)\s*(\d{1,5})/);
+        const priceMatch = safeText.match(/(\d{1,5})\s*(円|元)(?:\/人)?/);
+        const perPersonMatch = safeText.match(/(一人|每人)\s*(\d{1,5})/);
         if (priceMatch?.[1]) {
           const amount = Number(priceMatch[1]);
           if (!Number.isNaN(amount)) {
@@ -1774,7 +1990,15 @@ export class AiService {
       }
 
       const intent = hasRulePaste ? 'unknown' : detectIntent(allUserText || basePayload.details || '');
-      return { slots, confidence, intent, flags: { hasRulePaste }, origins, confirmations, denials };
+      return {
+        slots,
+        confidence,
+        intent,
+        flags: { hasRulePaste, fieldRouterSelection },
+        origins,
+        confirmations,
+        denials,
+      };
     };
     const buildAssumptionsFromHeuristics = (slotValues: Slots, slotConfidence: Confidence, sourceText: string) => {
       const assumptions: Array<{ field: string; assumedValue: string; reason: string }> = [];
@@ -2040,7 +2264,15 @@ export class AiService {
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
-    const turnIndex = Math.max(0, turnCount - 1);
+    let turnIndex = Math.max(0, turnCount - 1);
+    const conversationReset =
+      Boolean(payload.conversationId) &&
+      Boolean(this.lastConversationId) &&
+      payload.conversationId !== this.lastConversationId;
+    if (conversationReset) {
+      turnIndex = 0;
+    }
+    this.lastConversationId = payload.conversationId ?? null;
     const uiAction: EventAssistantUiAction = payload.uiAction ?? (payload.action ?? null);
     const baseLocale = payload.clientLocale ?? payload.baseLanguage ?? 'unknown';
     const baseTimezone = payload.clientTimezone ?? 'unknown';
@@ -2054,10 +2286,13 @@ export class AiService {
     let logDecisionTrace: Record<string, unknown> | null = null;
     let logMessageSource: string | null = null;
     let logPreviousAskedKey: string | null = null;
+    let logUnitSlipPrompted = false;
+    let logNonEventInput = false;
     let logParserTime = {
       rawText: null as string | null,
       candidateStartAt: null as string | null,
       candidateEndAt: null as string | null,
+      parserInputSource: null as string | null,
       confidence: null as number | null,
       ok: false,
       reason: 'not_attempted',
@@ -2067,6 +2302,10 @@ export class AiService {
       candidateAmount: null as number | null,
       currency: null as string | null,
       type: null as string | null,
+      unitRaw: null as string | null,
+      unitSlipCandidate: false,
+      slipReason: null as string | null,
+      parserInputSource: null as string | null,
       confidence: null as number | null,
       ok: false,
       reason: 'not_attempted',
@@ -2100,6 +2339,7 @@ export class AiService {
         draftReady: logDraftReady,
         uiMode,
         uiAction,
+        hasChoiceQuestion: Boolean(reply.choiceQuestion),
         parser: {
           timeOk: logParserTime.ok,
           priceOk: logParserPrice.ok,
@@ -2111,6 +2351,12 @@ export class AiService {
           price: draftSummary?.price ? String(draftSummary.price) : null,
         },
       });
+      if (logUnitSlipPrompted) {
+        failureAnalysis.signals.unitSlipPrompted = true;
+      }
+      if (logNonEventInput) {
+        failureAnalysis.failureTypes.push('NON_EVENT_INPUT');
+      }
       const entry: EventAssistantTurnLog = {
         ts: new Date().toISOString(),
         day: new Date().toISOString().slice(0, 10),
@@ -2122,6 +2368,7 @@ export class AiService {
         requestId,
         conversationId,
         turnIndex,
+        conversationReset,
         input: {
           userText: latestUserMessage,
           uiAction,
@@ -2184,6 +2431,72 @@ export class AiService {
       timezone: baseTimezone,
       turnCount,
     });
+    const sanitizedUserText = sanitizeParseText(latestUserMessage);
+    const isFreshConversation = turnCount <= 1;
+    if (isLikelyShellOutput(latestUserMessage) && isFreshConversation) {
+      logPromptPhase = 'collect';
+      logNonEventInput = true;
+      logParserTime = {
+        rawText: '',
+        candidateStartAt: null,
+        candidateEndAt: null,
+        parserInputSource: 'rejected',
+        confidence: null,
+        ok: false,
+        reason: 'not_attempted',
+      };
+      logParserPrice = {
+        rawText: '',
+        candidateAmount: null,
+        currency: null,
+        type: null,
+        unitRaw: null,
+        unitSlipCandidate: false,
+        slipReason: null,
+        parserInputSource: 'rejected',
+        confidence: null,
+        ok: false,
+        reason: 'not_attempted',
+      };
+      return await finalizeAndReturn({
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'non-event-input-v1',
+        language: payload.baseLanguage || 'ja',
+        turnCount,
+        thinkingSteps: [],
+        editorChecklist: [],
+        writerSummary: '',
+        ui: {
+          message: 'ログ/コマンドの貼り付けに見えます。イベント情報（タイトル/日時/場所/料金）だけ送ってください。',
+        },
+        optionTexts: [],
+        slots: {},
+        confidence: {
+          title: 0,
+          time: 0,
+          location: 0,
+          price: 0,
+          capacity: 0,
+          details: 0,
+          visibility: 0,
+          registrationForm: 0,
+          requireApproval: 0,
+          enableWaitlist: 0,
+          requireCheckin: 0,
+          refundPolicy: 0,
+          riskNotice: 0,
+        },
+        draftReady: false,
+        applyEnabled: false,
+        intent: 'unknown',
+        inputMode: 'describe',
+        nextQuestionKey: null,
+        modeHint: 'chat',
+        messageSource: 'backend.interrupt',
+      });
+    }
     const parseInitialUserMessage = async (): Promise<InitialParseResult | null> => {
       try {
         const client = this.client;
@@ -2434,7 +2747,7 @@ export class AiService {
     const slotOrigins = extracted.origins;
     const slotConfirmations = extracted.confirmations;
     const slotDenials = extracted.denials;
-    const hasUnsupportedCurrency = detectUnsupportedCurrencyInput(latestUserMessage);
+    const hasUnsupportedCurrencyBase = detectUnsupportedCurrencyInput(latestUserMessage);
     const effectiveInputMode: AssistantInputMode = continueEdit ? 'fill' : inputMode;
     const compareCandidatesForPrompt =
       effectiveInputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
@@ -2519,12 +2832,19 @@ export class AiService {
         messageSource: 'backend.ui',
       });
     }
+    const hasTimeSignalHint =
+      /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|\d{1,2}[:：]\d{2}/.test(
+        latestUserMessage,
+      );
     const followupUnknownNoDelta =
       !initialParse &&
       !helpIntent &&
       !metaComment &&
+      !isSelectionAction &&
       !lastAskedSlot &&
       !hasSlotDelta &&
+      !hasTimeSignalHint &&
+      !isLikelyPriceFreeText(latestUserMessage) &&
       Boolean(latestUserMessage.trim());
     if (followupUnknownNoDelta) {
       const clarifyMessage =
@@ -2795,9 +3115,14 @@ export class AiService {
         messageSource: 'backend.ui',
       });
     }
-    const timeSourceText = [slots.time, latestUserMessage].filter(Boolean).join(' ');
-    const structuredTime = buildStructuredSchedule(timeSourceText);
-    const priceSourceText = [slots.price, slots.details, latestUserMessage].filter(Boolean).join(' ');
+    const timeParserInput = sanitizeParserInput(latestUserMessage, 'time');
+    const timeSourceText = timeParserInput.text;
+    const hasTimeSignal =
+      /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|\d{1,2}[:：]\d{2}/.test(
+        timeSourceText,
+      ) || Boolean(slots.time);
+    const structuredTime =
+      hasTimeSignal && timeSourceText ? buildStructuredSchedule(timeSourceText) : null;
     logDebug('time_parse', {
       parser: 'rule',
       sourceText: timeSourceText,
@@ -2808,29 +3133,85 @@ export class AiService {
       needsConfirmation: Boolean(slots.time) && (confidence.time ?? 0) < 0.6,
       messageId: payload.messageId ?? null,
     });
-    const timeOk = Boolean(structuredTime?.startTime || slots.time || hasExplicitTimeRange(timeSourceText));
+    const timeOk =
+      (Boolean(slots.time) && (confidence.time ?? 0) >= 0.6) ||
+      (timeParserInput.source !== 'rejected' &&
+        hasTimeSignal &&
+        Boolean(structuredTime?.startTime || hasExplicitTimeRange(timeSourceText)));
     logParserTime = {
       rawText: timeSourceText || null,
       candidateStartAt: structuredTime?.startTime ?? null,
       candidateEndAt: structuredTime?.endTime ?? null,
+      parserInputSource: timeParserInput.source,
       confidence: confidence.time ?? null,
       ok: timeOk,
-      reason: timeOk ? 'parsed' : timeSourceText.trim() ? 'no_range' : 'no_date',
+      reason: timeOk
+        ? structuredTime?.source === 'zh_relative'
+          ? 'parsed_zh_relative'
+          : 'parsed'
+        : timeParserInput.source === 'rejected'
+        ? 'not_attempted'
+        : hasTimeSignal
+        ? 'no_range'
+        : 'not_attempted',
     };
-    const priceRaw = slots.price || priceSourceText || '';
+    const priceParserInput = sanitizeParserInput(latestUserMessage, 'price');
+    const priceSourceText = priceParserInput.text;
+    const priceRaw = priceSourceText || '';
     const priceAmountMatch = priceRaw.match(/(\d{1,5})/);
     const priceAmount = priceAmountMatch ? Number(priceAmountMatch[1]) : null;
     const priceType = /\/人|一人|每人/.test(priceRaw) ? 'per_person' : isFreeText(priceRaw) ? 'free' : 'flat';
-    const priceOk = Boolean(priceAmount || isFreeText(priceRaw));
+    const unitRawMatch = priceRaw.match(/(円|元|¥|JPY|CNY|RMB)/i);
+    const unitRaw = unitRawMatch?.[1]
+      ? unitRawMatch[1].toUpperCase() === 'RMB'
+        ? 'CNY'
+        : unitRawMatch[1]
+      : 'UNKNOWN';
+    const isCnyUnit = unitRaw === '元' || unitRaw === 'CNY';
+    const unitSlipCandidate = isProbableYuanSlip({
+      rawText: priceParserInput.text,
+      locale: baseLocale,
+      timezone: baseTimezone,
+      amount: priceAmount,
+      unitRaw: unitRaw === 'UNKNOWN' ? '' : unitRaw,
+    });
+    let priceOk = Boolean(priceAmount || isFreeText(priceRaw));
+    let priceReason = priceOk ? 'parsed' : priceRaw.trim() ? 'no_amount' : 'ambiguous';
+    let priceCurrency: string | null = priceOk ? 'JPY' : null;
+    if (priceParserInput.source === 'rejected' || !priceRaw.trim()) {
+      priceOk = false;
+      priceReason = 'not_attempted';
+    }
+    if (isCnyUnit) {
+      priceOk = false;
+      priceReason = 'wrong_currency_unit';
+      priceCurrency = 'CNY';
+    }
     logParserPrice = {
       rawText: priceRaw || null,
       candidateAmount: priceAmount && !Number.isNaN(priceAmount) ? priceAmount : null,
-      currency: priceOk ? 'JPY' : null,
+      currency: priceCurrency,
       type: priceOk ? priceType : null,
+      unitRaw: unitRaw === 'UNKNOWN' ? null : unitRaw,
+      unitSlipCandidate,
+      slipReason: unitSlipCandidate ? 'probable_yuan_slip_in_japan' : null,
+      parserInputSource: priceParserInput.source,
       confidence: confidence.price ?? null,
       ok: priceOk,
-      reason: priceOk ? 'parsed' : priceRaw.trim() ? 'no_amount' : 'ambiguous',
+      reason: priceReason,
     };
+    logDebug('price_parse', {
+      rawText: logParserPrice.rawText,
+      candidateAmount: logParserPrice.candidateAmount,
+      ok: logParserPrice.ok,
+      reason: logParserPrice.reason,
+      unitRaw: logParserPrice.unitRaw,
+      unitSlipCandidate: logParserPrice.unitSlipCandidate,
+      messageId: payload.messageId ?? null,
+    });
+    const priceUnitSlipCandidate = logParserPrice.unitSlipCandidate;
+    const priceWrongCurrencyUnit = logParserPrice.reason === 'wrong_currency_unit';
+    const hasUnsupportedCurrency = hasUnsupportedCurrencyBase && !priceUnitSlipCandidate;
     const isConfirmed = (k: keyof Slots) => fieldStatus[k] === 'confirmed';
     const computeMissingKeysInferred = (): (keyof Slots)[] => {
       const missing: (keyof Slots)[] = [];
@@ -2853,6 +3234,8 @@ export class AiService {
       initialParse?.intent === 'UNKNOWN' && Object.keys(initialParse.slots ?? {}).length === 0;
     if (
       unknownParseNoSlots &&
+      turnIndex === 0 &&
+      !isSelectionAction &&
       !helpIntent &&
       !metaComment &&
       normalizedInputMode !== 'compare' &&
@@ -3147,6 +3530,13 @@ export class AiService {
     if (draftReady || confirmDraft) {
       missingAll = [];
     }
+    const priceConfirmedJpy = priceCurrencyChoice === 'jpy';
+    const priceNeedsReenter = priceCurrencyChoice === 'cny' || priceCurrencyChoice === 'reenter';
+    if ((priceWrongCurrencyUnit && !priceConfirmedJpy) || priceNeedsReenter) {
+      if (!missingAll.includes('price')) {
+        missingAll.push('price');
+      }
+    }
     logMissingKeys = missingAll.map((key) => String(key));
     const confirmPriority: (keyof Slots)[] = ['time', 'price', 'location', 'title', 'details', 'capacity'];
     const candidateKeys = confirmPriority.filter((key) => fieldStatus[key] === 'candidate');
@@ -3160,6 +3550,9 @@ export class AiService {
     if (pendingConfirmKey && missingAll.length) {
       pendingConfirmKey = null;
     }
+    if (priceWrongCurrencyUnit && priceUnitSlipCandidate) {
+      pendingConfirmKey = null;
+    }
     // initialMissingOverride intentionally removed: single-source missing keys
     let confirmationChoiceQuestion: AiAssistantChoiceQuestion | null = null;
     if (pendingConfirmKey && slots[pendingConfirmKey]) {
@@ -3171,6 +3564,48 @@ export class AiService {
         options: [
           { label: sanitize(yesLabel), value: 'yes', recommended: true },
           { label: sanitize(noLabel), value: 'no' },
+        ],
+      };
+    }
+    let currencySlipChoiceQuestion: AiAssistantChoiceQuestion | null = null;
+    if (priceWrongCurrencyUnit && priceUnitSlipCandidate && !priceCurrencyChoice) {
+      const amountLabel = logParserPrice.candidateAmount ?? '';
+      const promptJp = `「${amountLabel}元」は、日円（JPY）のつもりですか？`;
+      const promptCn = `你输入的是「元」，你是想填「日元（円）」吗？`;
+      currencySlipChoiceQuestion = {
+        key: 'confirm_currency' as unknown as keyof Slots,
+        prompt: sanitize(`${promptJp}\n${promptCn}`),
+        options: [
+          {
+            label: sanitize(`はい、${amountLabel}円（JPY）`),
+            value: `confirm_jpy_${amountLabel}`,
+            recommended: true,
+          },
+          { label: sanitize('いいえ、人民元（CNY）です'), value: 'confirm_cny' },
+          { label: sanitize('入力し直す'), value: 'reenter_price' },
+        ],
+      };
+      logUnitSlipPrompted = true;
+    }
+    let timeSignalChoiceQuestion: AiAssistantChoiceQuestion | null = null;
+    if (
+      missingAll.includes('time') &&
+      hasTimeSignal &&
+      !timeOk &&
+      timeParserInput.text &&
+      !confirmationChoiceQuestion &&
+      !currencySlipChoiceQuestion
+    ) {
+      const promptJp = '今の入力は日時っぽいです。次のどれですか？';
+      const promptCn = '刚才的输入看起来像时间。你想补的是哪个？';
+      timeSignalChoiceQuestion = {
+        key: 'confirm_time' as unknown as keyof Slots,
+        prompt: sanitize(`${promptJp}\n${promptCn}`),
+        options: [
+          { label: sanitize('日時 / 時間'), value: 'time', recommended: true },
+          { label: sanitize('場所'), value: 'location' },
+          { label: sanitize('料金'), value: 'price' },
+          { label: sanitize('その他'), value: 'other' },
         ],
       };
     }
@@ -3205,10 +3640,28 @@ export class AiService {
         messageId: payload.messageId ?? null,
       });
     }
-    const forcedNextQuestionKey = continueEdit ? 'details' : hasUnsupportedCurrency ? 'price' : null;
+    let currencyUnitMessage: string | null = null;
+    if (priceCurrencyChoice === 'cny') {
+      const jp = '現在この画面では日円（JPY）のみ対応です。円で入力してください。例：1000円 / 無料';
+      const cn = '当前仅支持日元（JPY），请用“円”重新输入，例如：1000円 / 無料';
+      currencyUnitMessage = `${jp}\n${cn}`;
+    }
+    if (priceCurrencyChoice === 'reenter') {
+      const jp = '円で入力してください。例：1000円 / 無料';
+      const cn = '请用日元（円）重新输入。例：1000円 / 無料';
+      currencyUnitMessage = `${jp}\n${cn}`;
+    }
+    const forcedNextQuestionKey =
+      (extracted.flags.fieldRouterSelection && extracted.flags.fieldRouterSelection !== 'other'
+        ? extracted.flags.fieldRouterSelection
+        : null) ??
+      (continueEdit || hasUnsupportedCurrency || priceNeedsReenter ? 'price' : null);
     let nextQuestionKeyLocked = Boolean(forcedNextQuestionKey);
     let nextQuestionKeyCandidate =
-      forcedNextQuestionKey ?? (draftReady || confirmationChoiceQuestion ? null : pickNextQuestion(missingAll));
+      forcedNextQuestionKey ??
+      (draftReady || confirmationChoiceQuestion || currencySlipChoiceQuestion || timeSignalChoiceQuestion
+        ? null
+        : pickNextQuestion(missingAll));
     const getAskCount = (key: keyof Slots | null) =>
       key
         ? conversation.filter(
@@ -3253,6 +3706,9 @@ export class AiService {
         const client = this.client;
         if (!client) {
           throw new Error('OpenAI client is not configured');
+        }
+        if (containsConstitutionMarkers(latestUserMessage)) {
+          throw new Error('Normalizer skipped due to constitution markers');
         }
         if (!canCallLlm('normalizer', { promptPhase: 'collect', loopTriggered: true, helpIntent, turnIndex })) {
           throw new Error('LLM gated');
@@ -3917,7 +4373,34 @@ export class AiService {
       const effectiveIntent: AssistantIntent = confirmDraft ? 'create' : intent;
       const applyEnabled = !isCompareMode && draftReady && effectiveIntent === 'create';
       const shouldNullNextQuestionKey = Boolean(isCompareMode || draftReady || unrelatedAnswerKey);
-      const nextQuestionKey: keyof Slots | null = shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
+      let nextQuestionKey: keyof Slots | null = shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
+      if (
+        !shouldNullNextQuestionKey &&
+        !confirmationChoiceQuestion &&
+        !currencySlipChoiceQuestion &&
+        !timeSignalChoiceQuestion &&
+        missingAll.length &&
+        !nextQuestionKey
+      ) {
+        nextQuestionKey = pickNextQuestion(missingAll);
+      }
+      if (
+        !draftReady &&
+        missingAll.length &&
+        !confirmationChoiceQuestion &&
+        !currencySlipChoiceQuestion &&
+        !timeSignalChoiceQuestion &&
+        !nextQuestionKey
+      ) {
+        const error = new Error('nextQuestionKey invariant violated');
+        if (process.env.NODE_ENV === 'test') {
+          throw error;
+        }
+        console.warn('[AiService] next_question_key_invariant_failed', {
+          missingAll,
+          draftReady,
+        });
+      }
       let compareCandidates: AiAssistantCompareCandidate[] = [];
       if (isCompareMode) {
         compareCandidates = compareCandidatesForPrompt;
@@ -3992,7 +4475,7 @@ export class AiService {
       if (unrelatedAnswerKey) {
         cleanUiMessage = buildUnrelatedAnswerMessage(unrelatedAnswerKey);
       }
-      if (confirmationChoiceQuestion) {
+      if (confirmationChoiceQuestion || currencySlipChoiceQuestion) {
         cleanUiMessage = '';
         cleanUiOptions = [];
         cleanUiQuestionText = '';
@@ -4010,7 +4493,9 @@ export class AiService {
               .filter((o) => o.label && o.value),
           }
         : null;
-      if (hasUnsupportedCurrency) {
+      if (currencyUnitMessage) {
+        cleanUiMessage = currencyUnitMessage;
+      } else if (hasUnsupportedCurrency) {
         cleanUiMessage = '金額は円で入力してください。例：1000円 / 無料';
       }
       const autoTitleNotice = autoGeneratedTitle
@@ -4149,7 +4634,8 @@ export class AiService {
       parsed.coachPrompt = sanitize(parsed.coachPrompt);
       parsed.questions = cleanQuestions;
       parsed.miniPreview = cleanMiniPreview;
-      parsed.choiceQuestion = confirmationChoiceQuestion ?? cleanChoiceQuestion;
+      parsed.choiceQuestion =
+        currencySlipChoiceQuestion ?? confirmationChoiceQuestion ?? timeSignalChoiceQuestion ?? cleanChoiceQuestion;
       parsed.compareCandidates = cleanCompareCandidates;
       parsed.titleSuggestions = cleanTitleSuggestions;
       parsed.ui = cleanUi;
@@ -4360,7 +4846,7 @@ export class AiService {
         writerSummary: cleanWriterSummary,
         message: fallbackMessage ?? '',
         miniPreview: cleanMiniPreview,
-        choiceQuestion: confirmationChoiceQuestion ?? cleanChoiceQuestion,
+        choiceQuestion: currencySlipChoiceQuestion ?? confirmationChoiceQuestion ?? timeSignalChoiceQuestion ?? cleanChoiceQuestion,
         compareCandidates: cleanCompareCandidates,
         titleSuggestions: cleanTitleSuggestions,
         autoTitle: autoGeneratedTitle ?? undefined,

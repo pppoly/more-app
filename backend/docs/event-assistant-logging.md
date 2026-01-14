@@ -49,6 +49,7 @@ Each request to `/ai/events/assistant` appends one line:
       "rawText": "redacted",
       "candidateStartAt": null,
       "candidateEndAt": null,
+      "parserInputSource": "userText",
       "confidence": 0.7,
       "ok": false,
       "reason": "no_range"
@@ -58,6 +59,10 @@ Each request to `/ai/events/assistant` appends one line:
       "candidateAmount": 4000,
       "currency": "JPY",
       "type": "per_person",
+      "unitRaw": "円",
+      "unitSlipCandidate": false,
+      "slipReason": null,
+      "parserInputSource": "userText",
       "confidence": 0.7,
       "ok": true,
       "reason": "parsed"

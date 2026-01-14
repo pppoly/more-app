@@ -15,6 +15,7 @@ export interface FailureAnalysisInput {
   draftReady: boolean;
   uiMode: 'normal' | 'explain';
   uiAction: string | null;
+  hasChoiceQuestion: boolean;
   parser: {
     timeOk: boolean;
     priceOk: boolean;
@@ -36,6 +37,8 @@ export const analyzeFailures = (
     saidButMissing: false,
     stageMismatch: false,
     actionNoEffect: false,
+    unitSlipPrompted: false,
+    nextQuestionMissing: false,
   };
   const saidTime = TIME_HINT_REGEX.test(input.userText);
   const saidPrice = PRICE_HINT_REGEX.test(input.userText);
@@ -91,6 +94,13 @@ export const analyzeFailures = (
       !input.draftSummary.price);
   if (draftInconsistent) {
     failureTypes.push('DRAFT_INCONSISTENT');
+  }
+
+  const nextQuestionMissing =
+    !input.hasChoiceQuestion && input.missingKeys.length > 0 && !input.nextQuestionKey;
+  if (nextQuestionMissing) {
+    failureTypes.push('NEXT_QUESTION_MISSING');
+    signals.nextQuestionMissing = true;
   }
 
   return { failureTypes, signals };

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AiService, GenerateAssistantReplyDto } from '../src/ai/ai.service';
+import fs from 'fs/promises';
+import path from 'path';
+import { resolveLogDir } from '../src/ai/diagnostics/logger';
 
 process.env.EVENT_ASSISTANT_DEBUG = '1';
 process.env.OPENAI_API_KEY = 'test';
@@ -100,7 +103,22 @@ const createService = (handlers: ConstructorParameters<typeof FakeOpenAI>[0]) =>
   return service;
 };
 
-const buildPayload = (text: string, conversation?: GenerateAssistantReplyDto['conversation']) => ({
+const createServiceWithPrompts = (
+  handlers: ConstructorParameters<typeof FakeOpenAI>[0],
+  prompts: Array<{ id: string; system: string; instructions?: string; status?: string; version?: string; params?: string[] }>,
+) => {
+  const promptStore = { getAll: async () => prompts };
+  const prisma = {};
+  const service = new AiService(prisma as any, promptStore as any);
+  (service as any).client = new FakeOpenAI(handlers);
+  return service;
+};
+
+const buildPayload = (
+  text: string,
+  conversation?: GenerateAssistantReplyDto['conversation'],
+  requestId = 'test-request',
+) => ({
   baseLanguage: 'ja',
   topic: '',
   audience: '',
@@ -108,8 +126,10 @@ const buildPayload = (text: string, conversation?: GenerateAssistantReplyDto['co
   details: 'test',
   conversation: conversation ?? [{ role: 'user', content: text }],
   uiMode: 'collecting' as const,
-  requestId: 'test-request',
+  requestId,
   conversationId: 'test-conversation',
+  clientLocale: 'ja',
+  clientTimezone: 'Asia/Tokyo',
 });
 const buildPayloadWithAction = (
   text: string,
@@ -119,6 +139,19 @@ const buildPayloadWithAction = (
   ...buildPayload(text, conversation),
   action,
 });
+
+const readLatestLogEntry = async (requestId: string) => {
+  const logDir = resolveLogDir();
+  const day = new Date().toISOString().slice(0, 10);
+  const jsonlPath = path.join(logDir, `event-assistant-${day}.jsonl`);
+  const raw = await fs.readFile(jsonlPath, 'utf-8');
+  const lines = raw.split('\n').filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const entry = JSON.parse(lines[i]);
+    if (entry?.requestId === requestId) return entry;
+  }
+  return null;
+};
 
 const withCapturedLogs = async (fn: () => Promise<void> | void) => {
   const warns: any[] = [];
@@ -163,6 +196,121 @@ test('1) 起手清单抽取后不提示日時未確定', async () => {
   });
 });
 
+test('1-1) 解析只使用 userText，不解析提示词', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+    initialParse: () => buildDefaultInitialParse('zh'),
+  });
+  const { infos } = await withCapturedLogs(async () => {
+    await service.generateAssistantReply(buildPayload('我想创建一个活动') as any);
+  });
+  const priceParse = infos
+    .map((args) => args?.[1])
+    .find((entry) => entry?.message === 'price_parse');
+  assert.ok(priceParse);
+  assert.equal(String(priceParse.rawText || ''), '我想创建一个活动');
+  assert.equal(priceParse.ok, false);
+});
+
+test('1-2) 解析拒绝提示词/上下文污染', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-forbidden';
+  const text = 'AIの理解：タイトル: テスト --- Assistant Prompt --- SOCIALMORE AI 憲章';
+  await service.generateAssistantReply(buildPayload(text, undefined, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.price?.parserInputSource, 'rejected');
+  assert.equal(entry.parser?.price?.ok, false);
+  assert.equal(entry.parser?.price?.rawText, null);
+});
+
+test('1-3) 1000元 不触发时间解析', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  const requestId = 'test-request-no-time';
+  const payload = {
+    ...buildPayload('1000元', undefined, requestId),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  await service.generateAssistantReply(payload as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.time?.ok, false);
+  assert.equal(entry.parser?.time?.reason, 'not_attempted');
+});
+
+test('1-4) collecting/normalizer prompt 不包含憲章', async () => {
+  let capturedSystem = '';
+  const handlers = {
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' as const }),
+  };
+  const service = createServiceWithPrompts(handlers, [
+    {
+      id: 'event-assistant.collecting',
+      status: 'published',
+      system: 'SOCIALMORE AI 憲章\n--- Assistant Prompt ---\nPhase: collecting',
+      instructions: 'Fields still missing: title/time',
+      version: 'test',
+      params: [],
+    },
+  ]);
+  (service as any).client.chat.completions.create = async (params: any) => {
+    capturedSystem = params?.messages?.[0]?.content ?? '';
+    return {
+      choices: [{ message: { content: JSON.stringify({ ui: { question: { key: 'title', text: 'タイトルを教えてください。' } } }) } }],
+    };
+  };
+  await service.generateAssistantReply(buildPayload('テスト') as any);
+  assert.equal(/SOCIALMORE AI 憲章|--- Assistant Prompt ---|Fields still missing/i.test(capturedSystem), false);
+});
+
+test('1-5) normalizer system prompt 不包含憲章', async () => {
+  const { buildSlotNormalizerPrompt } = await import('../src/ai/slot-normalizer');
+  const prompt = buildSlotNormalizerPrompt({
+    rawUserText: 'テスト',
+    currentSlots: {},
+    currentNextQuestionKey: 'price',
+    recentTurns: [],
+  });
+  assert.equal(/SOCIALMORE AI 憲章|--- Assistant Prompt ---/i.test(prompt.systemPrompt), false);
+});
+
+test('1-6) constitution flag 仅影响 ready/operate', async () => {
+  const service = createServiceWithPrompts(
+    {
+      router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' as const }),
+    },
+    [
+      {
+        id: 'event-assistant.ready',
+        status: 'published',
+        system: 'SOCIALMORE AI 憲章\nReady system prompt',
+        instructions: 'Ready instruction',
+        version: 'test',
+        params: [],
+      },
+    ],
+  );
+  const originalMode = process.env.EVENT_ASSISTANT_CONSTITUTION_MODE;
+  process.env.EVENT_ASSISTANT_CONSTITUTION_MODE = 'full';
+  const resolvedFull = await (service as any).resolveEventAssistantPrompt('ready', {
+    latest_message: 'テスト',
+    phase: 'ready',
+  });
+  assert.equal(/SOCIALMORE AI 憲章/.test(resolvedFull.systemPrompt), true);
+  process.env.EVENT_ASSISTANT_CONSTITUTION_MODE = 'off';
+  const resolvedOff = await (service as any).resolveEventAssistantPrompt('ready', {
+    latest_message: 'テスト',
+    phase: 'ready',
+  });
+  assert.equal(/SOCIALMORE AI 憲章/.test(resolvedOff.systemPrompt), false);
+  process.env.EVENT_ASSISTANT_CONSTITUTION_MODE = originalMode;
+});
+
 test('2) 混中日输入 time/price inferred 完成', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
@@ -188,6 +336,166 @@ test('2-1) 候选时间会触发确认 선택', async () => {
   ].join('\n');
   const reply = await service.generateAssistantReply(buildPayload(text) as any);
   assert.equal(Boolean(reply.choiceQuestion?.key?.startsWith('confirm_')), true);
+});
+
+test('2-2) zh + Tokyo 输入 1000元 触发货币确认', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  const payload = {
+    ...buildPayload('1000元'),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const reply = await service.generateAssistantReply(payload as any);
+  assert.equal(reply.choiceQuestion?.key, 'confirm_currency');
+  const labels = reply.choiceQuestion?.options.map((opt) => opt.label).join(' ') ?? '';
+  assert.match(labels, /1000円/);
+});
+
+test('2-3) 货币确认 JPY 后 price 生效', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  const conversation = [{ role: 'user' as const, content: '【選択】confirm_currency:confirm_jpy_1000' }];
+  const payload = {
+    ...buildPayload('【選択】confirm_currency:confirm_jpy_1000', conversation),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const reply = await service.generateAssistantReply(payload as any);
+  assert.equal(reply.slots?.price?.includes('円'), true);
+  assert.notEqual(reply.nextQuestionKey, 'price');
+});
+
+test('2-4) en locale 输入 1000元 不触发确认', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'en' }),
+  });
+  const payload = {
+    ...buildPayload('1000元'),
+    clientLocale: 'en-US',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const reply = await service.generateAssistantReply(payload as any);
+  assert.equal(reply.choiceQuestion?.key === 'confirm_currency', false);
+  assert.match(reply.ui?.message ?? '', /円/);
+});
+
+test('2-5) 中文相对时间解析', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  process.env.EVENT_ASSISTANT_NOW = '2026-01-14T00:00:00+09:00';
+  const payload = {
+    ...buildPayload('下周二下午三点到五点'),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const { infos } = await withCapturedLogs(async () => {
+    await service.generateAssistantReply(payload as any);
+  });
+  const timeParse = infos
+    .map((args) => args?.[1])
+    .find((entry) => entry?.message === 'time_parse');
+  assert.ok(timeParse);
+  assert.match(timeParse.candidateStartAt, /2026-01-20T06:00:00/);
+  assert.match(timeParse.candidateEndAt, /2026-01-20T08:00:00/);
+  delete process.env.EVENT_ASSISTANT_NOW;
+});
+
+test('2-5a) 复现实例：先描述后补时间应推进', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  process.env.EVENT_ASSISTANT_NOW = '2026-01-14T00:00:00+09:00';
+  const conversation = [
+    { role: 'user' as const, content: '下周五，我想办一个bbq，10个人左右，费用待定' },
+    { role: 'user' as const, content: '下周五的上午十点到12点' },
+  ];
+  const payload = {
+    ...buildPayload('下周五的上午十点到12点', conversation),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const { infos } = await withCapturedLogs(async () => {
+    const reply = await service.generateAssistantReply(payload as any);
+    assert.ok(reply.nextQuestionKey);
+  });
+  const timeParse = infos
+    .map((args) => args?.[1])
+    .find((entry) => entry?.message === 'time_parse');
+  assert.ok(timeParse?.candidateStartAt);
+  delete process.env.EVENT_ASSISTANT_NOW;
+});
+
+test('2-6) shell 输出短路 LLM', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const shellText = [
+    'pppoly@more-staging:/opt/more-app/backend$ ls -la',
+    'No such file or directory',
+    '/opt/more-app/backend',
+  ].join('\n');
+  const { infos } = await withCapturedLogs(async () => {
+    const reply = await service.generateAssistantReply(buildPayload(shellText) as any);
+    assert.match(reply.ui?.message ?? '', /ログ\/コマンド/);
+  });
+  const llmCalls = infos
+    .map((args) => args?.[1])
+    .filter((entry) => entry?.message === 'llm_call');
+  assert.equal(llmCalls.length, 0);
+});
+
+test('2-7) missingKeys 存在时 nextQuestionKey 不为 null', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+    initialParse: () => buildDefaultInitialParse('zh'),
+  });
+  const reply = await service.generateAssistantReply(buildPayload('我想创建一个活动') as any);
+  assert.ok(reply.nextQuestionKey);
+});
+
+test('2-8) confirm_location 不应清空既有确认', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-confirm-location';
+  const conversation = [
+    {
+      role: 'user' as const,
+      content: 'タイトル: テスト会\n日時: 1/23 19:00-21:00\n場所: 渋谷\n参加費: 1000円',
+    },
+    { role: 'user' as const, content: '【選択】confirm_location:yes' },
+  ];
+  await service.generateAssistantReply(buildPayload('【選択】confirm_location:yes', conversation, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  const confirmed = entry.machine?.confirmedKeys ?? [];
+  assert.ok(confirmed.includes('time'));
+  assert.ok(confirmed.includes('price'));
+  assert.ok(confirmed.includes('location'));
+  const missing = entry.machine?.missingKeys ?? [];
+  assert.equal(missing.includes('time'), false);
+  assert.equal(missing.includes('price'), false);
+  assert.equal(missing.includes('location'), false);
+});
+
+test('2-9) 价格解析使用当前输入而非历史', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-current-price';
+  const conversation = [
+    { role: 'user' as const, content: '前回は1000円だった' },
+    { role: 'user' as const, content: '10000' },
+  ];
+  await service.generateAssistantReply(buildPayload('10000', conversation, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.price?.rawText, '10000');
+  assert.equal(entry.parser?.price?.candidateAmount, 10000);
 });
 
 test('3) 委托标题不会写入原句为 title', async () => {

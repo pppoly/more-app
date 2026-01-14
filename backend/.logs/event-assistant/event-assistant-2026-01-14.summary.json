@@ -1,0 +1,347 @@
+{
+  "day": "2026-01-14",
+  "env": "dev",
+  "totalTurns": 392,
+  "failureTypeCounts": {
+    "PARSE_FAILED": 238,
+    "SAID_BUT_MISSING": 51,
+    "NON_EVENT_INPUT": 8,
+    "NEXT_QUESTION_MISSING": 56
+  },
+  "topMissingKeys": {
+    "title": 291,
+    "location": 291,
+    "price": 222,
+    "time": 224,
+    "capacity": 52,
+    "visibility": 52,
+    "registrationForm": 52,
+    "requireApproval": 52,
+    "enableWaitlist": 52,
+    "requireCheckin": 52,
+    "refundPolicy": 52,
+    "riskNotice": 52
+  },
+  "topNextQuestionKeys": {
+    "location": 70,
+    "time": 110,
+    "price": 13
+  },
+  "topParserFailures": {
+    "time": 245,
+    "price": 273
+  },
+  "topExamples": {
+    "SAID_BUT_MISSING": [
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": "price",
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "タイトル: BBQ\n日時: 1/23 17:00-19:00\n場所: 渋谷\n参加費: 無料",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "time"
+          ],
+          "nextQuestionKey": "time",
+          "promptPhase": "collect"
+        }
+      }
+    ],
+    "REPEAT_QUESTION": [],
+    "PARSE_FAILED": [
+      {
+        "userText": "1/23 17-23 一人4000",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": "location",
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "1000元",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "你帮我想一个标题吧",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price"
+          ],
+          "nextQuestionKey": "time",
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "4000円",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location"
+          ],
+          "nextQuestionKey": "time",
+          "promptPhase": "collect"
+        }
+      }
+    ],
+    "STAGE_MISMATCH": [],
+    "ACTION_NO_EFFECT": [],
+    "DRAFT_INCONSISTENT": [],
+    "NON_EVENT_INPUT": [
+      {
+        "userText": "pppoly@more-staging:/opt/more-app/backend$ ls -la\nNo such file or directory\n/opt/more-app/backend",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "pppoly@more-staging:/opt/more-app/backend$ ls -la\nNo such file or directory\n/opt/more-app/backend",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "pppoly@more-staging:/opt/more-app/backend$ ls -la\nNo such file or directory\n/opt/more-app/backend",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "pppoly@more-staging:/opt/more-app/backend$ ls -la\nNo such file or directory\n/opt/more-app/backend",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      },
+      {
+        "userText": "pppoly@more-staging:/opt/more-app/backend$ ls -la\nNo such file or directory\n/opt/more-app/backend",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      }
+    ],
+    "NEXT_QUESTION_MISSING": [
+      {
+        "userText": "未定你帮我看看",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price",
+            "capacity",
+            "visibility",
+            "registrationForm",
+            "requireApproval",
+            "enableWaitlist",
+            "requireCheckin",
+            "refundPolicy",
+            "riskNotice"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "revise_select"
+        }
+      },
+      {
+        "userText": "明日19時にしたい",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price",
+            "capacity",
+            "visibility",
+            "registrationForm",
+            "requireApproval",
+            "enableWaitlist",
+            "requireCheckin",
+            "refundPolicy",
+            "riskNotice"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "revise_select"
+        }
+      },
+      {
+        "userText": "任せる",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price",
+            "capacity",
+            "visibility",
+            "registrationForm",
+            "requireApproval",
+            "enableWaitlist",
+            "requireCheckin",
+            "refundPolicy",
+            "riskNotice"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "revise_edit"
+        }
+      },
+      {
+        "userText": "任せる",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "title",
+            "time",
+            "location",
+            "price",
+            "capacity",
+            "visibility",
+            "registrationForm",
+            "requireApproval",
+            "enableWaitlist",
+            "requireCheckin",
+            "refundPolicy",
+            "riskNotice"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "revise_edit"
+        }
+      },
+      {
+        "userText": "まだ決めてない",
+        "requestId": "test-request",
+        "conversationId": "test-conversation",
+        "machine": {
+          "missingKeys": [
+            "price"
+          ],
+          "nextQuestionKey": null,
+          "promptPhase": "collect"
+        }
+      }
+    ]
+  }
+}

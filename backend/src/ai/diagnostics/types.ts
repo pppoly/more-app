@@ -23,13 +23,17 @@ export type FailureType =
   | 'PARSE_FAILED'
   | 'STAGE_MISMATCH'
   | 'ACTION_NO_EFFECT'
-  | 'DRAFT_INCONSISTENT';
+  | 'DRAFT_INCONSISTENT'
+  | 'NON_EVENT_INPUT'
+  | 'NEXT_QUESTION_MISSING';
 
 export interface FailureSignals {
   repeatQuestion: boolean;
   saidButMissing: boolean;
   stageMismatch: boolean;
   actionNoEffect: boolean;
+  unitSlipPrompted?: boolean;
+  nextQuestionMissing?: boolean;
 }
 
 export interface EventAssistantTurnLog {
@@ -39,6 +43,7 @@ export interface EventAssistantTurnLog {
   requestId: string | null;
   conversationId: string | null;
   turnIndex: number;
+  conversationReset: boolean;
   input: {
     userText: string;
     uiAction: EventAssistantUiAction;
@@ -62,6 +67,7 @@ export interface EventAssistantTurnLog {
       rawText: string | null;
       candidateStartAt: string | null;
       candidateEndAt: string | null;
+      parserInputSource: string | null;
       confidence: number | null;
       ok: boolean;
       reason: string;
@@ -71,6 +77,10 @@ export interface EventAssistantTurnLog {
       candidateAmount: number | null;
       currency: string | null;
       type: string | null;
+      unitRaw: string | null;
+      unitSlipCandidate: boolean;
+      slipReason: string | null;
+      parserInputSource: string | null;
       confidence: number | null;
       ok: boolean;
       reason: string;
