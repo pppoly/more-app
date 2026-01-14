@@ -212,7 +212,7 @@ const onAvatarFileSelected = async (event: Event) => {
   } catch (err) {
     avatarError.value =
       err instanceof Error
-        ? 'この写真は適していません。鮮明な写真に変えてお試しください。'
+        ? 'この写真は使えません。10MB以内の鮮明な写真に変えてお試しください。'
         : 'アバターのアップロードに失敗しました。別の写真でお試しください。';
   } finally {
     if (target) target.value = '';

@@ -8,7 +8,7 @@ export interface AvatarValidationOptions {
 
 const DEFAULT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const DEFAULT_MIN_SIZE = 128;
-const DEFAULT_MAX_BYTES = 500 * 1024;
+const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MAX_ASPECT_DELTA = 0.2; // 20% の偏差を正方形相当とみなす
 
 export const validateAvatarFile = (file: File, options: AvatarValidationOptions = {}) =>
@@ -26,7 +26,7 @@ export const validateAvatarFile = (file: File, options: AvatarValidationOptions 
       return;
     }
     if (file.size > maxBytes) {
-      reject(new Error('画像サイズが大きすぎます。圧縮して再試行してください'));
+      reject(new Error('画像サイズが大きすぎます。10MB以内の写真でお試しください'));
       return;
     }
 

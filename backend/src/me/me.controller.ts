@@ -39,7 +39,7 @@ export class MeController {
   }
 
   @Post('avatar')
-  @UseInterceptors(FileInterceptor('avatar', { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('avatar', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadAvatar(@UploadedFile() file: Express.Multer.File | undefined, @Req() req: any) {
     if (!file) {
       throw new BadRequestException('Avatar file is required');
