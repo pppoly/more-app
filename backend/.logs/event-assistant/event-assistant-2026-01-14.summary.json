@@ -1,35 +1,36 @@
 {
   "day": "2026-01-14",
   "env": "dev",
-  "totalTurns": 392,
+  "totalTurns": 495,
   "failureTypeCounts": {
-    "PARSE_FAILED": 238,
-    "SAID_BUT_MISSING": 51,
-    "NON_EVENT_INPUT": 8,
-    "NEXT_QUESTION_MISSING": 56
+    "PARSE_FAILED": 298,
+    "SAID_BUT_MISSING": 69,
+    "NON_EVENT_INPUT": 11,
+    "NEXT_QUESTION_MISSING": 75
   },
   "topMissingKeys": {
-    "title": 291,
-    "location": 291,
-    "price": 222,
-    "time": 224,
-    "capacity": 52,
-    "visibility": 52,
-    "registrationForm": 52,
-    "requireApproval": 52,
-    "enableWaitlist": 52,
-    "requireCheckin": 52,
-    "refundPolicy": 52,
-    "riskNotice": 52
+    "title": 369,
+    "location": 369,
+    "price": 282,
+    "time": 287,
+    "capacity": 64,
+    "visibility": 64,
+    "registrationForm": 64,
+    "requireApproval": 64,
+    "enableWaitlist": 64,
+    "requireCheckin": 64,
+    "refundPolicy": 64,
+    "riskNotice": 64
   },
   "topNextQuestionKeys": {
-    "location": 70,
-    "time": 110,
-    "price": 13
+    "location": 75,
+    "time": 125,
+    "price": 13,
+    "title": 36
   },
   "topParserFailures": {
-    "time": 245,
-    "price": 273
+    "time": 308,
+    "price": 346
   },
   "topExamples": {
     "SAID_BUT_MISSING": [

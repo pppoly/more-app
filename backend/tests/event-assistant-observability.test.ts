@@ -404,6 +404,28 @@ test('2-5) 中文相对时间解析', async () => {
   delete process.env.EVENT_ASSISTANT_NOW;
 });
 
+test('2-5b) 下周五上午十点到12点 解析', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  process.env.EVENT_ASSISTANT_NOW = '2026-01-14T00:00:00+09:00';
+  const payload = {
+    ...buildPayload('下周五的上午十点到12点'),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  const { infos } = await withCapturedLogs(async () => {
+    await service.generateAssistantReply(payload as any);
+  });
+  const timeParse = infos
+    .map((args) => args?.[1])
+    .find((entry) => entry?.message === 'time_parse');
+  assert.ok(timeParse);
+  assert.match(timeParse.candidateStartAt, /2026-01-23T01:00:00/);
+  assert.match(timeParse.candidateEndAt, /2026-01-23T03:00:00/);
+  delete process.env.EVENT_ASSISTANT_NOW;
+});
+
 test('2-5a) 复现实例：先描述后补时间应推进', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
@@ -448,13 +470,13 @@ test('2-6) shell 输出短路 LLM', async () => {
   assert.equal(llmCalls.length, 0);
 });
 
-test('2-7) missingKeys 存在时 nextQuestionKey 不为 null', async () => {
+test('2-7) missingKeys 存在时 nextQuestionKey 有优先级', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
     initialParse: () => buildDefaultInitialParse('zh'),
   });
   const reply = await service.generateAssistantReply(buildPayload('我想创建一个活动') as any);
-  assert.ok(reply.nextQuestionKey);
+  assert.equal(reply.nextQuestionKey, 'title');
 });
 
 test('2-8) confirm_location 不应清空既有确认', { concurrency: false }, async () => {
@@ -480,6 +502,28 @@ test('2-8) confirm_location 不应清空既有确认', { concurrency: false }, a
   assert.equal(missing.includes('time'), false);
   assert.equal(missing.includes('price'), false);
   assert.equal(missing.includes('location'), false);
+});
+
+test('2-8a) 确认しました 必须提交状态', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-confirm-price-text';
+  const conversation = [
+    {
+      role: 'user' as const,
+      content: 'タイトル: テスト会\n日時: 1/23 19:00-21:00\n場所: 渋谷\n参加費: 1000円',
+    },
+    { role: 'assistant' as const, content: '参加費は1000円でよろしいですか？' },
+    { role: 'user' as const, content: '确认しました' },
+  ];
+  await service.generateAssistantReply(buildPayload('确认しました', conversation, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  const confirmed = entry.machine?.confirmedKeys ?? [];
+  assert.ok(confirmed.includes('price'));
+  const missing = entry.machine?.missingKeys ?? [];
+  assert.equal(missing.includes('price'), false);
 });
 
 test('2-9) 价格解析使用当前输入而非历史', { concurrency: false }, async () => {

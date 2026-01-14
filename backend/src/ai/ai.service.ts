@@ -1369,15 +1369,18 @@ export class AiService {
       const target = new Date(nextWeekMonday);
       const weekdayOffset = weekday === 0 ? 6 : weekday - 1;
       target.setDate(nextWeekMonday.getDate() + weekdayOffset);
-      const rangeMatch = text.match(/(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?\s*(到|〜|~|-|－)\s*(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?/);
-      if (!rangeMatch) return null;
-      const startPeriod = rangeMatch[1] ?? rangeMatch[5] ?? '';
-      const endPeriod = rangeMatch[5] ?? startPeriod;
-      const startNum = parseZhNumber(rangeMatch[2]);
-      const endNum = parseZhNumber(rangeMatch[6]);
-      if (!startNum || !endNum) return null;
-      const startMinute = rangeMatch[3] === '半' ? 30 : 0;
-      const endMinute = rangeMatch[7] === '半' ? 30 : 0;
+      const rangeMatch = text.match(
+        /(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?\s*(到|〜|~|-|－)\s*(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?/,
+      );
+      const singleMatch = text.match(/(上午|下午|中午|晚上)?\s*([一二三四五六七八九十\d]{1,3})点(半)?/);
+      if (!rangeMatch && !singleMatch) return null;
+      const startPeriod = rangeMatch?.[1] ?? singleMatch?.[1] ?? '';
+      const endPeriod = rangeMatch?.[5] ?? startPeriod;
+      const startNum = parseZhNumber(rangeMatch?.[2] ?? singleMatch?.[2] ?? '');
+      const endNum = rangeMatch ? parseZhNumber(rangeMatch[6]) : null;
+      if (!startNum) return null;
+      const startMinute = (rangeMatch?.[3] ?? singleMatch?.[3]) === '半' ? 30 : 0;
+      const endMinute = rangeMatch?.[7] === '半' ? 30 : 0;
       const normalizeHour = (hour: number, period: string) => {
         if (/下午|晚上/.test(period) && hour < 12) return hour + 12;
         if (/中午/.test(period) && hour < 12) return hour + 12;
@@ -1385,9 +1388,12 @@ export class AiService {
       };
       const start = new Date(target);
       start.setHours(normalizeHour(startNum, startPeriod), startMinute, 0, 0);
+      if (!endNum) {
+        return { start, end: null, source: 'zh_relative_partial' as const };
+      }
       const end = new Date(target);
       end.setHours(normalizeHour(endNum, endPeriod), endMinute, 0, 0);
-      return { start, end };
+      return { start, end, source: 'zh_relative' as const };
     };
 
     const buildStructuredSchedule = (text: string) => {
@@ -1395,8 +1401,8 @@ export class AiService {
       if (zhRange) {
         return {
           startTime: zhRange.start.toISOString(),
-          endTime: zhRange.end.toISOString(),
-          source: 'zh_relative',
+          endTime: zhRange.end ? zhRange.end.toISOString() : undefined,
+          source: zhRange.source,
         };
       }
       const explicitStart = extractTokyoStartTimeIso(text);
@@ -3118,7 +3124,7 @@ export class AiService {
     const timeParserInput = sanitizeParserInput(latestUserMessage, 'time');
     const timeSourceText = timeParserInput.text;
     const hasTimeSignal =
-      /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|\d{1,2}[:：]\d{2}/.test(
+      /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|点|時|\d{1,2}[:：]\d{2}/.test(
         timeSourceText,
       ) || Boolean(slots.time);
     const structuredTime =
@@ -3148,6 +3154,8 @@ export class AiService {
       reason: timeOk
         ? structuredTime?.source === 'zh_relative'
           ? 'parsed_zh_relative'
+          : structuredTime?.source === 'zh_relative_partial'
+          ? 'partial_zh_relative'
           : 'parsed'
         : timeParserInput.source === 'rejected'
         ? 'not_attempted'
@@ -3290,11 +3298,12 @@ export class AiService {
     if (lastAskedSlot && lastUserAnswer && !isReviseSelectStep) {
       const selectionPattern = /【選択】\s*([a-zA-Z_]+)\s*[:：]\s*(.+)/;
       const isSelectionAnswer = selectionPattern.test(lastUserAnswer);
+      const isConfirmAnswer = /^(確認しました|了解しました|はい|yes|y|ok|了解|是|对|好)$/i.test(lastUserAnswer.trim());
       const isDelegateInput = isDelegateAnswer(lastUserAnswer) || isDelegateTitleAnswer(lastUserAnswer);
       const isEditFieldDelegate =
         Boolean(continueEdit && reviseState === 'edit_field' && isDelegateAnswer(lastUserAnswer));
       const isRelevantAnswer =
-        isDelegateInput || isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer);
+        isDelegateInput || isConfirmAnswer || isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer);
       if (isEditFieldDelegate) {
         unrelatedAnswerKey = lastAskedSlot;
       }
@@ -3302,15 +3311,20 @@ export class AiService {
         unrelatedAnswerKey = lastAskedSlot;
       }
       if (!isSelectionAnswer && !unrelatedAnswerKey && !isEditFieldDelegate) {
-        const recoveredPrice = normalizePriceAnswer(lastUserAnswer);
-        if (recoveredPrice && lastAskedSlot !== 'price') {
-          slots.price = recoveredPrice;
-          confidence.price = Math.max(confidence.price ?? 0, 0.85);
-          slotOrigins.price = 'explicit';
-        } else if (lastAskedSlot === 'title' && isDelegateTitleAnswer(lastUserAnswer)) {
-          delegateApplied = true;
-          try {
-            const timeSourceText = slots.time ?? '';
+        if (isConfirmAnswer) {
+          slotConfirmations[lastAskedSlot] = true;
+          confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.85);
+          slotOrigins[lastAskedSlot] = slotOrigins[lastAskedSlot] ?? 'explicit';
+        } else {
+          const recoveredPrice = normalizePriceAnswer(lastUserAnswer);
+          if (recoveredPrice && lastAskedSlot !== 'price') {
+            slots.price = recoveredPrice;
+            confidence.price = Math.max(confidence.price ?? 0, 0.85);
+            slotOrigins.price = 'explicit';
+          } else if (lastAskedSlot === 'title' && isDelegateTitleAnswer(lastUserAnswer)) {
+            delegateApplied = true;
+            try {
+              const timeSourceText = slots.time ?? '';
             const structuredSchedule = buildStructuredSchedule(timeSourceText);
             const draftBase: AiAssistantPublicDraft = {
               title: undefined,
@@ -3353,13 +3367,13 @@ export class AiService {
               slotOrigins.title = 'llm';
               autoGeneratedTitle = fallback;
             }
-          }
-        } else if (isDelegateAnswer(lastUserAnswer)) {
-          if (lastAskedSlot === 'price') {
-            slots.price = delegateDefaults.price;
-            confidence.price = Math.max(confidence.price ?? 0, 0.7);
-            slotOrigins.price = 'inferred';
-            delegateApplied = true;
+            }
+          } else if (isDelegateAnswer(lastUserAnswer)) {
+            if (lastAskedSlot === 'price') {
+              slots.price = delegateDefaults.price;
+              confidence.price = Math.max(confidence.price ?? 0, 0.7);
+              slotOrigins.price = 'inferred';
+              delegateApplied = true;
           } else if (lastAskedSlot === 'time') {
             slots.time = delegateDefaults.time;
             confidence.time = Math.max(confidence.time ?? 0, 0.65);
@@ -3391,87 +3405,88 @@ export class AiService {
             slotOrigins.registrationForm = 'inferred';
             delegateApplied = true;
           }
-        } else if (lastAskedSlot === 'price') {
-          const normalized = normalizePriceAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.price = normalized;
-            confidence.price = Math.max(confidence.price ?? 0, 0.85);
-            slotOrigins.price = 'explicit';
-          } else if (isLikelyPriceFreeText(lastUserAnswer)) {
-            slots.price = lastUserAnswer;
-            confidence.price = Math.max(confidence.price ?? 0, 0.65);
-            slotOrigins.price = 'explicit';
+          } else if (lastAskedSlot === 'price') {
+            const normalized = normalizePriceAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.price = normalized;
+              confidence.price = Math.max(confidence.price ?? 0, 0.85);
+              slotOrigins.price = 'explicit';
+            } else if (isLikelyPriceFreeText(lastUserAnswer)) {
+              slots.price = lastUserAnswer;
+              confidence.price = Math.max(confidence.price ?? 0, 0.65);
+              slotOrigins.price = 'explicit';
+            }
+          } else if (lastAskedSlot === 'registrationForm') {
+            const normalized = normalizeRegistrationFormAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.registrationForm = normalized;
+              confidence.registrationForm = Math.max(confidence.registrationForm ?? 0, 0.75);
+              slotOrigins.registrationForm = 'explicit';
+            }
+          } else if (lastAskedSlot === 'requireApproval') {
+            const normalized = normalizeToggleAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.requireApproval = normalized;
+              confidence.requireApproval = Math.max(confidence.requireApproval ?? 0, 0.7);
+              slotOrigins.requireApproval = 'explicit';
+            }
+          } else if (lastAskedSlot === 'enableWaitlist') {
+            const normalized = normalizeToggleAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.enableWaitlist = normalized;
+              confidence.enableWaitlist = Math.max(confidence.enableWaitlist ?? 0, 0.7);
+              slotOrigins.enableWaitlist = 'explicit';
+            }
+          } else if (lastAskedSlot === 'requireCheckin') {
+            const normalized = normalizeToggleAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.requireCheckin = normalized;
+              confidence.requireCheckin = Math.max(confidence.requireCheckin ?? 0, 0.7);
+              slotOrigins.requireCheckin = 'explicit';
+            }
+          } else if (lastAskedSlot === 'refundPolicy') {
+            if (lastUserAnswer) {
+              slots.refundPolicy = lastUserAnswer;
+              confidence.refundPolicy = Math.max(confidence.refundPolicy ?? 0, 0.7);
+              slotOrigins.refundPolicy = 'explicit';
+            }
+          } else if (lastAskedSlot === 'riskNotice') {
+            if (lastUserAnswer) {
+              slots.riskNotice = lastUserAnswer;
+              confidence.riskNotice = Math.max(confidence.riskNotice ?? 0, 0.7);
+              slotOrigins.riskNotice = 'explicit';
+            }
+          } else if (lastAskedSlot === 'visibility') {
+            const normalized = normalizeVisibilityAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.visibility = normalized;
+              confidence.visibility = Math.max(confidence.visibility ?? 0, 0.8);
+              slotOrigins.visibility = 'explicit';
+            }
+          } else if (lastAskedSlot === 'location') {
+            const normalized = normalizeLocationAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.location = normalized;
+              confidence.location = Math.max(confidence.location ?? 0, 0.75);
+              slotOrigins.location = 'explicit';
+            }
+          } else if (lastAskedSlot === 'time') {
+            const normalized = normalizeTimeAnswer(lastUserAnswer);
+            if (normalized) {
+              slots.time = normalized;
+              confidence.time = Math.max(confidence.time ?? 0, 0.75);
+              slotOrigins.time = 'explicit';
+            }
+          } else if (
+            FREE_TEXT_SLOTS.has(lastAskedSlot) &&
+            !slots[lastAskedSlot] &&
+            !delegateApplied &&
+            !isDelegateTitleAnswer(lastUserAnswer)
+          ) {
+            slots[lastAskedSlot] = lastUserAnswer;
+            confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.7);
+            slotOrigins[lastAskedSlot] = 'explicit';
           }
-        } else if (lastAskedSlot === 'registrationForm') {
-          const normalized = normalizeRegistrationFormAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.registrationForm = normalized;
-            confidence.registrationForm = Math.max(confidence.registrationForm ?? 0, 0.75);
-            slotOrigins.registrationForm = 'explicit';
-          }
-        } else if (lastAskedSlot === 'requireApproval') {
-          const normalized = normalizeToggleAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.requireApproval = normalized;
-            confidence.requireApproval = Math.max(confidence.requireApproval ?? 0, 0.7);
-            slotOrigins.requireApproval = 'explicit';
-          }
-        } else if (lastAskedSlot === 'enableWaitlist') {
-          const normalized = normalizeToggleAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.enableWaitlist = normalized;
-            confidence.enableWaitlist = Math.max(confidence.enableWaitlist ?? 0, 0.7);
-            slotOrigins.enableWaitlist = 'explicit';
-          }
-        } else if (lastAskedSlot === 'requireCheckin') {
-          const normalized = normalizeToggleAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.requireCheckin = normalized;
-            confidence.requireCheckin = Math.max(confidence.requireCheckin ?? 0, 0.7);
-            slotOrigins.requireCheckin = 'explicit';
-          }
-        } else if (lastAskedSlot === 'refundPolicy') {
-          if (lastUserAnswer) {
-            slots.refundPolicy = lastUserAnswer;
-            confidence.refundPolicy = Math.max(confidence.refundPolicy ?? 0, 0.7);
-            slotOrigins.refundPolicy = 'explicit';
-          }
-        } else if (lastAskedSlot === 'riskNotice') {
-          if (lastUserAnswer) {
-            slots.riskNotice = lastUserAnswer;
-            confidence.riskNotice = Math.max(confidence.riskNotice ?? 0, 0.7);
-            slotOrigins.riskNotice = 'explicit';
-          }
-        } else if (lastAskedSlot === 'visibility') {
-          const normalized = normalizeVisibilityAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.visibility = normalized;
-            confidence.visibility = Math.max(confidence.visibility ?? 0, 0.8);
-            slotOrigins.visibility = 'explicit';
-          }
-        } else if (lastAskedSlot === 'location') {
-          const normalized = normalizeLocationAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.location = normalized;
-            confidence.location = Math.max(confidence.location ?? 0, 0.75);
-            slotOrigins.location = 'explicit';
-          }
-        } else if (lastAskedSlot === 'time') {
-          const normalized = normalizeTimeAnswer(lastUserAnswer);
-          if (normalized) {
-            slots.time = normalized;
-            confidence.time = Math.max(confidence.time ?? 0, 0.75);
-            slotOrigins.time = 'explicit';
-          }
-        } else if (
-          FREE_TEXT_SLOTS.has(lastAskedSlot) &&
-          !slots[lastAskedSlot] &&
-          !delegateApplied &&
-          !isDelegateTitleAnswer(lastUserAnswer)
-        ) {
-          slots[lastAskedSlot] = lastUserAnswer;
-          confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.7);
-          slotOrigins[lastAskedSlot] = 'explicit';
         }
       }
     }
@@ -3495,14 +3510,14 @@ export class AiService {
 
     const pickNextQuestion = (missing: (keyof Slots)[]) => {
       const priority: (keyof Slots)[] = [
+        'title',
         'time',
         'location',
-        'title',
         'price',
+        'capacity',
         'details',
         'registrationForm',
         'visibility',
-        'capacity',
         'requireApproval',
         'enableWaitlist',
         'requireCheckin',
@@ -4372,24 +4387,26 @@ export class AiService {
         .filter((text) => Boolean(text && text.trim()));
       const effectiveIntent: AssistantIntent = confirmDraft ? 'create' : intent;
       const applyEnabled = !isCompareMode && draftReady && effectiveIntent === 'create';
-      const shouldNullNextQuestionKey = Boolean(isCompareMode || draftReady || unrelatedAnswerKey);
+      const choiceQuestionActive = Boolean(
+        confirmationChoiceQuestion ||
+          currencySlipChoiceQuestion ||
+          timeSignalChoiceQuestion ||
+          decisionChoiceCandidate ||
+          compareCandidatesForPrompt.length,
+      );
+      const shouldNullNextQuestionKey = Boolean(
+        isCompareMode || draftReady || unrelatedAnswerKey || choiceQuestionActive,
+      );
       let nextQuestionKey: keyof Slots | null = shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
-      if (
-        !shouldNullNextQuestionKey &&
-        !confirmationChoiceQuestion &&
-        !currencySlipChoiceQuestion &&
-        !timeSignalChoiceQuestion &&
-        missingAll.length &&
-        !nextQuestionKey
-      ) {
-        nextQuestionKey = pickNextQuestion(missingAll);
+      if (!draftReady && missingAll.length && !choiceQuestionActive && !unrelatedAnswerKey) {
+        const priorityKey = pickNextQuestion(missingAll);
+        nextQuestionKey = priorityKey ?? nextQuestionKeyCandidate ?? null;
       }
       if (
         !draftReady &&
         missingAll.length &&
-        !confirmationChoiceQuestion &&
-        !currencySlipChoiceQuestion &&
-        !timeSignalChoiceQuestion &&
+        !choiceQuestionActive &&
+        !unrelatedAnswerKey &&
         !nextQuestionKey
       ) {
         const error = new Error('nextQuestionKey invariant violated');
@@ -4497,6 +4514,16 @@ export class AiService {
         cleanUiMessage = currencyUnitMessage;
       } else if (hasUnsupportedCurrency) {
         cleanUiMessage = '金額は円で入力してください。例：1000円 / 無料';
+      }
+      if (/了解しました/.test(cleanUiMessage || '') && lastAskedSlot && !isConfirmed(lastAskedSlot)) {
+        const error = new Error('confirm_message_without_commit');
+        if (process.env.NODE_ENV === 'test') {
+          throw error;
+        }
+        console.warn('[AiService] confirm_message_without_commit', {
+          lastAskedSlot,
+          message: cleanUiMessage,
+        });
       }
       const autoTitleNotice = autoGeneratedTitle
         ? `タイトルは「${autoGeneratedTitle}」にしました。あとで変更できます。`
