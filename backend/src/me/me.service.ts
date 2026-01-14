@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Express } from 'express';
 import { buildAssetUrl } from '../common/storage/asset-path';
@@ -280,17 +281,26 @@ export class MeService {
       select: {
         id: true,
         name: true,
+        email: true,
+        phone: true,
         language: true,
         preferredLocale: true,
         prefecture: true,
         avatarUrl: true,
+        authProviders: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        lastLoginAt: true,
         isOrganizer: true,
         isAdmin: true,
       },
     });
   }
 
-  async updateProfile(userId: string, payload: { name?: string | undefined; preferredLocale?: string | undefined }) {
+  async updateProfile(
+    userId: string,
+    payload: { name?: string | undefined; preferredLocale?: string | undefined; email?: string | undefined },
+  ) {
     const data: Record<string, any> = {};
     if (payload.name !== undefined) {
       const trimmed = payload.name.trim();
@@ -298,6 +308,16 @@ export class MeService {
         throw new BadRequestException('表示名を入力してください');
       }
       data.name = trimmed;
+    }
+    if (payload.email !== undefined) {
+      const normalized = payload.email.trim().toLowerCase();
+      if (!normalized) {
+        throw new BadRequestException('メールアドレスを入力してください');
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+        throw new BadRequestException('メールアドレスの形式が正しくありません');
+      }
+      data.email = normalized;
     }
     if (payload.preferredLocale !== undefined) {
       const supported = this.getSupportedLocales();
@@ -310,20 +330,33 @@ export class MeService {
     if (!Object.keys(data).length) {
       throw new BadRequestException('更新する項目が未指定です');
     }
-    return this.prisma.user.update({
-      where: { id: userId },
-      data,
-      select: {
+    try {
+      return this.prisma.user.update({
+        where: { id: userId },
+        data,
+        select: {
         id: true,
         name: true,
+        email: true,
+        phone: true,
         language: true,
         preferredLocale: true,
         prefecture: true,
         avatarUrl: true,
+        authProviders: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        lastLoginAt: true,
         isOrganizer: true,
         isAdmin: true,
       },
     });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('このメールアドレスは既に使用されています');
+      }
+      throw error;
+    }
   }
 
   async cancelEventRegistration(userId: string, registrationId: string) {

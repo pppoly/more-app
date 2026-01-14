@@ -62,6 +62,8 @@ export interface GenerateAssistantReplyDto extends GenerateEventContentDto {
   conversation?: AssistantConversationMessage[];
   action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
   uiMode?: 'explain' | 'collecting';
+  requestId?: string;
+  conversationId?: string;
 }
 
 export type AssistantReplyState = 'collecting' | 'options' | 'ready';
@@ -440,6 +442,14 @@ export const isHelpIntent = (text: string) => {
     /何のため|何に使う|何に使えば|用途は|使い方は/i.test(text)
   );
 };
+export const isHelpUtterance = (text: string) => {
+  if (!text) return false;
+  return (
+    isHelpIntent(text) ||
+    /なにこれ|何これ|何の機能|どういうこと|どうなってる|使い方|助けて|ヘルプ/i.test(text) ||
+    /这是啥|这是什麼|这是?啥|啥意思|怎么回事|怎么搞|怎么弄/i.test(text)
+  );
+};
 
 const ROUTER_CONFIDENCE_THRESHOLD = 0.62;
 const HELP_ROUTES = new Set(['HELP_SYSTEM', 'HELP_WHAT_NEXT', 'HELP_HOWTO']);
@@ -642,6 +652,7 @@ interface AiAssistantReplyPayload {
   draftReady?: boolean;
   applyEnabled?: boolean;
   modeHint?: 'chat' | 'operate';
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt';
 }
 
 export interface AiAssistantReply extends AiAssistantReplyPayload {
@@ -944,6 +955,97 @@ export class AiService {
     if (!client) {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
     }
+    const debugEnabled = process.env.EVENT_ASSISTANT_DEBUG === '1';
+    const requestId =
+      payload.requestId || `ea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = payload.conversationId || 'unknown';
+    const llmCallLedger: Array<{ name: string; reason: string; allowed: boolean }> = [];
+    const logDebug = (message: string, meta?: Record<string, unknown>) => {
+      if (!debugEnabled) return;
+      console.info('[EventAssistant][debug]', { requestId, conversationId, message, ...meta });
+    };
+    const logWarn = (message: string, meta?: Record<string, unknown>) => {
+      if (!debugEnabled) return;
+      console.warn('[EventAssistant][warn]', { requestId, conversationId, message, ...meta });
+    };
+    const llmBudget = 2;
+    let llmCallCount = 0;
+    let normalizerUsed = false;
+    let mainLlmUsed = false;
+    const recordLlmCall = (name: string, reason: string, allowed: boolean) => {
+      llmCallLedger.push({ name, reason, allowed });
+      const allowedCount = llmCallLedger.filter((entry) => entry.allowed).length;
+      if (debugEnabled && allowedCount >= 3) {
+        logWarn('llm_call_ledger_threshold', { count: allowedCount, ledger: llmCallLedger });
+      }
+      logDebug('llm_call', { name, reason, allowed });
+      if (!allowed) {
+        logWarn('llm_call_blocked', { name, reason });
+      }
+    };
+    const canCallLlm = (name: string, ctx: {
+      promptPhase: 'parse' | 'collect' | 'ready' | 'operate';
+      loopTriggered: boolean;
+      helpIntent: boolean;
+      turnIndex: number;
+    }) => {
+      if (ctx.helpIntent) {
+        recordLlmCall(name, 'help_intent_blocked', false);
+        return false;
+      }
+      if (llmCallCount >= llmBudget) {
+        recordLlmCall(name, 'budget_exceeded', false);
+        return false;
+      }
+      if (name === 'normalizer' && mainLlmUsed) {
+        recordLlmCall(name, 'main_llm_already_used', false);
+        return false;
+      }
+      if (name === 'main_llm' && normalizerUsed) {
+        recordLlmCall(name, 'normalizer_already_used', false);
+        return false;
+      }
+      if (name === 'title_suggestions') {
+        const allowed = ctx.promptPhase === 'collect';
+        recordLlmCall(name, 'collect_title_suggestions', allowed);
+        if (allowed) llmCallCount += 1;
+        return allowed;
+      }
+      if (ctx.promptPhase === 'parse') {
+        if (ctx.turnIndex === 0) {
+          const allowed = name === 'router' || name === 'initial_parse';
+          recordLlmCall(name, 'turn0_parse_only', allowed);
+          if (allowed) llmCallCount += 1;
+          return allowed;
+        }
+        recordLlmCall(name, 'parse_phase_non_turn0', false);
+        return false;
+      }
+      if (ctx.promptPhase === 'collect') {
+        if (name === 'normalizer') {
+          const allowed = ctx.turnIndex >= 1 && ctx.loopTriggered && !normalizerUsed && llmCallCount === 0;
+          recordLlmCall(name, 'collect_loop_only', allowed);
+          if (allowed) llmCallCount += 1;
+          return allowed;
+        }
+        recordLlmCall(name, 'collect_disallow', false);
+        return false;
+      }
+      if (ctx.promptPhase === 'ready') {
+        const allowed = name === 'main_llm' && !ctx.loopTriggered && llmCallCount === 0;
+        recordLlmCall(name, 'ready_main_only', allowed);
+        if (allowed) llmCallCount += 1;
+        return allowed;
+      }
+      if (ctx.promptPhase === 'operate') {
+        const allowed = name === 'main_llm' && llmCallCount === 0;
+        recordLlmCall(name, 'operate_main_only', allowed);
+        if (allowed) llmCallCount += 1;
+        return allowed;
+      }
+      recordLlmCall(name, 'unknown_phase', false);
+      return false;
+    };
 
     const requiredSlots: (keyof Slots)[] = ['title', 'time', 'location', 'price', 'details'];
     const primaryOptionalSlots: (keyof Slots)[] = ['capacity', 'registrationForm', 'visibility'];
@@ -1880,6 +1982,9 @@ export class AiService {
       try {
         const client = this.client;
         if (!client) return null;
+        if (!canCallLlm('initial_parse', { promptPhase: 'parse', loopTriggered: false, helpIntent: explicitHelpIntent || payload.uiMode === 'explain', turnIndex })) {
+          return null;
+        }
         const parseRequest = buildInitialParsePrompt({
           conversation: conversation.map((msg) => ({
             role: msg.role === 'assistant' ? 'assistant' : 'user',
@@ -1914,7 +2019,60 @@ export class AiService {
     const confirmDraft = payload.action === 'confirm_draft';
     const continueEdit = payload.action === 'continue_edit';
     const resumeCollecting = payload.action === 'resume_collecting';
-    const explicitHelpIntent = !interruptChoice && isHelpIntent(latestUserMessage);
+    const explicitHelpIntent = !interruptChoice && isHelpUtterance(latestUserMessage);
+    const emptyConfidence: Confidence = {
+      title: 0,
+      time: 0,
+      location: 0,
+      price: 0,
+      capacity: 0,
+      details: 0,
+      visibility: 0,
+      registrationForm: 0,
+      requireApproval: 0,
+      enableWaitlist: 0,
+      requireCheckin: 0,
+      refundPolicy: 0,
+      riskNotice: 0,
+    };
+    if (explicitHelpIntent && !resumeCollecting) {
+      const explainMessage =
+        detectedLanguage.startsWith('zh')
+          ? '这是一个帮助你创建活动的助手。我会确认日期、地点、费用等关键信息，方便生成活动草稿。你可以继续回答当前问题，或者稍后手动编辑表单。'
+          : detectedLanguage === 'en'
+          ? 'This assistant helps you create an event. I confirm key details like time, place, and fee to draft the event. You can continue answering or edit the form later.'
+          : 'これはイベント作成を手伝うアシスタントです。日時・場所・参加費など必要な情報を確認して草案を作ります。続ける場合は今の質問に答えてください。';
+      return {
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'help-intent-v1',
+        language: detectedLanguage,
+        turnCount,
+        thinkingSteps: ['ヘルプ意図を検知しました'],
+        editorChecklist: [],
+        writerSummary: undefined,
+        message: explainMessage,
+        ui: {
+          message: explainMessage,
+          mode: 'explain',
+        },
+        choiceQuestion: undefined,
+        compareCandidates: [],
+        inputMode: 'describe',
+        nextQuestionKey: null,
+        slots: {},
+        confidence: emptyConfidence,
+        draftReady: false,
+        applyEnabled: false,
+        draftId: undefined,
+        intent: 'unknown',
+        modeHint: 'chat',
+        uiMode: 'explain',
+        messageSource: 'backend.ui',
+      };
+    }
+    const turnIndex = Math.max(0, turnCount - 1);
     const inputMode = detectInputMode(latestUserMessage);
     const lastUserIndex = (() => {
       for (let i = conversation.length - 1; i >= 0; i -= 1) {
@@ -1922,8 +2080,62 @@ export class AiService {
       }
       return -1;
     })();
+    const isInvalidTitleValue = (value?: string | null) => {
+      if (!value) return true;
+      return isDelegateTitleAnswer(value);
+    };
+    const isFreeText = (value?: string | null) => /無料|free/i.test(value ?? '');
+    const hasExplicitTimeRange = (value?: string | null) => {
+      if (!value) return false;
+      return /(\d{1,2})(?::\d{2})?\s*[-〜~]\s*(\d{1,2})(?::\d{2})?/.test(value);
+    };
+    const hasExplicitPrice = (value?: string | null) => {
+      if (!value) return false;
+      return /(¥|￥|\bUSD\b|\bEUR\b|\bJPY\b|\$|円|元)\s*\d+|\d+\s*(円|元|usd|eur)|一人\s*\d+/i.test(value);
+    };
+    const preExtracted = extractSlots(conversation, payload);
+    const preSlots = preExtracted.slots;
+    const preTimeSourceText = [preSlots.time, latestUserMessage].filter(Boolean).join(' ');
+    const preStructuredTime = buildStructuredSchedule(preTimeSourceText);
+    const preHasTimeRange =
+      Boolean(preStructuredTime?.startTime) ||
+      Boolean(preSlots.time) ||
+      hasExplicitTimeRange(preTimeSourceText);
+    const prePriceSourceText = [preSlots.price, preSlots.details, latestUserMessage]
+      .filter(Boolean)
+      .join(' ');
+    const preHasPrice =
+      Boolean(preSlots.price) ||
+      isFreeText(preSlots.price) ||
+      isFreeText(preSlots.details) ||
+      hasExplicitPrice(prePriceSourceText);
+    const preHasTitle =
+      Boolean(preSlots.title && !isInvalidTitleValue(preSlots.title)) || Boolean(preSlots.details);
+    const preHasLocation = Boolean(preSlots.location);
+    const preHasDetails = Boolean(preSlots.details);
+    const preRequiredAll =
+      preHasTitle && preHasTimeRange && preHasLocation && preHasDetails && preHasPrice;
+    const preOptCount = ['capacity', 'registrationForm', 'visibility'].filter(
+      (key) => Boolean(preSlots[key as keyof Slots]),
+    ).length;
+    const preDraftReady =
+      inputMode !== 'compare' &&
+      (confirmDraft || (preRequiredAll && preOptCount >= 2) || (preRequiredAll && preOptCount >= 1 && turnCount >= 3));
+    const prePromptPhase: EventAssistantPromptPhase =
+      inputMode === 'compare' ? 'compare' : confirmDraft ? 'operate' : preDraftReady ? 'ready' : 'collecting';
+    const preHasAllLabels =
+      /イベント名|タイトル/.test(latestUserMessage) &&
+      /(日付|日時|時間)/.test(latestUserMessage) &&
+      /場所/.test(latestUserMessage) &&
+      /(参加費|料金)/.test(latestUserMessage) &&
+      /(説明|内容|詳細|参加条件)/.test(latestUserMessage);
+    const shouldParsePhase =
+      turnIndex === 0 &&
+      prePromptPhase === 'collecting' &&
+      !(preDraftReady || preRequiredAll || preHasAllLabels);
     let routerResult: RouterResult | null = null;
     const shouldRouteIntent =
+      shouldParsePhase &&
       !explicitHelpIntent &&
       !interruptChoice &&
       !isSelectionAction &&
@@ -1938,33 +2150,38 @@ export class AiService {
         if (!client) {
           routerResult = null;
         } else {
-          const routerRequest = buildRouterPrompt({
-            conversation: conversation.map((msg) => ({
-              role: msg.role === 'assistant' ? 'assistant' : 'user',
-              content: msg.content ?? '',
-            })),
-            userText: latestUserMessage,
-          });
-          const routerCompletion = await client.chat.completions.create({
-            model: this.model,
-            temperature: 0,
-            response_format: {
-              type: 'json_schema',
-              json_schema: routerRequest.schema,
-            },
-            messages: [
-              { role: 'system', content: routerRequest.systemPrompt },
-              { role: 'user', content: JSON.stringify(routerRequest.userPayload) },
-            ],
-          });
-          const routerRaw = this.extractMessageContent(routerCompletion);
-          routerResult = routerRaw ? (JSON.parse(routerRaw) as RouterResult) : null;
+          if (canCallLlm('router', { promptPhase: 'parse', loopTriggered: false, helpIntent: explicitHelpIntent || payload.uiMode === 'explain', turnIndex })) {
+            const routerRequest = buildRouterPrompt({
+              conversation: conversation.map((msg) => ({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content ?? '',
+              })),
+              userText: latestUserMessage,
+            });
+            const routerCompletion = await client.chat.completions.create({
+              model: this.model,
+              temperature: 0,
+              response_format: {
+                type: 'json_schema',
+                json_schema: routerRequest.schema,
+              },
+              messages: [
+                { role: 'system', content: routerRequest.systemPrompt },
+                { role: 'user', content: JSON.stringify(routerRequest.userPayload) },
+              ],
+            });
+            const routerRaw = this.extractMessageContent(routerCompletion);
+            routerResult = routerRaw ? (JSON.parse(routerRaw) as RouterResult) : null;
+          } else {
+            routerResult = null;
+          }
         }
       } catch (err) {
         console.warn('[AiService] router_llm_failed', err);
       }
     }
     const shouldInitialParse =
+      shouldParsePhase &&
       turnCount <= 1 &&
       !interruptChoice &&
       !isSelectionAction &&
@@ -1985,19 +2202,15 @@ export class AiService {
       });
     }
     const persistExplainMode = payload.uiMode === 'explain' && !resumeCollecting;
-    const parsedHelpIntent = initialParse ? HELP_ROUTES.has(initialParse.intent) : false;
-    const helpIntent =
-      !resumeCollecting &&
-      (explicitHelpIntent ||
-        shouldEnterExplainMode(routerResult?.route, routerResult?.confidence) ||
-        parsedHelpIntent ||
-        persistExplainMode);
+    const helpIntent = !resumeCollecting && (explicitHelpIntent || persistExplainMode);
     const metaComment = metaCommentRaw && !helpIntent && payload.uiMode !== 'explain';
     const routedLanguage = initialParse?.language ?? routerResult?.language ?? detectedLanguage;
     const lastAssistantMessage =
       [...conversation].reverse().find((msg) => msg.role === 'assistant' && msg.content)?.content ?? '';
     const isReviseSelectStep = /どこを直したい|どこを修正/i.test(lastAssistantMessage || '');
     const lastAskedSlot = isReviseSelectStep ? null : detectAskedSlot(lastAssistantMessage);
+    const reviseState: 'select_field' | 'edit_field' | null =
+      isReviseSelectStep ? 'select_field' : continueEdit && lastAskedSlot ? 'edit_field' : null;
     const conversationForSlots =
       (metaComment || helpIntent || isReviseSelectStep) && lastUserIndex >= 0
         ? conversation.slice(0, lastUserIndex)
@@ -2077,6 +2290,7 @@ export class AiService {
         draftReady: false,
         applyEnabled: false,
         intent: 'unknown',
+        messageSource: 'backend.ui',
       };
     }
     const followupUnknownNoDelta =
@@ -2111,6 +2325,7 @@ export class AiService {
         draftReady: false,
         applyEnabled: false,
         intent: 'unknown',
+        messageSource: 'backend.ui',
       };
     }
     const initialMissingOverride =
@@ -2135,12 +2350,7 @@ export class AiService {
             ),
           )
         : null;
-    const hit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
-    const isInvalidTitleValue = (value?: string | null) => {
-      if (!value) return true;
-      return isDelegateTitleAnswer(value);
-    };
-    const isFreeText = (value?: string | null) => /無料|free/i.test(value ?? '');
+    const strictHit = (k: keyof Slots) => Boolean(slots[k]) && (confidence[k] ?? 0) >= 0.6;
 
     const parseReviseField = (text: string): keyof Slots | null => {
       if (!text) return null;
@@ -2158,6 +2368,22 @@ export class AiService {
       if (/返金|キャンセルポリシー/i.test(text)) return 'refundPolicy';
       if (/注意事項|免責|持ち物/i.test(text)) return 'riskNotice';
       return null;
+    };
+    const isDelegateIntent = (text: string) => {
+      if (!text) return false;
+      return /任せ|おまかせ|まかせ|お願い|頼む|你来|你帮|帮我|帮忙|你決め|你决定/i.test(text);
+    };
+    const classifyReviseIntent = (
+      reviseState: 'select_field' | 'edit_field' | null,
+      text: string,
+      selectedKey: keyof Slots | null,
+    ) => {
+      if (isDelegateIntent(text)) return 'DELEGATE';
+      if (reviseState === 'select_field') {
+        return selectedKey ? 'SELECT_FIELD' : 'SET_VALUE';
+      }
+      if (reviseState === 'edit_field') return 'SET_VALUE';
+      return 'SET_VALUE';
     };
 
     if (helpIntent) {
@@ -2194,11 +2420,43 @@ export class AiService {
         intent: intent,
         modeHint: 'chat',
         uiMode: 'explain',
+        messageSource: 'backend.ui',
       };
     }
 
     if (isReviseSelectStep) {
       const selectedKey = parseReviseField(latestUserMessage);
+      const reviseIntent = classifyReviseIntent(reviseState, latestUserMessage, selectedKey);
+      logDebug('revise_intent', { reviseState, reviseIntent, selectedKey });
+      if (reviseIntent === 'DELEGATE') {
+        return {
+          status: 'collecting',
+          state: 'collecting',
+          stage: 'coach',
+          promptVersion: 'revise-select-v1',
+          language: routedLanguage,
+          turnCount,
+          thinkingSteps: ['修正項目を選びます'],
+          editorChecklist: [],
+          writerSummary: undefined,
+          message: '',
+          ui: {
+            message: '直したい項目を教えてください。（例：日時 / 場所 / 参加費 / 説明 / 申込フォーム）',
+          },
+          choiceQuestion: undefined,
+          compareCandidates: [],
+          inputMode: 'fill',
+          nextQuestionKey: null,
+          slots,
+          confidence,
+          draftReady: false,
+          applyEnabled: false,
+          draftId: undefined,
+          intent: intent,
+          modeHint: 'chat',
+          messageSource: 'backend.ui',
+        };
+      }
       if (!selectedKey) {
         return {
           status: 'collecting',
@@ -2225,6 +2483,7 @@ export class AiService {
           draftId: undefined,
           intent: intent,
           modeHint: 'chat',
+          messageSource: 'backend.ui',
         };
       }
       return {
@@ -2252,25 +2511,100 @@ export class AiService {
         draftId: undefined,
         intent: intent,
         modeHint: 'chat',
+        messageSource: 'backend.ui',
       };
     }
-    const getMissingMvpKeys = (source: Slots, conf: Confidence): (keyof Slots)[] => {
+    if (reviseState === 'edit_field' && isDelegateIntent(latestUserMessage)) {
+      logDebug('revise_intent', { reviseState, reviseIntent: 'DELEGATE', selectedKey: null });
+      return {
+        status: 'collecting',
+        state: 'collecting',
+        stage: 'coach',
+        promptVersion: 'revise-select-v1',
+        language: routedLanguage,
+        turnCount,
+        thinkingSteps: ['修正項目を選びます'],
+        editorChecklist: [],
+        writerSummary: undefined,
+        message: '',
+        ui: {
+          message: '直したい項目を教えてください。（例：日時 / 場所 / 参加費 / 説明 / 申込フォーム）',
+        },
+        choiceQuestion: undefined,
+        compareCandidates: [],
+        inputMode: 'fill',
+        nextQuestionKey: null,
+        slots,
+        confidence,
+        draftReady: false,
+        applyEnabled: false,
+        draftId: undefined,
+        intent: intent,
+        modeHint: 'chat',
+        messageSource: 'backend.ui',
+      };
+    }
+    const timeSourceText = [slots.time, latestUserMessage].filter(Boolean).join(' ');
+    const structuredTime = buildStructuredSchedule(timeSourceText);
+    const hasTimeRange =
+      Boolean(structuredTime?.startTime) || Boolean(slots.time) || hasExplicitTimeRange(timeSourceText);
+    const priceSourceText = [slots.price, slots.details, latestUserMessage].filter(Boolean).join(' ');
+    const hasPrice =
+      Boolean(slots.price) ||
+      isFreeText(slots.price) ||
+      isFreeText(slots.details) ||
+      hasExplicitPrice(priceSourceText);
+    const inferredHit = (k: keyof Slots) => {
+      if (strictHit(k)) return true;
+      switch (k) {
+        case 'time':
+          return hasTimeRange;
+        case 'price':
+          return hasPrice;
+        case 'title':
+          return Boolean(slots.title && !isInvalidTitleValue(slots.title)) || Boolean(slots.details);
+        case 'location':
+          return Boolean(slots.location);
+        case 'details':
+          return Boolean(slots.details);
+        default:
+          return Boolean(slots[k]);
+      }
+    };
+    const computeMissingKeysInferred = (): (keyof Slots)[] => {
       const missing: (keyof Slots)[] = [];
-      const timeSourceText = [source.time, latestUserMessage].filter(Boolean).join(' ');
-      const structuredTime = buildStructuredSchedule(timeSourceText);
-      const hasTimeRange = Boolean(structuredTime?.startTime);
-      const hasTitle =
-        (source.title && (conf.title ?? 0) >= 0.6 && !isInvalidTitleValue(source.title)) || hit('details');
-      if (!hasTitle) missing.push('title');
-      if (!hasTimeRange) missing.push('time');
-      if (!hit('location')) missing.push('location');
-      if (!hit('details')) missing.push('details');
-      const hasPrice = hit('price') || isFreeText(source.price) || isFreeText(source.details);
-      if (!hasPrice) missing.push('price');
+      if (!inferredHit('title')) missing.push('title');
+      if (!inferredHit('time')) missing.push('time');
+      if (!inferredHit('location')) missing.push('location');
+      if (!inferredHit('details')) missing.push('details');
+      if (!inferredHit('price')) missing.push('price');
       return missing;
     };
-    const requiredAll = requiredSlots.every(hit);
-    const optCount = primaryOptionalSlots.filter(hit).length;
+    const diffMissingKeys = (label: string, explicit: (keyof Slots)[] | null) => {
+      if (!debugEnabled || !explicit) return;
+      const inferred = computeMissingKeysInferred();
+      const explicitSet = new Set(explicit);
+      const inferredSet = new Set(inferred);
+      const inferredButNotExplicit = inferred.filter((k) => !explicitSet.has(k));
+      const explicitButNotInferred = explicit.filter((k) => !inferredSet.has(k));
+      if (inferredButNotExplicit.length) {
+        logWarn('missing_keys_mismatch_danger', {
+          label,
+          explicit,
+          inferred,
+          inferredButNotExplicit,
+        });
+      } else if (explicitButNotInferred.length) {
+        logDebug('missing_keys_mismatch_conservative', {
+          label,
+          explicit,
+          inferred,
+          explicitButNotInferred,
+        });
+      }
+    };
+    const requiredAll = requiredSlots.every(inferredHit);
+    const optCount = primaryOptionalSlots.filter(inferredHit).length;
     const fastPath = requiredAll && optCount >= 2;
     const slowPath = requiredAll && optCount >= 1 && turnCount >= 3;
     const isCompareMode = normalizedInputMode === 'compare';
@@ -2305,6 +2639,7 @@ export class AiService {
         draftReady: false,
         applyEnabled: false,
         intent: 'unknown',
+        messageSource: 'backend.ui',
       };
     }
     const askedSet = new Set<keyof Slots>();
@@ -2334,12 +2669,17 @@ export class AiService {
       const selectionPattern = /【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/;
       const isSelectionAnswer = selectionPattern.test(lastUserAnswer);
       const isDelegateInput = isDelegateAnswer(lastUserAnswer) || isDelegateTitleAnswer(lastUserAnswer);
+      const isEditFieldDelegate =
+        Boolean(continueEdit && reviseState === 'edit_field' && isDelegateAnswer(lastUserAnswer));
       const isRelevantAnswer =
         isDelegateInput || isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer);
+      if (isEditFieldDelegate) {
+        unrelatedAnswerKey = lastAskedSlot;
+      }
       if (!isSelectionAnswer && !isRelevantAnswer) {
         unrelatedAnswerKey = lastAskedSlot;
       }
-      if (!isSelectionAnswer && !unrelatedAnswerKey) {
+      if (!isSelectionAnswer && !unrelatedAnswerKey && !isEditFieldDelegate) {
         const recoveredPrice = normalizePriceAnswer(lastUserAnswer);
         if (recoveredPrice && lastAskedSlot !== 'price') {
           slots.price = recoveredPrice;
@@ -2366,9 +2706,15 @@ export class AiService {
               capacity: slots.capacity || undefined,
               signupNotes: slots.details || undefined,
             };
-            const suggestions =
-              (await this.generateTitleSuggestions(draftBase, routedLanguage)) ||
-              buildTitleSuggestions(slots);
+            const suggestions = canCallLlm('title_suggestions', {
+              promptPhase: 'collect',
+              loopTriggered: false,
+              helpIntent,
+              turnIndex,
+            })
+              ? (await this.generateTitleSuggestions(draftBase, routedLanguage)) ||
+                buildTitleSuggestions(slots)
+              : buildTitleSuggestions(slots);
             const candidate = suggestions?.[0]?.trim() || '';
             if (candidate && isSafeTitleSuggestion(candidate, latestUserMessage)) {
               slots.title = candidate;
@@ -2519,7 +2865,6 @@ export class AiService {
         'refundPolicy',
         'riskNotice',
       ];
-      if (lastAskedSlot && missing.includes(lastAskedSlot)) return lastAskedSlot;
       for (const key of priority) {
         if (askedSet.has(key)) continue;
         if (missing.includes(key)) return key;
@@ -2529,28 +2874,46 @@ export class AiService {
       }
       return null;
     };
-    const missingRequired = requiredSlots.filter((k) => !hit(k));
-    const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !hit(k));
-    const missingMvpKeys = baseDraftReady ? getMissingMvpKeys(slots, confidence) : [];
+    const missingRequired = requiredSlots.filter((k) => !inferredHit(k));
+    const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => !inferredHit(k));
+    const missingMvpKeys = baseDraftReady ? computeMissingKeysInferred() : [];
     let draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
     let missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
+    const missingAllBeforeNormalizer = [...missingAll];
+    if (missingAll.length > 1) {
+      missingAll = Array.from(new Set(missingAll));
+    }
     if (draftReady || confirmDraft) {
       missingAll = [];
     }
     if (initialMissingOverride && initialMissingOverride.length) {
+      diffMissingKeys('initial_missing_override', initialMissingOverride);
       missingAll = initialMissingOverride;
     }
     const forcedNextQuestionKey = continueEdit ? 'details' : hasUnsupportedCurrency ? 'price' : null;
+    let nextQuestionKeyLocked = Boolean(forcedNextQuestionKey);
     let nextQuestionKeyCandidate =
       forcedNextQuestionKey ?? (draftReady ? null : pickNextQuestion(missingAll));
-    const askCount =
-      nextQuestionKeyCandidate
+    const getAskCount = (key: keyof Slots | null) =>
+      key
         ? conversation.filter(
-            (msg) =>
-              msg.role === 'assistant' &&
-              detectAskedSlot(msg.content || '') === nextQuestionKeyCandidate,
+            (msg) => msg.role === 'assistant' && detectAskedSlot(msg.content || '') === key,
           ).length
         : 0;
+    if (
+      nextQuestionKeyCandidate &&
+      lastAskedSlot &&
+      nextQuestionKeyCandidate === lastAskedSlot &&
+      missingAll.some((key) => key !== lastAskedSlot)
+    ) {
+      const remaining = missingAll.filter((key) => key !== lastAskedSlot);
+      const fallback = remaining.length ? pickNextQuestion(remaining) : null;
+      if (fallback) {
+        nextQuestionKeyCandidate = fallback;
+        nextQuestionKeyLocked = true;
+      }
+    }
+    let askCount = getAskCount(nextQuestionKeyCandidate);
     if (
       askCount >= 2 &&
       nextQuestionKeyCandidate &&
@@ -2561,15 +2924,24 @@ export class AiService {
       const fallback = remaining.length ? pickNextQuestion(remaining) : null;
       if (fallback) {
         nextQuestionKeyCandidate = fallback;
+        nextQuestionKeyLocked = true;
+        askCount = getAskCount(nextQuestionKeyCandidate);
       }
     }
+    if (!nextQuestionKeyLocked && nextQuestionKeyCandidate) {
+      nextQuestionKeyLocked = true;
+    }
     const loopTriggered = Boolean(nextQuestionKeyCandidate && askCount >= 2);
-    if (loopTriggered && nextQuestionKeyCandidate) {
+    if (loopTriggered && nextQuestionKeyCandidate && turnCount >= 2) {
       try {
         const client = this.client;
         if (!client) {
           throw new Error('OpenAI client is not configured');
         }
+        if (!canCallLlm('normalizer', { promptPhase: 'collect', loopTriggered: true, helpIntent, turnIndex })) {
+          throw new Error('LLM gated');
+        }
+        normalizerUsed = true;
         const normalizerRequest = buildSlotNormalizerPrompt({
           rawUserText: latestUserMessage,
           currentSlots: slots,
@@ -2601,7 +2973,7 @@ export class AiService {
             ambiguities: normalizerResult.ambiguities,
           });
           if (normalizerResult.intent && normalizerResult.intent !== 'answer') {
-            const missingKeys = getMissingMvpKeys(slots, confidence);
+            const missingKeys = computeMissingKeysInferred();
             if (missingKeys.length === 1 && missingKeys[0] === 'price') {
               const questionText = buildFallbackQuestionText('price');
               return {
@@ -2621,7 +2993,7 @@ export class AiService {
                 choiceQuestion: undefined,
                 compareCandidates: [],
                 inputMode: normalizedInputMode,
-                nextQuestionKey: 'price',
+                nextQuestionKey: null,
                 slots,
                 confidence,
                 draftReady: false,
@@ -2629,6 +3001,7 @@ export class AiService {
                 draftId: undefined,
                 intent: intent,
                 modeHint: 'chat',
+                messageSource: 'backend.normalizer',
               };
             }
             const missingLabels = missingKeys
@@ -2699,6 +3072,7 @@ export class AiService {
               draftId: undefined,
               intent: intent,
               modeHint: 'chat',
+              messageSource: 'backend.normalizer',
             };
           }
           const updated = normalizerResult.updates?.[nextQuestionKeyCandidate];
@@ -2748,21 +3122,20 @@ export class AiService {
                 draftId: undefined,
                 intent: intent,
                 modeHint: 'chat',
+                messageSource: 'backend.normalizer',
               };
             }
           }
           missingMvpKeys.length = 0;
-          missingMvpKeys.push(...(baseDraftReady ? getMissingMvpKeys(slots, confidence) : []));
+          missingMvpKeys.push(...(baseDraftReady ? computeMissingKeysInferred() : []));
           draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
           missingAll = missingMvpKeys.length ? missingMvpKeys : [...missingRequired, ...missingOptional];
-          if (nextQuestionKeyCandidate && (confidence[nextQuestionKeyCandidate] ?? 0) >= 0.6) {
-            nextQuestionKeyCandidate = pickNextQuestion(missingAll);
-          }
         }
       } catch (err) {
         console.warn('[AiService] slot_normalizer_failed', err);
       }
     }
+    const missingAllAfterNormalizer = [...missingAll];
     if (draftReady || confirmDraft) {
       unrelatedAnswerKey = null;
     }
@@ -2780,7 +3153,7 @@ export class AiService {
         : null;
     const assumptions = buildAssumptionsFromHeuristics(slots, confidence, latestUserMessage);
     if (metaComment) {
-      const missingKeys = getMissingMvpKeys(slots, confidence);
+      const missingKeys = computeMissingKeysInferred();
       if (missingKeys.length === 1 && missingKeys[0] === 'price') {
         const questionText = buildFallbackQuestionText('price');
         return {
@@ -2808,6 +3181,7 @@ export class AiService {
           draftId: undefined,
           intent: intent,
           modeHint: 'chat',
+          messageSource: 'backend.interrupt',
         };
       }
       const missingLabels = missingKeys
@@ -2876,6 +3250,7 @@ export class AiService {
         draftId: undefined,
         intent: intent,
         modeHint: 'chat',
+        messageSource: 'backend.interrupt',
       };
     }
     const applyNormalizerUpdates = (result: SlotNormalizerResult | null) => {
@@ -2896,17 +3271,15 @@ export class AiService {
       }
     };
 
-    const shouldRunNormalizer =
-      turnCount <= 1 &&
-      Boolean(latestUserMessage.trim()) &&
-      !metaComment &&
-      !helpIntent &&
-      !continueEdit;
+    const shouldRunNormalizer = false;
     if (shouldRunNormalizer) {
       try {
         const client = this.client;
         if (!client) {
           throw new Error('OpenAI client is not configured');
+        }
+        if (!canCallLlm('normalizer', { promptPhase: 'collect', loopTriggered: true, helpIntent: false, turnIndex })) {
+          throw new Error('LLM budget exceeded');
         }
         const normalizerRequest = buildSlotNormalizerPrompt({
           rawUserText: latestUserMessage,
@@ -2931,7 +3304,7 @@ export class AiService {
           ? (JSON.parse(normalizerRaw) as SlotNormalizerResult)
           : null;
         if (normalizerResult?.intent && normalizerResult.intent !== 'answer') {
-          const missingKeys = getMissingMvpKeys(slots, confidence);
+          const missingKeys = computeMissingKeysInferred();
           const missingLabels = missingKeys
             .map((key) => {
               switch (key) {
@@ -3000,6 +3373,7 @@ export class AiService {
             draftId: undefined,
             intent: intent,
             modeHint: 'chat',
+            messageSource: 'backend.normalizer',
           };
         }
         applyNormalizerUpdates(normalizerResult);
@@ -3067,7 +3441,38 @@ export class AiService {
         if (!client) {
           throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
         }
-        const completion = await client.chat.completions.create({
+        const mainPromptPhase =
+          promptPhase === 'operate'
+            ? 'operate'
+            : promptPhase === 'ready'
+              ? 'ready'
+              : 'collect';
+        if (!canCallLlm('main_llm', { promptPhase: mainPromptPhase, loopTriggered, helpIntent, turnIndex })) {
+          const fallbackKey = nextQuestionKeyCandidate ?? 'title';
+          const fallbackQuestionText = buildFallbackQuestionText(fallbackKey);
+          const compareChoiceQuestion = isCompareMode
+            ? buildCompareChoiceQuestion(compareCandidatesForPrompt)
+            : null;
+          const decisionChoice = decisionChoiceCandidate ?? null;
+          parsed = {
+            state: 'collecting',
+            language: detectedLanguage,
+            thinkingSteps: ['ヒアリングを続けます'],
+            coachPrompt: '必要な情報を確認しています',
+            ui: {
+              question: {
+                key: fallbackKey,
+                text: fallbackQuestionText,
+              },
+            },
+            choiceQuestion: compareChoiceQuestion ?? decisionChoice ?? undefined,
+            compareCandidates: compareCandidatesForPrompt,
+            inputMode: normalizedInputMode,
+            nextQuestionKey: nextQuestionKeyCandidate,
+          };
+        } else {
+          mainLlmUsed = true;
+          const completion = await client.chat.completions.create({
           model: this.model,
           temperature: 0.45,
           response_format: {
@@ -3104,26 +3509,27 @@ export class AiService {
               }),
             },
           ],
-        });
+          });
 
-        const raw = this.extractMessageContent(completion);
-        try {
-          parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
-        } catch (err) {
-          // Fallback to safe collecting state instead of 500
-          const fallbackKey = nextQuestionKeyCandidate ?? 'title';
-          parsed = {
-            state: 'collecting',
-            language: detectedLanguage,
-            thinkingSteps: ['ヒアリングを続けます'],
-            coachPrompt: 'イベントの概要を教えてください',
-            ui: {
-              question: {
-                key: fallbackKey,
-                text: 'イベントについて簡単に教えてください。',
+          const raw = this.extractMessageContent(completion);
+          try {
+            parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
+          } catch (err) {
+            // Fallback to safe collecting state instead of 500
+            const fallbackKey = nextQuestionKeyCandidate ?? 'title';
+            parsed = {
+              state: 'collecting',
+              language: detectedLanguage,
+              thinkingSteps: ['ヒアリングを続けます'],
+              coachPrompt: 'イベントの概要を教えてください',
+              ui: {
+                question: {
+                  key: fallbackKey,
+                  text: 'イベントについて簡単に教えてください。',
+                },
               },
-            },
-          };
+            };
+          }
         }
       }
       const { cleaned: phaseCleaned, removed: phaseRemoved } = enforcePhaseOutput(
@@ -3175,11 +3581,11 @@ export class AiService {
         .filter((text) => Boolean(text && text.trim()));
       const effectiveIntent: AssistantIntent = confirmDraft ? 'create' : intent;
       const applyEnabled = !isCompareMode && draftReady && effectiveIntent === 'create';
-      let nextQuestionKey: keyof Slots | null = nextQuestionKeyCandidate;
+      const shouldNullNextQuestionKey = Boolean(isCompareMode || draftReady || unrelatedAnswerKey);
+      let nextQuestionKey: keyof Slots | null = shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
       let compareCandidates: AiAssistantCompareCandidate[] = [];
       if (isCompareMode) {
         compareCandidates = compareCandidatesForPrompt;
-        nextQuestionKey = null;
         parsed.compareCandidates = compareCandidates;
         state = 'collecting';
       } else if (!draftReady) {
@@ -3200,7 +3606,6 @@ export class AiService {
         }
         state = 'collecting';
       } else {
-        nextQuestionKey = null;
         state = 'ready';
         if (confirmDraft) {
           parsed.questions = [];
@@ -3228,7 +3633,7 @@ export class AiService {
         Boolean(parsed.choiceQuestion),
       );
       parsed.message = sanitize(guardedMessage);
-      const responseNextQuestionKey = unrelatedAnswerKey ? null : nextQuestionKey;
+      const responseNextQuestionKey = nextQuestionKey;
       const uiQuestionKey = responseNextQuestionKey ?? null;
       if (!uiQuestionKey && parsed.ui?.question?.text) {
         console.warn('[AiService] ui.question ignored because nextQuestionKey is null', {
@@ -3552,10 +3957,17 @@ export class AiService {
         !confirmDraft && draftReady && (!slots.title || (confidence.title ?? 0) < 0.6);
       if (shouldSuggestTitles) {
         try {
-          parsed.titleSuggestions = await this.generateTitleSuggestions(
-            parsed.publicActivityDraft as AiAssistantPublicDraft,
-            detectedLanguage || payload.baseLanguage || 'ja',
-          );
+          parsed.titleSuggestions = canCallLlm('title_suggestions', {
+            promptPhase: 'ready',
+            loopTriggered: false,
+            helpIntent,
+            turnIndex,
+          })
+            ? await this.generateTitleSuggestions(
+                parsed.publicActivityDraft as AiAssistantPublicDraft,
+                detectedLanguage || payload.baseLanguage || 'ja',
+              )
+            : buildTitleSuggestions(draftBaseSlots);
         } catch (err) {
           parsed.titleSuggestions = buildTitleSuggestions(draftBaseSlots);
         }
@@ -3575,6 +3987,18 @@ export class AiService {
       const cleanOptionTexts = optionTexts
         .map((text) => sanitize(text))
         .filter((text): text is string => Boolean(text));
+      const messageSource: AiAssistantReplyPayload['messageSource'] = 'backend.ui';
+      if (debugEnabled) {
+        logDebug('next_question_key_trace', {
+          forcedNextQuestionKey,
+          missingAllBeforeNormalizer,
+          missingAllAfterNormalizer,
+          loopTriggered,
+          nextQuestionKeyCandidate,
+          finalNextQuestionKey: responseNextQuestionKey,
+          nextQuestionKeyLocked,
+        });
+      }
       return {
         ...parsed,
         status: state,
@@ -3604,6 +4028,7 @@ export class AiService {
         draftId,
         intent: effectiveIntent,
         modeHint: confirmDraft ? 'operate' : 'chat',
+        messageSource,
       };
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -3648,6 +4073,7 @@ export class AiService {
         inputMode: 'describe',
         nextQuestionKey: null,
         modeHint: 'chat',
+        messageSource: 'backend.ui',
       };
       return safe;
     }

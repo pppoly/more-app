@@ -51,9 +51,10 @@ export class MeController {
   async updateProfile(
     @Body('name') name: string | undefined,
     @Body('preferredLocale') preferredLocale: string | undefined,
+    @Body('email') email: string | undefined,
     @Req() req: any,
   ) {
-    return this.meService.updateProfile(req.user.id, { name, preferredLocale });
+    return this.meService.updateProfile(req.user.id, { name, preferredLocale, email });
   }
 
   @Post('events/:registrationId/cancel')

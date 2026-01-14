@@ -11,10 +11,15 @@ model User {
   id                        String                 @id @default(cuid())
   lineUserId                String?                @unique
   email                     String?                @unique
+  phone                     String?                @unique
   name                      String?
   avatarUrl                 String?
   language                  String?
   preferredLocale           String?                @default("ja")
+  authProviders             String[]               @default([])
+  emailVerifiedAt           DateTime?
+  phoneVerifiedAt           DateTime?
+  lastLoginAt               DateTime?
   organizerPayoutPolicyAcceptedAt DateTime?
   prefecture                String?
   createdAt                 DateTime               @default(now())

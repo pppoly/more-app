@@ -84,13 +84,19 @@ export class AuthService {
       select: {
         id: true,
         name: true,
-      language: true,
+        email: true,
+        phone: true,
+        language: true,
         preferredLocale: true,
-      prefecture: true,
-      avatarUrl: true,
-      isOrganizer: true,
-      isAdmin: true,
-    },
+        prefecture: true,
+        avatarUrl: true,
+        authProviders: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        lastLoginAt: true,
+        isOrganizer: true,
+        isAdmin: true,
+      },
     });
   }
 
