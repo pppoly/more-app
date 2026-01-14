@@ -879,10 +879,9 @@ const isInterruptChoice = computed(() => choiceQuestionState.value?.key === 'int
 const isConfirmChoice = computed(() => String(choiceQuestionState.value?.key ?? '').startsWith('confirm_'));
 const shouldShowChoiceBlock = computed(() => {
   if (!choiceQuestionState.value?.options?.length) return false;
-  return isInterruptChoice.value || isConfirmChoice.value;
+  return isConfirmChoice.value;
 });
 const choiceHelperText = computed(() => {
-  if (isInterruptChoice.value) return '続け方を選んでください。';
   if (isConfirmChoice.value) return '内容が合っているか選んでください。';
   return '近いものがあれば選んでください。なければ、そのまま入力してOKです。';
 });
@@ -1677,7 +1676,7 @@ const requestAssistantReply = async (
     if (result.autoTitle && result.autoTitle.trim()) {
       titleSeed.value = result.autoTitle.trim();
     }
-    const choiceQuestion = isExplainMode
+    let choiceQuestion = isExplainMode
       ? null
       : resolveChoiceQuestionState({
           inputMode: result.inputMode ?? null,
@@ -1686,6 +1685,9 @@ const requestAssistantReply = async (
           uiMessage: rawUiMessageText,
           uiOptions,
         });
+    if (choiceQuestion?.key === 'interrupt') {
+      choiceQuestion = null;
+    }
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
     coachPromptState.value =
       !isExplainMode && !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
