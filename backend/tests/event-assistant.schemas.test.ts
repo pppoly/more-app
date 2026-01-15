@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAssistantOutput } from '../src/ai/event-assistant.schemas';
 
-test('collecting schema rejects draft and unknown fields', () => {
-  const result = validateAssistantOutput('collecting', {
+test('collect schema rejects draft and unknown fields', () => {
+  const result = validateAssistantOutput('collect', {
     ui: { question: { key: 'title', text: 'x' } },
     thinkingSteps: ['a', 'b'],
     publicActivityDraft: { title: 't' },
@@ -13,8 +13,8 @@ test('collecting schema rejects draft and unknown fields', () => {
   assert.ok(result.errors.some((e) => e.includes('unknown_field')));
 });
 
-test('collecting schema allows message without question', () => {
-  const result = validateAssistantOutput('collecting', {
+test('collect schema allows message without question', () => {
+  const result = validateAssistantOutput('collect', {
     ui: { message: '了解しました。' },
   });
   assert.equal(result.valid, true);

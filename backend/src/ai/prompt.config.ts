@@ -76,7 +76,17 @@ const COLLECT_PROMPT: PromptConfig = {
       'Do NOT include drafts or flow-control fields. ' +
       COMMON_GUIDANCE +
       ' Latest user message: "{latestMessage}".',
-  allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
+  allowedFields: [
+    'ui',
+    'thinkingSteps',
+    'coachPrompt',
+    'writerSummary',
+    'state',
+    'language',
+    'inputMode',
+    'nextQuestionKey',
+    'expectedSlotKey',
+  ],
   forbiddenFields: [
     'questions',
     'options',

@@ -1,36 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { determinePromptPhase, enforcePhaseOutput } from '../src/ai/assistant-phase.guard';
+import { determineUiPhase, enforcePhaseOutput } from '../src/ai/assistant-phase.guard';
 import { getEventAssistantPromptConfig } from '../src/ai/prompt.config';
 
-test('determinePromptPhase follows compare > operate > ready > decision > collecting order', () => {
+test('determineUiPhase follows compare > operate > ready > decision > collecting order', () => {
   assert.equal(
-    determinePromptPhase({ inputMode: 'compare', confirmDraft: false, draftReady: false, hasDecisionChoice: false }),
+    determineUiPhase({ inputMode: 'compare', confirmDraft: false, draftReady: false, hasDecisionChoice: false }),
     'compare',
   );
   assert.equal(
-    determinePromptPhase({ inputMode: 'fill', confirmDraft: true, draftReady: true, hasDecisionChoice: true }),
+    determineUiPhase({ inputMode: 'fill', confirmDraft: true, draftReady: true, hasDecisionChoice: true }),
     'operate',
   );
   assert.equal(
-    determinePromptPhase({ inputMode: 'fill', confirmDraft: false, draftReady: true, hasDecisionChoice: false }),
+    determineUiPhase({ inputMode: 'fill', confirmDraft: false, draftReady: true, hasDecisionChoice: false }),
     'ready',
   );
   assert.equal(
-    determinePromptPhase({ inputMode: 'fill', confirmDraft: false, draftReady: false, hasDecisionChoice: true }),
+    determineUiPhase({ inputMode: 'fill', confirmDraft: false, draftReady: false, hasDecisionChoice: true }),
     'decision',
   );
   assert.equal(
-    determinePromptPhase({ inputMode: 'describe', confirmDraft: false, draftReady: false, hasDecisionChoice: false }),
+    determineUiPhase({ inputMode: 'describe', confirmDraft: false, draftReady: false, hasDecisionChoice: false }),
     'collecting',
   );
 });
 
-test('phase guard removes forbidden fields in collecting', () => {
-  const policy = getEventAssistantPromptConfig('collecting');
+test('phase guard removes forbidden fields in collect', () => {
+  const policy = getEventAssistantPromptConfig('collect');
   const payload = {
     state: 'collecting',
     language: 'ja',
+    inputMode: 'describe',
+    nextQuestionKey: 'title',
     thinkingSteps: ['a', 'b'],
     coachPrompt: 'x',
     writerSummary: 'y',
@@ -40,8 +42,12 @@ test('phase guard removes forbidden fields in collecting', () => {
     publicActivityDraft: { title: 't' },
     internalExecutionPlan: { objective: 'o' },
   };
-  const result = enforcePhaseOutput(payload, 'collecting', policy);
+  const result = enforcePhaseOutput(payload, 'collect', policy);
   assert.ok('ui' in result.cleaned);
+  assert.ok('state' in result.cleaned);
+  assert.ok('language' in result.cleaned);
+  assert.ok('inputMode' in result.cleaned);
+  assert.ok('nextQuestionKey' in result.cleaned);
   assert.ok(!('questions' in result.cleaned));
   assert.ok(!('options' in result.cleaned));
   assert.ok(!('publicActivityDraft' in result.cleaned));
@@ -65,34 +71,4 @@ test('phase guard keeps draft but removes questions in ready', () => {
   assert.ok('internalExecutionPlan' in result.cleaned);
   assert.ok(!('questions' in result.cleaned));
   assert.ok(!('options' in result.cleaned));
-});
-
-test('phase guard removes draft fields in decision', () => {
-  const policy = getEventAssistantPromptConfig('decision');
-  const payload = {
-    state: 'collecting',
-    language: 'ja',
-    thinkingSteps: ['a', 'b'],
-    ui: { question: { key: 'title', text: 'タイトルは？' } },
-    publicActivityDraft: { title: 't' },
-    internalExecutionPlan: { objective: 'o' },
-  };
-  const result = enforcePhaseOutput(payload, 'decision', policy);
-  assert.ok(!('publicActivityDraft' in result.cleaned));
-  assert.ok(!('internalExecutionPlan' in result.cleaned));
-});
-
-test('phase guard removes draft fields in compare', () => {
-  const policy = getEventAssistantPromptConfig('compare');
-  const payload = {
-    state: 'collecting',
-    language: 'ja',
-    thinkingSteps: ['a', 'b'],
-    ui: { message: 'ok', options: [{ label: 'A', value: 'A' }] },
-    publicActivityDraft: { title: 't' },
-    internalExecutionPlan: { objective: 'o' },
-  };
-  const result = enforcePhaseOutput(payload, 'compare', policy);
-  assert.ok(!('publicActivityDraft' in result.cleaned));
-  assert.ok(!('internalExecutionPlan' in result.cleaned));
 });

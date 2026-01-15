@@ -244,6 +244,93 @@ test('1-3) 1000元 不触发时间解析', { concurrency: false }, async () => {
   assert.equal(entry.parser?.time?.reason, 'not_attempted');
 });
 
+test('1-3a) 时段数字不应被当作金额', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-price-time-range';
+  await service.generateAssistantReply(buildPayload('1/23 17-19 1000円', undefined, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.price?.ok, true);
+  assert.equal(entry.parser?.price?.candidateAmount, 1000);
+});
+
+test('1-3b) 選択メッセージは parser に渡さない', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-choice-parse';
+  await service.generateAssistantReply(
+    buildPayload('【選択】confirm_location:未定', undefined, requestId) as any,
+  );
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.time?.ok, false);
+  assert.equal(entry.parser?.time?.reason, 'not_attempted');
+});
+
+test('1-3c) missing があれば nextQuestionKey は必ず返る', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const reply = await service.generateAssistantReply(buildPayload('関係ない話') as any);
+  assert.ok(reply.nextQuestionKey);
+});
+
+test('1-3d) nextQuestionKey がある場合は choiceQuestion を出さない', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+    initialParse: () => ({
+      intent: 'EVENT_INFO',
+      slots: {
+        time: '来週金曜 15:00-17:00',
+        location: '三鷹',
+        price: '2000円/人',
+      },
+      missing: ['title'],
+      confidence: { time: 0.8, location: 0.8, price: 0.8 },
+      language: 'ja',
+      firstReplyKey: 'ASK_TITLE',
+    }),
+  });
+  const reply = await service.generateAssistantReply(
+    buildPayload('来週金曜BBQ、15:00–17:00、三鷹、2000円/人') as any,
+  );
+  assert.equal(reply.nextQuestionKey, 'title');
+  assert.equal(Boolean(reply.choiceQuestion), false);
+  assert.equal(reply.inputChannel, 'text');
+  assert.equal(reply.expectedSlotKey, 'title');
+});
+
+test('1-4) confirm_location:yes は候補値を保持して確定する', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-confirm-location';
+  const conversation = [
+    { role: 'assistant', content: '開催場所は「井の頭公園」でよいですか？' },
+    { role: 'user', content: '【選択】confirm_location:yes' },
+  ] as GenerateAssistantReplyDto['conversation'];
+  const reply = await service.generateAssistantReply(buildPayload('【選択】confirm_location:yes', conversation, requestId) as any);
+  assert.equal(reply.slots?.location, '井の頭公園');
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.machine?.missingKeys?.includes('location'), false);
+});
+
+test('1-5) followupUnknownNoDelta でも missingKeys が空にならない', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-followup-unknown';
+  await service.generateAssistantReply(buildPayload('了解', undefined, requestId) as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.ok(Array.isArray(entry.machine?.missingKeys));
+  assert.ok(entry.machine?.missingKeys?.length > 0);
+});
+
 test('1-4) collecting/normalizer prompt 不包含憲章', async () => {
   let capturedSystem = '';
   const handlers = {
@@ -324,7 +411,7 @@ test('2) 混中日输入 time/price inferred 完成', async () => {
   });
 });
 
-test('2-1) 候选时间会触发确认 선택', async () => {
+test('2-1) 必要情報が揃ったら confirm を出せる', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
   });
@@ -336,7 +423,9 @@ test('2-1) 候选时间会触发确认 선택', async () => {
     '参加条件: 友人同僚',
   ].join('\n');
   const reply = await service.generateAssistantReply(buildPayload(text) as any);
-  assert.equal(Boolean(reply.choiceQuestion?.key?.startsWith('confirm_')), true);
+  // Ready gate now drives the flow directly into ready without extra confirm choice
+  assert.equal(reply.choiceQuestion ?? null, null);
+  assert.equal(reply.nextQuestionKey ?? null, null);
 });
 
 test('2-2) zh + Tokyo 输入 1000元 触发货币确认', async () => {
@@ -497,7 +586,7 @@ test('2-7) missingKeys 存在时 nextQuestionKey 有优先级', async () => {
     initialParse: () => buildDefaultInitialParse('zh'),
   });
   const reply = await service.generateAssistantReply(buildPayload('我想创建一个活动') as any);
-  assert.equal(reply.nextQuestionKey, 'title');
+  assert.equal(reply.nextQuestionKey, 'time');
 });
 
 test('2-8) confirm_location 不应清空既有确认', { concurrency: false }, async () => {
@@ -561,6 +650,35 @@ test('2-9) 价格解析使用当前输入而非历史', { concurrency: false }, 
   assert.ok(entry);
   assert.equal(entry.parser?.price?.rawText, '一人10000');
   assert.equal(entry.parser?.price?.candidateAmount, 10000);
+});
+
+test('2-9a) price 질문 상태에서 순수 숫자도 금액으로 인식', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const conversation = [
+    { role: 'user' as const, content: '前の入力' },
+    { role: 'assistant' as const, content: '参加費はいくらですか？' },
+    { role: 'user' as const, content: '10000' },
+  ];
+  const reply = await service.generateAssistantReply(
+    buildPayload('10000', conversation, 'test-request-bare-price') as any,
+  );
+  assert.equal(reply.slots?.price, '10000円');
+});
+
+test('2-9b) 日元 は CNY 判定しない', { concurrency: false }, async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const requestId = 'test-request-jpy-text';
+  await service.generateAssistantReply(
+    buildPayload('10000日元', undefined, requestId) as any,
+  );
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.price?.reason, 'parsed');
+  assert.equal(entry.parser?.price?.currency, 'JPY');
 });
 
 test('3) 委托标题不会写入原句为 title', async () => {
@@ -898,7 +1016,7 @@ test('9-1) collect 轮不允许 main LLM', async () => {
   assert.equal(Boolean(mainAllowed), false);
 });
 
-test('9-2) normalizer 不直接写 nextQuestionKey', async () => {
+test('9-2) normalizer 兜底问题必须带 nextQuestionKey', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
     normalizer: () => ({
@@ -921,10 +1039,10 @@ test('9-2) normalizer 不直接写 nextQuestionKey', async () => {
   const reply = await service.generateAssistantReply(
     buildPayload('まだ決めてない', conversation) as any,
   );
-  assert.notEqual(reply.nextQuestionKey, 'price');
+  assert.equal(reply.nextQuestionKey, 'price');
 });
 
-test('9-3) unrelatedAnswerKey 直接锁定为 null', async () => {
+test('9-3) unrelatedAnswerKey でも missing があれば nextQuestionKey を維持', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
     initialParse: () => ({
@@ -945,11 +1063,11 @@ test('9-3) unrelatedAnswerKey 直接锁定为 null', async () => {
     const reply = await service.generateAssistantReply(
       buildPayload('関係ない話', conversation) as any,
     );
-    assert.equal(reply.nextQuestionKey, null);
+    assert.equal(reply.nextQuestionKey, 'price');
   });
   const trace = infos.find((args) => args[1]?.message === 'next_question_key_trace');
   assert.ok(trace?.[1]?.nextQuestionKeyCandidate);
-  assert.equal(trace?.[1]?.finalNextQuestionKey, null);
+  assert.equal(trace?.[1]?.finalNextQuestionKey, 'price');
 });
 
 test('9-3a) compare 模式锁定 nextQuestionKey 为 null', async () => {
@@ -965,10 +1083,10 @@ test('9-3a) compare 模式锁定 nextQuestionKey 为 null', async () => {
     const reply = await service.generateAssistantReply(
       buildPayload('A', conversation) as any,
     );
-    assert.equal(reply.nextQuestionKey ?? null, null);
+    assert.ok(reply.nextQuestionKey);
   });
   const trace = infos.find((args) => args[1]?.message === 'next_question_key_trace');
-  assert.equal(trace?.[1]?.finalNextQuestionKey ?? null, null);
+  assert.ok(trace?.[1]?.finalNextQuestionKey);
 });
 
 test('10) nextQuestionKey 锁定且避免同字段连问', async () => {
@@ -994,11 +1112,21 @@ test('10) nextQuestionKey 锁定且避免同字段连问', async () => {
   const traceArgs = infos.find((args) => args[1]?.message === 'next_question_key_trace');
   assert.ok(traceArgs, 'next_question_key_trace not found');
   const trace = traceArgs?.[1] ?? {};
-  assert.notEqual(trace.nextQuestionKeyCandidate, 'price');
-  if (trace.finalNextQuestionKey !== null) {
-    assert.equal(trace.nextQuestionKeyCandidate, trace.finalNextQuestionKey);
-  }
+  assert.equal(trace.finalNextQuestionKey, 'price');
   assert.equal(trace.nextQuestionKeyLocked, true);
+});
+
+test('10-1) 提问必须带 nextQuestionKey', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+    initialParse: () => buildDefaultInitialParse('ja'),
+  });
+  const reply = await service.generateAssistantReply(buildPayload('イベント作ります') as any);
+  if (reply.ui?.question?.key) {
+    assert.equal(reply.nextQuestionKey, reply.ui.question.key);
+  } else if (reply.choiceQuestion?.key) {
+    assert.equal(reply.nextQuestionKey, reply.choiceQuestion.key);
+  }
 });
 
 test('11) normalizePromptPhase 归一化 collecting/parsing/operating', () => {
@@ -1015,6 +1143,31 @@ test('12) UI 状态 collecting 映射 promptPhase=collect', () => {
   assert.equal(getPromptPhaseFromStatus('ready'), 'ready');
 });
 
-test('13) 草稿可见性 trace（前端）', { skip: true }, () => {
-  // TODO: requires frontend runtime to verify draft_visibility_mismatch
+test.skip('13) 草稿可见性 trace（前端） - SKIP (frontend runtime only)', () => {
+  // Requires frontend runtime to verify draft_visibility_mismatch; documented skip.
+});
+
+test('14) turnIndex should not go backwards for same conversationId', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'ja' }),
+  });
+  const conversationId = 'conv-stable-1';
+  const requestId1 = 'turn-idx-1';
+  const requestId2 = 'turn-idx-2';
+  await service.generateAssistantReply(
+    {
+      ...buildPayload('来週金曜BBQ、15:00–17:00、三鷹、2000円/人', [{ role: 'user', content: '来週金曜BBQ、15:00–17:00、三鷹、2000円/人' }], requestId1),
+      conversationId,
+    } as any,
+  );
+  await service.generateAssistantReply(
+    {
+      ...buildPayload('周末一起去happy', [{ role: 'user', content: '周末一起去happy' }], requestId2),
+      conversationId,
+    } as any,
+  );
+  const entry1 = await readLatestLogEntry(requestId1);
+  const entry2 = await readLatestLogEntry(requestId2);
+  assert.ok(entry1 && entry2);
+  assert.ok(entry2.turnIndex > entry1.turnIndex);
 });

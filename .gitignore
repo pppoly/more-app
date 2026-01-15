@@ -5,6 +5,8 @@
 .env.*
 backend/.env*
 frontend/.env*
+backend/.logs/
+**/.logs/
 
 ############################
 # Build Artifacts (NEVER commit)

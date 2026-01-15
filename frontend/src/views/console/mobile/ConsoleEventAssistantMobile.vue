@@ -45,31 +45,58 @@
 
     <section class="chat-surface">
       <div class="chat-log" ref="chatLogRef">
-        <div v-if="isEmptyConversation" class="intro-card">
+        <div v-if="isEmptyConversation" class="intro-card" @click="introExpanded = !introExpanded">
           <div class="intro-header">
             <div class="intro-copy">
-              <p class="intro-title">AIがイベント作成を手伝います</p>
-              <p class="intro-subtitle">一言でOK。足りないところはあとで一緒に整えます。</p>
-              <p class="intro-example-line">入力例：来週の金曜、15:00〜17:00にBBQしませんか？参加費は2000円/人です。</p>
+              <p class="intro-title">イベント作成アシスタント</p>
+              <p class="intro-positioning">これは「イベント情報を整理して下書きを作るツール」です</p>
+              <p class="intro-action">まずは、イベント内容を一文で入力してください</p>
+              <p class="intro-action-sub">足りない情報は、あとでこちらから確認します</p>
+              <button
+                type="button"
+                class="intro-main-example"
+                @click.stop="handleChipSelect(introMainExample)"
+                aria-label="例を入力する"
+              >
+                {{ introMainExample }}
+              </button>
             </div>
-            <button type="button" class="intro-toggle" @click="introExpanded = !introExpanded">
-              {{ introExpanded ? '閉じる' : 'もっと見る' }}
-            </button>
+          </div>
+          <div class="intro-expander" @click.stop="introExpanded = !introExpanded" aria-hidden="true">
+            <span class="intro-expander-line"></span>
+            <span class="intro-expander-text">{{ introExpanded ? '閉じる' : 'もっと見る' }}</span>
+            <svg
+              class="intro-expander-icon"
+              :class="{ 'is-open': introExpanded }"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
           </div>
           <transition name="fade">
             <div v-if="introExpanded" class="intro-expanded">
-              <ul class="intro-list">
-                <li>・ まずは一言でOK</li>
-                <li>・ 足りないところは1つずつ聞きます</li>
-                <li>・ まとまったらフォームに反映できます</li>
-              </ul>
-              <div class="intro-examples">
-                <p class="intro-examples-title">入力例</p>
-                <ul class="intro-examples-list">
-                  <li>来週の金曜、15:00〜17:00にBBQしませんか？参加費は2000円/人です。</li>
-                  <li>平日夜にゆるい交流会をやります。19:00〜21:00、飲み物は各自持参で。</li>
-                  <li>土曜の午前に勉強会をします。10人くらい、参加費は無料です。</li>
-                  <li>日曜の午後にLanguage Exchange。場所はカフェ、参加費はワンドリンクだけでOK。</li>
+              <p class="intro-template">日時 ／ 場所 ／ 内容 ／ 参加費</p>
+              <p class="intro-unknown">※ 未定の項目は「未定」と書いてOKです</p>
+              <button
+                type="button"
+                class="intro-details-toggle"
+                @click="introDetailsExpanded = !introDetailsExpanded"
+              >
+                できること・できないことを見る
+              </button>
+              <div v-if="introDetailsExpanded" class="intro-details">
+                <p class="intro-section-title">できること</p>
+                <ul class="intro-list">
+                  <li>日時／場所／参加費などを整理して下書きを作成</li>
+                  <li>足りない情報は質問して確認</li>
+                  <li>日本語/英語/中文でもOK（入力は自由）</li>
+                </ul>
+                <p class="intro-section-title">できないこと</p>
+                <ul class="intro-list intro-list--muted">
+                  <li>この画面だけで公開・開催はできません</li>
+                  <li>雑談や何でも相談のAIではありません</li>
                 </ul>
               </div>
             </div>
@@ -98,6 +125,14 @@
                 <p v-if="getQuestionHelper(msg)?.foot" class="question-helper-foot">
                   {{ getQuestionHelper(msg)?.foot }}
                 </p>
+                <button
+                  v-if="currentSlotKey === 'title'"
+                  type="button"
+                  class="question-helper-action"
+                  @click="handleChipSelect('未定')"
+                >
+                  未定にする
+                </button>
               </div>
                 <button
                   v-if="msg.action === 'direct-form'"
@@ -158,49 +193,54 @@
         </template>
 
         <div
-          v-if="mode === 'chat' && !canShowProposalUi && !explainMode && isCompareModeUi && choiceQuestionState"
+          v-if="mode === 'chat' && !explainMode && (choiceQuestionState || readyMenuFallback)"
           class="decision-block"
         >
+          <p v-if="(choiceQuestionState || readyMenuFallback)?.prompt" class="decision-title">
+            {{ (choiceQuestionState || readyMenuFallback)?.prompt }}
+          </p>
           <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
           <div class="decision-chips">
             <button
-              v-for="(opt, idx) in choiceQuestionState.options"
+              v-for="(opt, idx) in (choiceQuestionState || readyMenuFallback)?.options || []"
               :key="`choice-${idx}`"
               type="button"
               class="chip"
               :class="{ 'chip--recommended': opt.recommended }"
-              @click="handleChoiceSelect(choiceQuestionState.key, opt.value)"
+              @click="handleChoiceSelect((choiceQuestionState || readyMenuFallback)!.key, opt.value)"
             >
               {{ getCandidateChipLabel(opt) }}
             </button>
           </div>
-          <button type="button" class="decision-toggle" @click="showCandidateDetails = !showCandidateDetails">
-            {{ showCandidateDetails ? '候補の詳細を閉じる' : '候補の詳細を見る' }}
-          </button>
-          <div v-if="showCandidateDetails" class="candidate-details">
-            <div
-              v-for="(opt, idx) in choiceQuestionState.options"
-              :key="`detail-${idx}`"
-              class="candidate-detail-card"
-            >
-              <div class="candidate-head">
-                <span class="candidate-tag">{{ getCandidateTag(opt) }}</span>
-                <span class="candidate-title">{{ getCandidateTitle(opt) }}</span>
-                <span v-if="opt.recommended" class="candidate-badge">近いかも</span>
-              </div>
-              <ul v-if="getCandidateMeta(opt).length" class="candidate-meta">
-                <li v-for="(line, mIdx) in getCandidateMeta(opt)" :key="`meta-${idx}-${mIdx}`">
-                  {{ line }}
-                </li>
-              </ul>
-              <p v-else class="candidate-summary">{{ getCandidateTitle(opt) }}</p>
-            </div>
-          </div>
-          <div class="decision-actions">
-            <button type="button" class="decision-secondary" @click="handleSkipCompare">
-              どちらでもないので続ける
+          <template v-if="isCompareModeUi">
+            <button type="button" class="decision-toggle" @click="showCandidateDetails = !showCandidateDetails">
+              {{ showCandidateDetails ? '候補の詳細を閉じる' : '候補の詳細を見る' }}
             </button>
-          </div>
+            <div v-if="showCandidateDetails" class="candidate-details">
+              <div
+                v-for="(opt, idx) in choiceQuestionState.options"
+                :key="`detail-${idx}`"
+                class="candidate-detail-card"
+              >
+                <div class="candidate-head">
+                  <span class="candidate-tag">{{ getCandidateTag(opt) }}</span>
+                  <span class="candidate-title">{{ getCandidateTitle(opt) }}</span>
+                  <span v-if="opt.recommended" class="candidate-badge">近いかも</span>
+                </div>
+                <ul v-if="getCandidateMeta(opt).length" class="candidate-meta">
+                  <li v-for="(line, mIdx) in getCandidateMeta(opt)" :key="`meta-${idx}-${mIdx}`">
+                    {{ line }}
+                  </li>
+                </ul>
+                <p v-else class="candidate-summary">{{ getCandidateTitle(opt) }}</p>
+              </div>
+            </div>
+            <div class="decision-actions">
+              <button type="button" class="decision-secondary" @click="handleSkipCompare">
+                どちらでもないので続ける
+              </button>
+            </div>
+          </template>
         </div>
         <div
           v-if="mode === 'chat' && !canShowProposalUi && !explainMode && !isCompareModeUi && shouldShowChoiceBlock"
@@ -321,17 +361,31 @@
             </button>
           </header>
           <div class="plan-preview-scroll">
-            <article class="plan-preview-section">
-              <p class="plan-preview-subtitle">概要</p>
-              <p class="plan-preview-text">{{ previewPlanDescription }}</p>
-            </article>
             <article v-if="previewExpertComment" class="plan-preview-section">
-              <p class="plan-preview-subtitle">AIコメント</p>
+              <p class="plan-preview-subtitle">AIコメント（参考・フォームには反映されません）</p>
               <p class="plan-preview-text">{{ previewExpertComment }}</p>
             </article>
             <article class="plan-preview-section">
               <p class="plan-preview-subtitle">詳細</p>
               <p class="plan-preview-text">{{ previewPlanDescription }}</p>
+            </article>
+            <article class="plan-preview-section">
+              <p class="plan-preview-subtitle">時間・場所</p>
+              <ul class="plan-preview-list">
+                <li v-for="item in previewPlanLogisticsDisplay" :key="`preview-logistics-${item.label}`">
+                  <strong>{{ item.label }}：</strong>{{ item.value }}
+                </li>
+              </ul>
+            </article>
+            <article class="plan-preview-section">
+              <p class="plan-preview-subtitle">参加費 / チケット</p>
+              <ul class="plan-preview-ticket-list">
+                <li v-if="!previewPlanTickets.length">参加費: {{ previewPriceText }}</li>
+                <li v-for="(ticket, idx) in previewPlanTickets" :key="`preview-ticket-${idx}`">
+                  <span>{{ ticket.name }}</span>
+                  <span>{{ formatTicketPrice(ticket.price) }}</span>
+                </li>
+              </ul>
             </article>
             <div class="plan-preview-grid">
               <article>
@@ -355,24 +409,6 @@
                 <p class="plan-preview-text">{{ previewCancellationPolicy }}</p>
               </article>
             </div>
-            <article class="plan-preview-section">
-              <p class="plan-preview-subtitle">時間・場所</p>
-              <ul class="plan-preview-list">
-                <li v-for="item in previewPlanLogisticsDisplay" :key="`preview-logistics-${item.label}`">
-                  <strong>{{ item.label }}：</strong>{{ item.value }}
-                </li>
-              </ul>
-            </article>
-            <article class="plan-preview-section">
-              <p class="plan-preview-subtitle">チケット設定</p>
-              <ul class="plan-preview-ticket-list">
-                <li v-if="!previewPlanTickets.length">参加費: {{ previewPriceText }}</li>
-                <li v-for="(ticket, idx) in previewPlanTickets" :key="`preview-ticket-${idx}`">
-                  <span>{{ ticket.name }}</span>
-                  <span>{{ formatTicketPrice(ticket.price) }}</span>
-                </li>
-              </ul>
-            </article>
             <article class="plan-preview-section">
               <p class="plan-preview-subtitle">参加要件</p>
               <ul class="plan-preview-list">
@@ -583,6 +619,10 @@ const explainMode = ref(false);
 const explainLanguage = ref<'ja' | 'zh' | 'en'>('ja');
 const titleSeed = ref<string | null>(null);
 const isCommitted = ref(false);
+const introMainExample =
+  '来週金曜の夕方にBBQをします。時間は15:00〜17:00、場所は三鷹、参加費は一人2000円です。';
+const introTemplateLine = '日時 ／ 場所 ／ 内容 ／ 参加費';
+const introDetailsExpanded = ref(false);
 const isReadyState = computed(() => lastAssistantStatus.value === 'ready');
 const isCompletedState = computed(() => lastAssistantStatus.value === 'completed');
 const phaseTemplates: Record<'collecting' | 'decision' | 'compare' | 'ready' | 'operate', string[]> = {
@@ -649,15 +689,35 @@ const selectionLabelMap: Record<string, string> = {
 const confirmedAnswers = reactive<Record<string, string>>({});
 const currentSlotKey = ref<string | null>(null);
 const formatSelectionDisplay = (raw: string) => {
-  const match = raw.match(/【選択】\s*([a-zA-Z]+)\s*[:：]\s*(.+)/);
+  const match = raw.match(/【選択】\s*([a-zA-Z_]+)\s*[:：]\s*(.+)/);
   if (!match) return '';
   const key = match[1];
   const value = match[2];
+  if (key.startsWith('confirm_') && (value === 'yes' || value === 'no')) {
+    return value === 'yes' ? '確認しました' : '修正します';
+  }
+  const normalizedKey = key.startsWith('confirm_') ? key.replace(/^confirm_/, '') : key;
   const candidateDisplay = getCandidateDisplayValue(value);
   if (candidateDisplay) return `「${candidateDisplay}」が近いと選びました`;
   if (/(?:候補|解釈)[A-Z]/i.test(value)) return '近い内容を選びました';
-  const label = selectionLabelMap[key] ?? '選択内容';
+  const label = selectionLabelMap[normalizedKey] ?? '選択内容';
   return `${label}を「${value}」にしました`;
+};
+
+const normalizeSelectionTokenForAssistant = (text: string) => {
+  if (!text || !text.includes('【選択】')) return text;
+  const tokenRegex = /【選択】\s*([a-zA-Z_]+)\s*[:：]\s*([^\s]+)/g;
+  const trimmed = text.trim();
+  const replaced = text.replace(tokenRegex, (match, key, value) => {
+    if (trimmed === match.trim()) return formatSelectionDisplay(match);
+    if (key.startsWith('confirm_') && (value === 'yes' || value === 'no')) {
+      return value === 'yes' ? '確認しました' : '修正します';
+    }
+    const candidateDisplay = getCandidateDisplayValue(value);
+    const displayValue = candidateDisplay || value;
+    return `「${displayValue}」`;
+  });
+  return replaced;
 };
 const buildChoiceDisplayText = (key: string, value: string, label?: string) => {
   if (key.startsWith('confirm_')) {
@@ -669,6 +729,27 @@ const buildChoiceDisplayText = (key: string, value: string, label?: string) => {
   const name = selectionLabelMap[key] ?? '選択内容';
   const displayValue = label?.replace(/^(候補|解釈)[A-Z]:?\s*/i, '') || value;
   return `${name}を「${displayValue}」にしました`;
+};
+
+const resolveChoiceValueFromInput = (
+  choice: NonNullable<EventAssistantReply['choiceQuestion']>,
+  input: string,
+) => {
+  const normalized = input.trim();
+  if (!normalized) return null;
+  if (choice.key.startsWith('confirm_')) {
+    const normalizedLower = normalized.toLowerCase();
+    if (normalized === 'はい' || normalized === '了解' || normalizedLower === 'yes') return 'yes';
+    if (normalized === 'いいえ' || normalized === '修正' || normalizedLower === 'no') return 'no';
+  }
+  const options = choice.options ?? [];
+  const directMatch = options.find((opt) => opt.value === normalized || opt.label === normalized);
+  if (directMatch) return directMatch.value;
+  const normalizedLower = normalized.toLowerCase();
+  const fuzzyMatch = options.find(
+    (opt) => opt.label?.toLowerCase() === normalizedLower || opt.value?.toLowerCase() === normalizedLower,
+  );
+  return fuzzyMatch ? fuzzyMatch.value : null;
 };
 
 const storeConfirmedAnswer = (key: string, value: string) => {
@@ -776,8 +857,8 @@ const QUESTION_HELPERS: Record<
 > = {
   title: {
     title: '例',
-    lines: ['来週金曜のBBQナイト', '初心者向けゆる交流会'],
-    foot: '未定でもOK。ざっくりで大丈夫です。',
+    lines: ['来週金曜のBBQ', '三鷹での交流会'],
+    foot: '未定でもOKです。あとで変更できます。',
   },
   time: {
     title: '例',
@@ -873,12 +954,33 @@ const isEmptyConversation = computed(
 );
 const miniPreviewState = ref<EventAssistantReply['miniPreview'] | null>(null);
 const choiceQuestionState = ref<EventAssistantReply['choiceQuestion'] | null>(null);
+const readyMenuFallback = computed((): EventAssistantReply['choiceQuestion'] | null => {
+  if (
+    !explainMode.value &&
+    !isCompareModeUi.value &&
+    mode.value === 'chat' &&
+    lastReadyDraft.value &&
+    lastDraftReady.value
+  ) {
+    return {
+      key: 'ready_next_action',
+      prompt: '下書きが準備できました。どうしますか？',
+      options: [
+        { label: '下書きを見る', value: 'preview', recommended: true },
+        { label: '手動で編集', value: 'manual' },
+      ],
+    };
+  }
+  return null;
+});
 const compareCandidatesState = ref<EventAssistantReply['compareCandidates'] | null>(null);
 const showCandidateDetails = ref(false);
 const isInterruptChoice = computed(() => choiceQuestionState.value?.key === 'interrupt');
 const isConfirmChoice = computed(() => String(choiceQuestionState.value?.key ?? '').startsWith('confirm_'));
+const hasActiveQuestion = computed(() => Boolean(currentSlotKey.value));
 const shouldShowChoiceBlock = computed(() => {
   if (!choiceQuestionState.value?.options?.length) return false;
+  if (hasActiveQuestion.value) return false;
   return isConfirmChoice.value;
 });
 const choiceHelperText = computed(() => {
@@ -1255,7 +1357,7 @@ const pushAssistantMessageOnce = (
   if (isEventAssistantDebug.value && !messageSource) {
     console.warn('[EventAssistant][warn]', {
       requestId: lastRequestId.value,
-      conversationId: activeLogId.value ?? assistantSessionId.value ?? null,
+      conversationId: assistantSessionId.value ?? null,
       message: 'missing_message_source',
       action,
       text,
@@ -1329,9 +1431,15 @@ const handleSend = async (source: 'button' | 'enter' = 'button') => {
     /(就用这个吧?|可以开始了|按这个来|就这样|この内容で|この案で|これでいこう|これで進めて|これでOK|この内容で作って|この内容で作成|この案で作成)/i.test(
       content,
     );
-  const submitText = choiceQuestionState.value?.key
-    ? `【選択】${choiceQuestionState.value.key}:${content}`
-    : content;
+  let submitText = content;
+  if (choiceQuestionState.value?.key) {
+    const matchedValue = resolveChoiceValueFromInput(choiceQuestionState.value, content);
+    if (matchedValue) {
+      submitText = `【選択】${choiceQuestionState.value.key}:${matchedValue}`;
+    } else {
+      choiceQuestionState.value = null;
+    }
+  }
   chatDraft.value = '';
   currentQuestionId.value = null;
   nextTick(resetChatInputHeight);
@@ -1429,11 +1537,43 @@ const ensureExplainBubble = (lang: 'ja' | 'zh' | 'en') => {
   );
 };
 
+const handleChitchat = () => {
+  pushAssistantMessageOnce(
+    'この画面はイベント作成専用です。雑談はできませんが、イベント作成については続けられます。',
+    'system-safe',
+    'frontend.explain',
+    undefined,
+    { includeInContext: false },
+  );
+  pushAssistantMessageOnce(
+    'まずは、イベント内容を一文で入力してください。',
+    'system-safe',
+    'frontend.explain',
+    undefined,
+    { includeInContext: false },
+  );
+  if (!chatDraft.value.trim()) {
+    chatDraft.value = introMainExample;
+    nextTick(resizeChatInput);
+  }
+  chatInputRef.value?.focus();
+};
+
 const handleChatAnswer = async (text: string, submitText?: string) => {
   applyLanguageFromInput(text);
-  const shouldStayExplain = explainMode.value || isLocalHelpIntent(text);
+  if (isLocalHelpIntent(text)) {
+    introExpanded.value = true;
+    introDetailsExpanded.value = true;
+    pendingQuestion.value = null;
+    if (!chatDraft.value.trim()) {
+      chatDraft.value = introTemplateLine;
+      nextTick(resizeChatInput);
+    }
+    chatInputRef.value?.focus();
+    return;
+  }
+  const shouldStayExplain = explainMode.value;
   if (shouldStayExplain) {
-    explainMode.value = true;
     explainLanguage.value = detectLanguage(text) as 'ja' | 'zh' | 'en';
     pendingQuestion.value = null;
     await requestAssistantReply(submitText ?? text);
@@ -1587,7 +1727,7 @@ const requestAssistantReply = async (
   const isSelectionAction = /【選択】/.test(userText);
   const requestId = `ea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const messageId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const conversationId = activeLogId.value ?? assistantSessionId.value ?? null;
+  const conversationId = assistantSessionId.value ?? null;
   const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
   const clientLocale = navigator.language || qaState.baseLanguage || 'ja';
   lastRequestId.value = requestId;
@@ -1685,6 +1825,10 @@ const requestAssistantReply = async (
           uiMessage: rawUiMessageText,
           uiOptions,
         });
+    // ready_next_action 仅作为菜单展示，实际动作在 handleChoiceSelect 中处理
+    if (choiceQuestion?.key === 'ready_next_action') {
+      choiceQuestion.prompt = choiceQuestion.prompt || '下書きが準備できました。どうしますか？';
+    }
     if (choiceQuestion?.key === 'interrupt') {
       choiceQuestion = null;
     }
@@ -2107,8 +2251,12 @@ const toggleThinking = (messageId: string) => {
 };
 
 const openPlanPreview = (plan?: (GeneratedEventContent & { summary?: string }) | null) => {
-  if (!plan) return;
-  planPreview.value = plan;
+  const targetPlan =
+    plan ??
+    (lastReadyDraft.value as (GeneratedEventContent & { summary?: string }) | null) ??
+    (aiResult.value as (GeneratedEventContent & { summary?: string }) | null);
+  if (!targetPlan) return;
+  planPreview.value = targetPlan;
 };
 
 const closePlanPreview = () => {
@@ -2139,17 +2287,25 @@ const applyDefaultsToState = () => {
 };
 
 const buildQaSummary = (latestInput?: string) => {
+  const toStr = (v: unknown) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v.trim();
+    return String(v).trim();
+  };
   const parts: string[] = [];
   const draft = lastReadyDraft.value;
-  const title = draft?.title?.trim() || confirmedAnswers.title || getProfileValue(qaState.topic, 'topic');
+  const title = toStr(draft?.title) || confirmedAnswers.title || getProfileValue(qaState.topic, 'topic');
   if (title) parts.push(`タイトル: ${title}`);
-  const timeValue = draft?.schedule?.date || draft?.schedule?.startTime || confirmedAnswers.time;
-  const locationValue = draft?.schedule?.location || confirmedAnswers.location;
-  const priceValue = draft?.price ?? confirmedAnswers.price;
+  const timeValue =
+    toStr((draft as any)?.schedule?.date) ||
+    toStr((draft as any)?.schedule?.startTime) ||
+    toStr(confirmedAnswers.time);
+  const locationValue = toStr((draft as any)?.schedule?.location) || toStr(confirmedAnswers.location);
+  const priceValue = toStr((draft as any)?.price) || toStr(confirmedAnswers.price);
   if (timeValue) parts.push(`日時: ${timeValue}`);
   if (locationValue) parts.push(`場所: ${locationValue}`);
   if (priceValue) parts.push(`参加費: ${priceValue}`);
-  const extra = latestInput || qaState.details || '特記事項なし';
+  const extra = toStr(latestInput || qaState.details || '特記事項なし');
   return `AIの理解：${parts.join(' / ') || '概要未設定'}。補足情報: ${extra}`;
 };
 
@@ -2174,10 +2330,18 @@ const buildConversationMessages = () => {
     .slice(-10)
     .map((msg) => ({
       role: msg.role,
-      content:
-        msg.type === 'text'
-          ? msg.content
-          : `提案: ${msg.payload?.title ?? ''} ${msg.payload?.description ?? ''}`,
+      content: (() => {
+        if (msg.type !== 'text') {
+          return `提案: ${msg.payload?.title ?? ''} ${msg.payload?.description ?? ''}`;
+        }
+        const baseContent = msg.content;
+        if (msg.role !== 'assistant') return baseContent;
+        const reply = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+        const askKey = reply?.ui?.question?.key ?? null;
+        const choicePrompt = reply?.choiceQuestion?.prompt ?? '';
+        const contentWithChoice = choicePrompt ? `${baseContent}\n${choicePrompt}`.trim() : baseContent;
+        return askKey ? `${contentWithChoice} [ask:${askKey}]` : contentWithChoice;
+      })(),
     }));
 };
 
@@ -2202,21 +2366,24 @@ const getMessageDisplayText = (msg: ChatMessage) => {
     return selectionDisplay || msg.content || '';
   }
   const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
+  const normalizedContent = normalizeSelectionTokenForAssistant(msg.content || '');
   const questionText = contentJson?.ui?.question?.text;
   if (questionText && msg.content === questionText) {
+    const key = contentJson?.ui?.question?.key;
+    if (key === 'title') return 'イベントのタイトルを教えてください';
     return msg.content;
   }
   if (contentJson && msg.type === 'text') {
     const uiMessage = contentJson.ui?.message;
     if (uiMessage && msg.content === uiMessage) {
-      return msg.content;
+      return normalizeSelectionTokenForAssistant(msg.content || '');
     }
     const phase = resolvePhaseForMessage(msg);
     return pickPhaseMessage(phase, contentJson.turnCount);
   }
   const fallback =
     getAssistantDisplay({
-      content: msg.content,
+      content: normalizedContent,
       contentText: msg.contentText,
       contentJson: msg.contentJson ?? msg.payload?.assistantReply ?? null,
       payload: msg.payload?.assistantReply ? { assistantReply: msg.payload.assistantReply } : undefined,
@@ -2281,6 +2448,20 @@ const handleExplainBack = () => {
 
 const handleChoiceSelect = async (key: string, value: string) => {
   if (!key || !value || aiLoading.value) return;
+  // consume ready_next_action on client without发消息
+  if (key === 'ready_next_action') {
+    lastQuestionKeyPending.value = false;
+    if (value === 'preview') {
+      if (lastReadyDraft.value) {
+        openPlanPreview(lastReadyDraft.value as GeneratedEventContent);
+      }
+      return;
+    }
+    if (value === 'manual') {
+      goToForm(false);
+      return;
+    }
+  }
   autoScrollEnabled.value = true;
   const label = choiceQuestionState.value?.options.find((opt) => opt.value === value)?.label;
   storeConfirmedAnswer(key, label ?? value);
@@ -2546,7 +2727,9 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   lastTurnCount.value = log.turnCount || 0;
   lastLanguage.value = (log.language as string) || lastLanguage.value;
   activeLogId.value = log.id;
-  assistantSessionId.value = log.id || assistantSessionId.value;
+  if (!assistantSessionId.value) {
+    assistantSessionId.value = log.id || createSessionId();
+  }
   const restoredDraft = [...chatMessages.value]
     .reverse()
     .map((msg) => (msg.contentJson ?? (msg.payload as any)?.assistantReply ?? null) as Record<string, any> | null)
@@ -2635,7 +2818,7 @@ const logDraftVisibilityTrace = (label: string) => {
     hasMvpDraft,
     draftReadyForUi,
   });
-  const conversationId = activeLogId.value ?? assistantSessionId.value ?? null;
+  const conversationId = assistantSessionId.value ?? null;
   console.info('[EventAssistant][debug]', {
     requestId: lastRequestId.value,
     conversationId,
@@ -2847,7 +3030,7 @@ const goToForm = async (useAi: boolean) => {
     if (isEventAssistantDebug.value) {
       console.info('[EventAssistant][trace]', {
         requestId: lastRequestId.value,
-        conversationId: activeLogId.value ?? assistantSessionId.value ?? null,
+        conversationId: assistantSessionId.value ?? null,
         messageId: null,
         event: 'form_write',
         source: draftSource,
@@ -2865,7 +3048,7 @@ const goToForm = async (useAi: boolean) => {
     if (isEventAssistantDebug.value) {
       console.info('[EventAssistant][trace]', {
         requestId: lastRequestId.value,
-        conversationId: activeLogId.value ?? assistantSessionId.value ?? null,
+        conversationId: assistantSessionId.value ?? null,
         messageId: null,
         event: 'form_write',
         source: draftSource,
@@ -3083,11 +3266,12 @@ onUnmounted(() => {
   box-shadow: none;
   border: 1px solid rgba(148, 163, 184, 0.4);
   color: #111827;
+  cursor: pointer;
 }
 
 .intro-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -3102,30 +3286,78 @@ onUnmounted(() => {
   font-size: 15px;
   font-weight: 600;
 }
-.intro-subtitle {
+.intro-positioning {
+  margin: 0;
+  font-size: 12px;
+  color: #1f2937;
+  font-weight: 600;
+}
+.intro-action {
+  margin: 0;
+  font-size: 12px;
+  color: #111827;
+}
+.intro-action-sub {
   margin: 0;
   font-size: 12px;
   color: #64748b;
 }
-.intro-example-line {
-  margin: 0;
-  font-size: 12px;
-  color: #94a3b8;
-}
-.intro-toggle {
-  border: none;
-  background: transparent;
+.intro-main-example {
+  margin-top: 4px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
   color: #111827;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px 6px;
+  text-align: left;
 }
-
 .intro-expanded {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.intro-expander {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #94a3b8;
+}
+.intro-expander-line {
+  display: block;
+  width: 40%;
+  height: 2px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+.intro-expander-text {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.intro-expander-icon {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s ease;
+}
+.intro-expander-icon.is-open {
+  transform: rotate(180deg);
+}
+.intro-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.intro-section-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
 .intro-list {
   margin: 0;
@@ -3136,26 +3368,36 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 6px;
 }
-.intro-examples {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.intro-examples-title {
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
+.intro-list--muted {
   color: #64748b;
-  text-transform: uppercase;
 }
-.intro-examples-list {
+.intro-unknown {
   margin: 0;
-  padding-left: 14px;
   font-size: 12px;
-  color: #0f172a;
+  color: #64748b;
+}
+.intro-template {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  text-align: center;
+}
+.intro-details-toggle {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #475569;
+  text-align: left;
+}
+.intro-details {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .chip-row {
@@ -3825,6 +4067,16 @@ onUnmounted(() => {
 .question-helper-foot {
   margin: 0;
   color: #64748b;
+}
+.question-helper-action {
+  align-self: flex-start;
+  border: 1px solid #cbd5f5;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .ghost-link {

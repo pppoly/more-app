@@ -6,7 +6,9 @@ const PRICE_HINT_REGEX = /(円|元|無料|フリー|free|¥|\d{2,5}\s*(円|元))
 
 export interface FailureAnalysisInput {
   userText: string;
+  previousUserText?: string | null;
   previousAskedKey: string | null;
+  conversationReset?: boolean;
   promptPhase: string;
   uiPhase: string | null;
   missingKeys: string[];
@@ -17,6 +19,8 @@ export interface FailureAnalysisInput {
   uiMode: 'normal' | 'explain';
   uiAction: string | null;
   hasChoiceQuestion: boolean;
+  uiQuestionText: string | null;
+  choiceQuestionKey: string | null;
   parser: {
     timeOk: boolean;
     priceOk: boolean;
@@ -53,7 +57,12 @@ export const analyzeFailures = (
     signals.saidButMissing = true;
   }
 
+  const normalizedUserText = input.userText.trim();
+  const normalizedPreviousText = (input.previousUserText ?? '').trim();
+  const sameUserText = normalizedPreviousText.length > 0 && normalizedPreviousText === normalizedUserText;
   const repeatQuestion =
+    !input.conversationReset &&
+    sameUserText &&
     Boolean(input.nextQuestionKey) &&
     input.nextQuestionKey === input.previousAskedKey &&
     (input.candidateKeys.includes(input.nextQuestionKey ?? '') ||
@@ -114,6 +123,17 @@ export const analyzeFailures = (
   if (nextQuestionMissing) {
     failureTypes.push('NEXT_QUESTION_MISSING');
     signals.nextQuestionMissing = true;
+  }
+
+  if (input.uiQuestionText && input.hasChoiceQuestion) {
+    failureTypes.push('DUAL_ACTION');
+  }
+
+  if (
+    input.choiceQuestionKey?.startsWith('confirm_') &&
+    ['title', 'time', 'location', 'price'].some((key) => input.missingKeys.includes(key))
+  ) {
+    failureTypes.push('CONFIRM_WHILE_MISSING');
   }
 
   return { failureTypes, signals };

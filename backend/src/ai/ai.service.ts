@@ -22,7 +22,26 @@ import type {
   EventAssistantTurnLog,
   EventAssistantUiPhase as DiagnosticUiPhase,
   EventAssistantUiAction,
+  FailureType,
 } from './diagnostics/types';
+
+const FORBIDDEN_TEXT_MARKERS = [
+  'AIの理解：',
+  '--- Conversation ---',
+  '--- Assistant Prompt ---',
+  'SOCIALMORE AI 憲章',
+];
+
+export const sanitizeDraftText = (text?: string | null): string | null => {
+  if (!text) return null;
+  const trimmed = String(text).trim();
+  if (!trimmed) return null;
+  if (FORBIDDEN_TEXT_MARKERS.some((m) => trimmed.includes(m))) {
+    return null;
+  }
+  const compact = trimmed.replace(/\s+/g, ' ').trim();
+  return compact.length > 800 ? compact.slice(0, 800) : compact;
+};
 
 export interface GenerateEventContentDto {
   baseLanguage: string;
@@ -174,6 +193,35 @@ export interface AiAssistantExecutionPlan {
   prepChecklist?: string[];
 }
 
+const generatePrepChecklist = (draft: AiAssistantPublicDraft, locale: string): string[] => {
+  const scheduleText = draft.schedule?.date || draft.title || '';
+  const timeText = draft.schedule?.startTime || draft.schedule?.endTime || '';
+  const locationText = draft.schedule?.location || '';
+  const priceText = draft.price ? String(draft.price) : draft.riskNotice || '';
+  const lines: string[] = [];
+  const baseNotice = ['参加者へ事前案内：', scheduleText, timeText, locationText]
+    .filter(Boolean)
+    .join(' ');
+  if (baseNotice) {
+    lines.push(baseNotice.trim());
+  } else {
+    lines.push('参加者へ事前案内：日時・集合場所・参加費を事前に共有してください。');
+  }
+  const prepLine = priceText
+    ? `当日の持ち物/準備：参加費 ${priceText}、必要に応じて飲食・備品を案内してください。`
+    : '当日の持ち物/準備：必要な持ち物や備品があれば事前に知らせてください。';
+  lines.push(prepLine);
+  lines.push('集合/連絡：集合場所と緊急連絡先を事前に共有してください。');
+  lines.push('プライバシー：名前や連絡先の扱いに注意し、不要な情報収集は避けてください。');
+  if (locationText && /(公園|park|屋外|BBQ)/i.test(locationText)) {
+    lines.push('雨天/キャンセル：天候による変更時の連絡手段と返金ルールを決めておいてください。');
+  }
+  if (locale?.toLowerCase().startsWith('zh')) {
+    lines.push('中文提醒：请提前告知时间、地点、费用和集合方式，准备好联系方式。');
+  }
+  return lines;
+};
+
 export type Slots = {
   title?: string;
   time?: string;
@@ -189,6 +237,10 @@ export type Slots = {
   refundPolicy?: string;
   riskNotice?: string;
 };
+
+type SlotOrigin = 'explicit' | 'inferred' | 'llm' | 'selection';
+type SlotOrigins = Partial<Record<keyof Slots, SlotOrigin>>;
+type SlotConfirmations = Partial<Record<keyof Slots, boolean>>;
 
 export const detectUnsupportedCurrencyInput = (text: string) =>
   /元/.test(text) && !/円/.test(text) && !/日元/.test(text);
@@ -353,6 +405,16 @@ const SLOT_LABELS: Partial<Record<keyof Slots, string>> = {
   riskNotice: '注意事項',
 };
 
+const inferQuestionKeyFromText = (text?: string | null): keyof Slots | null => {
+  if (!text) return null;
+  if (/参加費|料金/i.test(text)) return 'price';
+  if (/日時|日程|時間/i.test(text)) return 'time';
+  if (/場所|会場/i.test(text)) return 'location';
+  if (/タイトル|イベント名/i.test(text)) return 'title';
+  if (/内容|詳細/i.test(text)) return 'details';
+  return null;
+};
+
 const FREE_TEXT_SLOTS = new Set<keyof Slots>(['title', 'details', 'refundPolicy', 'riskNotice']);
 
 const isLikelyPriceFreeText = (text: string) => {
@@ -451,6 +513,17 @@ export const isMetaComment = (text: string) => {
     /ずっと|永遠|ループ|また同じ|何度も|なんで|なぜ|おかしい|どうなって|進まない|質問ばかり|やめて|止めて|やめたい|おかしくない|納得できない/i.test(
       text,
     ) || /为什么|为何|一直|循环|卡住|到不了|不想|别再问|停止/i.test(text)
+  );
+};
+
+// Short fillers/affirmations that should NOT overwrite slots
+export const isAffirmationFiller = (text: string) => {
+  if (!text) return false;
+  const trimmed = text.trim();
+  return (
+    /^(对|是的|不是|不对|嗯|好的?|好吧|ok|okay|行|不了|不知道|不清楚|随便|随你|随意|怎么办|怎么搞|怎么弄|どうする|わからない)$/i.test(
+      trimmed,
+    ) || /^[?？]+$/.test(trimmed)
   );
 };
 
@@ -660,6 +733,8 @@ interface AiAssistantReplyPayload {
   compareCandidates?: AiAssistantCompareCandidate[];
   titleSuggestions?: string[];
   inputMode?: AssistantInputMode;
+  inputChannel?: 'text' | 'choice';
+  expectedSlotKey?: keyof Slots | null;
   nextQuestionKey?: keyof Slots | null;
   questionMeta?: AiAssistantQuestionMeta;
   uiMode?: 'explain' | 'collect' | 'decision';
@@ -772,6 +847,16 @@ export interface TranslateTextResult {
 @Injectable()
 export class AiService {
   private lastConversationId: string | null = null;
+  private turnIndexByConversationId: Map<string, number> | null = null;
+  private conversationStateById: Map<
+    string,
+    {
+      slots: Slots;
+      confirmations: SlotConfirmations;
+      confidence: Confidence;
+      origins: SlotOrigins;
+    }
+  > | null = null;
   private readonly client: OpenAI | null;
   private readonly model: string;
    // simple in-memory cache: key => { [targetLang]: translated }
@@ -815,9 +900,8 @@ export class AiService {
     phase: EventAssistantPromptPhase,
     params: Record<string, string>,
   ): Promise<{ systemPrompt: string; instruction: string; version: string }> {
-    const constitutionMode = String(process.env.EVENT_ASSISTANT_CONSTITUTION_MODE || 'off').toLowerCase();
     const isCollectPhase = phase === 'collect';
-    const allowConstitution = constitutionMode !== 'off' && (phase === 'ready' || phase === 'operate');
+    const allowConstitution = false;
     const stripConstitution = (text: string) => {
       if (!text) return text;
       const forbiddenMarkers = [
@@ -1028,7 +1112,12 @@ export class AiService {
       }
       logDebug('llm_call', { name, reason, allowed });
       if (!allowed) {
-        logWarn('llm_call_blocked', { name, reason });
+      logWarn('llm_call_blocked', { name, reason });
+    }
+    };
+    const recordDraftTextContamination = () => {
+      if (!logInvariantFailures.includes('DRAFT_TEXT_CONTAMINATED')) {
+        logInvariantFailures.push('DRAFT_TEXT_CONTAMINATED');
       }
     };
     const canCallLlm = (name: string, ctx: {
@@ -1073,6 +1162,12 @@ export class AiService {
         if (name === 'normalizer') {
           const allowed = ctx.turnIndex >= 1 && ctx.loopTriggered && !normalizerUsed && llmCallCount === 0;
           recordLlmCall(name, 'collect_loop_only', allowed);
+          if (allowed) llmCallCount += 1;
+          return allowed;
+        }
+        if (name === 'main_llm') {
+          const allowed = !ctx.loopTriggered && llmCallCount === 0;
+          recordLlmCall(name, 'collect_main_only', allowed);
           if (allowed) llmCallCount += 1;
           return allowed;
         }
@@ -1452,6 +1547,10 @@ export class AiService {
         '--- Conversation ---',
         'You are the SOCIALMORE',
         'Current stage:',
+        'AI Constitution',
+        '使命（第0条）',
+        'Coach Mode',
+        'Editor Mode',
       ];
       return markers.some((marker) => text.includes(marker));
     };
@@ -1469,6 +1568,9 @@ export class AiService {
     ): { text: string; source: 'userText' | 'rejected' } => {
       if (!text) return { text: '', source: 'rejected' };
       const trimmed = text.trim();
+      if (trimmed.startsWith('【選択】')) {
+        return { text: '', source: 'userText' };
+      }
       if (containsConstitutionMarkers(trimmed)) {
         return { text: '', source: 'rejected' };
       }
@@ -1630,7 +1732,6 @@ export class AiService {
       return templates.slice(0, 7);
     };
 
-    type SlotOrigin = 'explicit' | 'inferred' | 'llm' | 'selection';
     let priceCurrencyChoice: 'jpy' | 'cny' | 'reenter' | null = null;
     const extractSlots = (
       conversationMessages: AssistantConversationMessage[],
@@ -1700,9 +1801,18 @@ export class AiService {
       }
 
       const userMessages = conversationMessages.filter((msg) => msg.role === 'user');
+      const lastAssistantMessage =
+        [...conversationMessages].reverse().find((msg) => msg.role === 'assistant')?.content ?? '';
       let hasRulePaste = false;
       let fieldRouterSelection: keyof Slots | 'other' | null = null;
       const allUserText = userMessages.map((m) => m.content || '').join(' ');
+      const extractConfirmedValueFromPrompt = (key: keyof Slots, text: string) => {
+        if (!text) return null;
+        const label = SLOT_LABELS[key];
+        if (!label) return null;
+        const match = text.match(new RegExp(`${label}は「(.+?)」でよいですか`, 'i'));
+        return match?.[1]?.trim() ?? null;
+      };
 
       for (const msg of userMessages) {
         const text = msg.content || '';
@@ -1839,7 +1949,15 @@ export class AiService {
           const isYes = /^(はい|yes|y|ok|了解|是|对|好)$/i.test(normalizedValue);
           const isNo = /^(いいえ|no|n|不|不是|否|不要)$/i.test(normalizedValue);
           if (isConfirmKey && Object.prototype.hasOwnProperty.call(confidence, targetKey)) {
-            if (isYes) confirmations[targetKey] = true;
+            if (isYes) {
+              confirmations[targetKey] = true;
+              if (!slots[targetKey]) {
+                const confirmedValue = extractConfirmedValueFromPrompt(targetKey, lastAssistantMessage);
+                if (confirmedValue) {
+                  setSlot(targetKey, confirmedValue, 0.85, 'explicit');
+                }
+              }
+            }
             if (isNo) denials[targetKey] = true;
             continue;
           }
@@ -2212,14 +2330,24 @@ export class AiService {
       } as const;
     };
     const detectAskedSlot = (message: string): keyof Slots | null => {
+      if (!message) return null;
+      const markerMatch = message.match(/\[ask:(title|time|location|price|capacity|details|audience|activityType)\]/i);
+      if (markerMatch?.[1]) return markerMatch[1] as keyof Slots;
       const lower = message.toLowerCase();
-      if (/日時|いつ|何時|日程|時間/.test(message) || /(time|when)/.test(lower)) return 'time';
-      if (/場所|どこ|会場|オンライン/.test(message) || /(where|location)/.test(lower)) return 'location';
-      if (/参加費|料金|価格|いくら|予算/.test(message) || /(price|fee|cost|budget)/.test(lower))
+      if (/日時|いつ|何時|日程|時間|时间|什么时候|何时|几点/.test(message) || /(time|when)/.test(lower))
+        return 'time';
+      if (/場所|どこ|会場|オンライン|地点|哪里|哪裡|地址/.test(message) || /(where|location)/.test(lower))
+        return 'location';
+      if (/参加費|料金|価格|いくら|予算|费用|價格|多少钱|多少錢|收费/.test(message) || /(price|fee|cost|budget)/.test(lower))
         return 'price';
-      if (/タイトル|題名/.test(message) || /(title|name)/.test(lower)) return 'title';
-      if (/定員|人数/.test(message)) return 'capacity';
-      if (/内容|詳細|説明|雰囲気/.test(message) || /(details|description)/.test(lower)) return 'details';
+      if (/タイトル|題名|标题|標題|名称|名字/.test(message) || /(title|name)/.test(lower)) return 'title';
+      if (/対象|誰向け|参加者|对象|對象|人群|面向/.test(message) || /(audience|who)/.test(lower))
+        return 'details';
+      if (/形式|タイプ|どんなイベント|类型|類型/.test(message) || /(type|format)/.test(lower))
+        return 'details';
+      if (/定員|人数|人數|上限/.test(message) || /(capacity|limit)/.test(lower)) return 'capacity';
+      if (/内容|詳細|説明|雰囲気|说明|說明|規則|氛围/.test(message) || /(details|description)/.test(lower))
+        return 'details';
       if (/申込フォーム|申込項目|質問項目|フォーム項目/.test(message) || /(registration|form)/.test(lower))
         return 'registrationForm';
       if (/参加承認|承認/.test(message)) return 'requireApproval';
@@ -2262,18 +2390,35 @@ export class AiService {
         })),
       };
     };
+    const cleanDraftText = (text?: string | null): string | null => {
+      const cleaned = sanitizeDraftText(text);
+      if (text && cleaned === null) {
+        recordDraftTextContamination();
+      }
+      return cleaned;
+    };
     const sanitize = (text?: string | null) => {
       if (!text) return text ?? '';
+      const cleaned = cleanDraftText(text);
+      if (!cleaned) return '';
       const banned = ['AI 憲章', 'AI憲章', '憲章', 'AI Constitution', 'SOCIALMORE AI', 'SOCIALMORE', 'You are MORE App', 'Rules:'];
-      const lower = text.toLowerCase();
-      const hasLeak = banned.some((kw) => text.includes(kw)) || lower.includes('constitution');
-      if (hasLeak || text.length > 400) return '';
-      return text;
+      const lower = cleaned.toLowerCase();
+      const hasLeak = banned.some((kw) => cleaned.includes(kw)) || lower.includes('constitution');
+      if (hasLeak || cleaned.length > 400) {
+        recordDraftTextContamination();
+        return '';
+      }
+      return cleaned;
     };
     const conversation = (payload.conversation ?? []).slice(-12);
     const turnCount = conversation.filter((msg) => msg.role === 'user').length;
     const latestUserMessage =
       [...conversation].reverse().find((msg) => msg.role === 'user')?.content ?? '';
+    const previousUserMessage =
+      [...conversation]
+        .slice(0, Math.max(0, conversation.length - 1))
+        .reverse()
+        .find((msg) => msg.role === 'user')?.content ?? '';
     let turnIndex = Math.max(0, turnCount - 1);
     const conversationReset =
       Boolean(payload.conversationId) &&
@@ -2281,6 +2426,16 @@ export class AiService {
       payload.conversationId !== this.lastConversationId;
     if (conversationReset) {
       turnIndex = 0;
+    }
+    if (!this.turnIndexByConversationId) {
+      this.turnIndexByConversationId = new Map<string, number>();
+    }
+    if (payload.conversationId) {
+      const lastTurnIndex = this.turnIndexByConversationId.get(payload.conversationId);
+      if (typeof lastTurnIndex === 'number' && turnIndex <= lastTurnIndex) {
+        turnIndex = lastTurnIndex + 1;
+      }
+      this.turnIndexByConversationId.set(payload.conversationId, turnIndex);
     }
     this.lastConversationId = payload.conversationId ?? null;
     const uiAction: EventAssistantUiAction = payload.uiAction ?? (payload.action ?? null);
@@ -2299,6 +2454,7 @@ export class AiService {
     let logPreviousAskedKey: string | null = null;
     let logUnitSlipPrompted = false;
     let logNonEventInput = false;
+    let logInvariantFailures: FailureType[] = [];
     let logParserTime = {
       rawText: null as string | null,
       candidateStartAt: null as string | null,
@@ -2338,6 +2494,7 @@ export class AiService {
       const uiMode = reply.ui?.mode === 'explain' || payload.uiMode === 'explain' ? 'explain' : 'normal';
       const assistantMessageText = reply.ui?.message ?? reply.message ?? '';
       const uiQuestionText = reply.ui?.question?.text ?? null;
+      const choiceQuestionKey = reply.choiceQuestion?.key ?? null;
       const draftSummary = buildDraftSummary(reply.publicActivityDraft as AiAssistantPublicDraft | null);
       const uiPhaseForLog =
         logUiPhase && logUiPhase !== 'unknown'
@@ -2350,7 +2507,9 @@ export class AiService {
       }
       const failureAnalysis = analyzeFailures({
         userText: latestUserMessage,
+        previousUserText: previousUserMessage,
         previousAskedKey: logPreviousAskedKey,
+        conversationReset,
         promptPhase: normalizedPromptPhase,
         uiPhase: logUiPhase === 'unknown' ? null : logUiPhase,
         missingKeys: logMissingKeys,
@@ -2361,6 +2520,8 @@ export class AiService {
         uiMode,
         uiAction,
         hasChoiceQuestion: Boolean(reply.choiceQuestion),
+        uiQuestionText,
+        choiceQuestionKey,
         parser: {
           timeOk: logParserTime.ok,
           priceOk: logParserPrice.ok,
@@ -2379,6 +2540,13 @@ export class AiService {
       }
       if (logNonEventInput) {
         failureAnalysis.failureTypes.push('NON_EVENT_INPUT');
+      }
+      if (logInvariantFailures.length) {
+        logInvariantFailures.forEach((failure) => {
+          if (!failureAnalysis.failureTypes.includes(failure)) {
+            failureAnalysis.failureTypes.push(failure);
+          }
+        });
       }
       const entry: EventAssistantTurnLog = {
         ts: new Date().toISOString(),
@@ -2407,6 +2575,8 @@ export class AiService {
           candidateKeys: logCandidateKeys,
           confirmedKeys: logConfirmedKeys,
           nextQuestionKey: logNextQuestionKey,
+          inputChannel: reply.inputChannel,
+          expectedSlotKey: reply.expectedSlotKey ?? null,
           draftReady: logDraftReady,
           messageSource: logMessageSource,
           decisionTrace: logDecisionTrace,
@@ -2442,6 +2612,178 @@ export class AiService {
       }
     };
     const finalizeAndReturn = async (reply: AiAssistantReply) => {
+      const promptPhase = (reply as any).promptPhase as string | undefined;
+      const isReadyPhase = reply.draftReady || promptPhase === 'ready';
+      if (isReadyPhase) {
+        (reply as any).promptPhase = 'ready';
+        (reply as any).uiPhase = (reply as any).uiPhase ?? 'ready';
+        reply.nextQuestionKey = null;
+        reply.expectedSlotKey = null;
+        reply.inputMode = reply.inputMode ?? ('choice' as AssistantInputMode);
+        if (reply.ui?.question) {
+          reply.ui.question = undefined;
+        }
+        const stripAskText = (text?: string | null) =>
+          text && /教えてください/.test(text) ? '' : text ?? '';
+        reply.message = stripAskText(reply.message) || undefined;
+        if (reply.ui) {
+          reply.ui.message = stripAskText(reply.ui.message) || undefined;
+        }
+        if (reply.choiceQuestion && reply.choiceQuestion.key?.startsWith('confirm_')) {
+          reply.choiceQuestion = undefined;
+        }
+        if (!reply.choiceQuestion) {
+          reply.choiceQuestion = {
+            key: 'ready_next_action' as any,
+            prompt: '下書きが準備できました。どうしますか？',
+            options: [
+              { label: '下書きを見る', value: 'preview', recommended: true },
+              { label: '手動で編集', value: 'manual' },
+            ],
+          };
+        }
+      }
+      const readyChoiceAllowed =
+        isReadyPhase &&
+        reply.choiceQuestion &&
+        ['ready_next_action', 'ready_actions'].includes(reply.choiceQuestion.key as string);
+      if (
+        reply.draftReady &&
+        (reply.ui?.question?.text ||
+          (reply.choiceQuestion && !readyChoiceAllowed) ||
+          (reply.choiceQuestion &&
+            readyChoiceAllowed &&
+            (reply.choiceQuestion.key?.startsWith('confirm_') ||
+              (reply.choiceQuestion.key as any) === 'interrupt')))
+      ) {
+        const error = new Error('ready_regression');
+        if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+          throw error;
+        }
+        logInvariantFailures.push('READY_REGRESSION');
+      }
+      const scrubText = (text?: string | null) =>
+        typeof text === 'string' && containsConstitutionMarkers(text) ? '' : text ?? '';
+      const scrubObjectStrings = (obj: any): any => {
+        if (!obj) return obj;
+        if (typeof obj === 'string') return scrubText(obj);
+        if (Array.isArray(obj)) return obj.map((item) => scrubObjectStrings(item)).filter(Boolean);
+        if (typeof obj === 'object') {
+          const next: Record<string, unknown> = {};
+          Object.entries(obj).forEach(([k, v]) => {
+            const cleaned = scrubObjectStrings(v);
+            if (cleaned !== '' && cleaned !== null && cleaned !== undefined) {
+              next[k] = cleaned;
+            }
+          });
+          return next;
+        }
+        return obj;
+      };
+      reply.message = scrubText(reply.message) || undefined;
+      if (reply.ui) {
+        reply.ui.message = scrubText(reply.ui.message) || undefined;
+        if (reply.ui.question) {
+          reply.ui.question = {
+            ...reply.ui.question,
+            text: scrubText(reply.ui.question.text) || '',
+          };
+        }
+      }
+      if (reply.choiceQuestion) {
+        reply.choiceQuestion.prompt = scrubText(reply.choiceQuestion.prompt) || '';
+        reply.choiceQuestion.options = reply.choiceQuestion.options?.map((opt) => ({
+          ...opt,
+          label: scrubText(opt.label) || '',
+          value: scrubText(opt.value) || '',
+        }));
+      }
+      if (reply.publicActivityDraft) {
+        reply.publicActivityDraft = scrubObjectStrings(reply.publicActivityDraft);
+      }
+      if (reply.internalExecutionPlan?.prepChecklist) {
+        reply.internalExecutionPlan.prepChecklist = reply.internalExecutionPlan.prepChecklist
+          .map((line) => scrubText(line) || '')
+          .filter(Boolean);
+      }
+      const gatherStrings = (): string[] => {
+        const texts: string[] = [];
+        const push = (v?: string | null) => {
+          if (typeof v === 'string') texts.push(v);
+        };
+        push(reply.message);
+        push(reply.ui?.message);
+        push(reply.ui?.question?.text);
+        push(reply.choiceQuestion?.prompt);
+        reply.choiceQuestion?.options?.forEach((opt) => {
+          push(opt.label);
+          push(opt.value);
+        });
+        const draftFields =
+          reply.publicActivityDraft && typeof reply.publicActivityDraft === 'object'
+            ? reply.publicActivityDraft
+            : null;
+        const collectDraftStrings = (obj: Record<string, unknown> | null | undefined) => {
+          if (!obj) return;
+          Object.values(obj).forEach((v) => {
+            if (typeof v === 'string') push(v);
+            if (Array.isArray(v)) {
+              v.forEach((item) => {
+                if (typeof item === 'string') push(item);
+                if (item && typeof item === 'object') collectDraftStrings(item as Record<string, unknown>);
+              });
+            }
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+              collectDraftStrings(v as Record<string, unknown>);
+            }
+          });
+        };
+        collectDraftStrings(draftFields as Record<string, unknown> | null);
+        if (reply.internalExecutionPlan?.prepChecklist) {
+          reply.internalExecutionPlan.prepChecklist.forEach((line) => push(line));
+        }
+        return texts;
+      };
+      const leakTexts = gatherStrings().filter((t) => containsConstitutionMarkers(t));
+      if (leakTexts.length) {
+        const error = new Error('constitution_leak');
+        if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+          throw error;
+        }
+        logInvariantFailures.push('CONSTITUTION_LEAK');
+      }
+      if (reply.ui?.question?.text && reply.choiceQuestion) {
+        const error = new Error('dual_action_output');
+        if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+          throw error;
+        }
+        logInvariantFailures.push('DUAL_ACTION');
+      }
+      const requiredMissing = logMissingKeys.filter((key) =>
+        ['title', 'time', 'location', 'price'].includes(key),
+      );
+      if (reply.choiceQuestion?.key?.startsWith('confirm_') && requiredMissing.length) {
+        const error = new Error('confirm_while_missing');
+        if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+          throw error;
+        }
+        logInvariantFailures.push('CONFIRM_WHILE_MISSING');
+      }
+      if (reply.ui?.question?.text && !reply.nextQuestionKey && !reply.expectedSlotKey) {
+        const error = new Error('next_question_missing');
+        if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+          throw error;
+        }
+        logInvariantFailures.push('NEXT_QUESTION_MISSING');
+      }
+      if (payload.conversationId && this.conversationStateById) {
+        this.conversationStateById.set(payload.conversationId, {
+          slots,
+          confirmations: slotConfirmations,
+          confidence,
+          origins: slotOrigins,
+        });
+      }
       logMessageSource = reply.messageSource ?? logMessageSource;
       logNextQuestionKey = reply.nextQuestionKey ?? null;
       logDraftReady = Boolean(reply.draftReady);
@@ -2558,6 +2900,7 @@ export class AiService {
     const interruptSelectionMatch = latestUserMessage.match(/【選択】\s*interrupt\s*[:：]\s*([a-z_]+)/i);
     const interruptChoice = interruptSelectionMatch?.[1]?.toLowerCase() ?? null;
     const metaCommentRaw = !interruptChoice && isMetaComment(latestUserMessage);
+    const isAffirmation = isAffirmationFiller(latestUserMessage);
     const isSelectionAction = /【選択】/.test(latestUserMessage);
     const detectedLanguage = this.detectLanguage(latestUserMessage, payload.baseLanguage);
     const confirmDraft = payload.action === 'confirm_draft';
@@ -2762,18 +3105,64 @@ export class AiService {
     logPreviousAskedKey = lastAskedSlot ? String(lastAskedSlot) : null;
     const reviseState: 'select_field' | 'edit_field' | null =
       isReviseSelectStep ? 'select_field' : continueEdit && lastAskedSlot ? 'edit_field' : null;
+    const lastUserAnswer = latestUserMessage.trim();
+    let expectedSlotKey: keyof Slots | null = null;
+    if (!expectedSlotKey && lastAskedSlot) {
+      expectedSlotKey = lastAskedSlot;
+    }
     const conversationForSlots =
       (metaComment || helpIntent || isReviseSelectStep) && lastUserIndex >= 0
         ? conversation.slice(0, lastUserIndex)
         : conversation;
     const extracted = extractSlots(conversationForSlots, payload);
-    const slots = extracted.slots;
-    const confidence = extracted.confidence;
+    let slots = extracted.slots;
+    let confidence = extracted.confidence;
     const intent = extracted.intent;
-    const slotOrigins = extracted.origins;
-    const slotConfirmations = extracted.confirmations;
+    let slotOrigins = extracted.origins;
+    let slotConfirmations = extracted.confirmations;
     const slotDenials = extracted.denials;
+    if (!this.conversationStateById) {
+      this.conversationStateById = new Map();
+    }
+    const conversationState =
+      payload.conversationId ? this.conversationStateById.get(payload.conversationId) : null;
+    if (conversationState) {
+      slots = { ...conversationState.slots, ...slots };
+      confidence = { ...conversationState.confidence, ...confidence };
+      slotOrigins = { ...conversationState.origins, ...slotOrigins };
+      slotConfirmations = {
+        ...conversationState.confirmations,
+        ...slotConfirmations,
+      };
+      (Object.keys(slotConfirmations) as (keyof Slots)[]).forEach((key) => {
+        slotConfirmations[key] = Boolean(slotConfirmations[key]);
+      });
+      (Object.keys(confidence) as (keyof Slots)[]).forEach((key) => {
+        const prev = conversationState.confidence[key] ?? 0;
+        const next = confidence[key] ?? 0;
+        confidence[key] = Math.max(prev, next);
+      });
+    }
     const hasUnsupportedCurrencyBase = detectUnsupportedCurrencyInput(latestUserMessage);
+    if (
+      lastAskedSlot === 'title' &&
+      lastUserAnswer &&
+      !isSelectionAction &&
+      !helpIntent &&
+      !metaComment &&
+      !isAffirmation &&
+      !confirmDraft &&
+      !continueEdit &&
+      !isDelegateTitleAnswer(lastUserAnswer)
+    ) {
+      const normalizedTitle = lastUserAnswer.trim();
+      if (normalizedTitle) {
+        slots.title = normalizedTitle;
+        confidence.title = Math.max(confidence.title ?? 0, 0.85);
+        slotOrigins.title = 'explicit';
+        slotConfirmations.title = true;
+      }
+    }
     const effectiveInputMode: AssistantInputMode = continueEdit ? 'fill' : inputMode;
     const compareCandidatesForPrompt =
       effectiveInputMode === 'compare' ? extractCompareCandidates(latestUserMessage) : [];
@@ -2785,6 +3174,9 @@ export class AiService {
     const prevExtracted = extractSlots(prevConversation, payload);
     const prevSlots = prevExtracted.slots;
     const prevConfidence = prevExtracted.confidence;
+    const prevConfirmedKeys = (Object.keys(prevExtracted.confirmations) as (keyof Slots)[]).filter(
+      (key) => prevExtracted.confirmations[key],
+    );
     const hasSlotDelta = (Object.keys(slots) as (keyof Slots)[]).some((key) => {
       const nextValue = slots[key];
       if (!nextValue) return false;
@@ -2804,15 +3196,19 @@ export class AiService {
       (Object.keys(parsedSlots) as (keyof Slots)[]).forEach((key) => {
         const value = parsedSlots[key];
         if (!value) return;
-        if (key === 'time' || key === 'price' || key === 'capacity') return;
+        const cleanedValue = typeof value === 'string' ? cleanDraftText(value) : null;
+        if (typeof value === 'string' && !cleanedValue) {
+          return;
+        }
+        const nextValue = cleanedValue ?? (value as string);
         if (key === 'title') {
-          const trimmed = value.trim();
+          const trimmed = nextValue.trim();
           if (!trimmed || isDelegateTitleAnswer(trimmed)) return;
           if (trimmed === latestUserMessage.trim()) return;
         }
         const conf = typeof parsed.confidence?.[key] === 'number' ? parsed.confidence?.[key] : 0.7;
         if ((confidence[key] ?? 0) <= conf) {
-          slots[key] = value.trim();
+          slots[key] = nextValue.trim();
           confidence[key] = conf;
           slotOrigins[key] = 'llm';
         }
@@ -2821,7 +3217,13 @@ export class AiService {
         delete slots.details;
         confidence.details = 0;
       }
-      if (turnCount <= 1 && slots.title === latestUserMessage.trim() && !parsed.slots?.title) {
+      if (
+        turnCount <= 1 &&
+        slots.title === latestUserMessage.trim() &&
+        !parsed.slots?.title &&
+        slotOrigins.title !== 'explicit' &&
+        !slotConfirmations.title
+      ) {
         delete slots.title;
         confidence.title = 0;
       }
@@ -2871,16 +3273,31 @@ export class AiService {
       !lastAskedSlot &&
       !hasSlotDelta &&
       !hasTimeSignalHint &&
+      !isLikelyAnswerForSlot('title', latestUserMessage) &&
       !isLikelyPriceFreeText(latestUserMessage) &&
       Boolean(latestUserMessage.trim());
     if (followupUnknownNoDelta) {
+      const fallbackMissing = requiredSlots.filter((key) => {
+        const value = slots[key];
+        if (!value) return true;
+        if (key === 'title' && isInvalidTitleValue(value)) return true;
+        if (key === 'time' && !hasExplicitTimeRange(String(value))) return true;
+        if (key === 'price' && !hasExplicitPrice(String(value)) && !isFreeText(String(value))) return true;
+        return false;
+      });
+      const fallbackPriority: (keyof Slots)[] = ['time', 'location', 'price', 'title'];
+      const fallbackNext =
+        fallbackPriority.find((key) => fallbackMissing.includes(key)) ?? fallbackMissing[0] ?? null;
+      logMissingKeys = fallbackMissing.map((key) => String(key));
+      logNextQuestionKey = fallbackNext ? String(fallbackNext) : null;
+      logPromptPhase = 'collect';
+      logUiPhase = 'collecting';
       const clarifyMessage =
         routedLanguage.startsWith('zh')
           ? 'まだ必要な情報が分かりません。标题/时间/地点/参加费のどれかを教えてください。'
           : routedLanguage === 'en'
           ? 'I still need at least one detail. Please share a title, time, location, or price.'
           : 'まだ必要な情報が分かりません。タイトル・日時・場所・参加費のいずれかを教えてください。';
-      logPromptPhase = 'collect';
       return await finalizeAndReturn({
         status: 'collecting',
         state: 'collecting',
@@ -2920,7 +3337,7 @@ export class AiService {
       if (origin === 'explicit' && (confidence[key] ?? 0) >= 0.6) return 'confirmed';
       return 'candidate';
     };
-    const fieldStatus: Record<keyof Slots, FieldStatus> = {
+    let fieldStatus: Record<keyof Slots, FieldStatus> = {
       title: resolveFieldStatus('title'),
       time: resolveFieldStatus('time'),
       location: resolveFieldStatus('location'),
@@ -2944,6 +3361,14 @@ export class AiService {
     logMissingKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
       .filter((key) => fieldStatus[key] === 'missing')
       .map((key) => String(key));
+
+    if (isSelectionAction && prevConfirmedKeys.length && logConfirmedKeys.length === 0) {
+      const error = new Error('choice_reset_state');
+      if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+      logInvariantFailures.push('CHOICE_RESET_STATE');
+    }
 
     const parseReviseField = (text: string): keyof Slots | null => {
       if (!text) return null;
@@ -3148,10 +3573,9 @@ export class AiService {
     }
     const timeParserInput = sanitizeParserInput(latestUserMessage, 'time');
     const timeSourceText = timeParserInput.text;
-    const hasTimeSignal =
-      /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|点|時|\d{1,2}[:：]\d{2}/.test(
-        timeSourceText,
-      ) || Boolean(slots.time);
+    const hasTimeSignal = /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|点|時|\d{1,2}[:：]\d{2}/.test(
+      timeSourceText,
+    );
     const structuredTime =
       hasTimeSignal && timeSourceText ? buildStructuredSchedule(timeSourceText) : null;
     logDebug('time_parse', {
@@ -3165,10 +3589,9 @@ export class AiService {
       messageId: payload.messageId ?? null,
     });
     const timeOk =
-      (Boolean(slots.time) && (confidence.time ?? 0) >= 0.6) ||
-      (timeParserInput.source !== 'rejected' &&
-        hasTimeSignal &&
-        Boolean(structuredTime?.startTime || hasExplicitTimeRange(timeSourceText)));
+      timeParserInput.source !== 'rejected' &&
+      hasTimeSignal &&
+      Boolean(structuredTime?.startTime || hasExplicitTimeRange(timeSourceText));
     logParserTime = {
       rawText: timeSourceText || null,
       candidateStartAt: structuredTime?.startTime ?? null,
@@ -3188,31 +3611,49 @@ export class AiService {
         ? 'no_range'
         : 'not_attempted',
     };
-    if (timeOk && !slots.time && timeSourceText.trim() && structuredTime?.startTime) {
-      slots.time = timeSourceText.trim();
-      confidence.time = Math.max(confidence.time ?? 0, 0.85);
-      slotOrigins.time = 'explicit';
+    if (timeOk && timeSourceText.trim() && structuredTime?.startTime) {
+      if (!slots.time || (confidence.time ?? 0) < 0.6) {
+        slots.time = timeSourceText.trim();
+        confidence.time = Math.max(confidence.time ?? 0, 0.85);
+        slotOrigins.time = 'explicit';
+      }
+      slotConfirmations.time = true;
     }
     const priceParserInput = sanitizeParserInput(latestUserMessage, 'price');
     const priceSourceText = priceParserInput.text;
     const stripTimeFragments = (text: string) => {
       if (!text) return '';
-      const withoutRanges = text.replace(/(\d{1,2}[:：]\d{2}\s*[-〜~－]\s*\d{1,2}[:：]\d{2})/g, ' ');
-      const withoutCnRanges = withoutRanges.replace(/(\d{1,2}\s*点\s*(半)?\s*(到|〜|~|-|－)\s*\d{1,2}\s*点\s*(半)?)/g, ' ');
-      const withoutCnTime = withoutCnRanges.replace(/(\d{1,2})\s*点(半)?/g, ' ');
-      const withoutDay = withoutCnTime.replace(/(下周|下星期|周|星期)\s*[一二三四五六日天]/g, ' ');
+      const withoutDate = text.replace(/(\d{1,2}\/\d{1,2})/g, ' ');
+      const withoutRanges = withoutDate.replace(
+        /(\d{1,2}[:：]\d{2}\s*[-〜~－–—]\s*\d{1,2}[:：]\d{2})/g,
+        ' ',
+      );
+      const withoutShortRanges = withoutRanges.replace(/(\d{1,2}\s*[-〜~－–—]\s*\d{1,2})/g, ' ');
+      const withoutCnRanges = withoutShortRanges.replace(
+        /(\d{1,2}\s*点\s*(半)?\s*(到|〜|~|-|－|–|—)\s*\d{1,2}\s*点\s*(半)?)/g,
+        ' ',
+      );
+      const withoutCnRangeWords = withoutCnRanges.replace(/([一二三四五六七八九十]+)\s*点\s*(半)?\s*(到|〜|~|-|－)\s*([一二三四五六七八九十]+)\s*点\s*(半)?/g, ' ');
+      const withoutCnTime = withoutCnRangeWords.replace(/(\d{1,2})\s*点(半)?/g, ' ');
+      const withoutCnTimeWords = withoutCnTime.replace(/([一二三四五六七八九十]+)\s*点(半)?/g, ' ');
+      const withoutDay = withoutCnTimeWords.replace(/(下周|下星期|周|星期)\s*[一二三四五六日天]/g, ' ');
       return withoutDay.replace(/\s+/g, ' ').trim();
     };
     const priceRaw = stripTimeFragments(priceSourceText || '');
     const hasPriceSignal = /(円|元|無料|フリー|free|¥|￥|参加費|料金|一人|每人|AA)/i.test(priceRaw);
-    const priceAmountMatch = hasPriceSignal ? priceRaw.match(/(\d{1,5})/) : null;
+    const amountWithUnitMatch = priceRaw.match(/(\d{1,7})\s*(日?円|¥|￥|元|JPY|CNY|RMB)/i);
+    const numericMatches = hasPriceSignal ? [...priceRaw.matchAll(/(\d{1,7})/g)] : [];
+    const fallbackAmountMatch = numericMatches.length ? numericMatches[numericMatches.length - 1] : null;
+    const priceAmountMatch = amountWithUnitMatch ?? fallbackAmountMatch;
     const priceAmount = priceAmountMatch ? Number(priceAmountMatch[1]) : null;
     const priceType = /\/人|一人|每人/.test(priceRaw) ? 'per_person' : isFreeText(priceRaw) ? 'free' : 'flat';
-    const unitRawMatch = priceRaw.match(/(円|元|¥|JPY|CNY|RMB)/i);
+    const unitRawMatch = priceRaw.match(/(日元|円|元|¥|JPY|CNY|RMB)/i);
     const unitRaw = unitRawMatch?.[1]
-      ? unitRawMatch[1].toUpperCase() === 'RMB'
-        ? 'CNY'
-        : unitRawMatch[1]
+      ? unitRawMatch[1] === '日元'
+        ? 'JPY'
+        : unitRawMatch[1].toUpperCase() === 'RMB'
+          ? 'CNY'
+          : unitRawMatch[1]
       : 'UNKNOWN';
     const isCnyUnit = unitRaw === '元' || unitRaw === 'CNY';
     const unitSlipCandidate = isProbableYuanSlip({
@@ -3222,12 +3663,22 @@ export class AiService {
       amount: priceAmount,
       unitRaw: unitRaw === 'UNKNOWN' ? '' : unitRaw,
     });
-    let priceOk = Boolean((priceAmount && hasPriceSignal) || isFreeText(priceRaw));
+    const allowBareAmount =
+      !hasPriceSignal &&
+      lastAskedSlot === 'price' &&
+      Boolean(priceAmountMatch) &&
+      !/(点|時|:)/.test(priceRaw);
+    let priceOk = Boolean((priceAmount && hasPriceSignal) || isFreeText(priceRaw) || allowBareAmount);
     let priceReason = priceOk ? 'parsed' : priceRaw.trim() ? 'no_amount' : 'ambiguous';
     let priceCurrency: string | null = priceOk ? 'JPY' : null;
     if (priceParserInput.source === 'rejected' || !priceRaw.trim()) {
       priceOk = false;
       priceReason = 'not_attempted';
+    }
+    if (lastAskedSlot === 'time' && !hasPriceSignal) {
+      priceOk = false;
+      priceReason = 'not_attempted';
+      priceCurrency = null;
     }
     if (isCnyUnit) {
       priceOk = false;
@@ -3268,12 +3719,13 @@ export class AiService {
       if (slots.price) {
         confidence.price = Math.max(confidence.price ?? 0, 0.85);
         slotOrigins.price = 'explicit';
+        slotConfirmations.price = true;
       }
     }
-    if (timeOk && fieldStatus.time === 'missing') {
+    if (timeOk && fieldStatus.time !== 'confirmed') {
       fieldStatus.time = 'confirmed';
     }
-    if (priceOk && !priceWrongCurrencyUnit && fieldStatus.price === 'missing') {
+    if (priceOk && !priceWrongCurrencyUnit && fieldStatus.price !== 'confirmed') {
       fieldStatus.price = 'confirmed';
     }
     logCandidateKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
@@ -3288,7 +3740,7 @@ export class AiService {
     const isConfirmed = (k: keyof Slots) => fieldStatus[k] === 'confirmed';
     const computeMissingKeysInferred = (): (keyof Slots)[] => {
       const missing: (keyof Slots)[] = [];
-      if (fieldStatus.title === 'missing') missing.push('title');
+      if (fieldStatus.title !== 'confirmed') missing.push('title');
       if (fieldStatus.time === 'missing') missing.push('time');
       if (fieldStatus.location === 'missing') missing.push('location');
       if (fieldStatus.details === 'missing') missing.push('details');
@@ -3355,11 +3807,75 @@ export class AiService {
         if (/返金ポリシー|返金/.test(text)) askedSet.add('refundPolicy');
         if (/注意事項|免責|持ち物/.test(text)) askedSet.add('riskNotice');
       });
-    const lastUserAnswer = latestUserMessage.trim();
     const delegateDefaults = buildDelegateDefaults(routedLanguage);
     let delegateApplied = false;
     let autoGeneratedTitle: string | null = null;
     let unrelatedAnswerKey: keyof Slots | null = null;
+    let forcedTitleCommit = false;
+    const titleCorrectionMatch = lastUserAnswer
+      ? /(?:タイトル|标题)\s*(?:是)?\s*[:：]\s*(.+)/i.exec(lastUserAnswer)
+      : null;
+    const correctedTitleAnswer = titleCorrectionMatch ? titleCorrectionMatch[1].trim() : lastUserAnswer;
+    const shouldCommitTitleFromPrompt =
+      lastAskedSlot === 'title' &&
+      correctedTitleAnswer &&
+      !isSelectionAction &&
+      !helpIntent &&
+      !metaComment &&
+      !isAffirmation &&
+      !confirmDraft &&
+      !continueEdit &&
+      !isDelegateTitleAnswer(correctedTitleAnswer);
+    if (shouldCommitTitleFromPrompt) {
+      const normalizedTitle = correctedTitleAnswer.trim();
+      if (normalizedTitle) {
+        slots.title = normalizedTitle;
+        confidence.title = Math.max(confidence.title ?? 0, 0.85);
+        slotOrigins.title = 'explicit';
+        slotConfirmations.title = true;
+        if (fieldStatus.title !== 'confirmed') {
+          fieldStatus.title = 'confirmed';
+        }
+      }
+    }
+    const shouldAutofillTitle =
+      !lastAskedSlot &&
+      correctedTitleAnswer &&
+      !isSelectionAction &&
+      !helpIntent &&
+      !metaComment &&
+      !isAffirmation &&
+      !confirmDraft &&
+      !continueEdit &&
+      !isDelegateTitleAnswer(correctedTitleAnswer) &&
+      !isDelegateAnswer(correctedTitleAnswer) &&
+      isLikelyAnswerForSlot('title', correctedTitleAnswer) &&
+      !isLikelyAnswerForSlot('time', correctedTitleAnswer) &&
+      !isLikelyAnswerForSlot('price', correctedTitleAnswer) &&
+      !isLikelyAnswerForSlot('location', correctedTitleAnswer);
+    if (shouldAutofillTitle) {
+      slots.title = correctedTitleAnswer;
+      confidence.title = Math.max(confidence.title ?? 0, 0.85);
+      slotOrigins.title = 'explicit';
+      slotConfirmations.title = true;
+    }
+    if (
+      expectedSlotKey === 'title' &&
+      correctedTitleAnswer &&
+      !isSelectionAction &&
+      !helpIntent &&
+      !metaComment &&
+      !isAffirmation &&
+      !confirmDraft &&
+      !continueEdit &&
+      !isDelegateTitleAnswer(correctedTitleAnswer)
+    ) {
+      slots.title = correctedTitleAnswer.trim();
+      confidence.title = Math.max(confidence.title ?? 0, 0.85);
+      slotOrigins.title = 'explicit';
+      slotConfirmations.title = true;
+      forcedTitleCommit = true;
+    }
     if (lastAskedSlot && lastUserAnswer && !isReviseSelectStep) {
       const selectionPattern = /【選択】\s*([a-zA-Z_]+)\s*[:：]\s*(.+)/;
       const isSelectionAnswer = selectionPattern.test(lastUserAnswer);
@@ -3367,20 +3883,53 @@ export class AiService {
       const isDelegateInput = isDelegateAnswer(lastUserAnswer) || isDelegateTitleAnswer(lastUserAnswer);
       const isEditFieldDelegate =
         Boolean(continueEdit && reviseState === 'edit_field' && isDelegateAnswer(lastUserAnswer));
+      const isTitleDirectAnswer =
+        lastAskedSlot === 'title' &&
+        !isSelectionAnswer &&
+        !isDelegateTitleAnswer(lastUserAnswer) &&
+        !isMetaComment(lastUserAnswer) &&
+        !isAffirmation;
       const isRelevantAnswer =
-        isDelegateInput || isConfirmAnswer || isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer);
+        isDelegateInput || isConfirmAnswer || isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer) || isTitleDirectAnswer;
+      const shouldTreatAsTitle =
+        lastAskedSlot !== 'title' &&
+        isLikelyAnswerForSlot('title', lastUserAnswer) &&
+        !isLikelyAnswerForSlot(lastAskedSlot, lastUserAnswer) &&
+        !isLikelyAnswerForSlot('time', lastUserAnswer) &&
+        !isLikelyAnswerForSlot('price', lastUserAnswer) &&
+        !isLikelyAnswerForSlot('location', lastUserAnswer);
+      if (shouldTreatAsTitle) {
+        slots.title = lastUserAnswer;
+        confidence.title = Math.max(confidence.title ?? 0, 0.85);
+        slotOrigins.title = 'explicit';
+        slotConfirmations.title = true;
+        forcedTitleCommit = true;
+      }
+      if (isTitleDirectAnswer && !forcedTitleCommit) {
+        slots.title = lastUserAnswer;
+        confidence.title = Math.max(confidence.title ?? 0, 0.85);
+        slotOrigins.title = 'explicit';
+        slotConfirmations.title = true;
+        forcedTitleCommit = true;
+      }
       if (isEditFieldDelegate) {
         unrelatedAnswerKey = lastAskedSlot;
       }
-      if (!isSelectionAnswer && !isRelevantAnswer) {
+      if (!forcedTitleCommit && !isSelectionAnswer && !isRelevantAnswer) {
         unrelatedAnswerKey = lastAskedSlot;
       }
-      if (!isSelectionAnswer && !unrelatedAnswerKey && !isEditFieldDelegate) {
+      if (!isSelectionAnswer && !unrelatedAnswerKey && !isEditFieldDelegate && !forcedTitleCommit) {
         if (isConfirmAnswer) {
           slotConfirmations[lastAskedSlot] = true;
           confidence[lastAskedSlot] = Math.max(confidence[lastAskedSlot] ?? 0, 0.85);
           slotOrigins[lastAskedSlot] = slotOrigins[lastAskedSlot] ?? 'explicit';
         } else {
+          if (lastAskedSlot === 'title' && !isDelegateTitleAnswer(lastUserAnswer) && !isAffirmation) {
+            slots.title = correctedTitleAnswer ?? lastUserAnswer;
+            confidence.title = Math.max(confidence.title ?? 0, 0.85);
+            slotOrigins.title = 'explicit';
+            slotConfirmations.title = true;
+          }
           const recoveredPrice = normalizePriceAnswer(lastUserAnswer);
           if (recoveredPrice && lastAskedSlot !== 'price') {
             slots.price = recoveredPrice;
@@ -3480,6 +4029,16 @@ export class AiService {
               slots.price = lastUserAnswer;
               confidence.price = Math.max(confidence.price ?? 0, 0.65);
               slotOrigins.price = 'explicit';
+            } else if (
+              lastUserAnswer &&
+              !slots.price &&
+              !delegateApplied &&
+              !isAmbiguousAnswer(lastUserAnswer) &&
+              !isMetaComment(lastUserAnswer)
+            ) {
+              slots.price = lastUserAnswer;
+              confidence.price = Math.max(confidence.price ?? 0, 0.55);
+              slotOrigins.price = 'explicit';
             }
           } else if (lastAskedSlot === 'registrationForm') {
             const normalized = normalizeRegistrationFormAnswer(lastUserAnswer);
@@ -3534,12 +4093,32 @@ export class AiService {
               slots.location = normalized;
               confidence.location = Math.max(confidence.location ?? 0, 0.75);
               slotOrigins.location = 'explicit';
+            } else if (
+              lastUserAnswer &&
+              !slots.location &&
+              !delegateApplied &&
+              !isAmbiguousAnswer(lastUserAnswer) &&
+              !isMetaComment(lastUserAnswer)
+            ) {
+              slots.location = lastUserAnswer;
+              confidence.location = Math.max(confidence.location ?? 0, 0.55);
+              slotOrigins.location = 'explicit';
             }
           } else if (lastAskedSlot === 'time') {
             const normalized = normalizeTimeAnswer(lastUserAnswer);
             if (normalized) {
               slots.time = normalized;
               confidence.time = Math.max(confidence.time ?? 0, 0.75);
+              slotOrigins.time = 'explicit';
+            } else if (
+              lastUserAnswer &&
+              !slots.time &&
+              !delegateApplied &&
+              !isAmbiguousAnswer(lastUserAnswer) &&
+              !isMetaComment(lastUserAnswer)
+            ) {
+              slots.time = lastUserAnswer;
+              confidence.time = Math.max(confidence.time ?? 0, 0.55);
               slotOrigins.time = 'explicit';
             }
           } else if (
@@ -3554,6 +4133,46 @@ export class AiService {
           }
         }
       }
+    }
+    // Re-evaluate field status after any slot updates/commits above
+    fieldStatus = {
+      title: resolveFieldStatus('title'),
+      time: resolveFieldStatus('time'),
+      location: resolveFieldStatus('location'),
+      price: resolveFieldStatus('price'),
+      capacity: resolveFieldStatus('capacity'),
+      details: resolveFieldStatus('details'),
+      visibility: resolveFieldStatus('visibility'),
+      registrationForm: resolveFieldStatus('registrationForm'),
+      requireApproval: resolveFieldStatus('requireApproval'),
+      enableWaitlist: resolveFieldStatus('enableWaitlist'),
+      requireCheckin: resolveFieldStatus('requireCheckin'),
+      refundPolicy: resolveFieldStatus('refundPolicy'),
+      riskNotice: resolveFieldStatus('riskNotice'),
+    };
+    logCandidateKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'candidate')
+      .map((key) => String(key));
+    logConfirmedKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'confirmed')
+      .map((key) => String(key));
+    logMissingKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'missing')
+      .map((key) => String(key));
+
+
+    if (
+      lastAskedSlot === 'title' &&
+      lastUserAnswer &&
+      !isSelectionAction &&
+      !isDelegateTitleAnswer(lastUserAnswer) &&
+      !slots.title
+    ) {
+      const error = new Error('title_not_committed');
+      if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+        throw error;
+      }
+      logInvariantFailures.push('TITLE_NOT_COMMITTED');
     }
 
     if (interruptChoice === 'skip' && lastAskedSlot) {
@@ -3574,11 +4193,14 @@ export class AiService {
     });
 
     const pickNextQuestion = (missing: (keyof Slots)[]) => {
+      if (lastAskedSlot && missing.includes(lastAskedSlot)) {
+        return lastAskedSlot;
+      }
       const priority: (keyof Slots)[] = [
-        'title',
         'time',
         'location',
         'price',
+        'title',
         'capacity',
         'details',
         'registrationForm',
@@ -3598,7 +4220,9 @@ export class AiService {
       }
       return null;
     };
-    const missingRequired = requiredSlots.filter((k) => fieldStatus[k] === 'missing');
+    const missingRequired = requiredSlots.filter((k) =>
+      k === 'title' ? fieldStatus.title !== 'confirmed' : fieldStatus[k] === 'missing',
+    );
     const missingOptional = primaryOptionalSlots.concat(secondaryOptionalSlots).filter((k) => fieldStatus[k] === 'missing');
     const missingMvpKeys = baseDraftReady ? computeMissingKeysInferred() : [];
     let draftReady = !continueEdit && baseDraftReady && missingMvpKeys.length === 0;
@@ -3846,7 +4470,7 @@ export class AiService {
                 choiceQuestion: undefined,
                 compareCandidates: [],
                 inputMode: normalizedInputMode,
-                nextQuestionKey: null,
+                nextQuestionKey: 'price',
                 slots,
                 confidence,
                 draftReady: false,
@@ -3892,6 +4516,7 @@ export class AiService {
               .join('・');
             const statusText = missingLabels ? `今は「${missingLabels}」が未確定です。` : '必要な情報はそろっています。';
             logPromptPhase = 'collect';
+            const interruptNextKey = pickNextQuestion(missingKeys);
             return await finalizeAndReturn({
               status: 'collecting',
               state: 'collecting',
@@ -3918,7 +4543,7 @@ export class AiService {
               },
               compareCandidates: [],
               inputMode: normalizedInputMode,
-              nextQuestionKey: null,
+              nextQuestionKey: interruptNextKey ?? null,
               slots,
               confidence,
               draftReady: false,
@@ -3969,7 +4594,7 @@ export class AiService {
                 },
                 compareCandidates: [],
                 inputMode: normalizedInputMode,
-                nextQuestionKey: null,
+                nextQuestionKey: nextQuestionKeyCandidate ?? null,
                 slots,
                 confidence,
                 draftReady: false,
@@ -4254,7 +4879,29 @@ export class AiService {
     logPromptPhase = promptPhase;
     logUiPhase = uiPhase;
     const promptConfig = getEventAssistantPromptConfig(promptPhase);
-    const shouldUseMainLlm = promptPhase === 'ready' || promptPhase === 'operate';
+    const hasCollectChoiceQuestion = Boolean(
+      confirmationChoiceQuestion ||
+        currencySlipChoiceQuestion ||
+        timeSignalChoiceQuestion ||
+        decisionChoiceCandidate ||
+        compareCandidatesForPrompt.length,
+    );
+    const collectNeedsLlm =
+      promptPhase === 'collect' &&
+      !loopTriggered &&
+      !helpIntent &&
+      !confirmDraft &&
+      !metaComment &&
+      !hasCollectChoiceQuestion &&
+      Boolean(lastAskedSlot) &&
+      missingAll.includes(lastAskedSlot as keyof Slots) &&
+      (isDelegateAnswer(latestUserMessage) ||
+        (lastAskedSlot === 'time' && !timeOk) ||
+        (lastAskedSlot === 'price' && !priceOk && !priceWrongCurrencyUnit) ||
+        (lastAskedSlot === 'location' && !slots.location) ||
+        (lastAskedSlot === 'title' && !slots.title));
+    const shouldUseMainLlm =
+      promptPhase === 'ready' || promptPhase === 'operate' || collectNeedsLlm;
     const promptParams: Record<string, string> = {
       latest_message: latestUserMessage || '',
       phase: promptPhase,
@@ -4303,12 +4950,7 @@ export class AiService {
         if (!client) {
           throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
         }
-        const mainPromptPhase =
-          promptPhase === 'operate'
-            ? 'operate'
-            : promptPhase === 'ready'
-              ? 'ready'
-              : 'collect';
+        const mainPromptPhase = promptPhase;
         if (!canCallLlm('main_llm', { promptPhase: mainPromptPhase, loopTriggered, helpIntent, turnIndex })) {
           const fallbackKey = nextQuestionKeyCandidate ?? 'title';
           const fallbackQuestionText = buildFallbackQuestionText(fallbackKey);
@@ -4450,11 +5092,11 @@ export class AiService {
           decisionChoiceCandidate ||
           compareCandidatesForPrompt.length,
       );
-      const shouldNullNextQuestionKey = Boolean(
-        isCompareMode || draftReady || unrelatedAnswerKey || choiceQuestionActive,
-      );
-      let nextQuestionKey: keyof Slots | null = shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
-      if (!draftReady && missingAll.length && !choiceQuestionActive && !unrelatedAnswerKey) {
+      const shouldNullNextQuestionKey = Boolean(isCompareMode || draftReady || choiceQuestionActive);
+      let nextQuestionKey: keyof Slots | null =
+        shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
+      let forcedReady = false;
+      if (!draftReady && missingAll.length && !choiceQuestionActive) {
         const priorityKey = pickNextQuestion(missingAll);
         nextQuestionKey = priorityKey ?? nextQuestionKeyCandidate ?? null;
       }
@@ -4462,7 +5104,6 @@ export class AiService {
         !draftReady &&
         missingAll.length &&
         !choiceQuestionActive &&
-        !unrelatedAnswerKey &&
         !nextQuestionKey
       ) {
         const error = new Error('nextQuestionKey invariant violated');
@@ -4524,9 +5165,27 @@ export class AiService {
         Boolean(parsed.choiceQuestion),
       );
       parsed.message = sanitize(guardedMessage);
-      const responseNextQuestionKey = nextQuestionKey;
-      const uiQuestionKey = responseNextQuestionKey ?? null;
-      if (!uiQuestionKey && parsed.ui?.question?.text) {
+      if (!nextQuestionKey && !choiceQuestionActive) {
+        const inferredKey =
+          inferQuestionKeyFromText(parsed.ui?.question?.text) ??
+          inferQuestionKeyFromText(parsed.message);
+        if (inferredKey && missingAll.includes(inferredKey)) {
+          nextQuestionKey = inferredKey;
+        }
+      }
+      if (!nextQuestionKey && parsed.choiceQuestion?.key && !choiceQuestionActive) {
+        nextQuestionKey = parsed.choiceQuestion.key as keyof Slots;
+      }
+      if (!nextQuestionKey && parsed.ui?.question?.key) {
+        nextQuestionKey = parsed.ui.question.key as keyof Slots;
+      }
+      const finalChoiceActive = Boolean(parsed.choiceQuestion) || choiceQuestionActive;
+      if (!draftReady && missingAll.length && !finalChoiceActive && !nextQuestionKey) {
+        nextQuestionKey = pickNextQuestion(missingAll) ?? null;
+      }
+      let responseNextQuestionKey = nextQuestionKey;
+      const uiQuestionKeyPre = responseNextQuestionKey ?? null;
+      if (!uiQuestionKeyPre && parsed.ui?.question?.text) {
         console.warn('[AiService] ui.question ignored because nextQuestionKey is null', {
           phase: promptPhase,
           question: parsed.ui?.question?.text,
@@ -4589,7 +5248,7 @@ export class AiService {
         : '';
       if (cleanUiQuestionText) {
         const askedSlot = detectAskedSlot(cleanUiQuestionText);
-        if (askedSlot && uiQuestionKey && askedSlot !== uiQuestionKey) {
+        if (askedSlot && uiQuestionKeyPre && askedSlot !== uiQuestionKeyPre) {
           cleanUiQuestionText = '';
         }
       }
@@ -4600,17 +5259,7 @@ export class AiService {
       if (autoTitleNotice && finalQuestionText && responseNextQuestionKey && responseNextQuestionKey !== 'title') {
         finalQuestionText = `${autoTitleNotice}\n${finalQuestionText}`;
       }
-      const cleanUiQuestion =
-        finalQuestionText && uiQuestionKey ? { key: uiQuestionKey, text: finalQuestionText } : undefined;
-      const cleanUi: AiAssistantUiPayload | undefined =
-        cleanUiMessage || cleanUiQuestion || cleanUiOptions.length
-          ? {
-              message: cleanUiMessage || undefined,
-              question: cleanUiQuestion,
-              options: cleanUiOptions.length ? cleanUiOptions : undefined,
-            }
-          : undefined;
-      const fallbackMessage = cleanUiMessage || cleanUiQuestionText || '';
+      let fallbackMessage = cleanUiMessage || cleanUiQuestionText || '';
       // sanitize fields
       const cleanQuestions = Array.isArray(parsed.questions)
         ? parsed.questions.map((q) => sanitize(q)).filter(Boolean)
@@ -4641,7 +5290,7 @@ export class AiService {
             }))
             .filter((candidate) => candidate.id && candidate.summary)
         : [];
-      const choiceKey = isCompareMode ? 'details' : uiQuestionKey;
+      const choiceKey = isCompareMode ? 'details' : uiQuestionKeyPre;
       const choicePrompt = cleanUiQuestionText || cleanUiMessage || '';
       const compareChoiceQuestion = isCompareMode ? buildCompareChoiceQuestion(cleanCompareCandidates) : null;
       const cleanChoiceQuestion =
@@ -4654,6 +5303,110 @@ export class AiService {
               options: cleanUiOptions,
             }
           : undefined);
+      const readyGateSlots: Record<string, unknown> = {
+        ...(initialParse?.slots ?? {}),
+        ...slots,
+      };
+      (['title', 'time', 'location', 'price', 'details'] as const).forEach((key) => {
+        if (typeof readyGateSlots[key] === 'string') {
+          const cleaned = cleanDraftText(readyGateSlots[key] as string);
+          if (!cleaned) {
+            delete readyGateSlots[key];
+          } else {
+            readyGateSlots[key] = cleaned;
+          }
+        }
+      });
+      if (
+        !readyGateSlots.title &&
+        correctedTitleAnswer &&
+        !isAffirmation &&
+        !metaComment &&
+        !isSelectionAction
+      ) {
+        readyGateSlots.title = correctedTitleAnswer.trim();
+      }
+      const readyGateFromInitialParse =
+        initialParse?.intent === 'EVENT_INFO' &&
+        Array.isArray(initialParse?.missing) &&
+        initialParse.missing.length === 0;
+      const readyGate =
+        readyGateFromInitialParse ||
+        ['title', 'time', 'location', 'price'].every((key) => Boolean(readyGateSlots[key]));
+      if (debugEnabled) {
+        logDebug('ready_gate_check', {
+          readyGate,
+          readyGateFromInitialParse,
+          readyGateSlots,
+          initialParseMissing: initialParse?.missing,
+        });
+      }
+      if (readyGate) {
+        slots = { ...slots, ...readyGateSlots };
+        (['title', 'time', 'location', 'price'] as (keyof Slots)[]).forEach((key) => {
+          slotConfirmations[key] = true;
+        });
+        logMissingKeys = [];
+        logCandidateKeys = [];
+        logConfirmedKeys = ['title', 'time', 'location', 'price'];
+        forcedReady = true;
+        draftReady = true;
+        logPromptPhase = 'ready';
+        logUiPhase = 'ready';
+        state = 'ready';
+        nextQuestionKey = null;
+        responseNextQuestionKey = null;
+        cleanUiQuestionText = '';
+        cleanUiMessage = cleanUiMessage || '';
+        missingAll = [];
+      }
+      if (!slots.title && correctedTitleAnswer && !isAffirmation && !metaComment && !isSelectionAction) {
+        slots.title = correctedTitleAnswer.trim();
+      }
+      let finalChoiceQuestion = readyGate
+        ? null
+        : currencySlipChoiceQuestion ?? confirmationChoiceQuestion ?? timeSignalChoiceQuestion ?? cleanChoiceQuestion;
+      const requiredMissing = missingAll.filter((key) => ['title', 'time', 'location', 'price'].includes(key));
+      const arbiter = () => {
+        let nextKey = responseNextQuestionKey ?? null;
+        let choice = finalChoiceQuestion;
+      if (choice?.key?.startsWith('confirm_') && choice.key !== 'confirm_currency' && requiredMissing.length) {
+        choice = undefined;
+      }
+        if (choice) {
+          nextKey = null;
+        } else if (!nextKey && missingAll.length) {
+          nextKey = pickNextQuestion(missingAll) ?? null;
+        }
+        const channel: 'text' | 'choice' = nextKey ? 'text' : choice ? 'choice' : 'text';
+        const expected: keyof Slots | null = nextKey ?? null;
+        const questionText = channel === 'text' ? finalQuestionText : '';
+        const uiOptions = channel === 'choice' && cleanUiOptions.length ? cleanUiOptions : [];
+        return { nextKey, choice, channel, expected, questionText, uiOptions };
+      };
+      const arbited = arbiter();
+      responseNextQuestionKey = arbited.nextKey;
+      finalChoiceQuestion = arbited.choice;
+      if (!finalChoiceQuestion && priceWrongCurrencyUnit && priceUnitSlipCandidate) {
+        finalChoiceQuestion = currencySlipChoiceQuestion ?? finalChoiceQuestion;
+      }
+      const inputChannel: 'text' | 'choice' = isSelectionAction ? 'choice' : 'text';
+      expectedSlotKey = arbited.expected;
+      const uiQuestionKey = responseNextQuestionKey ?? null;
+      if (inputChannel === 'choice') {
+        fallbackMessage = cleanUiMessage || '';
+        cleanUiQuestionText = '';
+      }
+      const cleanUiQuestion =
+        arbited.questionText && uiQuestionKey ? { key: uiQuestionKey, text: arbited.questionText } : undefined;
+      const cleanUi: AiAssistantUiPayload | undefined =
+        cleanUiMessage || cleanUiQuestion || (inputChannel === 'choice' && arbited.uiOptions.length)
+          ? {
+              message: cleanUiMessage || undefined,
+              question: cleanUiQuestion,
+              options: inputChannel === 'choice' && arbited.uiOptions.length ? arbited.uiOptions : undefined,
+            }
+          : undefined;
       const cleanTitleSuggestions = Array.isArray(parsed.titleSuggestions)
         ? parsed.titleSuggestions.map((t) => sanitize(t)).filter(Boolean)
         : [];
@@ -4662,67 +5415,92 @@ export class AiService {
           ? sanitize(parsed.writerSummary)
           : parsed.writerSummary;
       if (parsed.publicActivityDraft) {
-        parsed.publicActivityDraft.title = sanitize(parsed.publicActivityDraft.title);
-        parsed.publicActivityDraft.shortDescription = sanitize(parsed.publicActivityDraft.shortDescription);
-        parsed.publicActivityDraft.detailedDescription = sanitize(parsed.publicActivityDraft.detailedDescription);
-        parsed.publicActivityDraft.ageRange = sanitize(parsed.publicActivityDraft.ageRange);
+        const applyCleanDraft = (value?: string | null) => cleanDraftText(value) ?? undefined;
+        parsed.publicActivityDraft.title = applyCleanDraft(parsed.publicActivityDraft.title) ?? undefined;
+        parsed.publicActivityDraft.shortDescription =
+          applyCleanDraft(parsed.publicActivityDraft.shortDescription) ?? undefined;
+        parsed.publicActivityDraft.detailedDescription =
+          applyCleanDraft(parsed.publicActivityDraft.detailedDescription) ?? undefined;
+        parsed.publicActivityDraft.ageRange = applyCleanDraft(parsed.publicActivityDraft.ageRange) ?? undefined;
         if (Array.isArray(parsed.publicActivityDraft.highlights)) {
           parsed.publicActivityDraft.highlights = parsed.publicActivityDraft.highlights
-            .map((h) => sanitize(h))
-            .filter(Boolean);
+            .map((h) => applyCleanDraft(h))
+            .filter((h): h is string => Boolean(h));
         }
         if (parsed.publicActivityDraft.schedule) {
-          parsed.publicActivityDraft.schedule.date = sanitize(parsed.publicActivityDraft.schedule.date);
-          parsed.publicActivityDraft.schedule.duration = sanitize(parsed.publicActivityDraft.schedule.duration);
-          parsed.publicActivityDraft.schedule.location = sanitize(parsed.publicActivityDraft.schedule.location);
-          parsed.publicActivityDraft.schedule.startTime = sanitize(parsed.publicActivityDraft.schedule.startTime);
-          parsed.publicActivityDraft.schedule.endTime = sanitize(parsed.publicActivityDraft.schedule.endTime);
+          parsed.publicActivityDraft.schedule.date = applyCleanDraft(parsed.publicActivityDraft.schedule.date) ?? undefined;
+          parsed.publicActivityDraft.schedule.duration =
+            applyCleanDraft(parsed.publicActivityDraft.schedule.duration) ?? undefined;
+          parsed.publicActivityDraft.schedule.location =
+            applyCleanDraft(parsed.publicActivityDraft.schedule.location) ?? undefined;
+          parsed.publicActivityDraft.schedule.startTime =
+            applyCleanDraft(parsed.publicActivityDraft.schedule.startTime) ?? undefined;
+          parsed.publicActivityDraft.schedule.endTime =
+            applyCleanDraft(parsed.publicActivityDraft.schedule.endTime) ?? undefined;
         }
-        parsed.publicActivityDraft.signupNotes = sanitize(parsed.publicActivityDraft.signupNotes);
+        parsed.publicActivityDraft.signupNotes = applyCleanDraft(parsed.publicActivityDraft.signupNotes) ?? undefined;
         if (Array.isArray(parsed.publicActivityDraft.registrationForm)) {
           parsed.publicActivityDraft.registrationForm = parsed.publicActivityDraft.registrationForm
             .map((field) => ({
-              label: sanitize(field.label),
-              type: sanitize(field.type),
+              label: applyCleanDraft(field.label) ?? '',
+              type: applyCleanDraft(field.type) ?? '',
               required: Boolean(field.required),
             }))
             .filter((field) => field.label && field.type);
         }
-        parsed.publicActivityDraft.visibility = sanitize(parsed.publicActivityDraft.visibility);
-        parsed.publicActivityDraft.refundPolicy = sanitize(parsed.publicActivityDraft.refundPolicy);
-        parsed.publicActivityDraft.riskNotice = sanitize(parsed.publicActivityDraft.riskNotice);
-        parsed.publicActivityDraft.expertComment = sanitize(parsed.publicActivityDraft.expertComment);
+        parsed.publicActivityDraft.visibility = applyCleanDraft(parsed.publicActivityDraft.visibility) ?? undefined;
+        parsed.publicActivityDraft.refundPolicy = applyCleanDraft(parsed.publicActivityDraft.refundPolicy) ?? undefined;
+        parsed.publicActivityDraft.riskNotice = applyCleanDraft(parsed.publicActivityDraft.riskNotice) ?? undefined;
+        parsed.publicActivityDraft.expertComment = applyCleanDraft(parsed.publicActivityDraft.expertComment) ?? undefined;
       }
       if (parsed.internalExecutionPlan) {
-        parsed.internalExecutionPlan.objective = sanitize(parsed.internalExecutionPlan.objective);
-        parsed.internalExecutionPlan.coreExperienceDesign = sanitize(parsed.internalExecutionPlan.coreExperienceDesign);
+        parsed.internalExecutionPlan.objective = cleanDraftText(parsed.internalExecutionPlan.objective) ?? undefined;
+        parsed.internalExecutionPlan.coreExperienceDesign =
+          cleanDraftText(parsed.internalExecutionPlan.coreExperienceDesign) ?? undefined;
         if (Array.isArray(parsed.internalExecutionPlan.runOfShow)) {
-          parsed.internalExecutionPlan.runOfShow = parsed.internalExecutionPlan.runOfShow.map((i) => sanitize(i)).filter(Boolean);
+          parsed.internalExecutionPlan.runOfShow = parsed.internalExecutionPlan.runOfShow
+            .map((i) => cleanDraftText(i))
+            .filter(Boolean) as string[];
         }
         if (Array.isArray(parsed.internalExecutionPlan.materials)) {
-          parsed.internalExecutionPlan.materials = parsed.internalExecutionPlan.materials.map((i) => sanitize(i)).filter(Boolean);
+          parsed.internalExecutionPlan.materials = parsed.internalExecutionPlan.materials
+            .map((i) => cleanDraftText(i))
+            .filter(Boolean) as string[];
         }
         if (Array.isArray(parsed.internalExecutionPlan.staffing)) {
-          parsed.internalExecutionPlan.staffing = parsed.internalExecutionPlan.staffing.map((i) => sanitize(i)).filter(Boolean);
+          parsed.internalExecutionPlan.staffing = parsed.internalExecutionPlan.staffing
+            .map((i) => cleanDraftText(i))
+            .filter(Boolean) as string[];
         }
         if (Array.isArray(parsed.internalExecutionPlan.risksAndMitigation)) {
           parsed.internalExecutionPlan.risksAndMitigation = parsed.internalExecutionPlan.risksAndMitigation
-            .map((i) => sanitize(i))
-            .filter(Boolean);
+            .map((i) => cleanDraftText(i))
+            .filter(Boolean) as string[];
         }
         if (Array.isArray(parsed.internalExecutionPlan.prepChecklist)) {
-          parsed.internalExecutionPlan.prepChecklist = parsed.internalExecutionPlan.prepChecklist.map((i) => sanitize(i)).filter(Boolean);
+          parsed.internalExecutionPlan.prepChecklist = parsed.internalExecutionPlan.prepChecklist
+            .map((i) => cleanDraftText(i))
+            .filter(Boolean) as string[];
         }
       }
       parsed.coachPrompt = sanitize(parsed.coachPrompt);
       parsed.questions = cleanQuestions;
       parsed.miniPreview = cleanMiniPreview;
-      parsed.choiceQuestion =
-        currencySlipChoiceQuestion ?? confirmationChoiceQuestion ?? timeSignalChoiceQuestion ?? cleanChoiceQuestion;
+      parsed.choiceQuestion = finalChoiceQuestion ?? undefined;
       parsed.compareCandidates = cleanCompareCandidates;
       parsed.titleSuggestions = cleanTitleSuggestions;
+      if (!parsed.choiceQuestion && currencySlipChoiceQuestion) {
+        parsed.choiceQuestion = currencySlipChoiceQuestion;
+        parsed.nextQuestionKey = null;
+        responseNextQuestionKey = null;
+        parsed.expectedSlotKey = null;
+        expectedSlotKey = null;
+        parsed.inputChannel = 'choice';
+      }
       parsed.ui = cleanUi;
       parsed.inputMode = normalizedInputMode;
+      parsed.inputChannel = inputChannel;
+      parsed.expectedSlotKey = expectedSlotKey;
       parsed.nextQuestionKey = responseNextQuestionKey;
       parsed.editorChecklist = Array.isArray(parsed.editorChecklist)
         ? parsed.editorChecklist.map((item) => sanitize(item)).filter(Boolean)
@@ -4783,9 +5561,9 @@ export class AiService {
           });
           return fields;
         };
-        const description = source.details || '';
+        const description = cleanDraftText(source.details) || '';
         const normalizedPrice = normalizePriceAnswer(source.price || '');
-        const price = normalizedPrice || source.price || (isFreeText(source.details) ? '無料' : undefined);
+        const price = normalizedPrice || source.price || (isFreeText(source.details ?? '') ? '無料' : undefined);
         const parsedCapacity = source.capacity ? Number(source.capacity.replace(/[^\d]/g, '')) : null;
         return {
           title: title || undefined,
@@ -4836,16 +5614,46 @@ export class AiService {
         }
         return next;
       };
-      if (state === 'ready' && parsed.publicActivityDraft) {
+      const buildDescriptionFromDraft = (draft: AiAssistantPublicDraft) => {
+        const lines: string[] = [];
+        const title = draft.title || 'イベント';
+        const sched = draft.schedule || {};
+        const timeText = [sched.date, sched.startTime && `開始 ${sched.startTime}`, sched.endTime && `終了 ${sched.endTime}`]
+          .filter(Boolean)
+          .join(' / ');
+        const locText = sched.location ? `場所は${sched.location}` : '';
+        const priceText = draft.price ? `参加費は${draft.price}` : '';
+        const capText = draft.capacity ? `定員は${draft.capacity}人を予定しています` : '';
+        lines.push(`${title}のご案内です。`);
+        if (timeText) lines.push(`日時: ${timeText}。`);
+        if (locText) lines.push(`${locText}。`);
+        if (priceText) lines.push(`${priceText}。`);
+        if (capText) lines.push(`${capText}。`);
+        const requirements: string[] = [];
+        if (draft.registrationForm?.length) {
+          requirements.push(
+            `申込時に${draft.registrationForm.map((f) => f.label || '').filter(Boolean).join('・')}の入力が必要です`,
+          );
+        }
+        if (draft.requireApproval !== undefined) {
+          requirements.push(draft.requireApproval ? '参加には主催者の承認が必要です' : '参加承認は不要です');
+        }
+        if (requirements.length) {
+          lines.push(requirements.filter(Boolean).join('。') + '。');
+        }
+        return lines.filter(Boolean).join('');
+      };
+      if (state === 'ready') {
         const timeSourceText = [draftBaseSlots.time, latestUserMessage].filter(Boolean).join(' ');
         const fallbackDraft = buildDraftFromSlots(draftBaseSlots, timeSourceText);
+        const existingDraft = parsed.publicActivityDraft ?? {};
         parsed.publicActivityDraft = {
-          ...parsed.publicActivityDraft,
-          title: parsed.publicActivityDraft.title ?? fallbackDraft.title,
-          shortDescription: parsed.publicActivityDraft.shortDescription ?? fallbackDraft.shortDescription,
-          detailedDescription: parsed.publicActivityDraft.detailedDescription ?? fallbackDraft.detailedDescription,
+          ...existingDraft,
+          title: existingDraft.title ?? fallbackDraft.title,
+          shortDescription: existingDraft.shortDescription ?? fallbackDraft.shortDescription,
+          detailedDescription: existingDraft.detailedDescription ?? fallbackDraft.detailedDescription,
           schedule: fallbackDraft.schedule,
-          price: fallbackDraft.price,
+          price: existingDraft.price ?? fallbackDraft.price,
           capacity: fallbackDraft.capacity,
           signupNotes: fallbackDraft.signupNotes,
           registrationForm: fallbackDraft.registrationForm,
@@ -4855,9 +5663,27 @@ export class AiService {
           requireCheckin: fallbackDraft.requireCheckin,
           refundPolicy: fallbackDraft.refundPolicy,
           riskNotice: fallbackDraft.riskNotice,
-          expertComment: parsed.publicActivityDraft.expertComment ?? fallbackDraft.expertComment,
+          expertComment: existingDraft.expertComment ?? fallbackDraft.expertComment,
         };
         parsed.publicActivityDraft = ensureDraftMvpShape(parsed.publicActivityDraft, fallbackDraft);
+        if (draftBaseSlots.price) {
+          parsed.publicActivityDraft.price = draftBaseSlots.price;
+        }
+        if (!parsed.publicActivityDraft.detailedDescription) {
+          const desc = buildDescriptionFromDraft(parsed.publicActivityDraft);
+          parsed.publicActivityDraft.detailedDescription = desc || undefined;
+        }
+        if (!parsed.publicActivityDraft.shortDescription && parsed.publicActivityDraft.detailedDescription) {
+          parsed.publicActivityDraft.shortDescription = parsed.publicActivityDraft.detailedDescription;
+        }
+        const generatedPrep = generatePrepChecklist(parsed.publicActivityDraft, baseLocale);
+        const cleanedPrep = generatedPrep.map((line) => cleanDraftText(line)).filter(Boolean) as string[];
+        if (!parsed.internalExecutionPlan) {
+          parsed.internalExecutionPlan = {};
+        }
+        if (!parsed.internalExecutionPlan.prepChecklist || !parsed.internalExecutionPlan.prepChecklist.length) {
+          parsed.internalExecutionPlan.prepChecklist = cleanedPrep;
+        }
       }
       const shouldSuggestTitles =
         !confirmDraft && draftReady && (!slots.title || (confidence.title ?? 0) < 0.6);
@@ -4914,6 +5740,76 @@ export class AiService {
           nextQuestionKeyLocked,
         });
       }
+      const shouldForceCurrencyConfirm = priceWrongCurrencyUnit && priceUnitSlipCandidate;
+      if (shouldForceCurrencyConfirm) {
+        missingAll = missingAll.filter((key) => key !== 'price');
+        responseNextQuestionKey = null;
+        nextQuestionKey = null;
+      }
+      if (!shouldForceCurrencyConfirm && !responseNextQuestionKey && missingAll.length) {
+        responseNextQuestionKey = missingAll[0];
+        nextQuestionKey = responseNextQuestionKey;
+      }
+      if (responseNextQuestionKey) {
+        parsed.choiceQuestion = undefined;
+        if (parsed.ui?.options?.length) {
+          parsed.ui.options = undefined;
+        }
+        parsed.inputChannel = 'text';
+        parsed.expectedSlotKey = responseNextQuestionKey;
+      } else if (parsed.choiceQuestion) {
+        if (parsed.ui?.question) {
+          parsed.ui.question = undefined;
+        }
+        parsed.inputChannel = 'choice';
+        parsed.expectedSlotKey = null;
+      }
+
+      const finalSingleChoiceQuestion =
+        responseNextQuestionKey ? undefined : finalChoiceQuestion ?? undefined;
+      if (draftReady) {
+        parsed.ui = undefined;
+        parsed.choiceQuestion = undefined;
+        responseNextQuestionKey = null;
+        nextQuestionKey = null;
+      }
+
+      const slotsForReply: Slots = { ...(readyGateSlots as Slots) };
+      (Object.keys(slots) as (keyof Slots)[]).forEach((key) => {
+        const value = slots[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          slotsForReply[key] = value as any;
+        }
+      });
+      if (debugEnabled) {
+        logDebug('slots_for_reply', slotsForReply);
+      }
+      if (!slotsForReply.title) {
+        slotsForReply.title =
+          slots.title ||
+          (readyGateSlots.title as string | undefined) ||
+          (correctedTitleAnswer && !isAffirmation && !metaComment && !isSelectionAction
+            ? correctedTitleAnswer.trim()
+            : undefined);
+      }
+      if (!slotsForReply.title && correctedTitleAnswer && !isAffirmation && !metaComment && !isSelectionAction) {
+        slotsForReply.title = correctedTitleAnswer.trim();
+      }
+      if (slotsForReply.title) {
+        missingAll = missingAll.filter((key) => key !== 'title');
+        if (responseNextQuestionKey === 'title') {
+          responseNextQuestionKey = missingAll[0] ?? null;
+          nextQuestionKey = responseNextQuestionKey;
+        }
+      }
+      const finalSlots: Slots = { ...slotsForReply };
+      const forcedTitleValue =
+        correctedTitleAnswer && !isAffirmation && !metaComment && !isSelectionAction
+          ? correctedTitleAnswer.trim()
+          : undefined;
+      if (forcedTitleValue) {
+        finalSlots.title = forcedTitleValue;
+      }
       return await finalizeAndReturn({
         ...parsed,
         status: state,
@@ -4929,14 +5825,14 @@ export class AiService {
         writerSummary: cleanWriterSummary,
         message: fallbackMessage ?? '',
         miniPreview: cleanMiniPreview,
-        choiceQuestion: currencySlipChoiceQuestion ?? confirmationChoiceQuestion ?? timeSignalChoiceQuestion ?? cleanChoiceQuestion,
+        choiceQuestion: finalSingleChoiceQuestion,
         compareCandidates: cleanCompareCandidates,
         titleSuggestions: cleanTitleSuggestions,
         autoTitle: autoGeneratedTitle ?? undefined,
         inputMode: normalizedInputMode,
         nextQuestionKey,
         questionMeta: buildQuestionMeta(nextQuestionKey),
-        slots,
+        slots: finalSlots as Slots,
         confidence,
         draftReady,
         applyEnabled,

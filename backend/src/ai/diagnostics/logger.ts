@@ -70,6 +70,13 @@ const getLogPaths = (day: string) => {
     DRAFT_INCONSISTENT: [],
     NON_EVENT_INPUT: [],
     NEXT_QUESTION_MISSING: [],
+    DUAL_ACTION: [],
+    TITLE_NOT_COMMITTED: [],
+    CONFIRM_WHILE_MISSING: [],
+    CHOICE_RESET_STATE: [],
+    READY_REGRESSION: [],
+    DRAFT_TEXT_CONTAMINATED: [],
+    CONSTITUTION_LEAK: [],
   },
 });
 

@@ -28,7 +28,14 @@ export type FailureType =
   | 'ACTION_NO_EFFECT'
   | 'DRAFT_INCONSISTENT'
   | 'NON_EVENT_INPUT'
-  | 'NEXT_QUESTION_MISSING';
+  | 'NEXT_QUESTION_MISSING'
+  | 'DUAL_ACTION'
+  | 'TITLE_NOT_COMMITTED'
+  | 'CONFIRM_WHILE_MISSING'
+  | 'CHOICE_RESET_STATE'
+  | 'READY_REGRESSION'
+  | 'DRAFT_TEXT_CONTAMINATED'
+  | 'CONSTITUTION_LEAK';
 
 export interface FailureSignals {
   repeatQuestion: boolean;
@@ -62,6 +69,8 @@ export interface EventAssistantTurnLog {
     candidateKeys: string[];
     confirmedKeys: string[];
     nextQuestionKey: string | null;
+    inputChannel?: 'text' | 'choice';
+    expectedSlotKey?: string | null;
     draftReady: boolean;
     messageSource: string | null;
     decisionTrace?: Record<string, unknown> | null;
