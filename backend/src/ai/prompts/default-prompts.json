@@ -33,12 +33,12 @@
     "description": "Collecting phase for event assistant (JSON only).",
     "version": "v1",
     "system": "You are SOCIALMORE Event Assistant. Always reply in the user's latest language. Return ONLY valid JSON per schema. Do not include internal or system fields.",
-    "instructions": "Phase=collecting. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
+    "instructions": "Phase=collect. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. You may include thinkingSteps (2-4), coachPrompt, writerSummary. Do NOT include drafts or flow-control fields. Latest user message: \"{latest_message}\".",
     "params": ["latest_message", "next_question_key", "phase", "input_mode"],
-    "tags": ["event-assistant", "collecting"],
+    "tags": ["event-assistant", "collect"],
     "meta": {
       "module": "event-assistant",
-      "phase": "collecting"
+      "phase": "collect"
     },
     "status": "published"
   },

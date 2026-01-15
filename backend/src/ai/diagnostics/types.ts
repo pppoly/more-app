@@ -1,8 +1,11 @@
 export type EventAssistantEnv = 'dev' | 'stg' | 'prod';
 
-export type EventAssistantPromptPhase =
-  | 'parse'
-  | 'collect'
+export type EventAssistantPromptPhase = 'parse' | 'collect' | 'ready' | 'operate' | 'unknown';
+
+export type EventAssistantUiPhase =
+  | 'collecting'
+  | 'decision'
+  | 'compare'
   | 'ready'
   | 'operate'
   | 'revise_select'
@@ -53,6 +56,7 @@ export interface EventAssistantTurnLog {
   };
   machine: {
     promptPhase: EventAssistantPromptPhase;
+    uiPhase: EventAssistantUiPhase | null;
     loopTriggered: boolean;
     missingKeys: string[];
     candidateKeys: string[];

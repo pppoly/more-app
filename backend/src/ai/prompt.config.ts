@@ -19,7 +19,7 @@ export interface PromptConfig {
   forbiddenFields?: string[];
 }
 
-export type EventAssistantPromptPhase = 'collecting' | 'decision' | 'compare' | 'ready' | 'operate';
+export type EventAssistantPromptPhase = 'parse' | 'collect' | 'ready' | 'operate';
 
 export const COACHING_PROMPT_CONFIG: PromptConfig = {
   version: 'coach-v3-lite',
@@ -28,7 +28,7 @@ export const COACHING_PROMPT_CONFIG: PromptConfig = {
     'You are MORE App’s coach-style event copilot. Always respond in the user’s latest language (default ja). Tone: friendly, patient, dialog-first. Reply MUST be valid JSON per schema; no extra text.',
   instruction:
     'Decide state by turnCount and slot coverage. ' +
-    'state rules (hard): collecting => missing required slots; ask only ONE high-value question per turn (see slot priority). ' +
+    'state rules (hard): collect => missing required slots; ask only ONE high-value question per turn (see slot priority). ' +
     'options => partial info but branching; 2-3 options with title/description (pros/cons optional). ' +
     'ready => required slots present and key optional slots present per policy; include publicActivityDraft + internalExecutionPlan with facts_from_user, assumptions, open_questions. ' +
     'If turnCount >= {readyTurns} and key info still missing, ask ONE missing high-priority slot only. ' +
@@ -65,76 +65,35 @@ const COMMON_GUIDANCE =
   'Use slots with confidence>=0.6 as facts. Assumptions are tentative and must be labeled. ' +
   'Do not invent unconfirmed decisions. Keep output concise.';
 
-export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, PromptConfig> = {
-  collecting: {
-    version: 'event-assistant-v4-collect',
-    schemaName: 'MoreAppAssistantReply',
-    promptId: 'event-assistant.collecting',
-    systemPrompt: `${COMMON_SYSTEM} Phase: collecting. Provide the user-facing question only via ui.question.`,
-    instruction:
-      'Phase=collecting. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. ' +
+const COLLECT_PROMPT: PromptConfig = {
+  version: 'event-assistant-v4-collect',
+  schemaName: 'MoreAppAssistantReply',
+  promptId: 'event-assistant.collecting',
+  systemPrompt: `${COMMON_SYSTEM} Phase: collect. Provide the user-facing question only via ui.question.`,
+  instruction:
+    'Phase=collect. Output ui.question (key,text) and optional ui.message. Use next_question_key as ui.question.key. ' +
       'You may include thinkingSteps(2-4), coachPrompt, writerSummary. ' +
       'Do NOT include drafts or flow-control fields. ' +
       COMMON_GUIDANCE +
       ' Latest user message: "{latestMessage}".',
-    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
-    forbiddenFields: [
-      'questions',
-      'options',
-      'publicActivityDraft',
-      'internalExecutionPlan',
-      'choiceQuestion',
-      'compareCandidates',
-      'titleSuggestions',
-    ],
-    ...BASE_PROMPT,
-  },
-  decision: {
-    version: 'event-assistant-v4-decision',
-    schemaName: 'MoreAppAssistantReply',
-    promptId: 'event-assistant.decision',
-    systemPrompt: `${COMMON_SYSTEM} Phase: decision. Provide only ui.message (no questions/options).`,
-    instruction:
-      'Phase=decision. Output ui.message only. ' +
-      'You may include thinkingSteps(2-4), coachPrompt, writerSummary. ' +
-      'Do NOT include ui.question or ui.options, drafts, or flow-control fields. ' +
-      COMMON_GUIDANCE +
-      ' Latest user message: "{latestMessage}".',
-    allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
-    forbiddenFields: [
-      'questions',
-      'options',
-      'publicActivityDraft',
-      'internalExecutionPlan',
-      'choiceQuestion',
-      'compareCandidates',
-      'titleSuggestions',
-    ],
-    ...BASE_PROMPT,
-  },
-  compare: {
-    version: 'event-assistant-v4-compare',
-    schemaName: 'MoreAppAssistantReply',
-    promptId: 'event-assistant.compare',
-    systemPrompt: `${COMMON_SYSTEM} Phase: compare. Provide ui.message only; no questions/options.`,
-    instruction:
-      'Phase=compare. Output ui.message only. ' +
-      'You may include thinkingSteps(2-4), writerSummary. ' +
-      'Do NOT include ui.question or ui.options, drafts, or flow-control fields. ' +
-      COMMON_GUIDANCE +
-      ' Latest user message: "{latestMessage}".',
-    allowedFields: ['ui', 'thinkingSteps', 'writerSummary'],
-    forbiddenFields: [
-      'questions',
-      'options',
-      'publicActivityDraft',
-      'internalExecutionPlan',
-      'choiceQuestion',
-      'compareCandidates',
-      'titleSuggestions',
-    ],
-    ...BASE_PROMPT,
-  },
+  allowedFields: ['ui', 'thinkingSteps', 'coachPrompt', 'writerSummary'],
+  forbiddenFields: [
+    'questions',
+    'options',
+    'publicActivityDraft',
+    'internalExecutionPlan',
+    'choiceQuestion',
+    'compareCandidates',
+    'titleSuggestions',
+  ],
+  ...BASE_PROMPT,
+};
+
+export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<
+  Exclude<EventAssistantPromptPhase, 'parse'>,
+  PromptConfig
+> = {
+  collect: COLLECT_PROMPT,
   ready: {
     version: 'event-assistant-v4-ready',
     schemaName: 'MoreAppAssistantReply',
@@ -173,5 +132,7 @@ export const EVENT_ASSISTANT_PROMPT_MATRIX: Record<EventAssistantPromptPhase, Pr
   },
 };
 
-export const getEventAssistantPromptConfig = (phase: EventAssistantPromptPhase): PromptConfig =>
-  EVENT_ASSISTANT_PROMPT_MATRIX[phase] ?? COACHING_PROMPT_CONFIG;
+export const getEventAssistantPromptConfig = (phase: EventAssistantPromptPhase): PromptConfig => {
+  if (phase === 'parse') return EVENT_ASSISTANT_PROMPT_MATRIX.collect;
+  return EVENT_ASSISTANT_PROMPT_MATRIX[phase] ?? COACHING_PROMPT_CONFIG;
+};

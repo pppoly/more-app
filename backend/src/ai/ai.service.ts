@@ -3,7 +3,13 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import crypto from 'crypto';
 import { EventAssistantPromptPhase, getEventAssistantPromptConfig, PromptDefaultsProfile } from './prompt.config';
-import { determinePromptPhase, enforcePhaseOutput } from './assistant-phase.guard';
+import {
+  determineUiPhase,
+  enforcePhaseOutput,
+  EventAssistantUiPhase,
+  getPromptPhaseFromUiPhase,
+  normalizePromptPhase,
+} from './assistant-phase.guard';
 import { getEventAssistantOutputSchema, validateAssistantOutput } from './event-assistant.schemas';
 import { buildSlotNormalizerPrompt, SlotNormalizerResult } from './slot-normalizer';
 import { RouterResult, buildRouterPrompt } from './router-llm';
@@ -14,6 +20,7 @@ import { redactTurnLog, writeTurnLog } from './diagnostics/logger';
 import type {
   EventAssistantPromptPhase as DiagnosticPromptPhase,
   EventAssistantTurnLog,
+  EventAssistantUiPhase as DiagnosticUiPhase,
   EventAssistantUiAction,
 } from './diagnostics/types';
 
@@ -809,7 +816,7 @@ export class AiService {
     params: Record<string, string>,
   ): Promise<{ systemPrompt: string; instruction: string; version: string }> {
     const constitutionMode = String(process.env.EVENT_ASSISTANT_CONSTITUTION_MODE || 'off').toLowerCase();
-    const isCollectPhase = phase === 'collecting' || phase === 'decision' || phase === 'compare';
+    const isCollectPhase = phase === 'collect';
     const allowConstitution = constitutionMode !== 'off' && (phase === 'ready' || phase === 'operate');
     const stripConstitution = (text: string) => {
       if (!text) return text;
@@ -1497,11 +1504,8 @@ export class AiService {
       unitRaw: string;
     }) => {
       if (!input.rawText.includes('元')) return false;
-      const locale = input.locale.toLowerCase();
-      const hasCjk = /[\u4e00-\u9fff]/.test(input.rawText);
-      const looksZh = locale.startsWith('zh') || (hasCjk && !locale.startsWith('en'));
       const hasLatinCurrency = /(CNY|RMB|USD|EUR|JPY)/i.test(input.rawText);
-      if (!looksZh || hasLatinCurrency) return false;
+      if (hasLatinCurrency) return false;
       const inTokyo = input.timezone === 'Asia/Tokyo';
       if (!inTokyo) return false;
       if (!input.amount) return false;
@@ -2283,6 +2287,7 @@ export class AiService {
     const baseLocale = payload.clientLocale ?? payload.baseLanguage ?? 'unknown';
     const baseTimezone = payload.clientTimezone ?? 'unknown';
     let logPromptPhase: DiagnosticPromptPhase = 'unknown';
+    let logUiPhase: DiagnosticUiPhase = 'unknown';
     let logLoopTriggered = false;
     let logMissingKeys: string[] = [];
     let logCandidateKeys: string[] = [];
@@ -2334,10 +2339,20 @@ export class AiService {
       const assistantMessageText = reply.ui?.message ?? reply.message ?? '';
       const uiQuestionText = reply.ui?.question?.text ?? null;
       const draftSummary = buildDraftSummary(reply.publicActivityDraft as AiAssistantPublicDraft | null);
+      const uiPhaseForLog =
+        logUiPhase && logUiPhase !== 'unknown'
+          ? (logUiPhase as EventAssistantUiPhase)
+          : 'collecting';
+      const normalizedPromptPhase =
+        normalizePromptPhase(logPromptPhase) ?? getPromptPhaseFromUiPhase(uiPhaseForLog);
+      if (debugEnabled && normalizedPromptPhase !== logPromptPhase) {
+        logDebug('prompt_phase_normalized', { from: logPromptPhase, to: normalizedPromptPhase });
+      }
       const failureAnalysis = analyzeFailures({
         userText: latestUserMessage,
         previousAskedKey: logPreviousAskedKey,
-        promptPhase: logPromptPhase,
+        promptPhase: normalizedPromptPhase,
+        uiPhase: logUiPhase === 'unknown' ? null : logUiPhase,
         missingKeys: logMissingKeys,
         candidateKeys: logCandidateKeys,
         confirmedKeys: logConfirmedKeys,
@@ -2349,6 +2364,8 @@ export class AiService {
         parser: {
           timeOk: logParserTime.ok,
           priceOk: logParserPrice.ok,
+          timeReason: logParserTime.reason,
+          priceReason: logParserPrice.reason,
         },
         draftSummary: {
           title: draftSummary?.title ?? null,
@@ -2383,7 +2400,8 @@ export class AiService {
           timezone: baseTimezone,
         },
         machine: {
-          promptPhase: logPromptPhase,
+          promptPhase: normalizedPromptPhase,
+          uiPhase: logUiPhase === 'unknown' ? null : logUiPhase,
           loopTriggered: logLoopTriggered,
           missingKeys: logMissingKeys,
           candidateKeys: logCandidateKeys,
@@ -2441,6 +2459,7 @@ export class AiService {
     const isFreshConversation = turnCount <= 1;
     if (isLikelyShellOutput(latestUserMessage) && isFreshConversation) {
       logPromptPhase = 'collect';
+      logUiPhase = 'collecting';
       logNonEventInput = true;
       logParserTime = {
         rawText: '',
@@ -2651,8 +2670,9 @@ export class AiService {
     const preDraftReady =
       inputMode !== 'compare' &&
       (confirmDraft || (preRequiredAll && preOptCount >= 2) || (preRequiredAll && preOptCount >= 1 && turnCount >= 3));
-    const prePromptPhase: EventAssistantPromptPhase =
+    const preUiPhase: EventAssistantUiPhase =
       inputMode === 'compare' ? 'compare' : confirmDraft ? 'operate' : preDraftReady ? 'ready' : 'collecting';
+    const prePromptPhase = getPromptPhaseFromUiPhase(preUiPhase);
     const preHasAllLabels =
       /イベント名|タイトル/.test(latestUserMessage) &&
       /(日付|日時|時間)/.test(latestUserMessage) &&
@@ -2661,7 +2681,7 @@ export class AiService {
       /(説明|内容|詳細|参加条件)/.test(latestUserMessage);
     const shouldParsePhase =
       turnIndex === 0 &&
-      prePromptPhase === 'collecting' &&
+      prePromptPhase === 'collect' &&
       !(preDraftReady || preRequiredAll || preHasAllLabels);
     let routerResult: RouterResult | null = null;
     const shouldRouteIntent =
@@ -2817,6 +2837,7 @@ export class AiService {
           ? 'I couldn’t understand the event yet. Please share any of: title, time, location, or price.'
           : 'まだイベントの内容が分かりません。タイトル・日時・場所・参加費のいずれかを教えてください。';
       logPromptPhase = 'collect';
+      logUiPhase = 'collecting';
       return await finalizeAndReturn({
         status: 'collecting',
         state: 'collecting',
@@ -3002,7 +3023,8 @@ export class AiService {
       const reviseIntent = classifyReviseIntent(reviseState, latestUserMessage, selectedKey);
       logDebug('revise_intent', { reviseState, reviseIntent, selectedKey });
       if (reviseIntent === 'DELEGATE') {
-        logPromptPhase = 'revise_select';
+        logPromptPhase = 'collect';
+        logUiPhase = 'revise_select';
         return await finalizeAndReturn({
           status: 'collecting',
           state: 'collecting',
@@ -3032,7 +3054,8 @@ export class AiService {
         });
       }
       if (!selectedKey) {
-        logPromptPhase = 'revise_select';
+        logPromptPhase = 'collect';
+        logUiPhase = 'revise_select';
         return await finalizeAndReturn({
           status: 'collecting',
           state: 'collecting',
@@ -3061,7 +3084,8 @@ export class AiService {
           messageSource: 'backend.ui',
         });
       }
-      logPromptPhase = 'revise_select';
+      logPromptPhase = 'collect';
+      logUiPhase = 'revise_select';
       return await finalizeAndReturn({
         status: 'collecting',
         state: 'collecting',
@@ -3092,7 +3116,8 @@ export class AiService {
     }
     if (reviseState === 'edit_field' && isDelegateIntent(latestUserMessage)) {
       logDebug('revise_intent', { reviseState, reviseIntent: 'DELEGATE', selectedKey: null });
-      logPromptPhase = 'revise_edit';
+      logPromptPhase = 'collect';
+      logUiPhase = 'revise_edit';
       return await finalizeAndReturn({
         status: 'collecting',
         state: 'collecting',
@@ -3163,10 +3188,24 @@ export class AiService {
         ? 'no_range'
         : 'not_attempted',
     };
+    if (timeOk && !slots.time && timeSourceText.trim() && structuredTime?.startTime) {
+      slots.time = timeSourceText.trim();
+      confidence.time = Math.max(confidence.time ?? 0, 0.85);
+      slotOrigins.time = 'explicit';
+    }
     const priceParserInput = sanitizeParserInput(latestUserMessage, 'price');
     const priceSourceText = priceParserInput.text;
-    const priceRaw = priceSourceText || '';
-    const priceAmountMatch = priceRaw.match(/(\d{1,5})/);
+    const stripTimeFragments = (text: string) => {
+      if (!text) return '';
+      const withoutRanges = text.replace(/(\d{1,2}[:：]\d{2}\s*[-〜~－]\s*\d{1,2}[:：]\d{2})/g, ' ');
+      const withoutCnRanges = withoutRanges.replace(/(\d{1,2}\s*点\s*(半)?\s*(到|〜|~|-|－)\s*\d{1,2}\s*点\s*(半)?)/g, ' ');
+      const withoutCnTime = withoutCnRanges.replace(/(\d{1,2})\s*点(半)?/g, ' ');
+      const withoutDay = withoutCnTime.replace(/(下周|下星期|周|星期)\s*[一二三四五六日天]/g, ' ');
+      return withoutDay.replace(/\s+/g, ' ').trim();
+    };
+    const priceRaw = stripTimeFragments(priceSourceText || '');
+    const hasPriceSignal = /(円|元|無料|フリー|free|¥|￥|参加費|料金|一人|每人|AA)/i.test(priceRaw);
+    const priceAmountMatch = hasPriceSignal ? priceRaw.match(/(\d{1,5})/) : null;
     const priceAmount = priceAmountMatch ? Number(priceAmountMatch[1]) : null;
     const priceType = /\/人|一人|每人/.test(priceRaw) ? 'per_person' : isFreeText(priceRaw) ? 'free' : 'flat';
     const unitRawMatch = priceRaw.match(/(円|元|¥|JPY|CNY|RMB)/i);
@@ -3183,7 +3222,7 @@ export class AiService {
       amount: priceAmount,
       unitRaw: unitRaw === 'UNKNOWN' ? '' : unitRaw,
     });
-    let priceOk = Boolean(priceAmount || isFreeText(priceRaw));
+    let priceOk = Boolean((priceAmount && hasPriceSignal) || isFreeText(priceRaw));
     let priceReason = priceOk ? 'parsed' : priceRaw.trim() ? 'no_amount' : 'ambiguous';
     let priceCurrency: string | null = priceOk ? 'JPY' : null;
     if (priceParserInput.source === 'rejected' || !priceRaw.trim()) {
@@ -3220,6 +3259,32 @@ export class AiService {
     const priceUnitSlipCandidate = logParserPrice.unitSlipCandidate;
     const priceWrongCurrencyUnit = logParserPrice.reason === 'wrong_currency_unit';
     const hasUnsupportedCurrency = hasUnsupportedCurrencyBase && !priceUnitSlipCandidate;
+    if (priceOk && !priceWrongCurrencyUnit && !slots.price) {
+      if (isFreeText(priceRaw)) {
+        slots.price = '無料';
+      } else if (priceAmount) {
+        slots.price = `${priceAmount}円`;
+      }
+      if (slots.price) {
+        confidence.price = Math.max(confidence.price ?? 0, 0.85);
+        slotOrigins.price = 'explicit';
+      }
+    }
+    if (timeOk && fieldStatus.time === 'missing') {
+      fieldStatus.time = 'confirmed';
+    }
+    if (priceOk && !priceWrongCurrencyUnit && fieldStatus.price === 'missing') {
+      fieldStatus.price = 'confirmed';
+    }
+    logCandidateKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'candidate')
+      .map((key) => String(key));
+    logConfirmedKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'confirmed')
+      .map((key) => String(key));
+    logMissingKeys = (Object.keys(fieldStatus) as (keyof Slots)[])
+      .filter((key) => fieldStatus[key] === 'missing')
+      .map((key) => String(key));
     const isConfirmed = (k: keyof Slots) => fieldStatus[k] === 'confirmed';
     const computeMissingKeysInferred = (): (keyof Slots)[] => {
       const missing: (keyof Slots)[] = [];
@@ -4175,27 +4240,19 @@ export class AiService {
       }
     }
 
-    const promptPhase: EventAssistantPromptPhase = continueEdit
-      ? 'decision'
-      : determinePromptPhase({
+    const uiPhase: EventAssistantUiPhase = continueEdit
+      ? isReviseSelectStep
+        ? 'revise_select'
+        : 'revise_edit'
+      : determineUiPhase({
           inputMode: normalizedInputMode,
           confirmDraft,
           draftReady,
           hasDecisionChoice: Boolean(decisionChoiceCandidate),
         });
-    logPromptPhase = continueEdit
-      ? isReviseSelectStep
-        ? 'revise_select'
-        : 'revise_edit'
-      : promptPhase === 'collecting'
-      ? 'collect'
-      : promptPhase === 'ready'
-      ? 'ready'
-      : promptPhase === 'operate'
-      ? 'operate'
-      : promptPhase === 'decision' || promptPhase === 'compare'
-      ? 'collect'
-      : 'parse';
+    const promptPhase: EventAssistantPromptPhase = getPromptPhaseFromUiPhase(uiPhase);
+    logPromptPhase = promptPhase;
+    logUiPhase = uiPhase;
     const promptConfig = getEventAssistantPromptConfig(promptPhase);
     const shouldUseMainLlm = promptPhase === 'ready' || promptPhase === 'operate';
     const promptParams: Record<string, string> = {
@@ -4226,9 +4283,9 @@ export class AiService {
           thinkingSteps: ['ヒアリングを続けます'],
           coachPrompt: '必要な情報を確認しています',
           ui:
-            promptPhase === 'decision'
+            uiPhase === 'decision'
               ? { message: '近いものがあれば選んでください。' }
-              : promptPhase === 'compare'
+              : uiPhase === 'compare'
               ? { message: 'どちらが近いですか？' }
               : {
                   question: {
@@ -4239,8 +4296,7 @@ export class AiService {
           choiceQuestion: compareChoiceQuestion ?? decisionChoice ?? undefined,
           compareCandidates: compareCandidatesForPrompt,
           inputMode: normalizedInputMode,
-          nextQuestionKey:
-            promptPhase === 'collecting' ? nextQuestionKeyCandidate : null,
+          nextQuestionKey: promptPhase === 'collect' ? nextQuestionKeyCandidate : null,
         };
       } else {
         const client = this.client;
@@ -4476,7 +4532,7 @@ export class AiService {
           question: parsed.ui?.question?.text,
         });
       }
-      const isDecisionPhase = promptPhase === 'decision';
+      const isDecisionPhase = uiPhase === 'decision';
       const uiOptionsRaw = Array.isArray(parsed.ui?.options) ? parsed.ui.options : [];
       let cleanUiOptions = !isDecisionPhase && !isCompareMode
         ? uiOptionsRaw
@@ -5650,7 +5706,7 @@ export class AiService {
   }
 
   getProfileDefaults(): AiAssistantProfileDefaults {
-    const basePrompt = getEventAssistantPromptConfig('collecting');
+    const basePrompt = getEventAssistantPromptConfig('collect');
     return {
       version: basePrompt.version,
       defaults: basePrompt.defaults,

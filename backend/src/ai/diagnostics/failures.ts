@@ -8,6 +8,7 @@ export interface FailureAnalysisInput {
   userText: string;
   previousAskedKey: string | null;
   promptPhase: string;
+  uiPhase: string | null;
   missingKeys: string[];
   candidateKeys: string[];
   confirmedKeys: string[];
@@ -19,6 +20,8 @@ export interface FailureAnalysisInput {
   parser: {
     timeOk: boolean;
     priceOk: boolean;
+    timeReason?: string;
+    priceReason?: string;
   };
   draftSummary: {
     title?: string | null;
@@ -60,16 +63,22 @@ export const analyzeFailures = (
     signals.repeatQuestion = true;
   }
 
-  const parseFailed =
-    (!input.parser.timeOk && input.missingKeys.includes('time')) ||
-    (!input.parser.priceOk && input.missingKeys.includes('price'));
+  const timeFail =
+    !input.parser.timeOk &&
+    input.missingKeys.includes('time') &&
+    !['no_amount', 'not_attempted'].includes(input.parser.timeReason ?? '');
+  const priceFail =
+    !input.parser.priceOk &&
+    input.missingKeys.includes('price') &&
+    !['no_amount', 'not_attempted'].includes(input.parser.priceReason ?? '');
+  const parseFailed = timeFail || priceFail;
   if (parseFailed) {
     failureTypes.push('PARSE_FAILED');
   }
 
   const stageMismatch =
     (input.uiMode === 'explain' && Boolean(input.nextQuestionKey)) ||
-    (input.promptPhase === 'revise_select' && Boolean(input.nextQuestionKey)) ||
+    (input.uiPhase === 'revise_select' && Boolean(input.nextQuestionKey)) ||
     ((input.promptPhase === 'ready' || input.promptPhase === 'operate') && Boolean(input.nextQuestionKey));
   if (stageMismatch) {
     failureTypes.push('STAGE_MISMATCH');
@@ -97,7 +106,11 @@ export const analyzeFailures = (
   }
 
   const nextQuestionMissing =
-    !input.hasChoiceQuestion && input.missingKeys.length > 0 && !input.nextQuestionKey;
+    !input.hasChoiceQuestion &&
+    input.missingKeys.length > 0 &&
+    !input.nextQuestionKey &&
+    input.uiPhase !== 'revise_select' &&
+    input.uiPhase !== 'revise_edit';
   if (nextQuestionMissing) {
     failureTypes.push('NEXT_QUESTION_MISSING');
     signals.nextQuestionMissing = true;

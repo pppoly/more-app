@@ -178,45 +178,24 @@ export const SLOT_NORMALIZER_SCHEMA: JsonSchemaWrapper = {
   ),
 };
 
+const COLLECT_OUTPUT_SCHEMA: JsonSchemaWrapper = {
+  name: 'EventAssistantCollect',
+  schema: baseObject(
+    {
+      ui: uiCollectingSchema,
+      thinkingSteps: thinkingStepsSchema,
+      coachPrompt: coachPromptSchema,
+      writerSummary: writerSummarySchema,
+    },
+    ['ui'],
+  ),
+};
+
 export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
-  EventAssistantPromptPhase,
+  Exclude<EventAssistantPromptPhase, 'parse'>,
   JsonSchemaWrapper
 > = {
-  collecting: {
-    name: 'EventAssistantCollecting',
-    schema: baseObject(
-      {
-        ui: uiCollectingSchema,
-        thinkingSteps: thinkingStepsSchema,
-        coachPrompt: coachPromptSchema,
-        writerSummary: writerSummarySchema,
-      },
-      ['ui'],
-    ),
-  },
-  decision: {
-    name: 'EventAssistantDecision',
-    schema: baseObject(
-      {
-        ui: uiDecisionSchema,
-        thinkingSteps: thinkingStepsSchema,
-        coachPrompt: coachPromptSchema,
-        writerSummary: writerSummarySchema,
-      },
-      [],
-    ),
-  },
-  compare: {
-    name: 'EventAssistantCompare',
-    schema: baseObject(
-      {
-        ui: uiCompareSchema,
-        thinkingSteps: thinkingStepsSchema,
-        writerSummary: writerSummarySchema,
-      },
-      ['ui'],
-    ),
-  },
+  collect: COLLECT_OUTPUT_SCHEMA,
   ready: {
     name: 'EventAssistantReady',
     schema: baseObject(
@@ -248,14 +227,16 @@ export const EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE: Record<
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
-export const getEventAssistantOutputSchema = (phase: EventAssistantPromptPhase): JsonSchemaWrapper =>
-  EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE[phase];
+export const getEventAssistantOutputSchema = (phase: EventAssistantPromptPhase): JsonSchemaWrapper => {
+  if (phase === 'parse') return COLLECT_OUTPUT_SCHEMA;
+  return EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE[phase];
+};
 
 export const validateAssistantOutput = (
   phase: EventAssistantPromptPhase,
   payload: unknown,
 ): { valid: boolean; errors: string[] } => {
-  const schema = EVENT_ASSISTANT_OUTPUT_SCHEMA_BY_PHASE[phase]?.schema;
+  const schema = getEventAssistantOutputSchema(phase)?.schema;
   if (!schema || !isObject(payload)) {
     return { valid: false, errors: ['payload_not_object'] };
   }

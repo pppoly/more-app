@@ -4,6 +4,7 @@ import { AiService, GenerateAssistantReplyDto } from '../src/ai/ai.service';
 import fs from 'fs/promises';
 import path from 'path';
 import { resolveLogDir } from '../src/ai/diagnostics/logger';
+import { getPromptPhaseFromStatus, normalizePromptPhase } from '../src/ai/assistant-phase.guard';
 
 process.env.EVENT_ASSISTANT_DEBUG = '1';
 process.env.OPENAI_API_KEY = 'test';
@@ -368,7 +369,7 @@ test('2-3) 货币确认 JPY 后 price 生效', async () => {
   assert.notEqual(reply.nextQuestionKey, 'price');
 });
 
-test('2-4) en locale 输入 1000元 不触发确认', async () => {
+test('2-4) en locale 输入 1000元 也触发确认', async () => {
   const service = createService({
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'en' }),
   });
@@ -378,8 +379,7 @@ test('2-4) en locale 输入 1000元 不触发确认', async () => {
     clientTimezone: 'Asia/Tokyo',
   };
   const reply = await service.generateAssistantReply(payload as any);
-  assert.equal(reply.choiceQuestion?.key === 'confirm_currency', false);
-  assert.match(reply.ui?.message ?? '', /円/);
+  assert.equal(reply.choiceQuestion?.key === 'confirm_currency', true);
 });
 
 test('2-5) 中文相对时间解析', async () => {
@@ -387,8 +387,9 @@ test('2-5) 中文相对时间解析', async () => {
     router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
   });
   process.env.EVENT_ASSISTANT_NOW = '2026-01-14T00:00:00+09:00';
+  const requestId = 'test-request-zh-time';
   const payload = {
-    ...buildPayload('下周二下午三点到五点'),
+    ...buildPayload('下周二下午三点到五点', undefined, requestId),
     clientLocale: 'zh-CN',
     clientTimezone: 'Asia/Tokyo',
   };
@@ -401,6 +402,9 @@ test('2-5) 中文相对时间解析', async () => {
   assert.ok(timeParse);
   assert.match(timeParse.candidateStartAt, /2026-01-20T06:00:00/);
   assert.match(timeParse.candidateEndAt, /2026-01-20T08:00:00/);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.machine?.missingKeys?.includes('time'), false);
   delete process.env.EVENT_ASSISTANT_NOW;
 });
 
@@ -424,6 +428,23 @@ test('2-5b) 下周五上午十点到12点 解析', async () => {
   assert.match(timeParse.candidateStartAt, /2026-01-23T01:00:00/);
   assert.match(timeParse.candidateEndAt, /2026-01-23T03:00:00/);
   delete process.env.EVENT_ASSISTANT_NOW;
+});
+
+test('2-5c) 时间文本不应解析为价格', async () => {
+  const service = createService({
+    router: () => ({ route: 'EVENT_INFO', confidence: 0.9, language: 'zh' }),
+  });
+  const requestId = 'test-request-no-price-from-time';
+  const payload = {
+    ...buildPayload('下周五的上午十点到12点', undefined, requestId),
+    clientLocale: 'zh-CN',
+    clientTimezone: 'Asia/Tokyo',
+  };
+  await service.generateAssistantReply(payload as any);
+  const entry = await readLatestLogEntry(requestId);
+  assert.ok(entry);
+  assert.equal(entry.parser?.price?.candidateAmount, null);
+  assert.equal(entry.parser?.price?.ok, false);
 });
 
 test('2-5a) 复现实例：先描述后补时间应推进', async () => {
@@ -533,12 +554,12 @@ test('2-9) 价格解析使用当前输入而非历史', { concurrency: false }, 
   const requestId = 'test-request-current-price';
   const conversation = [
     { role: 'user' as const, content: '前回は1000円だった' },
-    { role: 'user' as const, content: '10000' },
+    { role: 'user' as const, content: '一人10000' },
   ];
-  await service.generateAssistantReply(buildPayload('10000', conversation, requestId) as any);
+  await service.generateAssistantReply(buildPayload('一人10000', conversation, requestId) as any);
   const entry = await readLatestLogEntry(requestId);
   assert.ok(entry);
-  assert.equal(entry.parser?.price?.rawText, '10000');
+  assert.equal(entry.parser?.price?.rawText, '一人10000');
   assert.equal(entry.parser?.price?.candidateAmount, 10000);
 });
 
@@ -980,6 +1001,20 @@ test('10) nextQuestionKey 锁定且避免同字段连问', async () => {
   assert.equal(trace.nextQuestionKeyLocked, true);
 });
 
-test('11) 草稿可见性 trace（前端）', { skip: true }, () => {
+test('11) normalizePromptPhase 归一化 collecting/parsing/operating', () => {
+  assert.equal(normalizePromptPhase('collecting'), 'collect');
+  assert.equal(normalizePromptPhase('parsing'), 'parse');
+  assert.equal(normalizePromptPhase('operating'), 'operate');
+  assert.equal(normalizePromptPhase('collect'), 'collect');
+  assert.equal(normalizePromptPhase('ready'), 'ready');
+  assert.equal(normalizePromptPhase('unknown-phase'), null);
+});
+
+test('12) UI 状态 collecting 映射 promptPhase=collect', () => {
+  assert.equal(getPromptPhaseFromStatus('collecting'), 'collect');
+  assert.equal(getPromptPhaseFromStatus('ready'), 'ready');
+});
+
+test('13) 草稿可见性 trace（前端）', { skip: true }, () => {
   // TODO: requires frontend runtime to verify draft_visibility_mismatch
 });
