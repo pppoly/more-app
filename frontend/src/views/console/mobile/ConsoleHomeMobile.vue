@@ -239,23 +239,23 @@
       <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
         <div class="create-sheet">
           <header class="create-head">
-            <p class="create-title">今回は、考えなくて大丈夫です</p>
-            <p class="create-subtitle">AIと一緒に、いちばん楽な方法から始められます</p>
+            <p class="create-title">イベント作成</p>
+            <p class="create-subtitle">メモや URL を貼るだけでもOK。AI がフォーム入力を手伝います。</p>
           </header>
           <div class="create-list">
-            <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('assistant')">
+            <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('paste')">
               <div class="create-badge">おすすめ</div>
-              <div class="create-icon create-icon--accent">🤖</div>
+              <div class="create-icon create-icon--accent">🧾</div>
+              <div class="create-body">
+                <p class="create-item-title">文章で作成</p>
+                <p class="create-item-desc">メモ/URL を貼ると AI が下書きを組み立てます</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('assistant')">
+              <div class="create-icon">🤖</div>
               <div class="create-body">
                 <p class="create-item-title">AIと一緒に作る</p>
                 <p class="create-item-desc">質問に答えるだけで、イベントの中身がほぼ完成します</p>
-              </div>
-            </button>
-            <button type="button" class="create-item" @click="selectCreateMode('paste')">
-              <div class="create-icon">🧾</div>
-              <div class="create-body">
-                <p class="create-item-title">下書きを貼って相談する</p>
-                <p class="create-item-desc">すでにメモや文章がある人向け</p>
               </div>
             </button>
             <button type="button" class="create-item" @click="selectCreateMode('copy')">

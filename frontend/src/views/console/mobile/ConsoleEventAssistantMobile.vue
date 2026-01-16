@@ -193,7 +193,7 @@
         </template>
 
         <div
-          v-if="mode === 'chat' && !explainMode && (choiceQuestionState || readyMenuFallback)"
+          v-if="mode === 'chat' && !explainMode && (choiceQuestionState || readyMenuFallback) && !readyCheckpointSimplifyActive"
           class="decision-block"
         >
           <p v-if="!machineUiOnlyActive && (choiceQuestionState || readyMenuFallback)?.prompt" class="decision-title">
@@ -440,6 +440,15 @@
             >
               フォームへ進む
             </button>
+            <button
+              v-else-if="readyCheckpointSimplifyActive"
+              type="button"
+              class="preview-primary"
+              :disabled="!planPreview"
+              @click="goToForm(false)"
+            >
+              フォームで手動で編集
+            </button>
             <button type="button" class="preview-ghost" @click="returnToChat">修正に戻る</button>
           </div>
         </section>
@@ -551,6 +560,19 @@ const isEventAssistantDebug = computed(() => {
   return flag === '1' || windowFlag === '1';
 });
 const machineUiOnlyEnabled = import.meta.env.VITE_EVENT_ASSISTANT_MACHINE_UI_ONLY === '1';
+const readyUiSimplifyEnabled = (() => {
+  const raw = (import.meta.env as Record<string, string | undefined>).VITE_READY_UI_SIMPLIFY;
+  if (raw === '1') return true;
+  if (raw === '0') return false;
+  return import.meta.env.DEV;
+})();
+const sessionUiOverrides = ref<string[]>([]);
+const sessionClientHints = reactive<{ readyCheckpointSimplified: boolean }>({ readyCheckpointSimplified: false });
+const registerUiOverride = (key: string) => {
+  if (!key) return;
+  if (sessionUiOverrides.value.includes(key)) return;
+  sessionUiOverrides.value = [...sessionUiOverrides.value, key];
+};
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
@@ -671,10 +693,13 @@ const shouldShowCommitCheckpoint = computed(
       draftReady: lastDraftReady.value,
       nextQuestionKey: lastNextQuestionKey.value,
       isCommitted: isCommitted.value,
-      hasChoiceQuestion: Boolean(choiceQuestionState.value),
+      hasChoiceQuestion:
+        Boolean(choiceQuestionState.value) &&
+        !(readyUiSimplifyEnabled && choiceQuestionState.value?.key === 'ready_next_action'),
       isCompareMode: isCompareModeUi.value,
     }),
 );
+const readyCheckpointSimplifyActive = computed(() => readyUiSimplifyEnabled && shouldShowCommitCheckpoint.value);
 const hasProposalMessage = computed(() => chatMessages.value.some((msg) => msg.type === 'proposal'));
 const showEntryBar = computed(() => canShowProposalUi.value && !hasProposalMessage.value);
 const isCompareModeUi = computed(() => computeIsCompareMode(lastInputMode.value, compareCandidatesState.value));
@@ -963,8 +988,10 @@ const isEmptyConversation = computed(
 const miniPreviewState = ref<EventAssistantReply['miniPreview'] | null>(null);
 const choiceQuestionState = ref<EventAssistantReply['choiceQuestion'] | null>(null);
 const readyMenuFallback = computed((): EventAssistantReply['choiceQuestion'] | null => {
+  if (readyCheckpointSimplifyActive.value) return null;
   if (
     !explainMode.value &&
+    isReadyState.value &&
     !isCompareModeUi.value &&
     mode.value === 'chat' &&
     lastReadyDraft.value &&
@@ -1856,6 +1883,8 @@ const requestAssistantReply = async (
     const isCompareMode = computeIsCompareMode(result.inputMode ?? null, result.compareCandidates ?? null);
     const nextQuestionKey = result.nextQuestionKey ?? null;
     const effectiveDraftReady = state === 'ready' && Boolean(result.draftReady);
+    const hasMvpDraft = isDraftMvp(result.publicActivityDraft ?? null);
+    const draftReadyForUi = effectiveDraftReady && hasMvpDraft;
     const willOperate =
       mode.value === 'operate' ||
       options?.action === 'confirm_draft' ||
@@ -1918,6 +1947,23 @@ const requestAssistantReply = async (
     if (choiceQuestion?.key === 'interrupt') {
       choiceQuestion = null;
     }
+    const isReadyNextActionChoice = choiceQuestion?.key === 'ready_next_action';
+    const shouldSimplifyReadyUiThisTurn =
+      readyUiSimplifyEnabled &&
+      state === 'ready' &&
+      computeShouldShowCommitCheckpoint({
+        mode: mode.value,
+        draftReady: draftReadyForUi,
+        nextQuestionKey,
+        isCommitted: isCommitted.value,
+        hasChoiceQuestion: Boolean(choiceQuestion?.options?.length) && !isReadyNextActionChoice,
+        isCompareMode,
+      });
+    if (shouldSimplifyReadyUiThisTurn && isReadyNextActionChoice) {
+      choiceQuestion = null;
+      registerUiOverride('discard_ready_next_action');
+      sessionClientHints.readyCheckpointSimplified = true;
+    }
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
     coachPromptState.value =
       !machineOnlyActiveThisTurn && !isExplainMode && !willOperate && hasChoiceQuestion && !isCompareMode
@@ -1931,8 +1977,6 @@ const requestAssistantReply = async (
     latestConfirmQuestions.value = result.confirmQuestions ?? [];
     let messageId: string | null = null;
     const canRenderBubble = !willOperate && !isExplainMode;
-    const hasMvpDraft = isDraftMvp(result.publicActivityDraft ?? null);
-    const draftReadyForUi = effectiveDraftReady && hasMvpDraft;
     const shouldHoldCommit = draftReadyForUi && !isCommitted.value && !willOperate;
     const isDuplicateQuestionKey =
       Boolean(nextQuestionKey && lastQuestionKey.value === nextQuestionKey && lastQuestionKeyPending.value);
@@ -2204,6 +2248,10 @@ const persistAssistantLog = async (
     writerSummary?: EventAssistantReply['writerSummary'] | null;
     ui?: EventAssistantReply['ui'] | null;
     draftId?: string | null;
+    conversationId?: string | null;
+    slotsSnapshot?: Record<string, unknown> | null;
+    uiOverrides?: string[];
+    clientHints?: Record<string, unknown> | null;
   },
   aiResultOverride?: GeneratedEventContent | null,
 ) => {
@@ -2239,6 +2287,14 @@ const persistAssistantLog = async (
         : null,
     }));
     const aiResultPayload = aiResultOverride ?? aiResult.value;
+    const slotsSnapshot = meta?.slotsSnapshot ?? buildClientSlotsSnapshot();
+    const uiOverrides = meta?.uiOverrides ?? sessionUiOverrides.value;
+    const clientHints = {
+      readyCheckpointSimplified: sessionClientHints.readyCheckpointSimplified,
+      ...(meta?.clientHints ?? {}),
+    };
+    const conversationId = meta?.conversationId ?? assistantSessionId.value ?? null;
+    const draftId = meta?.draftId ?? lastDraftId.value ?? null;
     const saved = await saveEventAssistantLog(communityId.value, {
       stage,
       summary,
@@ -2262,7 +2318,11 @@ const persistAssistantLog = async (
         coachPrompts: meta?.coachPrompts ?? [],
         editorChecklist: meta?.editorChecklist ?? [],
         writerSummary: meta?.writerSummary ?? null,
-        draftId: meta?.draftId ?? null,
+        draftId,
+        conversationId,
+        slotsSnapshot,
+        uiOverrides,
+        clientHints,
         mode: mode.value,
         isCommitted: isCommitted.value,
       },
@@ -2421,6 +2481,32 @@ const buildQaSummary = (latestInput?: string) => {
   if (priceValue) parts.push(`参加費: ${priceValue}`);
   const extra = toStr(latestInput || qaState.details || '特記事項なし');
   return `AIの理解：${parts.join(' / ') || '概要未設定'}。補足情報: ${extra}`;
+};
+
+const buildClientSlotsSnapshot = (): Record<string, unknown> => {
+  const toPlain = <T,>(value: T): T => {
+    try {
+      return JSON.parse(JSON.stringify(value)) as T;
+    } catch {
+      return value;
+    }
+  };
+  const draft = lastReadyDraft.value;
+  return {
+    confirmedAnswers: toPlain(confirmedAnswers),
+    nextQuestionKey: lastNextQuestionKey.value ?? null,
+    uiPhase: lastUiPhase.value ?? null,
+    draftReady: Boolean(lastDraftReady.value),
+    draftId: lastDraftId.value ?? null,
+    readyDraft: draft
+      ? {
+          title: draft.title ?? null,
+          schedule: (draft as any).schedule ?? null,
+          price: (draft as any).price ?? null,
+          capacity: (draft as any).capacity ?? null,
+        }
+      : null,
+  };
 };
 
 const buildConversationMessages = () => {
@@ -3028,6 +3114,8 @@ const startNewConversation = () => {
   closeActiveSession();
   activeLogId.value = null;
   assistantSessionId.value = createSessionId();
+  sessionUiOverrides.value = [];
+  sessionClientHints.readyCheckpointSimplified = false;
   chatMessages.value = [];
   aiResult.value = null;
   pendingQuestion.value = null;
@@ -3126,6 +3214,9 @@ const markSessionCompleted = async () => {
     promptVersion: lastPromptVersion.value,
     turnCount: lastTurnCount.value,
     language: lastLanguage.value,
+    draftId: lastDraftId.value ?? null,
+    conversationId: assistantSessionId.value ?? null,
+    slotsSnapshot: buildClientSlotsSnapshot(),
   });
   lastAssistantStatus.value = 'completed';
 };
@@ -3138,6 +3229,14 @@ const lastUndoSnapshot = ref<UndoSnapshot | null>(null);
 
 const goToForm = async (useAi: boolean) => {
   if (!communityId.value) return;
+  closePlanPreview();
+  choiceQuestionState.value = null;
+  compareCandidatesState.value = null;
+  showCandidateDetails.value = false;
+  pendingQuestion.value = null;
+  currentQuestionId.value = null;
+  currentSlotKey.value = null;
+  lastQuestionKeyPending.value = false;
   const draftSource = useAi ? 'llm' : 'manual_form';
   let beforeSnapshot: Record<string, any> | null = null;
   try {

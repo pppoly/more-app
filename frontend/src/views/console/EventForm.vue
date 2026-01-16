@@ -24,8 +24,8 @@
         <div class="paste-full-card">
           <header class="paste-full-head">
             <div>
-              <p class="paste-full-title">下書きを貼り付ける</p>
-              <p class="paste-full-subtitle">タイトル・説明・ルールを AI が読み取り、フォームに反映します</p>
+              <p class="paste-full-title">文章からイベントを作成</p>
+              <p class="paste-full-subtitle">企画のメモや資料を貼り付けて、AI にフォーム入力を手伝ってもらいましょう</p>
             </div>
             <button type="button" class="paste-close" @click="togglePaste(false)">閉じる</button>
           </header>
@@ -1261,7 +1261,7 @@ const pastedDraft = ref('');
 const draftCheckMessage = ref('');
 const pastedPreview = ref<{ title: string; description: string; rules: string } | null>(null);
 const showPastePanel = ref(false);
-const pastePlaceholder = 'イベントの下書きを貼り付ければ AI がフォームに反映します';
+const pastePlaceholder = '企画メモ・テキスト・URL などを貼り付けてください';
 const pasteInputRef = ref<HTMLTextAreaElement | null>(null);
 const showPasteResult = ref(false);
 const pasteFilledFields = ref<string[]>([]);

@@ -72,7 +72,14 @@ export class ConsoleEventDraftService {
     ].join('\n');
   }
 
-  async extractDraft(userId: string, communityId: string, draft: string, language?: string) {
+  async extractDraft(
+    userId: string,
+    communityId: string,
+    draft: string,
+    language?: string,
+    urls?: string[] | null,
+    imageUrls?: string[] | null,
+  ) {
     if (!draft?.trim()) {
       throw new HttpException('Draft is empty', HttpStatus.BAD_REQUEST);
     }
@@ -82,6 +89,14 @@ export class ConsoleEventDraftService {
     const userContent = [`草案：${draft}`];
     if (language) {
       userContent.push(`语言：${language}`);
+    }
+    const urlList = (urls || []).filter(Boolean);
+    const imageList = (imageUrls || []).filter(Boolean);
+    if (urlList.length) {
+      userContent.push(`参考URL:\n- ${urlList.join('\n- ')}`);
+    }
+    if (imageList.length) {
+      userContent.push(`画像リンク/スクショ:\n- ${imageList.join('\n- ')}`);
     }
 
     const { content } = await this.aiService.completeWithPrompt({
@@ -105,9 +120,9 @@ export class ConsoleEventDraftService {
       data: {
         communityId,
         userId,
-        stage: 'draft-extract',
-        summary: parsed.title ?? null,
-        messages: [
+      stage: 'draft-extract',
+      summary: parsed.title ?? null,
+      messages: [
       { role: 'system', content: system },
       { role: 'user', content: userContent.join('\n') },
       { role: 'assistant', content },

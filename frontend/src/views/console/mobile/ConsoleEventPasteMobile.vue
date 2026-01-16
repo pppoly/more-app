@@ -1,6 +1,6 @@
 <template>
   <div class="paste-page" :class="{ 'is-liff': isLiffClientMode }">
-    <ConsoleTopBar v-if="!isLiffClientMode" title="下書きを貼り付ける" @back="goBack" />
+    <ConsoleTopBar v-if="!isLiffClientMode" title="文章からイベントを作成" @back="goBack" />
 
     <section class="intro-card">
       <p class="intro-title">{{ preview ? '受け取った内容を確認しよう' : 'まずは一言でOK' }}</p>
@@ -8,7 +8,7 @@
         {{
           preview
             ? 'ここから一緒に整えます。必要なら戻って書き足せます。'
-            : '完璧に書く必要はありません。思い出したことをそのまま貼ってください。'
+            : '文章の情報をそのまま入れてください。AIが下書きを組み立てます。'
         }}
       </p>
     </section>
@@ -17,10 +17,17 @@
       <textarea
         v-model="draft"
         class="draft-input"
-        placeholder="例）土曜午前のヨガ。初心者向け。持ち物はタオル。場所は代々木公園 など"
+        placeholder="例）土曜午前のヨガ。初心者向け。場所は代々木公園。"
         rows="12"
       ></textarea>
-      <p class="input-hint">箇条書きでも短文でもOK。あとから一緒に整えます。</p>
+      <p class="input-hint" :class="{ 'input-hint--warn': validationBlocked }">
+        <span class="input-hint-main">
+          {{ validationMessage }}
+          <span class="input-hint-meta">（{{ charCount }}/{{ MAX_CHARS }}文字）</span>
+        </span>
+        <br />
+        <span class="input-hint-sub">{{ inputSubHint }}</span>
+      </p>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
@@ -37,6 +44,10 @@
         <p class="preview-label">注意事項 / ルール</p>
         <p class="preview-value">{{ preview.rules || '未検出' }}</p>
       </div>
+      <div v-if="extractSummary" class="preview-summary">
+        <p class="preview-label">検出サマリー</p>
+        <p class="preview-value">{{ extractSummary }}</p>
+      </div>
       <p class="preview-hint">他の項目は次の画面で調整できます。</p>
     </section>
 
@@ -46,7 +57,7 @@
       <button
         class="primary-next"
         type="button"
-        :disabled="!draft.trim() || loading"
+        :disabled="primaryDisabled"
         @click="preview ? proceedToForm() : confirmApply()"
       >
         <span v-if="loading">少々お待ちください…</span>
@@ -76,24 +87,66 @@ const parsedResult = ref<any | null>(null);
 const toast = useToast();
 const loading = ref(false);
 
+const MIN_CHARS = 30;
+const RECOMMENDED_MAX = 1000;
+const MAX_CHARS = 2000;
+
+const normalizedDraft = computed(() => draft.value.trim());
+const charCount = computed(() => normalizedDraft.value.length);
+const validationState = computed(() => {
+  const count = charCount.value;
+  if (count < MIN_CHARS) return 'too_short';
+  if (count <= RECOMMENDED_MAX) return 'ok';
+  if (count <= MAX_CHARS) return 'long';
+  return 'too_long';
+});
+const validationBlocked = computed(
+  () => validationState.value === 'too_short' || validationState.value === 'too_long',
+);
+const validationMessage = computed(() => {
+  switch (validationState.value) {
+    case 'too_short':
+      return '内容が短すぎます（30文字以上）';
+    case 'ok':
+      return '入力内容を反映できます（30〜1,000文字）';
+    case 'long':
+      return '少し長めです。要点だけにまとめると反映しやすくなります。';
+    case 'too_long':
+      return '文字数が多すぎます（最大2,000文字）。不要な部分を削除してください。';
+    default:
+      return '入力内容を反映できます（30〜1,000文字）';
+  }
+});
+const inputSubHint = computed(() => '箇条書き・短文など何でもOK。あとから整えます。');
+const primaryDisabled = computed(() => {
+  if (loading.value) return true;
+  if (preview.value) return !parsedResult.value;
+  return validationBlocked.value;
+});
+
 const goBack = () => {
   router.back();
 };
 
 const confirmApply = async () => {
-  if (!draft.value.trim() || loading.value) return;
+  if (loading.value || validationBlocked.value) return;
   loading.value = true;
   error.value = null;
   try {
     const communityId = route.params.communityId as string | undefined;
     if (communityId) {
-      const parsed = await extractEventDraft(communityId, { draft: draft.value });
+      const urlMatches = draft.value.match(/https?:\/\/[^\s]+/gi) || [];
+      const parsed = await extractEventDraft(communityId, {
+        draft: draft.value,
+        urls: urlMatches,
+      });
       parsedResult.value = parsed;
       preview.value = {
         title: parsed?.title,
         description: parsed?.description,
         rules: parsed?.rules,
       };
+      extractSummary.value = buildSummary(parsed);
     } else {
       error.value = 'コミュニティIDが必要です。';
     }
@@ -120,6 +173,18 @@ const proceedToForm = () => {
 const editDraft = () => {
   preview.value = null;
   parsedResult.value = null;
+  extractSummary.value = null;
+};
+
+const extractSummary = ref<string | null>(null);
+const buildSummary = (parsed: any) => {
+  const lines: string[] = [];
+  if (parsed?.startTime) lines.push(`日時: ${parsed.startTime}${parsed.endTime ? ` - ${parsed.endTime}` : ''}`);
+  if (parsed?.locationText) lines.push(`場所: ${parsed.locationText}`);
+  if (parsed?.ticketPrice) lines.push(`参加費: ${parsed.ticketPrice}円`);
+  if (parsed?.category) lines.push(`カテゴリ: ${parsed.category}`);
+  if (parsed?.refundPolicy) lines.push('返金ポリシー検出済み');
+  return lines.length ? lines.join(' / ') : null;
 };
 </script>
 
@@ -189,6 +254,7 @@ const editDraft = () => {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
 .preview-hint {
   margin: 0;
   font-size: 12px;
@@ -214,6 +280,31 @@ const editDraft = () => {
   margin: 0;
   font-size: 12px;
   color: #94a3b8;
+}
+.input-hint--warn {
+  color: #f97316;
+}
+.input-hint-main {
+  font-weight: 600;
+}
+.input-hint-meta {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.input-hint-sub {
+  font-weight: 400;
+  opacity: 0.9;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .error {
   margin: 0;

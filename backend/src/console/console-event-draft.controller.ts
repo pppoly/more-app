@@ -11,12 +11,19 @@ export class ConsoleEventDraftController {
   @Post('extract')
   async extractDraft(
     @Param('communityId') communityId: string,
-    @Body() body: { draft?: string; language?: string },
+    @Body() body: { draft?: string; language?: string; urls?: string[]; imageUrls?: string[] },
     @Req() req: any,
   ) {
     if (!body?.draft?.trim()) {
       throw new HttpException('请提供活动草案', HttpStatus.BAD_REQUEST);
     }
-    return this.draftService.extractDraft(req.user.id, communityId, body.draft, body.language);
+    return this.draftService.extractDraft(
+      req.user.id,
+      communityId,
+      body.draft,
+      body.language,
+      body.urls,
+      body.imageUrls,
+    );
   }
 }

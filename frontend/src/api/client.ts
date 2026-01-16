@@ -513,7 +513,7 @@ export async function subscribeCommunityPlan(
 
 export async function extractEventDraft(
   communityId: string,
-  payload: { draft: string; language?: string },
+  payload: { draft: string; language?: string; urls?: string[]; imageUrls?: string[] },
 ): Promise<any> {
   const { data } = await apiClient.post<any>(`/console/communities/${communityId}/event-draft/extract`, payload, {
     timeout: 45000,

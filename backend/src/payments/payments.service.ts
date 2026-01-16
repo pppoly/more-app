@@ -667,10 +667,9 @@ export class PaymentsService {
     const titleSource = event ? event.title : lesson?.class.title;
     const eventTitle = this.getLocalizedText(titleSource) || 'MORE Class';
 
-    // Expire Checkout after the pending timeout window to avoid long-held locks.
-    const expiresAt =
-      Math.floor(Date.now() / 1000) +
-      (PAYMENT_PENDING_TIMEOUT_MINUTES > 0 ? PAYMENT_PENDING_TIMEOUT_MINUTES * 60 : 15 * 60);
+    // Stripe requires expires_at >= 30 minutes; honor pending window but clamp to Stripe minimum.
+    const expiresInMinutes = PAYMENT_PENDING_TIMEOUT_MINUTES > 0 ? PAYMENT_PENDING_TIMEOUT_MINUTES : 15;
+    const expiresAt = Math.floor(Date.now() / 1000) + Math.max(expiresInMinutes, 30) * 60;
     // Prepare local payment first to bind metadata
     const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
     const payment = await this.prisma.payment.upsert({
