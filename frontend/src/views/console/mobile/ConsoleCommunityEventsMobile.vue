@@ -58,6 +58,7 @@ import { resolveAssetUrl } from '../../../utils/assetUrl';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
+import { useScrollMemory } from '../../../composables/useScrollMemory';
 const defaultEventCover =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
 const route = useRoute();
@@ -71,12 +72,14 @@ const lastFetchedAt = ref(0);
 const STALE_MS = 60_000;
 // デフォルトは「受付中」のイベントを表示
 const activeFilter = ref('open');
+const filterStorageKey = computed(() => `console-community-events-filter:${communityId.value || 'all'}`);
 const filters = [
   { value: 'all', label: 'すべて' },
   { value: 'open', label: '受付中' },
   { value: 'closed', label: '終了' },
 ];
 const keyword = ref('');
+useScrollMemory();
 
 const communityId = computed(() => route.params.communityId as string);
 const isAdmin = computed(() => Boolean(user.value?.isAdmin));
@@ -136,10 +139,27 @@ const loadEvents = async () => {
   }
 };
 
+const loadFilterFromStorage = () => {
+  if (typeof sessionStorage === 'undefined') return;
+  const saved = sessionStorage.getItem(filterStorageKey.value);
+  if (saved) activeFilter.value = saved;
+};
+
+watch(
+  () => activeFilter.value,
+  (val) => {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(filterStorageKey.value, val);
+  },
+);
+
 watch(
   () => communityId.value,
   () => {
-    if (communityId.value) loadEvents();
+    if (communityId.value) {
+      loadFilterFromStorage();
+      loadEvents();
+    }
   },
 );
 
@@ -183,6 +203,7 @@ const formatDate = (start: string, end?: string) => {
 onMounted(async () => {
   await communityStore.loadCommunities();
   if (communityId.value) {
+    loadFilterFromStorage();
     loadEvents();
   }
 });

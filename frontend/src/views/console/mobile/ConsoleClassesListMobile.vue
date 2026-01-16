@@ -73,6 +73,7 @@ import type { ClassSummary } from '../../../types/api';
 import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
+import { useScrollMemory } from '../../../composables/useScrollMemory';
 
 const classes = ref<(ClassSummary & { futureLessonCount?: number })[]>([]);
 const loading = ref(true);
@@ -81,6 +82,7 @@ const lastFetchedAt = ref(0);
 const STALE_MS = 60_000;
 const router = useRouter();
 const toast = useToast();
+useScrollMemory();
 const showTopBar = computed(() => !isLineInAppBrowser());
 const menuOpenId = ref<string | null>(null);
 const hasUnscheduled = computed(() => classes.value.some((c) => (c.futureLessonCount ?? 0) === 0));

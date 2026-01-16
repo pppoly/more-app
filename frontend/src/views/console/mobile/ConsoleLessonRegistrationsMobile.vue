@@ -109,6 +109,7 @@ import { fetchLessonPaymentSummary, fetchLessonRegistrations } from '../../../ap
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import AppAvatar from '../../../components/common/AppAvatar.vue';
+import { useScrollMemory } from '../../../composables/useScrollMemory';
 
 interface RegistrationItem {
   id: string;
@@ -133,6 +134,7 @@ const filterOptions = [
   { value: 'unpaid', label: '支払い待ち' },
   { value: 'refund', label: '返金処理中' },
 ];
+useScrollMemory();
 
 const load = async () => {
   try {

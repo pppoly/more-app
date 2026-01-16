@@ -138,6 +138,7 @@ import { isLineInAppBrowser } from '../../../utils/liff';
 import IosDateTimePicker from '../../../components/common/IosDateTimePicker.vue';
 import heroPlaceholder from '../../../assets/images/default-event.svg';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
+import { useScrollMemory } from '../../../composables/useScrollMemory';
 
 const route = useRoute();
 const router = useRouter();
@@ -187,6 +188,7 @@ const showTopBar = computed(() => !isLineInAppBrowser());
 const heroImageSrc = computed(() =>
   classDetail.value?.coverImageUrl ? resolveAssetUrl(classDetail.value.coverImageUrl) : heroPlaceholder,
 );
+useScrollMemory();
 
 const formatLesson = (startAt: string) => {
   const d = new Date(startAt);

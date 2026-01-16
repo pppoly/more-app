@@ -113,6 +113,7 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { trackEvent } from '../../utils/analytics';
 import { useAppShellMode } from '../../composables/useAppShellMode';
+import { useScrollMemory } from '../../composables/useScrollMemory';
 import logo1 from '../../assets/images/logo1.svg';
 
 const router = useRouter();
@@ -126,6 +127,7 @@ const STALE_MS = 60_000;
 const activeCategoryId = ref('all');
 const { preferredLangs } = useLocale();
 const logoImage = logo1;
+useScrollMemory();
 
 const resourceConfig = useResourceConfig();
 const { slotMap } = resourceConfig;

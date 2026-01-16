@@ -39,6 +39,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
+import { useScrollMemory } from '../../composables/useScrollMemory';
 import { useRouter } from 'vue-router';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
@@ -78,6 +79,7 @@ const apiOrigin =
   (import.meta.env.VITE_API_BASE_URL || '').replace(/\/api\/v1\/?$/, '') ||
   (typeof window !== 'undefined' ? window.location.origin : '');
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+useScrollMemory();
 
 const goBack = () => {
   const back = typeof window !== 'undefined' ? window.history.state?.back : null;

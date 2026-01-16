@@ -139,6 +139,7 @@ import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import { APP_TARGET } from '../../../config';
 import { getLocalizedText } from '../../../utils/i18nContent';
+import { useScrollMemory } from '../../../composables/useScrollMemory';
 
 const route = useRoute();
 const router = useRouter();
@@ -169,6 +170,7 @@ const eventTitle = computed(() => {
 const headerTitle = computed(() =>
   lockedEvent.value ? 'イベントの取引' : communityId.value ? 'コミュニティの取引' : '取引',
 );
+useScrollMemory();
 
 const formatYen = (value: number) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
