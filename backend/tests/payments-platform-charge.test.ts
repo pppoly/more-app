@@ -1,0 +1,477 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { PaymentsService } from '../src/payments/payments.service';
+import {
+  InMemoryPrisma,
+  StripeClientStub,
+  buildStripeServiceStub,
+  PermissionsServiceStub,
+  NotificationServiceStub,
+} from './payments-test-helpers';
+
+process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_test';
+
+const waitTick = async () => new Promise((resolve) => setImmediate(resolve));
+
+const buildPaidIntent = (params: { id: string; chargeId: string; fee: number }) => {
+  return {
+    id: params.id,
+    latest_charge: {
+      id: params.chargeId,
+      balance_transaction: {
+        id: `bt_${params.chargeId}`,
+        fee_details: [{ amount: params.fee }],
+      },
+    },
+  } as any;
+};
+
+test('P1/P4: platform charge paid + webhook replay is idempotent', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  stripeClient.paymentIntents['pi_1'] = buildPaidIntent({ id: 'pi_1', chargeId: 'ch_1', fee: 350 });
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_1',
+    userId: 'user_1',
+    status: 'pending',
+    paymentStatus: 'unpaid',
+    amount: 10000,
+    paidAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_1',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_1',
+    amount: 10000,
+    platformFee: 500,
+    currency: 'jpy',
+    status: 'pending',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripeCheckoutSessionId: 'cs_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const event = {
+    id: 'evt_checkout_1',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_1',
+        metadata: { paymentId: 'pay_1', registrationId: 'reg_1', communityId: 'com_1' },
+        payment_intent: 'pi_1',
+        mode: 'payment',
+        status: 'complete',
+        payment_status: 'paid',
+      },
+    },
+  } as any;
+
+  const rawBody = Buffer.from(JSON.stringify(event));
+  await paymentsService.handleStripeWebhook(rawBody, 'sig');
+  await waitTick();
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_1')!;
+  assert.equal(payment.status, 'paid');
+  assert.equal(payment.stripePaymentIntentId, 'pi_1');
+  assert.equal(payment.stripeChargeId, 'ch_1');
+
+  const reg = prisma.registrations.find((r) => r.id === 'reg_1')!;
+  assert.equal(reg.paymentStatus, 'paid');
+  assert.equal(reg.status, 'paid');
+
+  const ledgerCountAfter = prisma.ledgerEntries.length;
+  assert.ok(ledgerCountAfter >= 1);
+
+  await paymentsService.handleStripeWebhook(rawBody, 'sig');
+  await paymentsService.handleStripeWebhook(rawBody, 'sig');
+  await paymentsService.handleStripeWebhook(rawBody, 'sig');
+
+  assert.equal(prisma.ledgerEntries.length, ledgerCountAfter);
+});
+
+test('Webhook durable ACK: returns error when event cannot be persisted', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.shouldFailPaymentGatewayEventUpsert = true;
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const event = {
+    id: 'evt_durable_fail_1',
+    type: 'checkout.session.completed',
+    data: { object: { id: 'cs_durable_fail_1', metadata: {} } },
+  } as any;
+
+  await assert.rejects(async () => {
+    await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+  });
+});
+
+test('Webhook crash fallback: marks gateway event failed and schedules retry when processor crashes', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  // Simulate an unexpected crash after durable upsert.
+  (paymentsService as any).claimAndProcessGatewayEvent = async () => {
+    throw new Error('boom');
+  };
+
+  const event = {
+    id: 'evt_crash_1',
+    type: 'checkout.session.completed',
+    data: { object: { id: 'cs_crash_1', metadata: {} } },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+  const stored = prisma.paymentGatewayEvents.find(
+    (e) => e.provider === 'stripe' && e.providerEventId === 'evt_crash_1',
+  )!;
+  assert.equal(stored.status, 'failed');
+  assert.equal(stored.processedAt ?? null, null);
+  assert.ok(stored.nextAttemptAt instanceof Date);
+  assert.equal(stored.attempts ?? 0, 0);
+  assert.ok(String(stored.errorMessage ?? '').includes('boom'));
+});
+
+test('Webhook upsert update: unprocessed event nextAttemptAt is pulled forward for immediate retry', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const future = new Date(Date.now() + 60 * 60 * 1000);
+  prisma.paymentGatewayEvents.push({
+    id: 'pge_existing_1',
+    gateway: 'stripe',
+    provider: 'stripe',
+    providerEventId: 'evt_existing_1',
+    eventType: 'charge.refunded',
+    status: 'failed',
+    payload: { id: 'evt_existing_1', type: 'charge.refunded', data: { object: {} } },
+    payloadHash: 'hash',
+    receivedAt: new Date(),
+    nextAttemptAt: future,
+    processedAt: null,
+    attempts: 1,
+    errorMessage: 'previous_error',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const before = Date.now();
+  await (paymentsService as any).upsertGatewayEvent({
+    id: 'evt_existing_1',
+    type: 'charge.refunded',
+    data: { object: { id: 'ch_any' } },
+  } as any);
+  const after = Date.now();
+
+  const stored = prisma.paymentGatewayEvents.find((e) => e.id === 'pge_existing_1')!;
+  assert.equal(stored.processedAt ?? null, null);
+  assert.ok(stored.nextAttemptAt instanceof Date);
+  assert.ok(stored.nextAttemptAt.getTime() <= after + 1000);
+  assert.ok(stored.nextAttemptAt.getTime() >= before - 1000);
+});
+
+test('P2: payment_intent.payment_failed marks payment failed', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_2',
+    userId: 'user_2',
+    status: 'pending',
+    paymentStatus: 'unpaid',
+    amount: 8000,
+    paidAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_2',
+    userId: 'user_2',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_2',
+    amount: 8000,
+    platformFee: 400,
+    currency: 'jpy',
+    status: 'pending',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripePaymentIntentId: 'pi_fail_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const event = {
+    id: 'evt_pi_failed_1',
+    type: 'payment_intent.payment_failed',
+    data: { object: { id: 'pi_fail_1' } },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_2')!;
+  assert.equal(payment.status, 'failed');
+
+  const reg = prisma.registrations.find((r) => r.id === 'reg_2')!;
+  assert.equal(reg.paymentStatus, 'failed');
+});
+
+test('P3: checkout.session.expired cancels pending payment', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_3',
+    userId: 'user_3',
+    status: 'pending',
+    paymentStatus: 'unpaid',
+    amount: 6000,
+    paidAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_3',
+    userId: 'user_3',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_3',
+    amount: 6000,
+    platformFee: 300,
+    currency: 'jpy',
+    status: 'pending',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripeCheckoutSessionId: 'cs_exp_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const event = {
+    id: 'evt_cs_expired_1',
+    type: 'checkout.session.expired',
+    data: { object: { id: 'cs_exp_1', metadata: { registrationId: 'reg_3' } } },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_3')!;
+  assert.equal(payment.status, 'cancelled');
+});
+
+test('R1-R3: platform refund is from platform, no reverse_transfer/refund_application_fee, supports partial refunds', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  stripeClient.paymentIntents['pi_ref_1'] = buildPaidIntent({ id: 'pi_ref_1', chargeId: 'ch_ref_1', fee: 350 });
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_r1',
+    userId: 'user_1',
+    status: 'paid',
+    paymentStatus: 'paid',
+    amount: 10000,
+    paidAmount: 10000,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_r1',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_r1',
+    amount: 10000,
+    platformFee: 500,
+    currency: 'jpy',
+    status: 'paid',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripePaymentIntentId: 'pi_ref_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Partial refund (2000)
+  await paymentsService.refundStripePaymentInternal('admin', 'pay_r1', 2000, 'partial');
+  const refundCall1 = stripeClient.refundsCreateCalls[0];
+  const refundParams1 = refundCall1.params;
+  assert.equal(refundParams1.amount, 2000);
+  assert.ok(!('reverse_transfer' in refundParams1));
+  assert.ok(!('refund_application_fee' in refundParams1));
+  assert.equal(refundCall1.opts?.idempotencyKey, 'refund:pay_r1:2000:0');
+
+  let payment = prisma.payments.find((p) => p.id === 'pay_r1')!;
+  assert.equal(payment.status, 'partial_refunded');
+  assert.equal(payment.refundedGrossTotal, 2000);
+
+  // Another partial refund (8000) -> full refund
+  await paymentsService.refundStripePaymentInternal('admin', 'pay_r1', 8000, 'rest');
+  const refundCall2 = stripeClient.refundsCreateCalls[1];
+  const refundParams2 = refundCall2.params;
+  assert.equal(refundParams2.amount, 8000);
+  assert.ok(!('reverse_transfer' in refundParams2));
+  assert.equal(refundCall2.opts?.idempotencyKey, 'refund:pay_r1:8000:2000');
+
+  payment = prisma.payments.find((p) => p.id === 'pay_r1')!;
+  assert.equal(payment.status, 'refunded');
+  assert.equal(payment.refundedGrossTotal, 10000);
+
+  // Ledger should have refund entries keyed per refund id
+  const refundLedgerKeys = prisma.ledgerEntries
+    .filter((e) => e.entryType === 'refund' && e.provider === 'stripe')
+    .map((e) => e.idempotencyKey);
+  assert.ok(refundLedgerKeys.some((k) => k.includes('stripe:refund:re_test_1')));
+  assert.ok(refundLedgerKeys.some((k) => k.includes('stripe:refund:re_test_2')));
+});
+
+test('R4/R5: out-of-order refund webhook is retried and idempotent', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const refundEvent = {
+    id: 'evt_refund_ooo_1',
+    type: 'charge.refunded',
+    data: {
+      object: {
+        id: 'ch_ooo_1',
+        payment_intent: 'pi_ooo_1',
+        amount_refunded: 10000,
+        currency: 'jpy',
+        refunds: { data: [{ id: 're_ooo_1', amount: 10000, currency: 'jpy', balance_transaction: 'bt_re_ooo_1' }] },
+      },
+    },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(refundEvent)), 'sig');
+
+  const storedGatewayEvent = prisma.paymentGatewayEvents.find(
+    (e) => e.provider === 'stripe' && e.providerEventId === 'evt_refund_ooo_1',
+  )!;
+  assert.ok(storedGatewayEvent.payload);
+  assert.equal(storedGatewayEvent.status, 'failed');
+  assert.equal(storedGatewayEvent.processedAt ?? null, null);
+  assert.ok(storedGatewayEvent.nextAttemptAt instanceof Date);
+
+  // Payment arrives later
+  prisma.registrations.push({
+    id: 'reg_ooo_1',
+    userId: 'user_ooo',
+    status: 'paid',
+    paymentStatus: 'paid',
+    amount: 10000,
+    paidAmount: 10000,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_ooo_1',
+    userId: 'user_ooo',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_ooo_1',
+    amount: 10000,
+    platformFee: 500,
+    currency: 'jpy',
+    status: 'paid',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripePaymentIntentId: 'pi_ooo_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Make the gateway event due and retry
+  storedGatewayEvent.nextAttemptAt = new Date(Date.now() - 1);
+
+  const retry = await paymentsService.retryOverdueStripeWebhookEvents(5);
+  assert.equal(retry.retried, 1);
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_ooo_1')!;
+  assert.equal(payment.status, 'refunded');
+
+  const refundEntryCount = prisma.ledgerEntries.filter((e) => e.idempotencyKey === 'stripe:refund:re_ooo_1').length;
+  assert.equal(refundEntryCount, 1);
+
+  // Replay the same event should not duplicate ledger
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(refundEvent)), 'sig');
+  const refundEntryCountAfter = prisma.ledgerEntries.filter((e) => e.idempotencyKey === 'stripe:refund:re_ooo_1').length;
+  assert.equal(refundEntryCountAfter, 1);
+});

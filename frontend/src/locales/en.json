@@ -273,31 +273,31 @@
         "title": "Payment & payout flow",
         "items": [
           "Participants pay by credit card (Stripe)",
-          "Funds go through payment processing and settlement first",
-          "Payouts are not instant and follow a review/settlement cycle"
+          "MORE receives payments via Stripe and settles payouts on a settlement cycle",
+          "Payouts are not instant and may vary due to review and payout schedules"
         ]
       },
       "refund": {
         "title": "About refunds",
         "items": [
-          "Participants receive a full refund",
-          "Card processing fees are usually not returned (industry standard)",
-          "Those fees are borne by the organizer"
+          "For a full refund, participants receive the full amount back",
+          "Card processing fees may not be returned on refunds (industry standard)",
+          "In v1, MORE absorbs those fees (not deducted from your payout)"
         ]
       },
       "negative": {
         "title": "When balance can go negative",
         "items": [
           "If refunds or disputes happen before settlement",
-          "Your balance may temporarily go negative",
-          "Negative amounts are deducted from future revenue"
+          "Your settlement balance in MORE may temporarily go negative",
+          "Negative amounts are offset against future revenue (your Stripe available balance should not go negative)"
         ]
       },
       "responsibility": {
         "title": "Responsibility boundaries",
         "items": [
-          "MORE does not advance or front funds",
-          "Refund/dispute costs are borne by the organizer",
+          "Organizers are responsible for event fulfillment and setting refund terms",
+          "MORE receives payments, processes refunds, and settles payouts (payouts may be adjusted/paused due to refunds or disputes)",
           "This prevents abuse and protects serious organizers"
         ]
       },
@@ -312,7 +312,7 @@
     },
     "example": {
       "title": "Example",
-      "body": "Refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned and are borne by the organizer."
+      "body": "Full refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned; in v1, MORE absorbs those fees (not deducted from your payout)."
     },
     "accept": {
       "title": "Confirmation",

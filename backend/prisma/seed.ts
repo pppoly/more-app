@@ -91,6 +91,7 @@ async function createRegistration(options: {
         registrationId: registration.id,
         amount,
         method: 'mock',
+        chargeModel: 'platform_charge',
         platformFee: 0,
         currency: 'jpy',
         status: 'paid',

@@ -71,6 +71,7 @@ model Community {
   follows                CommunityFollow[]
   events                 Event[]
   payments               Payment[]
+  settlementItems        SettlementItem[]
 }
 
 model CommunityTagCategory {
@@ -341,6 +342,7 @@ model Payment {
   currency                String             @default("jpy")
   status                  String             @default("pending")
   method                  String             @default("stripe")
+  chargeModel             ChargeModel
   stripePaymentIntentId   String?
   stripeChargeId          String?
   stripeTransferId        String?
@@ -372,6 +374,71 @@ model Payment {
   @@index([provider, providerObjectId])
   @@index([providerBalanceTxId])
   @@index([stripePaymentIntentId])
+}
+
+enum ChargeModel {
+  platform_charge
+  destination_charge
+}
+
+model EventInbox {
+  id          String   @id @default(cuid())
+  type        String
+  eventId     String
+  payloadHash String?
+  processedAt DateTime?
+  attempts    Int      @default(0)
+  lastError   String?
+  nextAttemptAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([type, eventId])
+  @@index([processedAt])
+  @@index([nextAttemptAt])
+}
+
+model SettlementBatch {
+  id         String   @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  currency   String   @default("jpy")
+  status     String   @default("pending")
+  runAt      DateTime @default(now())
+  meta       Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items      SettlementItem[]
+
+  @@unique([periodFrom, periodTo, currency])
+  @@index([periodFrom])
+  @@index([periodTo])
+  @@index([status])
+}
+
+model SettlementItem {
+  id              String   @id @default(cuid())
+  batchId         String
+  hostId          String
+  currency        String   @default("jpy")
+  hostBalance     Int
+  settleAmount    Int
+  carryReceivable Int
+  status          String   @default("pending")
+  counts          Json?
+  stripeTransferId String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  batch SettlementBatch @relation(fields: [batchId], references: [id])
+  host  Community      @relation(fields: [hostId], references: [id])
+
+  @@unique([batchId, hostId])
+  @@index([batchId])
+  @@index([hostId])
+  @@index([status])
 }
 
 model RefundRequest {
@@ -412,10 +479,12 @@ model PaymentGatewayEvent {
   payload           Json?
   payloadHash       String?
   receivedAt        DateTime  @default(now())
+  nextAttemptAt     DateTime?
   processedAt       DateTime?
   attempts          Int       @default(0)
   errorMessage      String?
   createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@unique([provider, providerEventId], name: "provider_providerEventId")
   @@index([paymentId])
@@ -426,6 +495,8 @@ model PaymentGatewayEvent {
   @@index([userId])
   @@index([gateway, eventType])
   @@index([status])
+  @@index([nextAttemptAt])
+  @@index([processedAt])
 }
 
 model LedgerEntry {

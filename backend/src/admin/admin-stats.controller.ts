@@ -1,8 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsService } from '../auth/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Request } from 'express';
+
+type AuthedRequest = Request & { user: { id: string } };
 
 @Controller('admin/stats')
 @UseGuards(JwtAuthGuard)
@@ -10,7 +12,7 @@ export class AdminStatsController {
   constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   @Get()
-  async summary(@Req() req: any) {
+  async summary(@Req() req: AuthedRequest) {
     await this.permissions.assertAdmin(req.user.id);
     const [userCount, organizerCount, communityCount, eventCount, gmvAgg, refundAgg, subscriptionCount] =
       await this.prisma.$transaction([

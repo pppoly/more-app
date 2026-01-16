@@ -4,7 +4,7 @@
 3. Responsibility: Content/behavior borne by organizer; platform is intermediary.
 4. Prohibited: Fraud/false/religious solicitation/adult/organized crime/18+/gambling/danger/unlicensed medical.
 5. Operations: Accurate info, timely updates, safety; cancellation per refund policy.
-6. Payments: Stripe payouts, platform fee; chargebacks may trigger holds/freeze/setoff.
+6. Payments: Participant payments are received by the platform via Stripe and settled to the organizer on a settlement cycle (via Stripe Connect); platform fee; chargebacks may trigger holds/freeze/setoff.
 7. Data: APPI/telecom-log compliance; no use beyond purpose.
 8. Disclaimers: No indirect damages; force majeure; liability capped per law.
 9. Termination: High-risk/major breach → suspend/terminate.

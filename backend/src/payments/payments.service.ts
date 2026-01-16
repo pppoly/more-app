@@ -11,10 +11,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StripeService } from '../stripe/stripe.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { NotificationService } from '../notifications/notification.service';
-import { Prisma, Payment } from '@prisma/client';
+import { ChargeModel, Prisma, Payment } from '@prisma/client';
 import Stripe from 'stripe';
 import { buildIdempotencyKey } from './idempotency.util';
 import { computeMerchantNet, computeProportionalAmount } from './settlement.utils';
+import { getPaymentsConfig } from './payments.config';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
 const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15);
@@ -25,6 +26,9 @@ const PAYMENT_PENDING_TIMEOUT_MS =
 const PLATFORM_FEE_WAIVED = !['0', 'false', 'off'].includes(
   (process.env.BETA_PLATFORM_FEE_WAIVED ?? '1').toLowerCase(),
 );
+const WEBHOOK_RETRY_DELAY_MS = Number(process.env.STRIPE_WEBHOOK_RETRY_DELAY_MS ?? 60_000);
+const WEBHOOK_PROCESSING_TIMEOUT_MS = Number(process.env.STRIPE_WEBHOOK_PROCESSING_TIMEOUT_MS ?? 5 * 60_000);
+const WEBHOOK_ERROR_MESSAGE_MAX_LENGTH = 1000;
 
 @Injectable()
 export class PaymentsService {
@@ -86,7 +90,11 @@ export class PaymentsService {
     try {
       if (payment.stripeCheckoutSessionId && this.stripeService.enabled) {
         try {
-          await this.stripeService.client.checkout.sessions.expire(payment.stripeCheckoutSessionId);
+          await this.stripeService.client.checkout.sessions.expire(
+            payment.stripeCheckoutSessionId,
+            undefined,
+            { idempotencyKey: `expire:checkout_session:${payment.stripeCheckoutSessionId}` },
+          );
         } catch (error) {
           this.logger.warn(
             `Failed to expire Stripe session ${payment.stripeCheckoutSessionId} for payment ${payment.id}: ${
@@ -468,6 +476,7 @@ export class PaymentsService {
           currency: 'jpy',
           status: 'paid',
           method: 'mock',
+          chargeModel: 'platform_charge',
           idempotencyKey: buildIdempotencyKey('mock', 'charge', 'registration', registrationId, amount, 'jpy'),
         },
         select: {
@@ -660,6 +669,9 @@ export class PaymentsService {
       }
     }
 
+    const config = getPaymentsConfig();
+    const chargeModel: ChargeModel = config.chargeModel === 'destination_charge' ? 'destination_charge' : 'platform_charge';
+
     const planFee = this.resolvePlanFee(community.pricingPlanId);
     const percent = planFee.percent;
     const fixed = planFee.fixed;
@@ -685,6 +697,7 @@ export class PaymentsService {
         currency: 'jpy',
         status: 'pending',
         method: 'stripe',
+        chargeModel,
         idempotencyKey,
         providerAccountId: community.stripeAccountId ?? undefined,
       },
@@ -700,12 +713,22 @@ export class PaymentsService {
         currency: 'jpy',
         status: 'pending',
         method: 'stripe',
+        chargeModel,
         idempotencyKey,
         providerAccountId: community.stripeAccountId ?? undefined,
       },
     });
 
-    const session = await this.stripeService.client.checkout.sessions.create({
+    const sessionIdempotencyKey = buildIdempotencyKey(
+      'stripe',
+      'checkout_session',
+      'payment',
+      payment.id,
+      amount,
+      'jpy',
+    );
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
       payment_method_types: ['card'],
       expires_at: expiresAt,
@@ -730,6 +753,7 @@ export class PaymentsService {
         planId: community.pricingPlanId ?? 'free',
         feePercent: percent,
         feeFixed: fixed,
+        chargeModel,
       },
       success_url: `${this.stripeService.successUrlBase}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: this.stripeService.cancelUrlBase,
@@ -737,12 +761,24 @@ export class PaymentsService {
         metadata: {
           paymentId: payment.id,
           registrationId,
+          communityId: community.id,
+          chargeModel,
         },
+      },
+    };
+
+    if (chargeModel === 'destination_charge') {
+      sessionParams.payment_intent_data = {
+        ...(sessionParams.payment_intent_data ?? {}),
         application_fee_amount: platformFee,
         transfer_data: {
           destination: community.stripeAccountId,
         },
-      },
+      };
+    }
+
+    const session = await this.stripeService.client.checkout.sessions.create(sessionParams, {
+      idempotencyKey: sessionIdempotencyKey,
     });
 
     if (!session.url) {
@@ -852,120 +888,180 @@ export class PaymentsService {
     }
 
     const gatewayEvent = await this.upsertGatewayEvent(event);
-    if (gatewayEvent.processedAt) {
-      return { received: true };
+    try {
+      await this.claimAndProcessGatewayEvent(gatewayEvent.id);
+    } catch (error) {
+      // Durable ACK is already satisfied (gateway event persisted). Never return 500 after this point.
+      const errorMessage = this.truncateErrorMessage(error, WEBHOOK_ERROR_MESSAGE_MAX_LENGTH);
+      this.logger.error(
+        `Stripe webhook processing crashed but acknowledged: gatewayEventId=${gatewayEvent.id} event=${event.type} id=${event.id} error=${errorMessage}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      await this.writeCrashFallbackForGatewayEvent(gatewayEvent.id, event, errorMessage);
     }
+
+    return { received: true };
+  }
+
+  private async claimAndProcessGatewayEvent(gatewayEventId: string) {
+    const now = new Date();
+    const timeoutAt = new Date(now.getTime() - (Number.isFinite(WEBHOOK_PROCESSING_TIMEOUT_MS) ? WEBHOOK_PROCESSING_TIMEOUT_MS : 300_000));
+    const retryDelayMs = Number.isFinite(WEBHOOK_RETRY_DELAY_MS) ? WEBHOOK_RETRY_DELAY_MS : 60_000;
+    const claimed = await this.prisma.paymentGatewayEvent.updateMany({
+      where: {
+        id: gatewayEventId,
+        processedAt: null,
+        AND: [
+          { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+          {
+            OR: [
+              { status: { in: ['received', 'failed'] } },
+              { status: 'processing', updatedAt: { lt: timeoutAt } },
+            ],
+          },
+        ],
+      } as any,
+      data: {
+        status: 'processing',
+        attempts: { increment: 1 } as any,
+      },
+    });
+
+    if (claimed.count !== 1) return { received: true };
 
     try {
-      await this.prisma.$transaction(async (tx) => {
-        // 再読防止のロック：同一 event が並行到達しても processedAt を二重に書かない
-        const locked = await tx.paymentGatewayEvent.findUnique({ where: { id: gatewayEvent.id }, select: { processedAt: true } });
-        if (locked?.processedAt) return;
-
+      const { event, ignored } = await this.prisma.$transaction(async (tx) => {
+        const result = await this.processGatewayEventById(gatewayEventId, tx);
+        const status = result.ignored ? 'ignored' : 'processed';
         await tx.paymentGatewayEvent.update({
-          where: { id: gatewayEvent.id },
-          data: { attempts: { increment: 1 } as any, status: 'received' },
+          where: { id: gatewayEventId },
+          data: { status, processedAt: new Date(), errorMessage: null, nextAttemptAt: null },
         });
-
-        switch (event.type) {
-          case 'checkout.session.completed':
-          case 'checkout.session.async_payment_succeeded':
-            await this.handleCheckoutSessionCompleted(event.data.object, tx, event.id);
-            break;
-          case 'payment_intent.succeeded': {
-            const intent = event.data.object as Stripe.PaymentIntent;
-            const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
-            const payment =
-              (paymentId ? await tx.payment.findUnique({ where: { id: paymentId } }) : null) ??
-              (await tx.payment.findFirst({ where: { stripePaymentIntentId: intent.id } }));
-            if (!payment) {
-              this.logger.warn(`Stripe PI succeeded but no payment matched: paymentId=${paymentId ?? 'n/a'}, intent=${intent.id}`);
-              break;
-            }
-            await tx.payment.update({
-              where: { id: payment.id },
-              data: {
-                status: 'paid',
-                stripePaymentIntentId: intent.id,
-                stripeChargeId:
-                  typeof intent.latest_charge === 'string'
-                    ? intent.latest_charge
-                    : intent.latest_charge?.id ?? payment.stripeChargeId ?? null,
-                provider: 'stripe',
-                providerObjectType: 'payment_intent',
-                providerObjectId: intent.id,
-              },
-            });
-            void this.reconcilePaymentSettlement(payment.id, intent.id);
-            if (payment.registrationId) {
-              await tx.eventRegistration.update({
-                where: { id: payment.registrationId },
-                data: {
-                  status: 'paid',
-                  paymentStatus: 'paid',
-                  paidAmount: payment.amount,
-                },
-              });
-            }
-            break;
-          }
-          case 'checkout.session.expired':
-            await this.handleCheckoutSessionExpired(event.data.object, tx);
-            break;
-          case 'invoice.payment_succeeded':
-            await this.handleInvoicePaymentSucceeded(event.data.object);
-            break;
-          case 'invoice.payment_failed':
-            await this.handleInvoicePaymentFailed(event.data.object);
-            break;
-          case 'charge.dispute.created':
-          case 'charge.dispute.closed':
-            await this.handleChargeDispute(event.type, event.data.object);
-            break;
-          case 'payment_intent.payment_failed':
-            await this.handlePaymentIntentFailed(event.data.object, tx);
-            break;
-          case 'customer.subscription.deleted':
-          case 'customer.subscription.updated':
-            await this.handleSubscriptionLifecycle(event.data.object);
-            break;
-          case 'charge.refunded':
-            await this.handleChargeRefunded(event.data.object, tx);
-            break;
-          default:
-            this.logger.debug(`Unhandled Stripe event: ${event.type}`);
-            await tx.paymentGatewayEvent.update({
-              where: { id: gatewayEvent.id },
-              data: { status: 'ignored', processedAt: new Date() },
-            });
-            return;
-        }
-
-        await tx.paymentGatewayEvent.update({
-          where: { id: gatewayEvent.id },
-          data: { processedAt: new Date(), status: 'processed' } as any,
-        });
+        return { event: result.event, ignored: result.ignored };
       });
+
+      this.notifyStripeWebhookSideEffects(event);
+      return { received: true };
     } catch (err: any) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       await this.prisma.paymentGatewayEvent.update({
-        where: { id: gatewayEvent.id },
+        where: { id: gatewayEventId },
         data: {
           status: 'failed',
-          errorMessage: err instanceof Error ? err.message : String(err),
-          attempts: { increment: 1 } as any,
+          errorMessage,
+          nextAttemptAt: new Date(Date.now() + retryDelayMs),
         },
       });
-      throw err;
+      this.logger.error(
+        `Stripe webhook processing failed but acknowledged: gatewayEventId=${gatewayEventId} error=${errorMessage}`,
+      );
+      return { received: true };
+    }
+  }
+
+  private async processGatewayEventById(gatewayEventId: string, tx: Prisma.TransactionClient) {
+    const gatewayEvent = await tx.paymentGatewayEvent.findUnique({
+      where: { id: gatewayEventId },
+      select: { payload: true },
+    });
+    if (!gatewayEvent?.payload) {
+      throw new Error('gateway_event_payload_missing');
+    }
+    const event = gatewayEvent.payload as any;
+    if (!event || typeof event.type !== 'string' || typeof event.id !== 'string') {
+      throw new Error('gateway_event_payload_invalid');
+    }
+    const stripeEvent = event as Stripe.Event;
+
+    switch (stripeEvent.type) {
+      case 'checkout.session.completed':
+      case 'checkout.session.async_payment_succeeded':
+        await this.handleCheckoutSessionCompleted(stripeEvent.data.object, tx, stripeEvent.id);
+        break;
+      case 'payment_intent.succeeded': {
+        const intent = stripeEvent.data.object as Stripe.PaymentIntent;
+        const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
+        const payment =
+          (paymentId ? await tx.payment.findUnique({ where: { id: paymentId } }) : null) ??
+          (await tx.payment.findFirst({ where: { stripePaymentIntentId: intent.id } }));
+        if (!payment) {
+          const message = `Stripe PI succeeded but no payment matched: paymentId=${paymentId ?? 'n/a'}, intent=${intent.id}`;
+          if (!paymentId) {
+            this.logger.warn(message);
+            break;
+          }
+          throw new Error(message);
+        }
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'paid',
+            stripePaymentIntentId: intent.id,
+            stripeChargeId:
+              typeof intent.latest_charge === 'string'
+                ? intent.latest_charge
+                : intent.latest_charge?.id ?? payment.stripeChargeId ?? null,
+            provider: 'stripe',
+            providerObjectType: 'payment_intent',
+            providerObjectId: intent.id,
+          },
+        });
+        void this.reconcilePaymentSettlement(payment.id, intent.id);
+        if (payment.registrationId) {
+          await tx.eventRegistration.update({
+            where: { id: payment.registrationId },
+            data: {
+              status: 'paid',
+              paymentStatus: 'paid',
+              paidAmount: payment.amount,
+            },
+          });
+        }
+        break;
+      }
+      case 'checkout.session.expired':
+        await this.handleCheckoutSessionExpired(stripeEvent.data.object, tx);
+        break;
+      case 'invoice.payment_succeeded':
+        await this.handleInvoicePaymentSucceeded(stripeEvent.data.object);
+        break;
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(stripeEvent.data.object);
+        break;
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed':
+        await this.handleChargeDispute(stripeEvent.type, stripeEvent.data.object);
+        break;
+      case 'payment_intent.payment_failed':
+        await this.handlePaymentIntentFailed(stripeEvent.data.object, tx);
+        break;
+      case 'customer.subscription.deleted':
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionLifecycle(stripeEvent.data.object);
+        break;
+      case 'charge.refunded':
+        await this.handleChargeRefunded(stripeEvent.data.object, tx);
+        break;
+      default:
+        this.logger.debug(`Unhandled Stripe event: ${stripeEvent.type}`);
+        return { event: stripeEvent, ignored: true };
     }
 
+    return { event: stripeEvent, ignored: false };
+  }
+
+  private notifyStripeWebhookSideEffects(event: Stripe.Event) {
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
       const registrationId = session.metadata?.registrationId;
       if (registrationId) {
         void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
-          this.logger.warn(`Failed to notify Stripe payment success: ${error instanceof Error ? error.message : String(error)}`);
+          this.logger.warn(
+            `Failed to notify Stripe payment success: ${error instanceof Error ? error.message : String(error)}`,
+          );
         });
       }
+      return;
     }
 
     if (event.type === 'charge.refunded') {
@@ -980,8 +1076,32 @@ export class PaymentsService {
           this.logger.warn(`Failed to notify Stripe refund: ${error instanceof Error ? error.message : String(error)}`);
         });
     }
+  }
 
-    return { received: true };
+  async retryOverdueStripeWebhookEvents(limit: number = 10) {
+    const now = new Date();
+    const take = Math.min(50, Math.max(1, Number(limit) || 10));
+    const due = await this.prisma.paymentGatewayEvent.findMany({
+      where: {
+        provider: 'stripe',
+        providerEventId: { not: null },
+        processedAt: null,
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      } as any,
+      orderBy: { nextAttemptAt: 'asc' },
+      take,
+      select: { id: true },
+    });
+
+    if (!due.length) return { retried: 0 };
+
+    let retried = 0;
+    for (const gatewayEvent of due) {
+      await this.claimAndProcessGatewayEvent(gatewayEvent.id);
+      retried += 1;
+    }
+
+    return { retried };
   }
 
   async refundStripePayment(userId: string, paymentId: string, reason?: string) {
@@ -1120,61 +1240,27 @@ export class PaymentsService {
     refundPlatformFee = Math.min(refundPlatformFee, remainingPlatformFee);
     reverseMerchant = Math.min(reverseMerchant, remainingMerchant);
 
-    const reverseTransfer = reverseMerchant > 0;
-    const refund = await this.stripeService.client.refunds.create(
-      {
-        payment_intent: paymentIntentId,
-        amount: refundAmount,
-        refund_application_fee: true,
-        reverse_transfer: reverseTransfer,
-        metadata: {
-          paymentId: payment.id,
-          eventId: payment.eventId,
-          lessonId: payment.lessonId,
-          requestedBy: userId,
-          reason: reason ?? '',
-        },
+    const refundParams: Stripe.RefundCreateParams = {
+      payment_intent: paymentIntentId,
+      amount: refundAmount,
+      metadata: {
+        paymentId: payment.id,
+        eventId: payment.eventId,
+        lessonId: payment.lessonId,
+        requestedBy: userId,
+        reason: reason ?? '',
       },
-      { idempotencyKey: `refund:${payment.id}:${refundAmount}:${refreshed.refundedGrossTotal ?? 0}` },
-    );
+    };
 
-    if (reverseMerchant > 0 && !reverseTransfer) {
-      if (!refreshed.stripeTransferId) {
-        throw new BadRequestException('Transfer not found for refund reversal');
-      }
-      const reversal = await this.stripeService.client.transfers.createReversal(
-        refreshed.stripeTransferId,
-        {
-          amount: reverseMerchant,
-          metadata: {
-            paymentId: payment.id,
-            refundId: refund.id,
-            reason: 'refund_reversal',
-          },
-        },
-        { idempotencyKey: `transfer:refund:${refund.id}` },
-      );
-
-      await this.createLedgerEntryIfMissing({
-        tx: this.prisma,
-        businessPaymentId: payment.id,
-        businessRegistrationId: payment.registrationId ?? undefined,
-        businessLessonId: payment.lessonId ?? undefined,
-        businessCommunityId: payment.communityId ?? undefined,
-        entryType: 'transfer_reversal',
-        direction: 'in',
-        amount: reverseMerchant,
-        currency: payment.currency ?? 'jpy',
-        provider: 'stripe',
-        providerObjectType: 'transfer_reversal',
-        providerObjectId: reversal.id,
-        providerBalanceTxId: reversal.balance_transaction as string | undefined,
-        providerAccountId: payment.communityId ?? undefined,
-        idempotencyKey: `stripe:transfer.reversal:refund:${reversal.id}`,
-        occurredAt: new Date(),
-        metadata: { refundId: refund.id, transferId: refreshed.stripeTransferId },
-      });
+    // Legacy rollback path only: destination charge needs reverse/fee refund behavior.
+    if (refreshed.chargeModel === 'destination_charge') {
+      (refundParams as any).refund_application_fee = true;
+      (refundParams as any).reverse_transfer = reverseMerchant > 0;
     }
+
+    const refund = await this.stripeService.client.refunds.create(refundParams, {
+      idempotencyKey: `refund:${payment.id}:${refundAmount}:${refreshed.refundedGrossTotal ?? 0}`,
+    });
 
     const status = await this.recordRefundTotals(payment.id, {
       refundAmount,
@@ -1207,6 +1293,71 @@ export class PaymentsService {
       metadata: { reason, refundPlatformFee, reverseMerchant },
     });
 
+    // v1 baseline: platform charge refunds do not touch connected account balance.
+    // Record internal journal entries for reconciliation and settlement reporting.
+    if (refreshed.chargeModel === 'platform_charge') {
+      if (refundPlatformFee > 0) {
+        await this.createLedgerEntryIfMissing({
+          tx: this.prisma,
+          businessPaymentId: payment.id,
+          businessRegistrationId: payment.registrationId ?? undefined,
+          businessLessonId: payment.lessonId ?? undefined,
+          businessCommunityId: payment.communityId ?? undefined,
+          entryType: 'platform_fee_reversal',
+          direction: 'out',
+          amount: refundPlatformFee,
+          currency: payment.currency ?? 'jpy',
+          provider: 'internal',
+          providerObjectType: 'refund',
+          providerObjectId: refund.id,
+          idempotencyKey: `ledger:platform_fee_reversal:${refund.id}`,
+          occurredAt: new Date(),
+          metadata: { paymentId: payment.id, refundId: refund.id },
+        });
+      }
+
+      if (reverseMerchant > 0) {
+        await this.createLedgerEntryIfMissing({
+          tx: this.prisma,
+          businessPaymentId: payment.id,
+          businessRegistrationId: payment.registrationId ?? undefined,
+          businessLessonId: payment.lessonId ?? undefined,
+          businessCommunityId: payment.communityId ?? undefined,
+          entryType: 'host_payable_reversal',
+          direction: 'in',
+          amount: reverseMerchant,
+          currency: payment.currency ?? 'jpy',
+          provider: 'internal',
+          providerObjectType: 'refund',
+          providerObjectId: refund.id,
+          idempotencyKey: `ledger:host_payable_reversal:${refund.id}`,
+          occurredAt: new Date(),
+          metadata: { paymentId: payment.id, refundId: refund.id },
+        });
+      }
+
+      const refundFeeLoss = computeProportionalAmount(stripeFee, refundAmount, gross);
+      if (refundFeeLoss > 0) {
+        await this.createLedgerEntryIfMissing({
+          tx: this.prisma,
+          businessPaymentId: payment.id,
+          businessRegistrationId: payment.registrationId ?? undefined,
+          businessLessonId: payment.lessonId ?? undefined,
+          businessCommunityId: payment.communityId ?? undefined,
+          entryType: 'refund_fee_loss_platform',
+          direction: 'out',
+          amount: refundFeeLoss,
+          currency: payment.currency ?? 'jpy',
+          provider: 'internal',
+          providerObjectType: 'refund',
+          providerObjectId: refund.id,
+          idempotencyKey: `ledger:refund_fee_loss_platform:${refund.id}`,
+          occurredAt: new Date(),
+          metadata: { paymentId: payment.id, refundId: refund.id, stripeFee, refundAmount, gross },
+        });
+      }
+    }
+
     await this.logGatewayEvent({
       gateway: 'stripe',
       eventType: 'refund.requested',
@@ -1229,7 +1380,11 @@ export class PaymentsService {
     eventId?: string,
   ) {
     const registrationId = session.metadata?.registrationId;
+    const paymentId = session.metadata?.paymentId;
     const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
+    if (paymentId) {
+      whereClauses.push({ id: paymentId });
+    }
     if (registrationId) {
       whereClauses.push({ registrationId });
     }
@@ -1261,14 +1416,18 @@ export class PaymentsService {
         );
         return;
       }
-      this.logger.warn(`No payment found for checkout session ${session.id}`);
+      const message = `No payment found for checkout session ${session.id} paymentId=${paymentId ?? 'n/a'}`;
+      if (paymentId) {
+        throw new Error(message);
+      }
+      this.logger.warn(message);
       await this.logGatewayEvent({
         gateway: 'stripe',
         eventType: 'checkout.session.completed',
         status: 'ignored',
         registrationId,
         communityId: session.metadata?.communityId,
-        message: `Payment not found for checkout session ${session.id}`,
+        message,
         payload: { sessionId: session.id },
       });
       return;
@@ -1367,8 +1526,13 @@ export class PaymentsService {
       const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
       if (!payment || payment.method !== 'stripe') return;
 
+      const chargeModel: ChargeModel =
+        payment.chargeModel === 'destination_charge' ? 'destination_charge' : 'platform_charge';
       const intent = await this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
-        expand: ['latest_charge.balance_transaction', 'latest_charge.transfer'],
+        expand:
+          chargeModel === 'destination_charge'
+            ? ['latest_charge.balance_transaction', 'latest_charge.transfer']
+            : ['latest_charge.balance_transaction'],
       });
       const latestCharge =
         typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
@@ -1387,22 +1551,95 @@ export class PaymentsService {
       const gross = payment.amount ?? 0;
       const platformFee = payment.platformFee ?? 0;
       const merchantNet = computeMerchantNet(gross, platformFee, stripeFee);
-      const transferId =
-        typeof latestCharge?.transfer === 'string'
-          ? latestCharge.transfer
-          : (latestCharge?.transfer as Stripe.Transfer | null)?.id ?? null;
+
+      const updateData: Prisma.PaymentUpdateInput = {
+        stripePaymentIntentId: paymentIntentId,
+        stripeChargeId: chargeId,
+        stripeFeeAmountActual: stripeFee,
+        merchantTransferAmount: merchantNet,
+        providerBalanceTxId: balanceTx?.id ?? payment.providerBalanceTxId ?? undefined,
+      };
+
+      let transferId: string | null = null;
+      if (chargeModel === 'destination_charge') {
+        transferId =
+          typeof latestCharge?.transfer === 'string'
+            ? latestCharge.transfer
+            : (latestCharge?.transfer as Stripe.Transfer | null)?.id ?? null;
+        updateData.stripeTransferId = transferId ?? undefined;
+      }
 
       await this.prisma.payment.update({
         where: { id: paymentId },
-        data: {
-          stripePaymentIntentId: paymentIntentId,
-          stripeChargeId: chargeId,
-          stripeTransferId: transferId ?? undefined,
-          stripeFeeAmountActual: stripeFee,
-          merchantTransferAmount: merchantNet,
-        },
+        data: updateData,
       });
 
+      if (chargeModel === 'platform_charge') {
+        if (balanceTx && stripeFee > 0) {
+          await this.createLedgerEntryIfMissing({
+            tx: this.prisma,
+            businessPaymentId: paymentId,
+            businessRegistrationId: payment.registrationId ?? undefined,
+            businessLessonId: payment.lessonId ?? undefined,
+            businessCommunityId: payment.communityId ?? undefined,
+            entryType: 'stripe_fee_actual',
+            direction: 'out',
+            amount: stripeFee,
+            currency: payment.currency ?? 'jpy',
+            provider: 'stripe',
+            providerObjectType: 'balance_transaction',
+            providerObjectId: balanceTx.id,
+            providerBalanceTxId: balanceTx.id,
+            idempotencyKey: `stripe:balance_tx.fee:${balanceTx.id}`,
+            occurredAt: new Date(),
+            metadata: { paymentIntentId, chargeId },
+          });
+        }
+
+        if (platformFee > 0) {
+          await this.createLedgerEntryIfMissing({
+            tx: this.prisma,
+            businessPaymentId: paymentId,
+            businessRegistrationId: payment.registrationId ?? undefined,
+            businessLessonId: payment.lessonId ?? undefined,
+            businessCommunityId: payment.communityId ?? undefined,
+            entryType: 'platform_fee',
+            direction: 'in',
+            amount: platformFee,
+            currency: payment.currency ?? 'jpy',
+            provider: 'internal',
+            providerObjectType: 'payment',
+            providerObjectId: paymentId,
+            idempotencyKey: `ledger:platform_fee:${paymentId}`,
+            occurredAt: new Date(),
+            metadata: { paymentIntentId, chargeId, chargeModel },
+          });
+        }
+
+        if (merchantNet > 0) {
+          await this.createLedgerEntryIfMissing({
+            tx: this.prisma,
+            businessPaymentId: paymentId,
+            businessRegistrationId: payment.registrationId ?? undefined,
+            businessLessonId: payment.lessonId ?? undefined,
+            businessCommunityId: payment.communityId ?? undefined,
+            entryType: 'host_payable',
+            direction: 'out',
+            amount: merchantNet,
+            currency: payment.currency ?? 'jpy',
+            provider: 'internal',
+            providerObjectType: 'payment',
+            providerObjectId: paymentId,
+            idempotencyKey: `ledger:host_payable:${paymentId}`,
+            occurredAt: new Date(),
+            metadata: { paymentIntentId, chargeId, gross, platformFee, stripeFee },
+          });
+        }
+
+        return;
+      }
+
+      // Legacy destination-charge accounting (rollback only)
       if (!transferId || stripeFee <= 0) return;
       if (payment.stripeFeeReversalId) return;
 
@@ -1613,39 +1850,49 @@ export class PaymentsService {
       where: { OR: whereClauses },
     });
     if (!payment) {
-      this.logger.warn(`No payment matched refunded charge ${charge.id}`);
-      await this.logGatewayEvent({
-        gateway: 'stripe',
-        eventType: 'charge.refunded',
-        status: 'ignored',
-        message: `No payment matched charge ${charge.id}`,
-        payload: { chargeId: charge.id },
-      });
-      return;
+      const message = `No payment matched refunded charge ${charge.id} payment_intent=${paymentIntentId ?? 'n/a'}`;
+      if (!paymentIntentId) {
+        this.logger.warn(message);
+        await this.logGatewayEvent({
+          gateway: 'stripe',
+          eventType: 'charge.refunded',
+          status: 'ignored',
+          message,
+          payload: { chargeId: charge.id },
+        });
+        return;
+      }
+      throw new Error(message);
     }
 
     const refundedAmount = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : payment.amount;
-    await this.syncRefundTotalsFromStripe(payment, refundedAmount, charge.refunds?.data?.[0]?.id, tx);
+    const refunds = charge.refunds?.data ?? [];
+    const latestRefundId = refunds[0]?.id ?? null;
+    await this.syncRefundTotalsFromStripe(payment, refundedAmount, latestRefundId, tx);
 
-    await this.createLedgerEntryIfMissing({
-      tx,
-      businessPaymentId: payment.id,
-      businessRegistrationId: payment.registrationId ?? undefined,
-      businessLessonId: payment.lessonId ?? undefined,
-      businessCommunityId: payment.communityId ?? undefined,
-      entryType: 'refund',
-      direction: 'refund',
-      amount: charge.amount_refunded ?? payment.amount,
-      currency: charge.currency ?? 'jpy',
-      provider: 'stripe',
-      providerObjectType: 'charge',
-      providerObjectId: charge.id,
-      providerBalanceTxId: (charge.balance_transaction as string) ?? undefined,
-      providerAccountId: undefined,
-      idempotencyKey: `stripe:charge.refunded:${charge.id}`,
-      occurredAt: new Date(),
-      metadata: { paymentIntentId },
-    });
+    for (const refund of refunds) {
+      if (!refund?.id) continue;
+      await this.createLedgerEntryIfMissing({
+        tx,
+        businessPaymentId: payment.id,
+        businessRegistrationId: payment.registrationId ?? undefined,
+        businessLessonId: payment.lessonId ?? undefined,
+        businessCommunityId: payment.communityId ?? undefined,
+        entryType: 'refund',
+        direction: 'refund',
+        amount: refund.amount ?? 0,
+        currency: refund.currency ?? charge.currency ?? 'jpy',
+        provider: 'stripe',
+        providerObjectType: 'refund',
+        providerObjectId: refund.id,
+        providerBalanceTxId:
+          typeof refund.balance_transaction === 'string' ? refund.balance_transaction : undefined,
+        providerAccountId: undefined,
+        idempotencyKey: `stripe:refund:${refund.id}`,
+        occurredAt: new Date(),
+        metadata: { paymentIntentId, chargeId: charge.id },
+      });
+    }
   }
 
   private async handleChargeDispute(eventType: string, dispute: Stripe.Dispute) {
@@ -1873,6 +2120,7 @@ export class PaymentsService {
     if (
       normalizedPaymentStatus === 'paid' &&
       payment.method === 'stripe' &&
+      payment.chargeModel === 'destination_charge' &&
       payment.providerAccountId &&
       !payment.stripeTransferId &&
       isOldEnough
@@ -2055,6 +2303,7 @@ export class PaymentsService {
         currency,
         status: 'paid',
         method: 'stripe',
+        chargeModel: 'platform_charge',
         stripeChargeId: chargeId,
         metadata: { planId, invoiceId: invoice.id },
       } as any,
@@ -2195,20 +2444,63 @@ export class PaymentsService {
     const providerEventId = event.id;
     const payloadHash = this.hashPayload(event);
     const now = new Date();
-    return this.prisma.paymentGatewayEvent.upsert({
+    const gatewayEvent = await this.prisma.paymentGatewayEvent.upsert({
       where: { provider_providerEventId: { provider: 'stripe', providerEventId } } as any,
-      update: { payload: event as any, payloadHash, attempts: { increment: 1 } as any },
+      update: { payload: event as any, payloadHash, eventType: event.type },
       create: {
         gateway: 'stripe',
         provider: 'stripe',
         providerEventId,
-        eventType: `webhook.${event.type}`,
-        status: 'pending',
+        eventType: event.type,
+        status: 'received',
         payload: event as any,
         payloadHash,
         receivedAt: now,
+        nextAttemptAt: now,
       },
     });
+    // Ensure unprocessed events are eligible for immediate processing/sweep even if nextAttemptAt is null/future.
+    await this.prisma.paymentGatewayEvent.updateMany({
+      where: {
+        id: gatewayEvent.id,
+        processedAt: null,
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { gt: now } }],
+      } as any,
+      data: { nextAttemptAt: now },
+    });
+    return gatewayEvent;
+  }
+
+  private truncateErrorMessage(error: unknown, maxLength: number) {
+    const raw = error instanceof Error ? error.message : String(error);
+    if (!raw) return 'unknown_error';
+    if (raw.length <= maxLength) return raw;
+    return raw.slice(0, maxLength);
+  }
+
+  private async writeCrashFallbackForGatewayEvent(gatewayEventId: string, event: Stripe.Event, errorMessage: string) {
+    const retryDelayMs = Number.isFinite(WEBHOOK_RETRY_DELAY_MS) ? WEBHOOK_RETRY_DELAY_MS : 60_000;
+    const nextAttemptAt = new Date(Date.now() + retryDelayMs);
+    try {
+      const updated = await this.prisma.paymentGatewayEvent.updateMany({
+        where: { id: gatewayEventId, processedAt: null } as any,
+        data: {
+          status: 'failed',
+          errorMessage,
+          nextAttemptAt,
+        },
+      });
+      if (updated.count === 1) {
+        this.logger.error(
+          `Stripe webhook crash fallback scheduled: gatewayEventId=${gatewayEventId} event=${event.type} id=${event.id} nextAttemptAt=${nextAttemptAt.toISOString()}`,
+        );
+      }
+    } catch (fallbackError) {
+      this.logger.error(
+        `Stripe webhook crash fallback failed: gatewayEventId=${gatewayEventId} event=${event.type} id=${event.id}`,
+        fallbackError instanceof Error ? fallbackError.stack : String(fallbackError),
+      );
+    }
   }
 
   private async createLedgerEntryIfMissing({
