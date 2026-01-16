@@ -196,10 +196,12 @@
           v-if="mode === 'chat' && !explainMode && (choiceQuestionState || readyMenuFallback)"
           class="decision-block"
         >
-          <p v-if="(choiceQuestionState || readyMenuFallback)?.prompt" class="decision-title">
+          <p v-if="!machineUiOnlyActive && (choiceQuestionState || readyMenuFallback)?.prompt" class="decision-title">
             {{ (choiceQuestionState || readyMenuFallback)?.prompt }}
           </p>
-          <p v-if="coachPromptState" class="coach-prompt">{{ coachPromptState }}</p>
+          <p v-if="coachPromptState && !machineUiOnlyActive" class="coach-prompt">
+            {{ coachPromptState }}
+          </p>
           <div class="decision-chips">
             <button
               v-for="(opt, idx) in (choiceQuestionState || readyMenuFallback)?.options || []"
@@ -449,8 +451,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { buildEventAssistantPrompt } from '../../../ai/eventCreationAssistant';
-import type { EventAssistantStage } from '../../../ai/eventCreationAssistant';
 import {
   fetchAssistantProfileDefaults,
   requestEventAssistantReply,
@@ -489,6 +489,7 @@ import {
 
 type ChatRole = 'user' | 'assistant';
 type ChatMessageType = 'text' | 'proposal';
+type EventAssistantStage = 'coach' | 'editor' | 'writer';
 interface ChatMessage {
   id: string;
   clientMessageId?: string;
@@ -501,7 +502,13 @@ interface ChatMessage {
   serverCreatedAt?: string;
   includeInContext?: boolean;
   action?: 'direct-form' | 'title-suggestion' | 'system-safe' | 'welcome' | 'draft-anchor';
-  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt' | 'frontend.machine' | 'frontend.explain';
+  messageSource?:
+    | 'backend.ui'
+    | 'backend.normalizer'
+    | 'backend.interrupt'
+    | 'backend.llm'
+    | 'frontend.machine'
+    | 'frontend.explain';
   status?: 'pending' | 'sent' | 'failed';
   options?: string[];
   thinkingSteps?: string[];
@@ -543,6 +550,7 @@ const isEventAssistantDebug = computed(() => {
   const windowFlag = (window as any)?.EVENT_ASSISTANT_DEBUG;
   return flag === '1' || windowFlag === '1';
 });
+const machineUiOnlyEnabled = import.meta.env.VITE_EVENT_ASSISTANT_MACHINE_UI_ONLY === '1';
 const communityId = computed(() => route.params.communityId as string | undefined);
 const forceNewSession = computed(() => route.query.newSession === '1');
 const requestedLogId = computed(() => (route.query.logId as string | undefined) || null);
@@ -1048,6 +1056,16 @@ const savingLog = ref(false);
 const historyEntries = ref<AssistantHistoryEntry[]>([]);
 const expandedThinkingId = ref<string | null>(null);
 const lastAssistantStatus = ref<EventAssistantState>('collecting');
+const lastUiPhase = ref<EventAssistantReply['uiPhase'] | null>(null);
+const machineUiOnlyActive = computed(() => {
+  if (!machineUiOnlyEnabled) return false;
+  if (explainMode.value) return false;
+  return (
+    lastUiPhase.value === 'collecting' ||
+    lastUiPhase.value === 'decision' ||
+    lastUiPhase.value === 'compare'
+  );
+});
 const lastPromptVersion = ref('coach-v3-lite');
 const currentStage = ref<EventAssistantStage>('coach');
 const pendingQuestion = ref<string | null>(null);
@@ -1714,6 +1732,70 @@ const buildProposalFromDraft = (
   };
 };
 
+const inferUiPhaseFromStructure = (reply: EventAssistantReply): EventAssistantReply['uiPhase'] | null => {
+  if (!reply) return null;
+  if (reply.draftReady) return 'ready';
+  if (reply.inputMode === 'compare' || Boolean(reply.compareCandidates?.length)) return 'compare';
+  if (reply.choiceQuestion?.options?.length) {
+    const key = reply.choiceQuestion.key;
+    if (key === 'ready_next_action' || key === 'ready_actions') return 'ready';
+    return 'decision';
+  }
+  if (reply.nextQuestionKey) return 'collecting';
+  return null;
+};
+
+const resolveServerUiPhase = (reply: EventAssistantReply): EventAssistantReply['uiPhase'] | null =>
+  reply.uiPhase ?? inferUiPhaseFromStructure(reply);
+
+const normalizeUiPhaseForNudge = (
+  uiPhase: EventAssistantReply['uiPhase'] | null,
+): 'collecting' | 'decision' | 'compare' | 'ready' | 'operate' => {
+  switch (uiPhase) {
+    case 'decision':
+    case 'compare':
+    case 'ready':
+    case 'operate':
+      return uiPhase;
+    default:
+      return 'collecting';
+  }
+};
+
+const buildMachineFallbackQuestion = (key: string | null, language: string) => {
+  const lang = language?.toLowerCase() || 'ja';
+  const label = (() => {
+    switch (key) {
+      case 'title':
+        return lang.startsWith('zh') ? '标题' : lang === 'en' ? 'title' : 'タイトル';
+      case 'time':
+        return lang.startsWith('zh') ? '时间' : lang === 'en' ? 'time' : '日時';
+      case 'location':
+        return lang.startsWith('zh') ? '地点' : lang === 'en' ? 'location' : '場所';
+      case 'price':
+        return lang.startsWith('zh') ? '参加费' : lang === 'en' ? 'price' : '参加費';
+      case 'details':
+        return lang.startsWith('zh') ? '内容' : lang === 'en' ? 'details' : '内容';
+      case 'capacity':
+        return lang.startsWith('zh') ? '人数上限' : lang === 'en' ? 'capacity' : '定員';
+      default:
+        return '';
+    }
+  })();
+  if (!label) {
+    return lang.startsWith('zh')
+      ? '请补充一个关键信息（标题/时间/地点/参加费）。'
+      : lang === 'en'
+      ? 'Please share one key detail (title/time/location/price).'
+      : 'タイトル・日時・場所・参加費のいずれかを教えてください。';
+  }
+  return lang.startsWith('zh')
+    ? `请补充：${label}`
+    : lang === 'en'
+    ? `Please share: ${label}.`
+    : `${label}を教えてください。`;
+};
+
 const requestAssistantReply = async (
   userText: string,
   options?: {
@@ -1732,12 +1814,7 @@ const requestAssistantReply = async (
   const clientLocale = navigator.language || qaState.baseLanguage || 'ja';
   lastRequestId.value = requestId;
   const qaSummary = options?.overrideSummary ?? buildQaSummary(userText);
-  const { stage, prompt } = buildEventAssistantPrompt({
-    draft: assistantDraftSnapshot.value,
-    locale: (qaState.baseLanguage as 'ja' | 'zh' | 'en') || 'ja',
-    lastUserUtterance: userText,
-  });
-  currentStage.value = stage;
+  currentStage.value = 'coach';
   if (isEventAssistantDebug.value) {
     console.info('[EventAssistant][trace]', {
       requestId,
@@ -1749,15 +1826,13 @@ const requestAssistantReply = async (
       timezone: clientTimezone,
     });
   }
-  const conversationContext = buildConversationContext();
-  const promptDetails = `${qaSummary}\n\n--- Conversation ---\n${conversationContext}\n\n--- Assistant Prompt ---\n${prompt}`;
   const conversationMessages = buildConversationMessages();
   const payload: EventAssistantRequest = {
     baseLanguage: getProfileValue(qaState.baseLanguage, 'baseLanguage'),
     topic: getProfileValue(qaState.topic, 'topic'),
     audience: getProfileValue(qaState.audience, 'audience'),
     style: getProfileValue(qaState.style, 'style'),
-    details: promptDetails,
+    details: qaSummary,
     titleSeed: titleSeed.value ?? undefined,
     conversation: conversationMessages,
     action: options?.action,
@@ -1772,6 +1847,8 @@ const requestAssistantReply = async (
   aiLoading.value = true;
   try {
     const result = await requestEventAssistantReply(payload);
+    const serverUiPhase = resolveServerUiPhase(result);
+    lastUiPhase.value = serverUiPhase;
     const state = (result.state as EventAssistantState) || result.status || 'collecting';
     const stageTag: EventAssistantStage = state === 'ready' ? 'writer' : state === 'options' ? 'editor' : 'coach';
     currentStage.value = stageTag;
@@ -1813,6 +1890,15 @@ const requestAssistantReply = async (
     if (isExplainMode) {
       ensureExplainBubble(explainLanguage.value);
     }
+    const machineOnlyActiveThisTurn =
+      machineUiOnlyEnabled &&
+      !explainMode.value &&
+      (serverUiPhase === 'collecting' || serverUiPhase === 'decision' || serverUiPhase === 'compare');
+    const nudgePhase = normalizeUiPhaseForNudge(serverUiPhase);
+    const phaseMessage = pickPhaseMessage(nudgePhase, result.turnCount);
+    if (machineOnlyActiveThisTurn) {
+      uiMessageText = '';
+    }
     if (result.autoTitle && result.autoTitle.trim()) {
       titleSeed.value = result.autoTitle.trim();
     }
@@ -1834,7 +1920,9 @@ const requestAssistantReply = async (
     }
     const hasChoiceQuestion = Boolean(choiceQuestion?.options?.length);
     coachPromptState.value =
-      !isExplainMode && !willOperate && hasChoiceQuestion && !isCompareMode ? result.coachPrompt ?? null : null;
+      !machineOnlyActiveThisTurn && !isExplainMode && !willOperate && hasChoiceQuestion && !isCompareMode
+        ? result.coachPrompt ?? null
+        : null;
     lastAssistantStatus.value = state;
     lastPromptVersion.value = result.promptVersion;
     lastTurnCount.value = result.turnCount;
@@ -1854,22 +1942,40 @@ const requestAssistantReply = async (
     if (uiQuestionText && isDuplicateQuestionKey) {
       console.warn('[EventAssistant] duplicate question key ignored', { nextQuestionKey });
     }
-    const hasNextQuestion = Boolean(nextQuestionKey);
-    const hasQuestionText = Boolean(uiQuestionText);
-    const shouldRenderQuestionBubble =
-      canRenderBubble &&
-      !isCompareMode &&
-      hasNextQuestion &&
-      hasQuestionText &&
-      !shouldHoldCommit &&
-      !isDuplicateQuestionKey;
-    const shouldRenderCompareBubble = canRenderBubble && isCompareMode && uiMessageText;
+    const uiQuestionKey = (result.ui?.question?.key as string | undefined) ?? null;
+    const isSafeMachineQuestion =
+      machineOnlyActiveThisTurn &&
+      uiMessageSource !== 'backend.llm' &&
+      Boolean(uiQuestionText) &&
+      Boolean(nextQuestionKey) &&
+      uiQuestionKey === nextQuestionKey &&
+      uiQuestionText.length > 0 &&
+      uiQuestionText.length <= 140;
+    const questionTextForBubble =
+      machineOnlyActiveThisTurn && serverUiPhase === 'collecting'
+        ? isSafeMachineQuestion
+          ? uiQuestionText
+          : buildMachineFallbackQuestion(
+              nextQuestionKey,
+              (result.language as string) || qaState.baseLanguage || 'ja',
+            )
+        : uiQuestionText;
+    const hasQuestionText = Boolean(questionTextForBubble);
+    const shouldRenderQuestionBubble = machineOnlyActiveThisTurn
+      ? canRenderBubble && serverUiPhase === 'collecting' && hasQuestionText && !shouldHoldCommit && !isDuplicateQuestionKey
+      : canRenderBubble &&
+        !isCompareMode &&
+        Boolean(nextQuestionKey) &&
+        hasQuestionText &&
+        !shouldHoldCommit &&
+        !isDuplicateQuestionKey;
+    const shouldRenderCompareBubble = !machineOnlyActiveThisTurn && canRenderBubble && isCompareMode && uiMessageText;
     const shouldRenderMessageBubble =
-      canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText && !shouldHoldCommit;
+      !machineOnlyActiveThisTurn && canRenderBubble && !isCompareMode && !nextQuestionKey && uiMessageText && !shouldHoldCommit;
     const lastMessage = chatMessages.value[chatMessages.value.length - 1] ?? null;
     const canAppendQuestionBubble = shouldAppendQuestionBubble({
       lastMessage,
-      questionText: uiQuestionText,
+      questionText: questionTextForBubble,
       shouldRender: shouldRenderQuestionBubble,
     });
     if (shouldRenderQuestionBubble) {
@@ -1877,16 +1983,6 @@ const requestAssistantReply = async (
     } else {
       currentSlotKey.value = null;
     }
-    const phase: 'collecting' | 'decision' | 'compare' | 'ready' | 'operate' = willOperate
-      ? 'operate'
-      : isCompareMode
-      ? 'compare'
-      : hasChoiceQuestion
-      ? 'decision'
-      : draftReadyForUi
-      ? 'ready'
-      : 'collecting';
-    const phaseMessage = pickPhaseMessage(phase, result.turnCount);
     const shouldAckPrevious =
       canRenderBubble &&
       !isCompareMode &&
@@ -1910,20 +2006,38 @@ const requestAssistantReply = async (
         turnMessageKeys,
       );
     }
+    if (machineOnlyActiveThisTurn && canRenderBubble && nudgeMessage) {
+      const nudgeId = pushAssistantMessageOnce(
+        nudgeMessage,
+        'system-safe',
+        'frontend.machine',
+        undefined,
+        { includeInContext: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        turnMessageKeys,
+      );
+      if (!messageId) {
+        messageId = nudgeId;
+      }
+    }
     if (canAppendQuestionBubble) {
       lastQuestionKey.value = nextQuestionKey ?? null;
       lastQuestionKeyPending.value = true;
       messageId = pushAssistantMessageOnce(
-        uiQuestionText,
+        questionTextForBubble,
         'system-safe',
-        uiMessageSource,
+        machineOnlyActiveThisTurn ? (isSafeMachineQuestion ? uiMessageSource : 'frontend.machine') : uiMessageSource,
         undefined,
         { contentJson: result as unknown as Record<string, unknown> },
-        steps,
-        result.coachPrompts,
-        result.editorChecklist,
-        stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
-        result.confirmQuestions,
+        machineOnlyActiveThisTurn ? undefined : steps,
+        machineOnlyActiveThisTurn ? undefined : result.coachPrompts,
+        machineOnlyActiveThisTurn ? undefined : result.editorChecklist,
+        !machineOnlyActiveThisTurn && stageTag === 'writer' ? buildSafeWriterSummary() : undefined,
+        machineOnlyActiveThisTurn ? undefined : result.confirmQuestions,
         turnMessageKeys,
       );
     } else if (shouldRenderCompareBubble || shouldRenderMessageBubble) {
@@ -1958,7 +2072,7 @@ const requestAssistantReply = async (
         turnMessageKeys,
       );
     }
-    pendingQuestion.value = canAppendQuestionBubble ? uiQuestionText : null;
+    pendingQuestion.value = canAppendQuestionBubble ? questionTextForBubble : null;
     // keep options bubble highlighted to drive user click
     currentQuestionId.value =
       messageId && (shouldRenderQuestionBubble || shouldRenderCompareBubble) ? messageId : null;
@@ -2309,21 +2423,6 @@ const buildQaSummary = (latestInput?: string) => {
   return `AIの理解：${parts.join(' / ') || '概要未設定'}。補足情報: ${extra}`;
 };
 
-const buildConversationContext = () => {
-  return chatMessages.value
-    .filter((msg) => msg.includeInContext !== false)
-    .slice(-8)
-    .map((msg) => {
-      const speaker = msg.role === 'user' ? 'User' : 'Assistant';
-      const body =
-        msg.type === 'text'
-          ? msg.content
-          : `提案: ${msg.payload?.title ?? ''} ${msg.payload?.description ?? ''}`;
-      return `${speaker}: ${body}`;
-    })
-    .join('\n');
-};
-
 const buildConversationMessages = () => {
   return chatMessages.value
     .filter((msg) => msg.includeInContext !== false)
@@ -2348,15 +2447,8 @@ const buildConversationMessages = () => {
 const resolvePhaseForMessage = (msg: ChatMessage): 'collecting' | 'decision' | 'compare' | 'ready' | 'operate' => {
   const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
   if (!contentJson) return 'collecting';
-  const state = (contentJson.state as EventAssistantState) || (contentJson.status as EventAssistantState) || 'collecting';
-  if (state === 'completed') return 'operate';
-  if (state === 'ready') return 'ready';
-  const isCompare = contentJson.inputMode === 'compare' || Boolean(contentJson.compareCandidates?.length);
-  if (isCompare) return 'compare';
-  const hasChoice =
-    Boolean(contentJson.choiceQuestion?.options?.length) || Boolean(contentJson.ui?.options?.length);
-  if (hasChoice) return 'decision';
-  return 'collecting';
+  const phase = resolveServerUiPhase(contentJson);
+  return normalizeUiPhaseForNudge(phase);
 };
 
 const getMessageDisplayText = (msg: ChatMessage) => {
@@ -2365,8 +2457,50 @@ const getMessageDisplayText = (msg: ChatMessage) => {
     const selectionDisplay = formatSelectionDisplay(msg.content || '');
     return selectionDisplay || msg.content || '';
   }
+  if (msg.messageSource === 'frontend.machine' || msg.messageSource === 'frontend.explain') {
+    return msg.contentText || msg.content || '';
+  }
   const contentJson = (msg.contentJson ?? msg.payload?.assistantReply ?? null) as EventAssistantReply | null;
   const normalizedContent = normalizeSelectionTokenForAssistant(msg.content || '');
+  const machinePhase =
+    Boolean(machineUiOnlyEnabled && !explainMode.value) &&
+    Boolean(
+      contentJson &&
+        (contentJson.uiPhase === 'collecting' ||
+          contentJson.uiPhase === 'decision' ||
+          contentJson.uiPhase === 'compare' ||
+          (!contentJson.uiPhase &&
+            (inferUiPhaseFromStructure(contentJson) === 'collecting' ||
+              inferUiPhaseFromStructure(contentJson) === 'decision' ||
+              inferUiPhaseFromStructure(contentJson) === 'compare'))),
+    );
+  if (contentJson && machinePhase) {
+    const phase = normalizeUiPhaseForNudge(resolveServerUiPhase(contentJson));
+    const source = (contentJson.messageSource as string | undefined) ?? null;
+    const nextKey = (contentJson.nextQuestionKey as string | null | undefined) ?? null;
+    const uiMessage = contentJson.ui?.message ?? null;
+    const questionText = contentJson.ui?.question?.text ?? null;
+    const questionKey = (contentJson.ui?.question?.key as string | undefined) ?? null;
+    if (uiMessage && msg.content === uiMessage) {
+      return pickPhaseMessage(phase, contentJson.turnCount);
+    }
+    if (phase !== 'collecting') {
+      return pickPhaseMessage(phase, contentJson.turnCount);
+    }
+    if (source === 'backend.llm' || msg.messageSource === 'backend.llm') {
+      return buildMachineFallbackQuestion(nextKey, contentJson.language || 'ja');
+    }
+    if (questionText && msg.content === questionText) {
+      const safe =
+        questionKey &&
+        nextKey &&
+        questionKey === nextKey &&
+        questionText.trim().length > 0 &&
+        questionText.trim().length <= 140;
+      return safe ? msg.content : buildMachineFallbackQuestion(nextKey, contentJson.language || 'ja');
+    }
+    return pickPhaseMessage(phase, contentJson.turnCount);
+  }
   const questionText = contentJson?.ui?.question?.text;
   if (questionText && msg.content === questionText) {
     const key = contentJson?.ui?.question?.key;
@@ -2726,6 +2860,16 @@ const restoreFromLog = (log: ConsoleEventAssistantLog, source: 'server' | 'cache
   lastPromptVersion.value = log.promptVersion || lastPromptVersion.value;
   lastTurnCount.value = log.turnCount || 0;
   lastLanguage.value = (log.language as string) || lastLanguage.value;
+  const latestReply = [...chatMessages.value]
+    .reverse()
+    .map(
+      (msg) =>
+        (msg.role === 'assistant'
+          ? ((msg.contentJson ?? (msg.payload as any)?.assistantReply ?? null) as EventAssistantReply | null)
+          : null),
+    )
+    .find((reply) => Boolean(reply));
+  lastUiPhase.value = latestReply ? resolveServerUiPhase(latestReply) : null;
   activeLogId.value = log.id;
   if (!assistantSessionId.value) {
     assistantSessionId.value = log.id || createSessionId();

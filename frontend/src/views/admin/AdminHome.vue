@@ -8,14 +8,35 @@
       </div>
       <div class="meta">
         <div class="meta-item">
-          <p>憲法バージョン</p>
-          <strong>{{ constitutionMeta.version }}</strong>
+          <p>登録ユーザー</p>
+          <strong>{{ statValue(stats.registeredUsers) }}</strong>
         </div>
         <div class="meta-item">
-          <p>更新</p>
-          <strong>{{ constitutionMeta.lastUpdated }}</strong>
+          <p>主催者</p>
+          <strong>{{ statValue(stats.organizers) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>コミュニティ</p>
+          <strong>{{ statValue(stats.communities) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>サブスクリプション</p>
+          <strong>{{ statValue(stats.subscriptions) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>イベント数</p>
+          <strong>{{ statValue(stats.events) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>総取引額</p>
+          <strong>{{ statValue(stats.gmv, 'yen') }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>総返金額</p>
+          <strong>{{ statValue(stats.refunds, 'yen') }}</strong>
         </div>
       </div>
+      <p v-if="statsError" class="meta-error">{{ statsError }}</p>
     </header>
 
     <section v-for="section in sections" :key="section.id" class="card section-card">
@@ -41,63 +62,25 @@
         </button>
       </div>
     </section>
-
-    <section class="card section-card">
-      <header class="section-head">
-        <div>
-          <p class="section-eyebrow">ルール</p>
-          <h2>AI 憲法</h2>
-        </div>
-      </header>
-      <div class="entry-list">
-        <button class="entry" type="button" @click="openConstitutionSheet">
-          <div>
-            <p class="entry-title">AI 憲法全文</p>
-            <p class="entry-desc">{{ constitutionSummary }}</p>
-          </div>
-          <span class="i-lucide-chevron-right"></span>
-        </button>
-      </div>
-    </section>
-
-    <div v-if="showConstitutionSheet" class="sheet" @click.self="closeConstitutionSheet">
-      <div class="sheet-body">
-        <header class="sheet-head">
-          <div>
-            <p class="section-eyebrow">SOCIALMORE AI 憲法</p>
-            <h2>全文</h2>
-          </div>
-          <button type="button" class="icon-button" @click="closeConstitutionSheet">
-            <span class="i-lucide-x"></span>
-          </button>
-        </header>
-        <pre class="sheet-content">{{ constitutionText }}</pre>
-      </div>
-    </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { SOCIALMORE_AI_CONSTITUTION_V1 } from '../../ai/constitution';
+import { fetchAdminStats } from '../../api/client';
 
 const router = useRouter();
-const showConstitutionSheet = ref(false);
+const statsError = ref('');
 
-const constitutionMeta = {
-  version: '1.0',
-  lastUpdated: new Date().toLocaleString(),
-};
-
-const constitutionText = SOCIALMORE_AI_CONSTITUTION_V1.trim();
-const constitutionSummary = computed(() => {
-  const lines = constitutionText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^SOCIALMORE/.test(line) && !/^Version/.test(line) && !/^Author/.test(line));
-  return lines.slice(0, 2).join(' · ');
+const stats = reactive({
+  registeredUsers: 0,
+  organizers: 0,
+  communities: 0,
+  subscriptions: 0,
+  events: 0,
+  gmv: 0,
+  refunds: 0,
 });
 
 const sections = [
@@ -144,8 +127,29 @@ const navigate = (item: (typeof sections)[number]['items'][number]) => {
   }
 };
 
-const openConstitutionSheet = () => (showConstitutionSheet.value = true);
-const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
+const formatNumber = (val: number) => new Intl.NumberFormat('ja-JP').format(val || 0);
+const statValue = (val: number, currency?: 'yen') => {
+  if (statsError.value) return '—';
+  return currency === 'yen' ? `¥${formatNumber(val)}` : formatNumber(val);
+};
+
+const loadStats = async () => {
+  statsError.value = '';
+  try {
+    const res = await fetchAdminStats();
+    stats.registeredUsers = res.registeredUsers ?? 0;
+    stats.organizers = res.organizers ?? 0;
+    stats.communities = res.communities ?? 0;
+    stats.subscriptions = res.subscriptions ?? 0;
+    stats.events = res.events ?? 0;
+    stats.gmv = res.gmv ?? 0;
+    stats.refunds = res.refunds ?? 0;
+  } catch {
+    statsError.value = '統計を取得できませんでした';
+  }
+};
+
+onMounted(loadStats);
 </script>
 
 <style scoped>
@@ -185,7 +189,7 @@ const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
 }
 .meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 .meta-item {
@@ -258,31 +262,15 @@ const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
 }
 .sheet-body {
   background: #fff;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 16px;
-  width: min(520px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.sheet-content {
-  margin: 0;
-  font-size: 13px;
-  color: #0f172a;
-  max-height: 60vh;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-.sheet-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  width: min(640px, 100%);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
 }
 .icon-button {
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  border-radius: 10px;
-  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  padding: 6px;
+  cursor: pointer;
 }
 </style>

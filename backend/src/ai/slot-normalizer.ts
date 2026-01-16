@@ -11,7 +11,6 @@ export type SlotNormalizerUpdate = {
 export type SlotNormalizerAmbiguity = {
   slotKey: keyof Slots;
   candidates: string[];
-  questionSuggestion?: string;
 };
 
 export type SlotNormalizerResult = {
@@ -32,6 +31,7 @@ export const buildSlotNormalizerPrompt = (params: {
     'Only normalize/interpret the user input for the current slot. ' +
     'Do NOT decide conversation flow. ' +
     'Return JSON that strictly matches the schema. ' +
+    'Do NOT output any user-facing question or message text. ' +
     'If user is complaining/confused, set intent=complaint or meta. ' +
     'Normalize values for price/time/location/visibility. ' +
     'Price: normalize to "無料" or "{number}円". ' +

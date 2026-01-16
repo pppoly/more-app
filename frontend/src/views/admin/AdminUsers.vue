@@ -30,7 +30,7 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">データがありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in items" :key="item.id" class="user-card">
+        <article v-for="item in visibleItems" :key="item.id" class="user-card">
           <div class="card-top">
             <div>
               <p class="eyebrow">{{ item.email || '—' }}</p>
@@ -46,24 +46,60 @@
           </div>
           <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
           <div class="actions">
-            <button
-              class="ghost danger"
-              type="button"
-              :disabled="busyId === item.id"
-              @click="updateStatus(item.id, item.status === 'banned' ? 'active' : 'banned')"
-            >
+            <button class="ghost" type="button" @click="openDetail(item)">詳細を見る</button>
+            <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="openConfirm(item)">
               {{ item.status === 'banned' ? '解除' : '封禁' }}
             </button>
           </div>
         </article>
+        <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
+          さらに読み込む
+        </button>
       </div>
     </section>
+
+    <AdminConfirmModal
+      :open="!!confirmTarget"
+      :title="confirmTarget?.status === 'banned' ? '封禁を解除しますか？' : '封禁しますか？'"
+      :message="confirmTarget ? `${confirmTarget.email || confirmTarget.name || confirmTarget.id}` : ''"
+      :loading="busyId === confirmTarget?.id"
+      @close="confirmTarget = null"
+      @confirm="submitConfirm"
+    />
+
+    <div v-if="detailTarget" class="modal" @click.self="closeDetail">
+      <div class="modal-body detail">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">{{ detailTarget.email || '—' }}</p>
+            <h3>{{ detailTarget.name || '—' }}</h3>
+            <p class="meta">作成: {{ formatDate(detailTarget.createdAt) }}</p>
+          </div>
+          <button class="icon-button" type="button" @click="closeDetail" aria-label="close">
+            <span class="i-lucide-x"></span>
+          </button>
+        </div>
+        <div class="chips">
+          <span class="pill" :class="detailTarget.status === 'banned' ? 'pill-danger' : 'pill-live'">
+            {{ detailTarget.status }}
+          </span>
+          <span class="pill" :class="detailTarget.isAdmin ? 'pill-live' : 'pill-info'">
+            {{ detailTarget.isAdmin ? 'Admin' : 'User' }}
+          </span>
+          <span class="pill" :class="detailTarget.isOrganizer ? 'pill-live' : 'pill-info'">
+            {{ detailTarget.isOrganizer ? 'Organizer' : 'Member' }}
+          </span>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { adminListUsers, adminUpdateUserStatus } from '../../api/client';
+import { useToast } from '../../composables/useToast';
+import AdminConfirmModal from '../../components/admin/AdminConfirmModal.vue';
 
 interface AdminUserItem {
   id: string;
@@ -75,11 +111,18 @@ interface AdminUserItem {
   createdAt: string;
 }
 
+const toast = useToast();
 const items = ref<AdminUserItem[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const filters = ref<{ status?: string }>({});
 const busyId = ref<string | null>(null);
+const confirmTarget = ref<AdminUserItem | null>(null);
+const detailTarget = ref<AdminUserItem | null>(null);
+const page = ref(1);
+const pageSize = 12;
+const visibleItems = computed(() => items.value.slice(0, page.value * pageSize));
+const canLoadMore = computed(() => visibleItems.value.length < items.value.length);
 
 const formatDate = (val: string) =>
   new Date(val).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -89,23 +132,45 @@ const load = async () => {
   error.value = null;
   try {
     items.value = await adminListUsers({ status: filters.value.status });
+    page.value = 1;
   } catch (err) {
     error.value = 'ロードに失敗しました';
+    toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
   }
 };
 
-const updateStatus = async (id: string, status: string) => {
-  busyId.value = id;
+const loadMore = () => {
+  if (canLoadMore.value) page.value += 1;
+};
+
+const openConfirm = (item: AdminUserItem) => {
+  confirmTarget.value = item;
+};
+
+const submitConfirm = async () => {
+  if (!confirmTarget.value) return;
+  const targetStatus = confirmTarget.value.status === 'banned' ? 'active' : 'banned';
+  busyId.value = confirmTarget.value.id;
   try {
-    await adminUpdateUserStatus(id, status);
+    await adminUpdateUserStatus(confirmTarget.value.id, targetStatus);
     await load();
+    toast.show('更新しました', 'success');
   } catch (err) {
     error.value = '更新に失敗しました';
+    toast.show('更新に失敗しました', 'error');
   } finally {
+    confirmTarget.value = null;
     busyId.value = null;
   }
+};
+
+const openDetail = (item: AdminUserItem) => {
+  detailTarget.value = item;
+};
+const closeDetail = () => {
+  detailTarget.value = null;
 };
 
 onMounted(load);
@@ -135,6 +200,10 @@ onMounted(load);
   background: #fff;
   border-radius: 10px;
   padding: 8px 12px;
+}
+.ghost.full {
+  width: 100%;
+  text-align: center;
 }
 .card {
   background: #fff;
@@ -227,5 +296,35 @@ onMounted(load);
 .danger {
   border-color: rgba(185, 28, 28, 0.4);
   color: #b91c1c;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  padding: 16px;
+}
+.modal-body {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.icon-button {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
 }
 </style>

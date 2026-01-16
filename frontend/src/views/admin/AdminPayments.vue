@@ -9,7 +9,7 @@
       <button class="ghost" type="button" :disabled="loading" @click="load">
         <span class="i-lucide-refresh-cw"></span> 更新
       </button>
-  </header>
+    </header>
 
     <section class="filters card">
       <div class="filter-row">
@@ -36,7 +36,7 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">データがありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in items" :key="item.id" class="payment-card">
+        <article v-for="item in visibleItems" :key="item.id" class="payment-card">
           <div class="card-top">
             <div>
               <p class="eyebrow">{{ item.community?.name || item.community?.id || '—' }}</p>
@@ -58,27 +58,47 @@
               class="ghost danger"
               type="button"
               :disabled="busyId === item.id || item.status === 'refunded'"
-              @click="refund(item.id)"
+              @click="openRefund(item)"
             >
               返金
             </button>
           </div>
         </article>
+        <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
+          さらに読み込む
+        </button>
       </div>
     </section>
+
+    <AdminConfirmModal
+      :open="!!refundTarget"
+      title="返金しますか？"
+      :message="refundTarget ? `支払い ${refundTarget.id} を返金します。` : ''"
+      :loading="busyId === refundTarget?.id"
+      @close="refundTarget = null"
+      @confirm="refund"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type { ConsolePaymentItem } from '../../types/api';
 import { adminDiagnosePayment, adminRefundPayment, fetchAdminPayments } from '../../api/client';
+import { useToast } from '../../composables/useToast';
+import AdminConfirmModal from '../../components/admin/AdminConfirmModal.vue';
 
+const toast = useToast();
 const items = ref<ConsolePaymentItem[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const filters = ref<{ communityId?: string; status?: string }>({});
 const busyId = ref<string | null>(null);
+const refundTarget = ref<ConsolePaymentItem | null>(null);
+const page = ref(1);
+const pageSize = 10;
+const visibleItems = computed(() => items.value.slice(0, page.value * pageSize));
+const canLoadMore = computed(() => visibleItems.value.length < items.value.length);
 
 const formatNumber = (val?: number | null) => new Intl.NumberFormat('ja-JP').format(val ?? 0);
 const formatDate = (val: string) =>
@@ -99,11 +119,17 @@ const load = async () => {
       status: filters.value.status,
     });
     items.value = res.items || [];
+    page.value = 1;
   } catch (err) {
     error.value = 'ロードに失敗しました';
+    toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
   }
+};
+
+const loadMore = () => {
+  if (canLoadMore.value) page.value += 1;
 };
 
 const diagnose = async (id: string) => {
@@ -111,21 +137,31 @@ const diagnose = async (id: string) => {
   try {
     await adminDiagnosePayment(id);
     await load();
+    toast.show('診断を実行しました', 'success');
   } catch (err) {
     error.value = '診断に失敗しました';
+    toast.show('診断に失敗しました', 'error');
   } finally {
     busyId.value = null;
   }
 };
 
-const refund = async (id: string) => {
-  busyId.value = id;
+const openRefund = (item: ConsolePaymentItem) => {
+  refundTarget.value = item;
+};
+
+const refund = async () => {
+  if (!refundTarget.value) return;
+  busyId.value = refundTarget.value.id;
   try {
-    await adminRefundPayment(id);
+    await adminRefundPayment(refundTarget.value.id);
     await load();
+    toast.show('返金しました', 'success');
   } catch (err) {
     error.value = '返金に失敗しました';
+    toast.show('返金に失敗しました', 'error');
   } finally {
+    refundTarget.value = null;
     busyId.value = null;
   }
 };
@@ -199,14 +235,8 @@ onMounted(load);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
-.filters label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-}
-.filters input,
-.filters select {
+.filter-row input,
+.filter-row select {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 8px;
@@ -217,18 +247,13 @@ onMounted(load);
   color: #fff;
   border-radius: 10px;
   padding: 8px 12px;
-  font-weight: 700;
-  min-width: 120px;
 }
 .primary.full {
   width: 100%;
 }
-.empty {
-  padding: 18px;
-  color: #475569;
-}
-.empty.error {
-  color: #b91c1c;
+.card-list .ghost.full {
+  width: 100%;
+  text-align: center;
 }
 .pill {
   padding: 4px 10px;
@@ -240,20 +265,31 @@ onMounted(load);
   background: #ecfdf3;
   color: #15803d;
 }
+.pill-pending {
+  background: #fffbeb;
+  color: #92400e;
+}
+.pill-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .pill-danger {
   background: #fef2f2;
   color: #b91c1c;
 }
-.pill-pending {
-  background: #fff7ed;
-  color: #c2410c;
+.empty {
+  padding: 18px;
+  color: #475569;
 }
-.pill-info {
-  background: #eef2ff;
-  color: #312e81;
+.empty.error {
+  color: #b91c1c;
 }
-.muted {
-  color: #94a3b8;
-  font-size: 12px;
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.actions .danger {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.3);
 }
 </style>

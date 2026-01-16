@@ -686,6 +686,14 @@ export interface EventAssistantExecutionPlan {
 export interface EventAssistantReply {
   state: EventAssistantState;
   status?: EventAssistantState;
+  uiPhase?:
+    | 'collecting'
+    | 'decision'
+    | 'compare'
+    | 'ready'
+    | 'operate'
+    | 'revise_select'
+    | 'revise_edit';
   message?: string;
   ui?: {
     message?: string;
@@ -818,7 +826,7 @@ export interface EventAssistantReply {
     | null;
   modeHint?: 'chat' | 'operate';
   uiMode?: 'explain' | 'collect' | 'decision';
-  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt';
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt' | 'backend.llm';
 }
 
 export interface EventAssistantProfileDefaults {
@@ -944,6 +952,26 @@ export interface AdminEventReviewItem {
     name: string;
     slug: string;
   } | null;
+}
+
+export interface AdminStatsSummary {
+  registeredUsers: number;
+  organizers: number;
+  communities: number;
+  subscriptions: number;
+  events: number;
+  gmv: number;
+  refunds: number;
+}
+
+export interface AdminStatsSummary {
+  registeredUsers: number;
+  organizers: number;
+  communities: number;
+  subscriptions: number;
+  events: number;
+  gmv: number;
+  refunds: number;
 }
 
 export interface AiAssistantSessionSummary {

@@ -149,7 +149,13 @@ export interface AiAssistantQuestionMeta {
 }
 
 export interface AiAssistantChoiceQuestion {
-  key: keyof Slots | `confirm_${keyof Slots}` | 'confirm_currency';
+  key:
+    | keyof Slots
+    | `confirm_${keyof Slots}`
+    | 'confirm_currency'
+    | 'interrupt'
+    | 'ready_next_action'
+    | 'ready_actions';
   prompt: string;
   options: Array<{ label: string; value: string; recommended?: boolean }>;
 }
@@ -751,7 +757,8 @@ interface AiAssistantReplyPayload {
   draftReady?: boolean;
   applyEnabled?: boolean;
   modeHint?: 'chat' | 'operate';
-  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt';
+  uiPhase?: EventAssistantUiPhase;
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt' | 'backend.llm';
 }
 
 export interface AiAssistantReply extends AiAssistantReplyPayload {
@@ -851,7 +858,7 @@ export interface TranslateTextResult {
 @Injectable()
 export class AiService {
   private lastConversationId: string | null = null;
-  private turnIndexByConversationId: Map<string, number> | null = null;
+  private turnIndexByConversationId: Map<string, { turnIndex: number; updatedAt: number }> | null = null;
   private conversationStateById: Map<
     string,
     {
@@ -859,6 +866,7 @@ export class AiService {
       confirmations: SlotConfirmations;
       confidence: Confidence;
       origins: SlotOrigins;
+      updatedAt: number;
     }
   > | null = null;
   private readonly client: OpenAI | null;
@@ -874,6 +882,80 @@ export class AiService {
     const apiKey = process.env.OPENAI_API_KEY;
     this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     this.client = apiKey ? new OpenAI({ apiKey }) : null;
+  }
+
+  private pruneAssistantState(now: number) {
+    if (process.env.EVENT_ASSISTANT_STATE_EVICTION !== '1') return;
+    const ttlMs = Number(process.env.EVENT_ASSISTANT_STATE_EVICTION_TTL_MS ?? 24 * 60 * 60 * 1000);
+    const max = Number(process.env.EVENT_ASSISTANT_STATE_EVICTION_MAX ?? 2000);
+    const isExpired = (updatedAt?: number | null) => !updatedAt || now - updatedAt > ttlMs;
+
+    const conversationState = this.conversationStateById;
+    const turnIndexState = this.turnIndexByConversationId;
+
+    if (conversationState) {
+      for (const [id, entry] of conversationState.entries()) {
+        if (isExpired(entry.updatedAt)) {
+          conversationState.delete(id);
+          turnIndexState?.delete(id);
+        }
+      }
+    }
+    if (turnIndexState) {
+      for (const [id, entry] of turnIndexState.entries()) {
+        if (isExpired(entry.updatedAt)) {
+          turnIndexState.delete(id);
+          conversationState?.delete(id);
+        }
+      }
+    }
+
+    const isOverLimit =
+      (conversationState?.size ?? 0) > max || (turnIndexState?.size ?? 0) > max;
+
+    if (!isOverLimit) return;
+
+    const findOldestId = () => {
+      let oldestId: string | null = null;
+      let oldestAt = Number.POSITIVE_INFINITY;
+      if (conversationState) {
+        for (const [id, entry] of conversationState.entries()) {
+          const at = entry.updatedAt ?? 0;
+          if (at < oldestAt) {
+            oldestAt = at;
+            oldestId = id;
+          }
+        }
+      }
+      if (turnIndexState) {
+        for (const [id, entry] of turnIndexState.entries()) {
+          const at = entry.updatedAt ?? 0;
+          if (at < oldestAt) {
+            oldestAt = at;
+            oldestId = id;
+          }
+        }
+      }
+      return oldestId;
+    };
+
+    while ((conversationState?.size ?? 0) > max || (turnIndexState?.size ?? 0) > max) {
+      const oldestId = findOldestId();
+      if (!oldestId) break;
+      conversationState?.delete(oldestId);
+      turnIndexState?.delete(oldestId);
+    }
+  }
+
+  private touchAssistantState(conversationId: string, now: number) {
+    const conversationState = this.conversationStateById?.get(conversationId);
+    if (conversationState) {
+      this.conversationStateById?.set(conversationId, { ...conversationState, updatedAt: now });
+    }
+    const turnIndexState = this.turnIndexByConversationId?.get(conversationId);
+    if (turnIndexState) {
+      this.turnIndexByConversationId?.set(conversationId, { ...turnIndexState, updatedAt: now });
+    }
   }
 
   private applyPromptParams(
@@ -1091,8 +1173,11 @@ export class AiService {
       throw new HttpException('OpenAI API key is not configured', HttpStatus.BAD_REQUEST);
     }
     const debugEnabled = process.env.EVENT_ASSISTANT_DEBUG === '1';
+    const strictWorker = process.env.EVENT_ASSISTANT_STRICT_WORKER === '1';
+    const nowMs = Date.now();
+    this.pruneAssistantState(nowMs);
     const requestId =
-      payload.requestId || `ea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      payload.requestId || `ea-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
     const conversationId = payload.conversationId || 'unknown';
     const llmCallLedger: Array<{ name: string; reason: string; allowed: boolean }> = [];
     const logDebug = (message: string, meta?: Record<string, unknown>) => {
@@ -1108,6 +1193,7 @@ export class AiService {
     let llmCallCount = 0;
     let normalizerUsed = false;
     let mainLlmUsed = false;
+    let mainLlmOutputUsedThisTurn = false;
     const recordLlmCall = (name: string, reason: string, allowed: boolean) => {
       llmCallLedger.push({ name, reason, allowed });
       const allowedCount = llmCallLedger.filter((entry) => entry.allowed).length;
@@ -1116,8 +1202,8 @@ export class AiService {
       }
       logDebug('llm_call', { name, reason, allowed });
       if (!allowed) {
-      logWarn('llm_call_blocked', { name, reason });
-    }
+        logWarn('llm_call_blocked', { name, reason });
+      }
     };
     const recordDraftTextContamination = () => {
       if (!logInvariantFailures.includes('DRAFT_TEXT_CONTAMINATED')) {
@@ -1130,6 +1216,14 @@ export class AiService {
       helpIntent: boolean;
       turnIndex: number;
     }) => {
+      if (strictWorker && name === 'title_suggestions') {
+        recordLlmCall(name, 'strict_worker_title_suggestions_block', false);
+        return false;
+      }
+      if (strictWorker && ctx.promptPhase === 'collect' && name === 'main_llm') {
+        recordLlmCall(name, 'strict_worker_collect_block', false);
+        return false;
+      }
       if (ctx.helpIntent) {
         recordLlmCall(name, 'help_intent_blocked', false);
         return false;
@@ -1566,10 +1660,7 @@ export class AiService {
       return singleLine.slice(0, 200).trim();
     };
 
-    const sanitizeParserInput = (
-      text: string,
-      kind: 'time' | 'price',
-    ): { text: string; source: 'userText' | 'rejected' } => {
+    const sanitizeParserInput = (text: string): { text: string; source: 'userText' | 'rejected' } => {
       if (!text) return { text: '', source: 'rejected' };
       const trimmed = text.trim();
       if (trimmed.startsWith('【選択】')) {
@@ -2432,14 +2523,16 @@ export class AiService {
       turnIndex = 0;
     }
     if (!this.turnIndexByConversationId) {
-      this.turnIndexByConversationId = new Map<string, number>();
+      this.turnIndexByConversationId = new Map<string, { turnIndex: number; updatedAt: number }>();
     }
     if (payload.conversationId) {
       const lastTurnIndex = this.turnIndexByConversationId.get(payload.conversationId);
-      if (typeof lastTurnIndex === 'number' && turnIndex <= lastTurnIndex) {
-        turnIndex = lastTurnIndex + 1;
+      const lastTurnValue = typeof lastTurnIndex?.turnIndex === 'number' ? lastTurnIndex.turnIndex : null;
+      if (typeof lastTurnValue === 'number' && turnIndex <= lastTurnValue) {
+        turnIndex = lastTurnValue + 1;
       }
-      this.turnIndexByConversationId.set(payload.conversationId, turnIndex);
+      this.turnIndexByConversationId.set(payload.conversationId, { turnIndex, updatedAt: nowMs });
+      this.touchAssistantState(payload.conversationId, nowMs);
     }
     this.lastConversationId = payload.conversationId ?? null;
     const uiAction: EventAssistantUiAction = payload.uiAction ?? (payload.action ?? null);
@@ -2458,7 +2551,8 @@ export class AiService {
     let logPreviousAskedKey: string | null = null;
     let logUnitSlipPrompted = false;
     let logNonEventInput = false;
-    let logInvariantFailures: FailureType[] = [];
+    const logInvariantFailures: FailureType[] = [];
+    let logCollectNeedsMainLlmReasons: string[] = [];
     let logParserTime = {
       rawText: null as string | null,
       candidateStartAt: null as string | null,
@@ -2481,6 +2575,11 @@ export class AiService {
       ok: false,
       reason: 'not_attempted',
     };
+    let slotStateInitialized = false;
+    let slots: Slots = {};
+    let confidence: Confidence = {} as Confidence;
+    let slotOrigins: SlotOrigins = {} as SlotOrigins;
+    let slotConfirmations: SlotConfirmations = {} as SlotConfirmations;
 
     const buildDraftSummary = (draft?: AiAssistantPublicDraft | null) => {
       if (!draft) return null;
@@ -2531,6 +2630,10 @@ export class AiService {
           priceOk: logParserPrice.ok,
           timeReason: logParserTime.reason,
           priceReason: logParserPrice.reason,
+        },
+        llm: {
+          strictWorker,
+          collectNeedsMainLlmReasons: logCollectNeedsMainLlmReasons,
         },
         draftSummary: {
           title: draftSummary?.title ?? null,
@@ -2592,6 +2695,8 @@ export class AiService {
         llm: {
           ledger: llmCallLedger,
           callsCount: llmCallLedger.filter((entry) => entry.allowed).length,
+          strictWorker,
+          collectNeedsMainLlmReasons: logCollectNeedsMainLlmReasons,
         },
         draft: {
           publicActivityDraft: draftSummary,
@@ -2616,14 +2721,25 @@ export class AiService {
       }
     };
     const finalizeAndReturn = async (reply: AiAssistantReply) => {
-      const promptPhase = (reply as any).promptPhase as string | undefined;
-      const isReadyPhase = reply.draftReady || promptPhase === 'ready';
+      reply.messageSource = reply.messageSource ?? 'backend.ui';
+      const uiPhaseFallback =
+        logUiPhase && logUiPhase !== 'unknown'
+          ? (logUiPhase as unknown as EventAssistantUiPhase)
+          : determineUiPhase({
+              inputMode: reply.inputMode ?? 'describe',
+              confirmDraft: payload.action === 'confirm_draft',
+              draftReady: Boolean(reply.draftReady),
+              hasDecisionChoice: Boolean(reply.choiceQuestion?.options?.length) && !reply.draftReady,
+            });
+      const resolvedUiPhase = reply.uiPhase ?? uiPhaseFallback;
+      reply.uiPhase = resolvedUiPhase;
+      logUiPhase = resolvedUiPhase as unknown as DiagnosticUiPhase;
+
+      const isReadyPhase = Boolean(reply.draftReady) || resolvedUiPhase === 'ready';
       if (isReadyPhase) {
-        (reply as any).promptPhase = 'ready';
-        (reply as any).uiPhase = (reply as any).uiPhase ?? 'ready';
         reply.nextQuestionKey = null;
         reply.expectedSlotKey = null;
-        reply.inputMode = reply.inputMode ?? ('choice' as AssistantInputMode);
+        reply.inputMode = reply.inputMode ?? 'describe';
         if (reply.ui?.question) {
           reply.ui.question = undefined;
         }
@@ -2638,7 +2754,7 @@ export class AiService {
         }
         if (!reply.choiceQuestion) {
           reply.choiceQuestion = {
-            key: 'ready_next_action' as any,
+            key: 'ready_next_action',
             prompt: '下書きが準備できました。どうしますか？',
             options: [
               { label: '下書きを見る', value: 'preview', recommended: true },
@@ -2650,15 +2766,14 @@ export class AiService {
       const readyChoiceAllowed =
         isReadyPhase &&
         reply.choiceQuestion &&
-        ['ready_next_action', 'ready_actions'].includes(reply.choiceQuestion.key as string);
+        (reply.choiceQuestion.key === 'ready_next_action' || reply.choiceQuestion.key === 'ready_actions');
       if (
         reply.draftReady &&
         (reply.ui?.question?.text ||
           (reply.choiceQuestion && !readyChoiceAllowed) ||
           (reply.choiceQuestion &&
             readyChoiceAllowed &&
-            (reply.choiceQuestion.key?.startsWith('confirm_') ||
-              (reply.choiceQuestion.key as any) === 'interrupt')))
+            (reply.choiceQuestion.key?.startsWith('confirm_') || reply.choiceQuestion.key === 'interrupt')))
       ) {
         const error = new Error('ready_regression');
         if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
@@ -2668,13 +2783,17 @@ export class AiService {
       }
       const scrubText = (text?: string | null) =>
         typeof text === 'string' && containsConstitutionMarkers(text) ? '' : text ?? '';
-      const scrubObjectStrings = (obj: any): any => {
-        if (!obj) return obj;
+      const scrubObjectStrings = (obj: unknown): unknown => {
+        if (obj === null || obj === undefined) return obj;
         if (typeof obj === 'string') return scrubText(obj);
-        if (Array.isArray(obj)) return obj.map((item) => scrubObjectStrings(item)).filter(Boolean);
+        if (Array.isArray(obj)) {
+          return obj
+            .map((item) => scrubObjectStrings(item))
+            .filter((item): item is unknown => item !== '' && item !== null && item !== undefined);
+        }
         if (typeof obj === 'object') {
           const next: Record<string, unknown> = {};
-          Object.entries(obj).forEach(([k, v]) => {
+          Object.entries(obj as Record<string, unknown>).forEach(([k, v]) => {
             const cleaned = scrubObjectStrings(v);
             if (cleaned !== '' && cleaned !== null && cleaned !== undefined) {
               next[k] = cleaned;
@@ -2703,7 +2822,7 @@ export class AiService {
         }));
       }
       if (reply.publicActivityDraft) {
-        reply.publicActivityDraft = scrubObjectStrings(reply.publicActivityDraft);
+        reply.publicActivityDraft = scrubObjectStrings(reply.publicActivityDraft) as AiAssistantPublicDraft;
       }
       if (reply.internalExecutionPlan?.prepChecklist) {
         reply.internalExecutionPlan.prepChecklist = reply.internalExecutionPlan.prepChecklist
@@ -2780,19 +2899,29 @@ export class AiService {
         }
         logInvariantFailures.push('NEXT_QUESTION_MISSING');
       }
-      if (payload.conversationId && this.conversationStateById) {
+      if (payload.conversationId && this.conversationStateById && slotStateInitialized) {
         this.conversationStateById.set(payload.conversationId, {
           slots,
           confirmations: slotConfirmations,
           confidence,
           origins: slotOrigins,
+          updatedAt: nowMs,
         });
+      }
+      if (payload.conversationId) {
+        this.touchAssistantState(payload.conversationId, nowMs);
+        this.pruneAssistantState(nowMs);
       }
       logMessageSource = reply.messageSource ?? logMessageSource;
       logNextQuestionKey = reply.nextQuestionKey ?? null;
       logDraftReady = Boolean(reply.draftReady);
       await emitTurnLog(reply);
       return reply;
+    };
+    const finalizeWithUiPhase = async (phase: EventAssistantUiPhase, reply: AiAssistantReply) => {
+      reply.uiPhase = phase;
+      logUiPhase = phase as unknown as DiagnosticUiPhase;
+      return await finalizeAndReturn(reply);
     };
     logDebug('user_input_received', {
       messageId: payload.messageId ?? null,
@@ -2801,7 +2930,6 @@ export class AiService {
       timezone: baseTimezone,
       turnCount,
     });
-    const sanitizedUserText = sanitizeParseText(latestUserMessage);
     const isFreshConversation = turnCount <= 1;
     if (isLikelyShellOutput(latestUserMessage) && isFreshConversation) {
       logPromptPhase = 'collect';
@@ -2939,7 +3067,8 @@ export class AiService {
           : detectedLanguage === 'en'
           ? 'This assistant helps you create an event. I confirm key details like time, place, and fee to draft the event. You can continue answering or edit the form later.'
           : 'これはイベント作成を手伝うアシスタントです。日時・場所・参加費など必要な情報を確認して草案を作ります。続ける場合は今の質問に答えてください。';
-      return {
+      logPromptPhase = 'collect';
+      return await finalizeWithUiPhase('collecting', {
         status: 'collecting',
         state: 'collecting',
         stage: 'coach',
@@ -2967,7 +3096,7 @@ export class AiService {
         modeHint: 'chat',
         uiMode: 'explain',
         messageSource: 'backend.ui',
-      };
+      });
     }
     const inputMode = detectInputMode(latestUserMessage);
     const lastUserIndex = (() => {
@@ -3119,12 +3248,13 @@ export class AiService {
         ? conversation.slice(0, lastUserIndex)
         : conversation;
     const extracted = extractSlots(conversationForSlots, payload);
-    let slots = extracted.slots;
-    let confidence = extracted.confidence;
+    slots = extracted.slots;
+    confidence = extracted.confidence;
     const intent = extracted.intent;
-    let slotOrigins = extracted.origins;
-    let slotConfirmations = extracted.confirmations;
+    slotOrigins = extracted.origins;
+    slotConfirmations = extracted.confirmations;
     const slotDenials = extracted.denials;
+    slotStateInitialized = true;
     if (!this.conversationStateById) {
       this.conversationStateById = new Map();
     }
@@ -3204,7 +3334,7 @@ export class AiService {
         if (typeof value === 'string' && !cleanedValue) {
           return;
         }
-        const nextValue = cleanedValue ?? (value as string);
+        const nextValue = cleanedValue ?? value;
         if (key === 'title') {
           const trimmed = nextValue.trim();
           if (!trimmed || isDelegateTitleAnswer(trimmed)) return;
@@ -3575,7 +3705,7 @@ export class AiService {
         messageSource: 'backend.ui',
       });
     }
-    const timeParserInput = sanitizeParserInput(latestUserMessage, 'time');
+    const timeParserInput = sanitizeParserInput(latestUserMessage);
     const timeSourceText = timeParserInput.text;
     const hasTimeSignal = /下周|下星期|今週|来週|週末|平日夜|土曜|日曜|金曜|月曜|火曜|水曜|木曜|上午|下午|中午|晚上|点|時|\d{1,2}[:：]\d{2}/.test(
       timeSourceText,
@@ -3623,7 +3753,7 @@ export class AiService {
       }
       slotConfirmations.time = true;
     }
-    const priceParserInput = sanitizeParserInput(latestUserMessage, 'price');
+    const priceParserInput = sanitizeParserInput(latestUserMessage);
     const priceSourceText = priceParserInput.text;
     const stripTimeFragments = (text: string) => {
       if (!text) return '';
@@ -3940,6 +4070,59 @@ export class AiService {
             confidence.price = Math.max(confidence.price ?? 0, 0.85);
             slotOrigins.price = 'explicit';
           } else if (lastAskedSlot === 'title' && isDelegateTitleAnswer(lastUserAnswer)) {
+            if (strictWorker) {
+              const prompt = routedLanguage.startsWith('zh')
+                ? '我先给几个标题候选，你选一个：'
+                : routedLanguage === 'en'
+                ? 'Here are a few title options. Pick one:'
+                : 'タイトル候補を選んでください。';
+              const options = Array.from(
+                new Set(
+                  buildTitleSuggestions(slots)
+                    .map((candidate) => sanitize(candidate))
+                    .map((candidate) => candidate.trim())
+                    .filter(Boolean),
+                ),
+              )
+                .slice(0, 4)
+                .map((candidate, idx) => ({
+                  label: candidate,
+                  value: candidate,
+                  recommended: idx === 0,
+                }));
+              logPromptPhase = 'collect';
+              return await finalizeWithUiPhase('decision', {
+                status: 'collecting',
+                state: 'collecting',
+                stage: 'coach',
+                promptVersion: 'strict-worker-title-choice-v1',
+                language: routedLanguage,
+                turnCount,
+                thinkingSteps: ['タイトル候補を提示します'],
+                editorChecklist: [],
+                writerSummary: undefined,
+                message: '',
+                ui: undefined,
+                choiceQuestion: {
+                  key: 'title',
+                  prompt,
+                  options: options.length >= 2 ? options : [{ label: 'イベント案', value: 'イベント案', recommended: true }],
+                },
+                compareCandidates: [],
+                inputMode: normalizedInputMode,
+                inputChannel: 'choice',
+                expectedSlotKey: null,
+                nextQuestionKey: 'title',
+                slots,
+                confidence,
+                draftReady: false,
+                applyEnabled: false,
+                draftId: undefined,
+                intent: intent,
+                modeHint: 'chat',
+                messageSource: 'backend.ui',
+              });
+            }
             delegateApplied = true;
             try {
               const timeSourceText = slots.time ?? '';
@@ -4267,7 +4450,7 @@ export class AiService {
       const yesLabel = routedLanguage.startsWith('zh') ? '是的' : 'はい';
       const noLabel = routedLanguage.startsWith('zh') ? '不是' : 'いいえ';
       confirmationChoiceQuestion = {
-        key: `confirm_${pendingConfirmKey}` as unknown as keyof Slots,
+        key: `confirm_${pendingConfirmKey}`,
         prompt: sanitize(buildConfirmPrompt(pendingConfirmKey, String(slots[pendingConfirmKey] ?? ''))),
         options: [
           { label: sanitize(yesLabel), value: 'yes', recommended: true },
@@ -4281,7 +4464,7 @@ export class AiService {
       const promptJp = `「${amountLabel}元」は、日円（JPY）のつもりですか？`;
       const promptCn = `你输入的是「元」，你是想填「日元（円）」吗？`;
       currencySlipChoiceQuestion = {
-        key: 'confirm_currency' as unknown as keyof Slots,
+        key: 'confirm_currency',
         prompt: sanitize(`${promptJp}\n${promptCn}`),
         options: [
           {
@@ -4307,7 +4490,7 @@ export class AiService {
       const promptJp = '今の入力は日時っぽいです。次のどれですか？';
       const promptCn = '刚才的输入看起来像时间。你想补的是哪个？';
       timeSignalChoiceQuestion = {
-        key: 'confirm_time' as unknown as keyof Slots,
+        key: 'confirm_time',
         prompt: sanitize(`${promptJp}\n${promptCn}`),
         options: [
           { label: sanitize('日時 / 時間'), value: 'time', recommended: true },
@@ -4536,7 +4719,7 @@ export class AiService {
                 message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
               },
               choiceQuestion: {
-                key: 'interrupt' as keyof Slots,
+                key: 'interrupt',
                 prompt: 'どう進めますか？',
                 options: [
                   { label: '続けて質問に答える', value: 'continue', recommended: true },
@@ -4572,42 +4755,55 @@ export class AiService {
               (item) => item.slotKey === nextQuestionKeyCandidate,
             );
             if (ambiguity?.candidates?.length) {
-              logPromptPhase = 'collect';
-              return await finalizeAndReturn({
-                status: 'collecting',
-                state: 'collecting',
-                stage: 'coach',
-                promptVersion: 'loop-breaker-v1',
-                language: detectedLanguage,
-                turnCount,
-                thinkingSteps: ['確認が必要です'],
-                editorChecklist: [],
-                writerSummary: undefined,
-                message: '',
-                ui: {
-                  message: ambiguity.questionSuggestion || 'どちらが近いですか？',
-                },
-                choiceQuestion: {
-                  key: nextQuestionKeyCandidate,
-                  prompt: ambiguity.questionSuggestion || 'どちらが近いですか？',
-                  options: ambiguity.candidates.slice(0, 4).map((candidate, idx) => ({
-                    label: candidate,
-                    value: candidate,
-                    recommended: idx === 0,
-                  })),
-                },
-                compareCandidates: [],
-                inputMode: normalizedInputMode,
-                nextQuestionKey: nextQuestionKeyCandidate ?? null,
-                slots,
-                confidence,
-                draftReady: false,
-                applyEnabled: false,
-                draftId: undefined,
-                intent: intent,
-                modeHint: 'chat',
-                messageSource: 'backend.normalizer',
-              });
+              const choicePrompt = detectedLanguage.startsWith('zh')
+                ? '下面哪一个更接近？'
+                : detectedLanguage === 'en'
+                ? 'Which one is closer?'
+                : 'どれが近いですか？';
+              const options = Array.from(
+                new Set(
+                  ambiguity.candidates
+                    .map((candidate) => sanitize(candidate))
+                    .map((candidate) => candidate.trim())
+                    .filter(Boolean),
+                ),
+              ).slice(0, 4);
+              if (options.length >= 2) {
+                logPromptPhase = 'collect';
+                return await finalizeWithUiPhase('decision', {
+                  status: 'collecting',
+                  state: 'collecting',
+                  stage: 'coach',
+                  promptVersion: 'loop-breaker-v1',
+                  language: detectedLanguage,
+                  turnCount,
+                  thinkingSteps: ['確認が必要です'],
+                  editorChecklist: [],
+                  writerSummary: undefined,
+                  message: '',
+                  ui: undefined,
+                  choiceQuestion: {
+                    key: nextQuestionKeyCandidate,
+                    prompt: choicePrompt,
+                    options: options.map((candidate, idx) => ({
+                      label: candidate,
+                      value: candidate,
+                      recommended: idx === 0,
+                    })),
+                  },
+                  compareCandidates: [],
+                  inputMode: normalizedInputMode,
+                  nextQuestionKey: nextQuestionKeyCandidate ?? null,
+                  slots,
+                  confidence,
+                  draftReady: false,
+                  applyEnabled: false,
+                  draftId: undefined,
+                  intent: intent,
+                  modeHint: 'chat',
+                  messageSource: 'backend.normalizer',
+                });
+              }
             }
           }
           missingMvpKeys.length = 0;
@@ -4717,7 +4913,7 @@ export class AiService {
           message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
         },
         choiceQuestion: {
-          key: 'interrupt' as keyof Slots,
+          key: 'interrupt',
           prompt: 'どう進めますか？',
           options: [
             { label: '続けて質問に答える', value: 'continue', recommended: true },
@@ -4841,7 +5037,7 @@ export class AiService {
               message: `ご指摘ありがとう。${statusText}続け方を選んでください。`,
             },
             choiceQuestion: {
-              key: 'interrupt' as keyof Slots,
+              key: 'interrupt',
               prompt: 'どう進めますか？',
               options: [
                 { label: '続けて質問に答える', value: 'continue', recommended: true },
@@ -4890,7 +5086,8 @@ export class AiService {
         decisionChoiceCandidate ||
         compareCandidatesForPrompt.length,
     );
-    const collectNeedsLlm =
+    const collectNeedsMainLlmReasons: string[] = [];
+    if (
       promptPhase === 'collect' &&
       !loopTriggered &&
       !helpIntent &&
@@ -4898,12 +5095,18 @@ export class AiService {
       !metaComment &&
       !hasCollectChoiceQuestion &&
       Boolean(lastAskedSlot) &&
-      missingAll.includes(lastAskedSlot as keyof Slots) &&
-      (isDelegateAnswer(latestUserMessage) ||
-        (lastAskedSlot === 'time' && !timeOk) ||
-        (lastAskedSlot === 'price' && !priceOk && !priceWrongCurrencyUnit) ||
-        (lastAskedSlot === 'location' && !slots.location) ||
-        (lastAskedSlot === 'title' && !slots.title));
+      missingAll.includes(lastAskedSlot as keyof Slots)
+    ) {
+      if (isDelegateAnswer(latestUserMessage)) collectNeedsMainLlmReasons.push('delegate_answer');
+      if (lastAskedSlot === 'time' && !timeOk) collectNeedsMainLlmReasons.push('time_parse_failed');
+      if (lastAskedSlot === 'price' && !priceOk && !priceWrongCurrencyUnit) {
+        collectNeedsMainLlmReasons.push('price_parse_failed');
+      }
+      if (lastAskedSlot === 'location' && !slots.location) collectNeedsMainLlmReasons.push('location_missing');
+      if (lastAskedSlot === 'title' && !slots.title) collectNeedsMainLlmReasons.push('title_missing');
+    }
+    logCollectNeedsMainLlmReasons = collectNeedsMainLlmReasons;
+    const collectNeedsLlm = collectNeedsMainLlmReasons.length > 0;
     const shouldUseMainLlm =
       promptPhase === 'ready' || promptPhase === 'operate' || collectNeedsLlm;
     const promptParams: Record<string, string> = {
@@ -4921,6 +5124,7 @@ export class AiService {
     try {
       const outputSchema = getEventAssistantOutputSchema(promptPhase);
       let parsed: AiAssistantReplyPayload;
+      let parsedFromMainLlm = false;
       if (!shouldUseMainLlm) {
         const fallbackKey = nextQuestionKeyCandidate ?? 'title';
         const fallbackQuestionText = buildFallbackQuestionText(fallbackKey);
@@ -4981,47 +5185,48 @@ export class AiService {
         } else {
           mainLlmUsed = true;
           const completion = await client.chat.completions.create({
-          model: this.model,
-          temperature: 0.45,
-          response_format: {
-            type: 'json_schema',
-            json_schema: outputSchema,
-          },
-          messages: [
-            {
-              role: 'system',
-              content: resolvedPrompt.systemPrompt,
+            model: this.model,
+            temperature: 0.45,
+            response_format: {
+              type: 'json_schema',
+              json_schema: outputSchema,
             },
-            {
-              role: 'user',
-              content: JSON.stringify({
-                profile: {
-                  baseLanguage: payload.baseLanguage,
-                  topic: payload.topic,
-                  audience: payload.audience,
-                  style: payload.style,
-                },
-                phase: promptPhase,
-                conversation,
-                turnCount,
-                latestUserMessage,
-                inputMode: normalizedInputMode,
-                draftReady,
-                nextQuestionKey: nextQuestionKeyCandidate,
-                compareCandidates: compareCandidatesForPrompt,
-                slots,
-                confidence,
-                assumptions,
-                targetLanguage: detectedLanguage,
-                instruction,
-              }),
-            },
-          ],
+            messages: [
+              {
+                role: 'system',
+                content: resolvedPrompt.systemPrompt,
+              },
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  profile: {
+                    baseLanguage: payload.baseLanguage,
+                    topic: payload.topic,
+                    audience: payload.audience,
+                    style: payload.style,
+                  },
+                  phase: promptPhase,
+                  conversation,
+                  turnCount,
+                  latestUserMessage,
+                  inputMode: normalizedInputMode,
+                  draftReady,
+                  nextQuestionKey: nextQuestionKeyCandidate,
+                  compareCandidates: compareCandidatesForPrompt,
+                  slots,
+                  confidence,
+                  assumptions,
+                  targetLanguage: detectedLanguage,
+                  instruction,
+                }),
+              },
+            ],
           });
 
           const raw = this.extractMessageContent(completion);
           try {
             parsed = raw ? (JSON.parse(raw) as AiAssistantReplyPayload) : ({} as AiAssistantReplyPayload);
+            parsedFromMainLlm = Boolean(raw);
           } catch (err) {
             // Fallback to safe collecting state instead of 500
             const fallbackKey = nextQuestionKeyCandidate ?? 'title';
@@ -5053,6 +5258,7 @@ export class AiService {
       }
       parsed = phaseCleaned as unknown as AiAssistantReplyPayload;
       const schemaValidation = validateAssistantOutput(promptPhase, parsed);
+      mainLlmOutputUsedThisTurn = parsedFromMainLlm && schemaValidation.valid;
       if (!schemaValidation.valid) {
         console.warn('[AiService] schema_validation_failed', {
           phase: promptPhase,
@@ -5099,7 +5305,6 @@ export class AiService {
       const shouldNullNextQuestionKey = Boolean(isCompareMode || draftReady || choiceQuestionActive);
       let nextQuestionKey: keyof Slots | null =
         shouldNullNextQuestionKey ? null : nextQuestionKeyCandidate;
-      let forcedReady = false;
       if (!draftReady && missingAll.length && !choiceQuestionActive) {
         const priorityKey = pickNextQuestion(missingAll);
         nextQuestionKey = priorityKey ?? nextQuestionKeyCandidate ?? null;
@@ -5181,7 +5386,7 @@ export class AiService {
         nextQuestionKey = parsed.choiceQuestion.key as keyof Slots;
       }
       if (!nextQuestionKey && parsed.ui?.question?.key) {
-        nextQuestionKey = parsed.ui.question.key as keyof Slots;
+        nextQuestionKey = parsed.ui.question.key;
       }
       const finalChoiceActive = Boolean(parsed.choiceQuestion) || choiceQuestionActive;
       if (!draftReady && missingAll.length && !finalChoiceActive && !nextQuestionKey) {
@@ -5313,7 +5518,7 @@ export class AiService {
       };
       (['title', 'time', 'location', 'price', 'details'] as const).forEach((key) => {
         if (typeof readyGateSlots[key] === 'string') {
-          const cleaned = cleanDraftText(readyGateSlots[key] as string);
+          const cleaned = cleanDraftText(readyGateSlots[key]);
           if (!cleaned) {
             delete readyGateSlots[key];
           } else {
@@ -5353,7 +5558,6 @@ export class AiService {
         logMissingKeys = [];
         logCandidateKeys = [];
         logConfirmedKeys = ['title', 'time', 'location', 'price'];
-        forcedReady = true;
         draftReady = true;
         logPromptPhase = 'ready';
         logUiPhase = 'ready';
@@ -5723,7 +5927,9 @@ export class AiService {
       const cleanOptionTexts = optionTexts
         .map((text) => sanitize(text))
         .filter((text): text is string => Boolean(text));
-      const messageSource: AiAssistantReplyPayload['messageSource'] = 'backend.ui';
+      const messageSource: AiAssistantReplyPayload['messageSource'] = mainLlmOutputUsedThisTurn
+        ? 'backend.llm'
+        : 'backend.ui';
       logDecisionTrace = {
         forcedNextQuestionKey,
         missingAllBeforeNormalizer,
@@ -5782,7 +5988,7 @@ export class AiService {
       (Object.keys(slots) as (keyof Slots)[]).forEach((key) => {
         const value = slots[key];
         if (value !== undefined && value !== null && String(value).trim() !== '') {
-          slotsForReply[key] = value as any;
+          slotsForReply[key] = value;
         }
       });
       if (debugEnabled) {
@@ -5836,7 +6042,8 @@ export class AiService {
         inputMode: normalizedInputMode,
         nextQuestionKey,
         questionMeta: buildQuestionMeta(nextQuestionKey),
-        slots: finalSlots as Slots,
+        uiPhase,
+        slots: finalSlots,
         confidence,
         draftReady,
         applyEnabled,

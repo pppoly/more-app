@@ -62,6 +62,7 @@ const getLogPaths = (day: string) => {
   topNextQuestionKeys: {},
   topParserFailures: { time: 0, price: 0 },
   topExamples: {
+    STRICT_WORKER_COLLECT_FALLBACK: [],
     SAID_BUT_MISSING: [],
     REPEAT_QUESTION: [],
     PARSE_FAILED: [],

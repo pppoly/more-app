@@ -19,6 +19,7 @@ import { AdminUsersController } from './admin/admin-users.controller';
 import { AdminCommunitiesController } from './admin/admin-communities.controller';
 import { AdminEventsListController } from './admin/admin-events-list.controller';
 import { AdminCommunityTagsController } from './admin/admin-community-tags.controller';
+import { AdminStatsController } from './admin/admin-stats.controller';
 import { AssetModule } from './asset/asset.module';
 import { BullModule } from '@nestjs/bullmq';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -66,6 +67,7 @@ import { AdminNotificationsController } from './admin/admin-notifications.contro
     AdminEventsListController,
     AdminCommunityTagsController,
     AdminNotificationsController,
+    AdminStatsController,
   ],
   providers: [],
 })

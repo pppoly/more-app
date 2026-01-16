@@ -21,6 +21,7 @@ export type EventAssistantUiAction =
   | null;
 
 export type FailureType =
+  | 'STRICT_WORKER_COLLECT_FALLBACK'
   | 'SAID_BUT_MISSING'
   | 'REPEAT_QUESTION'
   | 'PARSE_FAILED'
@@ -102,6 +103,8 @@ export interface EventAssistantTurnLog {
   llm: {
     ledger: Array<{ name: string; allowed: boolean; reason?: string }>;
     callsCount: number;
+    strictWorker: boolean;
+    collectNeedsMainLlmReasons: string[];
   };
   draft: {
     publicActivityDraft: Record<string, unknown> | null;

@@ -1,5 +1,5 @@
 <template>
-  <div v-if="visible" class="liff-debug">
+  <div v-if="false" class="liff-debug">
     <h3>LIFF Diagnostic</h3>
     <div class="row"><span>location.href</span><code>{{ data.locationHref }}</code></div>
     <div class="row"><span>document.referrer</span><code>{{ data.referrer }}</code></div>

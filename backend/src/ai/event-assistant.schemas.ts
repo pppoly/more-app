@@ -109,20 +109,6 @@ const uiCollectingSchema: JsonSchema = baseObject(
   [],
 );
 
-const uiDecisionSchema: JsonSchema = baseObject(
-  {
-    message: uiMessageSchema,
-  },
-  [],
-);
-
-const uiCompareSchema: JsonSchema = baseObject(
-  {
-    message: uiMessageSchema,
-  },
-  ['message'],
-);
-
 const uiReadySchema: JsonSchema = baseObject({
   message: uiMessageSchema,
 });
@@ -160,7 +146,6 @@ const slotAmbiguitySchema: JsonSchema = baseObject(
   {
     slotKey: { type: 'string' },
     candidates: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 4 },
-    questionSuggestion: { type: 'string' },
   },
   ['slotKey', 'candidates'],
 );

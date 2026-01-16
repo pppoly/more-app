@@ -27,6 +27,10 @@ export interface FailureAnalysisInput {
     timeReason?: string;
     priceReason?: string;
   };
+  llm: {
+    strictWorker: boolean;
+    collectNeedsMainLlmReasons: string[];
+  };
   draftSummary: {
     title?: string | null;
     startTime?: string | null;
@@ -83,6 +87,15 @@ export const analyzeFailures = (
   const parseFailed = timeFail || priceFail;
   if (parseFailed) {
     failureTypes.push('PARSE_FAILED');
+  }
+
+  const strictWorkerCollectFallback =
+    input.llm.strictWorker &&
+    input.promptPhase === 'collect' &&
+    Array.isArray(input.llm.collectNeedsMainLlmReasons) &&
+    input.llm.collectNeedsMainLlmReasons.length > 0;
+  if (strictWorkerCollectFallback) {
+    failureTypes.push('STRICT_WORKER_COLLECT_FALLBACK');
   }
 
   const stageMismatch =

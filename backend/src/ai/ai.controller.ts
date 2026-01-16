@@ -58,8 +58,10 @@ export class AiController {
   @Post('events/assistant')
   async generateAssistantReply(
     @Body() body: Partial<GenerateAssistantReplyDto>,
+    @Req() req: any,
   ): Promise<AiAssistantReply> {
     try {
+      this.assertRateLimit(req);
       const requiredFields: Array<keyof GenerateEventContentDto> = [
         'baseLanguage',
         'topic',

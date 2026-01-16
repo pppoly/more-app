@@ -10,8 +10,7 @@
     <AppToast />
     <AppConfirm />
     <LiffOpenPrompt />
-    <LiffStatusBadge />
-    <LiffDebugPanel :visible="debugParam" />
+    <LiffDebugPanel :visible="false" />
     <LoginRequiredSheet
       :visible="authSheets.state.login.visible"
       :pending-action="authSheets.state.login.pendingAction"
@@ -124,7 +123,6 @@ import AppToast from './components/common/AppToast.vue';
 import AppConfirm from './components/common/AppConfirm.vue';
 import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
-import LiffStatusBadge from './components/common/LiffStatusBadge.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
 import { isLineBrowser } from './utils/device';
 import { BUILD_VERSION } from './version';

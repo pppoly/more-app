@@ -32,7 +32,7 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">データがありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in items" :key="item.id" class="event-card">
+        <article v-for="item in visibleItems" :key="item.id" class="event-card">
           <div class="card-top">
             <div class="title-block">
               <p class="eyebrow">{{ item.community?.name || '—' }}</p>
@@ -46,16 +46,20 @@
           <p class="meta">更新: {{ formatDate(item.updatedAt) }}</p>
           <p v-if="item.reviewReason" class="muted small">{{ item.reviewReason }}</p>
           <div class="actions">
-            <button class="ghost" type="button" :disabled="busyId === item.id" @click="approve(item.id)">承認</button>
+            <button class="ghost" type="button" @click="openDetail(item)">詳細を見る</button>
+            <button class="ghost" type="button" :disabled="busyId === item.id" @click="openApprove(item)">承認</button>
             <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="openReject(item.id)">
               差し戻し
             </button>
-            <button class="ghost" type="button" :disabled="busyId === item.id" @click="closeEvent(item.id)">クローズ</button>
-            <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="cancelEvent(item.id)">
+            <button class="ghost" type="button" :disabled="busyId === item.id" @click="openClose(item)">クローズ</button>
+            <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="openCancel(item)">
               キャンセル
             </button>
           </div>
         </article>
+        <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
+          さらに読み込む
+        </button>
       </div>
     </section>
 
@@ -65,19 +69,59 @@
         <textarea v-model="rejectReason" rows="4" placeholder="例: 内容が不足しています"></textarea>
         <div class="modal-actions">
           <button class="ghost" type="button" @click="closeReject">キャンセル</button>
-          <button class="primary danger" type="button" :disabled="busyId === rejectTarget" @click="submitReject">
+          <button class="primary danger" type="button" :disabled="busyId === rejectTarget" @click="confirmReject">
             送信
           </button>
         </div>
+      </div>
+    </div>
+
+    <AdminConfirmModal
+      :open="!!confirmAction"
+      :title="confirmAction?.title || ''"
+      :message="confirmAction?.message || ''"
+      :loading="busyId === confirmAction?.id"
+      @close="confirmAction = null"
+      @confirm="performConfirm"
+    />
+
+    <div v-if="detailTarget" class="modal" @click.self="closeDetail">
+      <div class="modal-body detail">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">{{ detailTarget.community?.name || '—' }}</p>
+            <h3>{{ getText(detailTarget.title) }}</h3>
+            <p class="meta">更新: {{ formatDate(detailTarget.updatedAt) }}</p>
+          </div>
+          <button class="icon-button" type="button" @click="closeDetail" aria-label="close">
+            <span class="i-lucide-x"></span>
+          </button>
+        </div>
+        <p class="reason muted" v-if="detailTarget.reviewReason">レビュー: {{ detailTarget.reviewReason }}</p>
+        <div class="chips">
+          <span class="pill pill-soft">{{ detailTarget.status }}</span>
+          <span class="pill" :class="statusClass(detailTarget.reviewStatus)">{{ detailTarget.reviewStatus || '—' }}</span>
+        </div>
+        <RouterLink
+          class="ghost"
+          :to="{ name: 'event-detail', params: { eventId: detailTarget.id } }"
+          target="_blank"
+          rel="noopener"
+        >
+          ユーザー表示で開く
+        </RouterLink>
       </div>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import { adminApproveEvent, adminCancelEvent, adminCloseEvent, adminRejectEvent, fetchAdminEvents } from '../../api/client';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { useToast } from '../../composables/useToast';
+import AdminConfirmModal from '../../components/admin/AdminConfirmModal.vue';
 
 interface AdminEventItem {
   id: string;
@@ -89,6 +133,7 @@ interface AdminEventItem {
   community?: { id: string; name: string } | null;
 }
 
+const toast = useToast();
 const items = ref<AdminEventItem[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -96,6 +141,14 @@ const busyId = ref<string | null>(null);
 const filters = ref<{ status?: string }>({});
 const rejectTarget = ref<string | null>(null);
 const rejectReason = ref('');
+const confirmAction = ref<
+  { id: string; action: 'approve' | 'reject' | 'close' | 'cancel'; title: string; message: string } | null
+>(null);
+const detailTarget = ref<AdminEventItem | null>(null);
+const page = ref(1);
+const pageSize = 10;
+const visibleItems = computed(() => items.value.slice(0, page.value * pageSize));
+const canLoadMore = computed(() => visibleItems.value.length < items.value.length);
 
 const getText = (val: any) => getLocalizedText(val) || '無題';
 const formatDate = (val: string) =>
@@ -113,21 +166,60 @@ const load = async () => {
   try {
     const res = await fetchAdminEvents({ status: filters.value.status });
     items.value = res.items ?? res;
+    page.value = 1;
   } catch (err) {
     error.value = 'ロードに失敗しました';
+    toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
   }
 };
 
-const approve = async (id: string) => {
+const loadMore = () => {
+  if (canLoadMore.value) page.value += 1;
+};
+
+const openApprove = (item: AdminEventItem) => {
+  confirmAction.value = {
+    id: item.id,
+    action: 'approve',
+    title: '承認しますか？',
+    message: `「${getText(item.title)}」を承認します。`,
+  };
+};
+const openClose = (item: AdminEventItem) => {
+  confirmAction.value = {
+    id: item.id,
+    action: 'close',
+    title: 'クローズしますか？',
+    message: `「${getText(item.title)}」をクローズします。`,
+  };
+};
+const openCancel = (item: AdminEventItem) => {
+  confirmAction.value = {
+    id: item.id,
+    action: 'cancel',
+    title: 'キャンセルしますか？',
+    message: `「${getText(item.title)}」をキャンセルします。`,
+  };
+};
+
+const performConfirm = async () => {
+  if (!confirmAction.value) return;
+  const { id, action } = confirmAction.value;
   busyId.value = id;
   try {
-    await adminApproveEvent(id);
+    if (action === 'approve') await adminApproveEvent(id);
+    if (action === 'close') await adminCloseEvent(id);
+    if (action === 'cancel') await adminCancelEvent(id, '管理操作によるキャンセル');
+    if (action === 'reject') await adminRejectEvent(id, rejectReason.value || '管理操作');
     await load();
+    toast.show('処理が完了しました', 'success');
   } catch (err) {
-    error.value = '承認に失敗しました';
+    error.value = '処理に失敗しました';
+    toast.show('処理に失敗しました', 'error');
   } finally {
+    confirmAction.value = null;
     busyId.value = null;
   }
 };
@@ -140,42 +232,44 @@ const closeReject = () => {
   rejectTarget.value = null;
   rejectReason.value = '';
 };
+const confirmReject = () => {
+  if (!rejectReason.value.trim()) {
+    error.value = '理由を入力してください';
+    toast.show('理由を入力してください', 'error');
+    return;
+  }
+  confirmAction.value = {
+    id: rejectTarget.value as string,
+    action: 'reject',
+    title: '差し戻しますか？',
+    message: rejectReason.value,
+  };
+};
 const submitReject = async () => {
-  if (!rejectTarget.value) return;
+  if (!rejectTarget.value || !rejectReason.value.trim()) {
+    error.value = '理由を入力してください';
+    toast.show('理由を入力してください', 'error');
+    return;
+  }
   busyId.value = rejectTarget.value;
   try {
-    await adminRejectEvent(rejectTarget.value, rejectReason.value || undefined);
+    await adminRejectEvent(rejectTarget.value, rejectReason.value.trim());
     closeReject();
     await load();
+    toast.show('差し戻しました', 'success');
   } catch (err) {
     error.value = '差し戻しに失敗しました';
+    toast.show('差し戻しに失敗しました', 'error');
   } finally {
     busyId.value = null;
   }
 };
 
-const closeEvent = async (id: string) => {
-  busyId.value = id;
-  try {
-    await adminCloseEvent(id);
-    await load();
-  } catch (err) {
-    error.value = 'クローズに失敗しました';
-  } finally {
-    busyId.value = null;
-  }
+const openDetail = (item: AdminEventItem) => {
+  detailTarget.value = item;
 };
-
-const cancelEvent = async (id: string) => {
-  busyId.value = id;
-  try {
-    await adminCancelEvent(id, '運営によるキャンセル');
-    await load();
-  } catch (err) {
-    error.value = 'キャンセルに失敗しました';
-  } finally {
-    busyId.value = null;
-  }
+const closeDetail = () => {
+  detailTarget.value = null;
 };
 
 onMounted(load);
@@ -205,6 +299,10 @@ onMounted(load);
   background: #fff;
   border-radius: 10px;
   padding: 8px 12px;
+}
+.ghost.full {
+  width: 100%;
+  text-align: center;
 }
 .card {
   background: #fff;
@@ -297,8 +395,10 @@ onMounted(load);
 .small {
   font-size: 13px;
 }
-.actions button {
-  margin-left: 6px;
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .actions .danger {
   color: #b91c1c;
@@ -322,6 +422,9 @@ onMounted(load);
   flex-direction: column;
   gap: 12px;
 }
+.modal-body.detail {
+  gap: 8px;
+}
 .modal-body textarea {
   width: 100%;
   border-radius: 12px;
@@ -337,5 +440,17 @@ onMounted(load);
 }
 .primary.danger {
   background: linear-gradient(135deg, #ef4444, #f97316);
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.icon-button {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
 }
 </style>

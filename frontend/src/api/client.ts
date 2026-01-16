@@ -38,6 +38,7 @@ import type {
   ConsolePaymentList,
   ConsoleCommunityBalance,
   CommunityStripeStatusResponse,
+  AdminStatsSummary,
   AdminEventReviewItem,
   ConsolePaymentItem,
   SupportedLanguagesResponse,
@@ -841,6 +842,11 @@ export async function fetchCommunityAiUsage(communityId: string): Promise<AiComm
 
 export async function fetchAdminEventReviews(): Promise<AdminEventReviewItem[]> {
   const { data } = await apiClient.get<AdminEventReviewItem[]>('/admin/events/reviews');
+  return data;
+}
+
+export async function fetchAdminStats(): Promise<AdminStatsSummary> {
+  const { data } = await apiClient.get<AdminStatsSummary>('/admin/stats');
   return data;
 }
 
