@@ -18,6 +18,7 @@ export class AdminEventsListController {
   async list(
     @Req() req: any,
     @Query('status') status?: string,
+    @Query('q') q?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
@@ -27,6 +28,14 @@ export class AdminEventsListController {
     const where: any = {};
     if (status) {
       where.status = status;
+    }
+    if (q && q.trim()) {
+      const query = q.trim();
+      where.OR = [
+        { id: { contains: query } },
+        { community: { name: { contains: query, mode: 'insensitive' } } },
+        { community: { slug: { contains: query, mode: 'insensitive' } } },
+      ];
     }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.event.findMany({

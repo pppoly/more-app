@@ -12,19 +12,30 @@
     </header>
 
     <section class="filters card">
-      <label>
-        Status
-        <select v-model="filters.status">
-          <option value="">すべて</option>
-          <option value="draft">draft</option>
-          <option value="pending_review">pending_review</option>
-          <option value="rejected">rejected</option>
-          <option value="open">open</option>
-          <option value="closed">closed</option>
-          <option value="cancelled">cancelled</option>
-        </select>
-      </label>
-      <button class="primary" type="button" :disabled="loading" @click="load">適用</button>
+      <div class="filter-row">
+        <label>
+          キーワード
+          <input
+            v-model="filters.q"
+            type="search"
+            placeholder="event id / community name"
+            @keyup.enter="load"
+          />
+        </label>
+        <label>
+          Status
+          <select v-model="filters.status">
+            <option value="">すべて</option>
+            <option value="draft">draft</option>
+            <option value="pending_review">pending_review</option>
+            <option value="rejected">rejected</option>
+            <option value="open">open</option>
+            <option value="closed">closed</option>
+            <option value="cancelled">cancelled</option>
+          </select>
+        </label>
+      </div>
+      <button class="primary full" type="button" :disabled="loading" @click="load">適用</button>
     </section>
 
     <section class="card">
@@ -32,7 +43,7 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">データがありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in visibleItems" :key="item.id" class="event-card">
+        <article v-for="item in items" :key="item.id" class="event-card">
           <div class="card-top">
             <div class="title-block">
               <p class="eyebrow">{{ item.community?.name || '—' }}</p>
@@ -57,7 +68,13 @@
             </button>
           </div>
         </article>
-        <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
+        <button
+          v-if="hasMore"
+          class="ghost full"
+          type="button"
+          :disabled="loading || loadingMore"
+          @click="loadMore"
+        >
           さらに読み込む
         </button>
       </div>
@@ -136,9 +153,10 @@ interface AdminEventItem {
 const toast = useToast();
 const items = ref<AdminEventItem[]>([]);
 const loading = ref(false);
+const loadingMore = ref(false);
 const error = ref<string | null>(null);
 const busyId = ref<string | null>(null);
-const filters = ref<{ status?: string }>({});
+const filters = ref<{ status?: string; q?: string }>({});
 const rejectTarget = ref<string | null>(null);
 const rejectReason = ref('');
 const confirmAction = ref<
@@ -146,9 +164,9 @@ const confirmAction = ref<
 >(null);
 const detailTarget = ref<AdminEventItem | null>(null);
 const page = ref(1);
-const pageSize = 10;
-const visibleItems = computed(() => items.value.slice(0, page.value * pageSize));
-const canLoadMore = computed(() => visibleItems.value.length < items.value.length);
+const pageSize = 12;
+const total = ref(0);
+const hasMore = computed(() => items.value.length < total.value);
 
 const getText = (val: any) => getLocalizedText(val) || '無題';
 const formatDate = (val: string) =>
@@ -160,23 +178,42 @@ const statusClass = (status?: string | null) => {
   return '';
 };
 
-const load = async () => {
-  loading.value = true;
+const load = async (reset = true) => {
+  if (reset) {
+    loading.value = true;
+    page.value = 1;
+    items.value = [];
+    total.value = 0;
+  } else {
+    loadingMore.value = true;
+  }
   error.value = null;
   try {
-    const res = await fetchAdminEvents({ status: filters.value.status });
-    items.value = res.items ?? res;
-    page.value = 1;
+    const res = await fetchAdminEvents({
+      status: filters.value.status,
+      q: filters.value.q?.trim() || undefined,
+      page: page.value,
+      pageSize,
+    });
+    const list = res.items ?? [];
+    total.value = res.total ?? list.length;
+    items.value = reset ? list : [...items.value, ...list];
+    const fetched = list.length;
+    if (items.value.length < total.value && fetched > 0) {
+      page.value += 1;
+    }
   } catch (err) {
     error.value = 'ロードに失敗しました';
     toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
 };
 
 const loadMore = () => {
-  if (canLoadMore.value) page.value += 1;
+  if (loading.value || loadingMore.value || !hasMore.value) return;
+  void load(false);
 };
 
 const openApprove = (item: AdminEventItem) => {
@@ -311,9 +348,9 @@ onMounted(load);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 .card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
 }
 .event-card {
   border: 1px solid #e2e8f0;
@@ -322,7 +359,7 @@ onMounted(load);
   background: #fff;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .card-top {
   display: flex;
@@ -332,8 +369,8 @@ onMounted(load);
 }
 .title-block h3 {
   margin: 4px 0 0;
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.35;
 }
 .chips {
   display: flex;
@@ -343,13 +380,20 @@ onMounted(load);
 }
 .filters {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
 }
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.filters input,
 .filters select {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 8px;
+  width: 100%;
 }
 .primary {
   border: none;
@@ -358,6 +402,10 @@ onMounted(load);
   border-radius: 10px;
   padding: 8px 12px;
   font-weight: 700;
+  min-width: 120px;
+}
+.primary.full {
+  width: 100%;
 }
 .empty {
   padding: 18px;
@@ -399,6 +447,7 @@ onMounted(load);
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  margin-top: 4px;
 }
 .actions .danger {
   color: #b91c1c;

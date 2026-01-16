@@ -880,9 +880,10 @@ export async function adminCancelEvent(eventId: string, reason?: string): Promis
 
 export async function fetchAdminEvents(params?: {
   status?: string;
+  q?: string;
   page?: number;
   pageSize?: number;
-}): Promise<{ items: any[] }> {
+}): Promise<{ items: any[]; total?: number; page?: number; pageSize?: number }> {
   const { data } = await apiClient.get('/admin/events', { params });
   return data;
 }
@@ -949,8 +950,13 @@ export async function evalPrompt(payload: EvalPromptRequest) {
   const { data } = await apiClient.post('/ai/eval', payload);
   return data;
 }
-export async function adminListUsers(params?: { status?: string }): Promise<
-  Array<{
+export async function adminListUsers(params?: {
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  items: Array<{
     id: string;
     name?: string | null;
     email?: string | null;
@@ -958,9 +964,15 @@ export async function adminListUsers(params?: { status?: string }): Promise<
     isOrganizer?: boolean;
     status?: string;
     createdAt: string;
-  }>
-> {
+  }>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+}> {
   const { data } = await apiClient.get('/admin/users', { params });
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: params?.page, pageSize: params?.pageSize };
+  }
   return data;
 }
 
@@ -969,8 +981,23 @@ export async function adminUpdateUserStatus(userId: string, status: string): Pro
   return data;
 }
 
-export async function adminListCommunities(params?: { status?: string }): Promise<
-  Array<{
+export async function adminUpdateUserOrganizer(
+  userId: string,
+  isOrganizer: boolean,
+): Promise<{ id: string; isOrganizer: boolean }> {
+  const { data } = await apiClient.patch<{ id: string; isOrganizer: boolean }>(`/admin/users/${userId}/organizer`, {
+    isOrganizer,
+  });
+  return data;
+}
+
+export async function adminListCommunities(params?: {
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  items: Array<{
     id: string;
     name: string;
     slug: string;
@@ -979,9 +1006,15 @@ export async function adminListCommunities(params?: { status?: string }): Promis
     stripeAccountId?: string | null;
     stripeAccountOnboarded?: boolean | null;
     createdAt: string;
-  }>
-> {
+  }>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+}> {
   const { data } = await apiClient.get('/admin/communities', { params });
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: params?.page, pageSize: params?.pageSize };
+  }
   return data;
 }
 
