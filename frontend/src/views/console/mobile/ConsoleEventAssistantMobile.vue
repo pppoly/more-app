@@ -2928,24 +2928,38 @@ const getProfileValue = (value: string | undefined | null, key: keyof typeof pro
 };
 
 const extractText = (content: any) => {
+  const containsMarkers = (text: string) => {
+    const markers = [
+      'AIの理解：',
+      '--- Conversation ---',
+      '--- Assistant Prompt ---',
+      'SOCIALMORE AI 憲章',
+      'AI Constitution',
+      '使命（第0条）',
+    ];
+    return markers.some((m) => text.includes(m));
+  };
   if (!content) return '';
-  if (typeof content === 'string') return content;
+  if (typeof content === 'string') {
+    return containsMarkers(content) ? '' : content;
+  }
   if (typeof content !== 'object') return '';
   const original = typeof content.original === 'string' ? content.original : '';
-  if (original.trim()) return original;
+  if (original.trim()) return containsMarkers(original) ? '' : original;
   const translations = content.translations;
   if (translations && typeof translations === 'object') {
     const preferred = content.lang ? (translations as any)[content.lang] : null;
-    if (typeof preferred === 'string' && preferred.trim()) return preferred;
+    if (typeof preferred === 'string' && preferred.trim())
+      return containsMarkers(preferred) ? '' : preferred;
     const fallback = ['ja', 'zh', 'en']
       .map((key) => (translations as any)[key])
       .find((value) => typeof value === 'string' && value.trim());
-    if (fallback) return fallback as string;
+    if (fallback) return containsMarkers(fallback as string) ? '' : (fallback as string);
   }
   const direct = ['ja', 'zh', 'en']
     .map((key) => (content as any)[key])
     .find((value) => typeof value === 'string' && value.trim());
-  return direct ? (direct as string) : '';
+  return direct ? (containsMarkers(direct as string) ? '' : (direct as string)) : '';
 };
 
 const goBack = () => {

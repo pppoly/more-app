@@ -36,7 +36,11 @@ export const sanitizeDraftText = (text?: string | null): string | null => {
   if (!text) return null;
   const trimmed = String(text).trim();
   if (!trimmed) return null;
-  if (FORBIDDEN_TEXT_MARKERS.some((m) => trimmed.includes(m))) {
+  const hasMarker =
+    FORBIDDEN_TEXT_MARKERS.some((m) => trimmed.includes(m)) ||
+    trimmed.toLowerCase().includes('constitution') ||
+    trimmed.includes('憲章');
+  if (hasMarker) {
     return null;
   }
   const compact = trimmed.replace(/\s+/g, ' ').trim();
