@@ -1095,7 +1095,7 @@ export class PaymentsService {
             providerObjectId: intent.id,
           },
         });
-        void this.reconcilePaymentSettlement(payment.id, intent.id);
+        await this.reconcilePaymentSettlement(payment.id, intent.id);
         if (payment.registrationId) {
           await tx.eventRegistration.update({
             where: { id: payment.registrationId },
@@ -1311,7 +1311,7 @@ export class PaymentsService {
       throw new BadRequestException('Stripe支払い情報を取得できませんでした');
     }
 
-    await this.reconcilePaymentSettlement(payment.id, paymentIntentId);
+    await this.reconcilePaymentSettlement(payment.id, paymentIntentId, { suppressErrors: true });
     const refreshed = await this.prisma.payment.findUnique({ where: { id: payment.id } });
     if (!refreshed) {
       throw new NotFoundException('Payment not found');
@@ -1543,7 +1543,7 @@ export class PaymentsService {
     });
 
     if (paymentIntentId) {
-      void this.reconcilePaymentSettlement(payment.id, paymentIntentId);
+      await this.reconcilePaymentSettlement(payment.id, paymentIntentId);
     }
 
     if (payment.registrationId) {
@@ -1610,19 +1610,25 @@ export class PaymentsService {
     });
   }
 
-  private async reconcilePaymentSettlement(paymentId: string, paymentIntentId: string) {
+  private async reconcilePaymentSettlement(
+    paymentId: string,
+    paymentIntentId: string,
+    options?: { suppressErrors?: boolean },
+  ) {
     try {
       const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
       if (!payment || payment.method !== 'stripe') return;
 
       const chargeModel: ChargeModel =
         payment.chargeModel === 'destination_charge' ? 'destination_charge' : 'platform_charge';
-      const intent = await this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
-        expand:
-          chargeModel === 'destination_charge'
-            ? ['latest_charge.balance_transaction', 'latest_charge.transfer']
-            : ['latest_charge.balance_transaction'],
-      });
+      const intent = await this.withStripeRetry(() =>
+        this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
+          expand:
+            chargeModel === 'destination_charge'
+              ? ['latest_charge.balance_transaction', 'latest_charge.transfer']
+              : ['latest_charge.balance_transaction'],
+        }),
+      );
       const latestCharge =
         typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
       const chargeId =
@@ -1631,11 +1637,33 @@ export class PaymentsService {
           : intent.latest_charge?.id ?? null;
       if (!chargeId) return;
 
-      const balanceTx =
-        latestCharge?.balance_transaction &&
-        typeof latestCharge.balance_transaction !== 'string'
-          ? latestCharge.balance_transaction
-          : null;
+      let balanceTx: Stripe.BalanceTransaction | null = null;
+      const latestBalanceTx = latestCharge?.balance_transaction ?? null;
+      if (latestBalanceTx && typeof latestBalanceTx !== 'string') {
+        balanceTx = latestBalanceTx;
+      } else if (typeof latestBalanceTx === 'string') {
+        balanceTx = await this.withStripeRetry(() =>
+          this.stripeService.client.balanceTransactions.retrieve(latestBalanceTx),
+        );
+      }
+
+      if (!balanceTx) {
+        const charge = await this.withStripeRetry(() =>
+          this.stripeService.client.charges.retrieve(chargeId),
+        );
+        const chargeBalanceTx = charge.balance_transaction ?? null;
+        if (chargeBalanceTx && typeof chargeBalanceTx !== 'string') {
+          balanceTx = chargeBalanceTx as Stripe.BalanceTransaction;
+        } else if (typeof chargeBalanceTx === 'string') {
+          balanceTx = await this.withStripeRetry(() =>
+            this.stripeService.client.balanceTransactions.retrieve(chargeBalanceTx),
+          );
+        }
+      }
+
+      if (!balanceTx) {
+        throw new Error(`stripe_balance_tx_missing payment=${paymentId} charge=${chargeId}`);
+      }
       const stripeFee = balanceTx ? this.computeStripeFeeFromBalanceTx(balanceTx) : 0;
       const gross = payment.amount ?? 0;
       const platformFee = payment.platformFee ?? 0;
@@ -1796,7 +1824,44 @@ export class PaymentsService {
       });
     } catch (err) {
       this.logger.warn(`Failed to reconcile settlement for payment ${paymentId}: ${err}`);
+      if (!options?.suppressErrors) {
+        throw err;
+      }
     }
+  }
+
+  private async withStripeRetry<T>(fn: () => Promise<T>, maxAttempts: number = 3) {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (!this.shouldRetryStripeError(error) || attempt === maxAttempts) break;
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    throw lastError;
+  }
+
+  private shouldRetryStripeError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof Error ? error.name : '';
+    const retrySignals = [
+      'StripeConnectionError',
+      'APIConnectionError',
+      'rate limit',
+      '429',
+      'ETIMEDOUT',
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'EPIPE',
+      'timeout',
+      'timed out',
+    ];
+    if (retrySignals.some((signal) => message.includes(signal))) return true;
+    if (/timeout|connection/i.test(name)) return true;
+    return false;
   }
 
   private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
