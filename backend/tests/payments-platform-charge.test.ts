@@ -240,6 +240,18 @@ test('Community balance: settlement snapshot is derived from ledger + settlement
       occurredAt: beforeMonth,
     },
     {
+      id: 'led_fee_prev',
+      businessPaymentId: 'pay_prev',
+      businessCommunityId: 'com_1',
+      entryType: 'stripe_fee_actual',
+      direction: 'out',
+      amount: 50,
+      currency: 'jpy',
+      provider: 'stripe',
+      idempotencyKey: 'led_fee_prev',
+      occurredAt: beforeMonth,
+    },
+    {
       id: 'led_hp_month',
       businessPaymentId: 'pay_month',
       businessCommunityId: 'com_1',
@@ -249,6 +261,18 @@ test('Community balance: settlement snapshot is derived from ledger + settlement
       currency: 'jpy',
       provider: 'internal',
       idempotencyKey: 'led_hp_month',
+      occurredAt: inMonth,
+    },
+    {
+      id: 'led_fee_month',
+      businessPaymentId: 'pay_month',
+      businessCommunityId: 'com_1',
+      entryType: 'stripe_fee_actual',
+      direction: 'out',
+      amount: 150,
+      currency: 'jpy',
+      provider: 'stripe',
+      idempotencyKey: 'led_fee_month',
       occurredAt: inMonth,
     },
     {
@@ -287,9 +311,11 @@ test('Community balance: settlement snapshot is derived from ledger + settlement
   assert.equal(all.settlement?.settleAmount, 3000);
   assert.equal(all.settlement?.carryReceivable, 0);
   assert.equal(all.settlement?.accruedNetPeriod, undefined);
+  assert.equal(all.stripeFee, 200);
 
   const month = await paymentsService.getCommunityBalance('user_1', 'com_1', 'month');
   assert.equal(month.settlement?.accruedNetPeriod, 7000);
+  assert.equal(month.stripeFee, 150);
 });
 
 test('P2: payment_intent.payment_failed marks payment failed', async () => {

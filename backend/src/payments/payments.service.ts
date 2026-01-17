@@ -320,7 +320,6 @@ export class PaymentsService {
     ]);
 
     let stripeBalance: { available: number; pending: number } | null = null;
-    let stripeFee = 0;
     if (this.stripeService.enabled && community.stripeAccountId) {
       try {
         const balance = await this.stripeService.client.balance.retrieve({
@@ -338,15 +337,14 @@ export class PaymentsService {
       }
     }
 
-    if (this.stripeService.enabled) {
-      try {
-        stripeFee = await this.getCommunityStripeFeeFromPlatform(communityId, monthStart ?? undefined);
-      } catch (err) {
-        this.logger.warn(`Failed to fetch Stripe fee from platform for community ${communityId}: ${err}`);
-      }
-    }
-
-    const [hostPayableAllAgg, hostPayableReversalAllAgg, paidOutAllAgg, hostPayablePeriodAgg, hostPayableReversalPeriodAgg] =
+    const [
+      hostPayableAllAgg,
+      hostPayableReversalAllAgg,
+      paidOutAllAgg,
+      hostPayablePeriodAgg,
+      hostPayableReversalPeriodAgg,
+      stripeFeeAgg,
+    ] =
       await this.prisma.$transaction([
         this.prisma.ledgerEntry.aggregate({
           where: {
@@ -401,6 +399,16 @@ export class PaymentsService {
               where: { id: '__skip__' },
               _sum: { amount: true },
             }),
+        this.prisma.ledgerEntry.aggregate({
+          where: {
+            businessCommunityId: communityId,
+            entryType: 'stripe_fee_actual',
+            provider: 'stripe',
+            direction: 'out',
+            occurredAt: monthStart ? { gte: monthStart, lt: now } : { lt: now },
+          },
+          _sum: { amount: true },
+        }),
       ]);
 
     const accruedNetAll =
@@ -417,6 +425,7 @@ export class PaymentsService {
     const grossPaid = paidAgg._sum.amount ?? 0;
     const platformFee = paidAgg._sum.platformFee ?? 0;
     const refunded = refundedAgg._sum.amount ?? 0;
+    const stripeFee = stripeFeeAgg._sum.amount ?? 0;
     const net = Math.max(0, grossPaid - platformFee - refunded - stripeFee);
 
     return {

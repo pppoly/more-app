@@ -380,6 +380,8 @@ model Payment {
   @@index([provider, providerObjectId])
   @@index([providerBalanceTxId])
   @@index([stripePaymentIntentId])
+  @@index([communityId, createdAt])
+  @@index([communityId, status, createdAt])
 }
 
 enum ChargeModel {
@@ -540,6 +542,7 @@ model LedgerEntry {
   @@index([userId])
   @@index([providerBalanceTxId])
   @@index([entryType])
+  @@index([businessCommunityId, entryType, occurredAt])
 }
 
 model I18nMessage {
