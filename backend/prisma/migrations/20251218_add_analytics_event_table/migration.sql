@@ -1,4 +1,4 @@
--- CreateTable
+-- CreateTabley
 CREATE TABLE "AnalyticsEvent" (
     "id" TEXT NOT NULL,
     "eventName" TEXT NOT NULL,
