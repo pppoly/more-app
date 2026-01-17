@@ -60,6 +60,8 @@ model Community {
   stripeAccountOnboarded Boolean           @default(false)
   stripeSubscriptionId   String?
   stripeCustomerId       String?
+  settlementDelayDaysOverride        Int?
+  settlementMinTransferAmountOverride Int?
   status                 String            @default("active")
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
@@ -345,6 +347,10 @@ model Payment {
   chargeModel             ChargeModel
   stripePaymentIntentId   String?
   stripeChargeId          String?
+  stripeDisputeId         String?
+  stripeDisputeStatus     String?
+  stripeDisputedAt        DateTime?
+  stripeDisputeResolvedAt DateTime?
   stripeTransferId        String?
   stripeRefundId          String?
   stripeCheckoutSessionId String?            @unique
@@ -429,6 +435,8 @@ model SettlementItem {
   counts          Json?
   stripeTransferId String?
   errorMessage    String?
+  attempts        Int      @default(0)
+  nextAttemptAt   DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -439,6 +447,7 @@ model SettlementItem {
   @@index([batchId])
   @@index([hostId])
   @@index([status])
+  @@index([nextAttemptAt])
 }
 
 model RefundRequest {

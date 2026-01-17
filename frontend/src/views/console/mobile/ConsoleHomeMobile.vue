@@ -497,7 +497,8 @@ const fetchMonthBalance = async () => {
   }
   try {
     const balance = await fetchCommunityBalance(communityId.value, { period: 'month' });
-    monthRevenueText.value = formatJPY(balance.net ?? 0);
+    const monthRevenue = balance.settlement?.accruedNetPeriod ?? balance.net ?? 0;
+    monthRevenueText.value = formatJPY(monthRevenue);
   } catch (err) {
     monthRevenueText.value = '¥0';
   }

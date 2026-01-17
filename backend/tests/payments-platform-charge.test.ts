@@ -208,6 +208,90 @@ test('Webhook upsert update: unprocessed event nextAttemptAt is pulled forward f
   assert.ok(stored.nextAttemptAt.getTime() >= before - 1000);
 });
 
+test('Community balance: settlement snapshot is derived from ledger + settlement items', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.communities.push({ id: 'com_1', stripeAccountId: null });
+
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    { enabled: false, client: {} } as any,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const now = new Date();
+  const monthStart = new Date(now);
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const inMonth = new Date(Math.max(monthStart.getTime(), now.getTime() - 5 * 60_000));
+  const beforeMonth = new Date(monthStart.getTime() - 5 * 60_000);
+
+  prisma.ledgerEntries.push(
+    {
+      id: 'led_hp_prev',
+      businessPaymentId: 'pay_prev',
+      businessCommunityId: 'com_1',
+      entryType: 'host_payable',
+      direction: 'out',
+      amount: 1000,
+      currency: 'jpy',
+      provider: 'internal',
+      idempotencyKey: 'led_hp_prev',
+      occurredAt: beforeMonth,
+    },
+    {
+      id: 'led_hp_month',
+      businessPaymentId: 'pay_month',
+      businessCommunityId: 'com_1',
+      entryType: 'host_payable',
+      direction: 'out',
+      amount: 9000,
+      currency: 'jpy',
+      provider: 'internal',
+      idempotencyKey: 'led_hp_month',
+      occurredAt: inMonth,
+    },
+    {
+      id: 'led_rev_month',
+      businessPaymentId: 'pay_month',
+      businessCommunityId: 'com_1',
+      entryType: 'host_payable_reversal',
+      direction: 'in',
+      amount: 2000,
+      currency: 'jpy',
+      provider: 'internal',
+      idempotencyKey: 'led_rev_month',
+      occurredAt: inMonth,
+    },
+  );
+
+  prisma.settlementItems.push({
+    id: 'si_1',
+    batchId: 'sb_1',
+    hostId: 'com_1',
+    currency: 'jpy',
+    hostBalance: 0,
+    settleAmount: 5000,
+    carryReceivable: 0,
+    status: 'completed',
+    counts: {},
+    stripeTransferId: 'tr_1',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const all = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(all.settlement?.accruedNetAll, 8000);
+  assert.equal(all.settlement?.paidOutAll, 5000);
+  assert.equal(all.settlement?.hostBalance, 3000);
+  assert.equal(all.settlement?.settleAmount, 3000);
+  assert.equal(all.settlement?.carryReceivable, 0);
+  assert.equal(all.settlement?.accruedNetPeriod, undefined);
+
+  const month = await paymentsService.getCommunityBalance('user_1', 'com_1', 'month');
+  assert.equal(month.settlement?.accruedNetPeriod, 7000);
+});
+
 test('P2: payment_intent.payment_failed marks payment failed', async () => {
   const prisma = new InMemoryPrisma();
   const stripeClient = new StripeClientStub();

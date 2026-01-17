@@ -10,8 +10,11 @@
   - `EventInbox` 表仍保留在 schema 内（历史迁移兼容），但 Stripe webhook 幂等/重试已收敛到 `PaymentGatewayEvent`（避免双表竞态）。
   - 新增结算表：
     - `SettlementBatch(periodFrom, periodTo, status, runAt, meta, currency)`
-    - `SettlementItem(batchId, hostId, hostBalance, settleAmount, carryReceivable, counts, status, stripeTransferId, errorMessage)`
+    - `SettlementItem(batchId, hostId, hostBalance, settleAmount, carryReceivable, counts, status, stripeTransferId, errorMessage, attempts, nextAttemptAt)`
   - `Community.settlementItems` 作为 `SettlementItem.host` 的反向关系字段（满足 Prisma relation 约束）。
+  - 社群级结算规则覆盖（可选）：
+    - `Community.settlementDelayDaysOverride`
+    - `Community.settlementMinTransferAmountOverride`
 - `backend/prisma/migrations/20260210_platform_charge_and_settlement/migration.sql`
   - 新增 `ChargeModel` enum 类型与 `Payment.chargeModel` 列（默认 `platform_charge`）。
   - 新增 `EventInbox`、`SettlementBatch`、`SettlementItem` 相关表/索引/FK。
@@ -23,6 +26,11 @@
   - 增加 `SettlementBatch(periodFrom, periodTo, currency)` 唯一约束（防止重复跑批）。
 - `backend/prisma/migrations/20260213_payment_gateway_event_retry_fields/migration.sql`
   - `PaymentGatewayEvent` 新增 `nextAttemptAt/updatedAt` 与索引，用于 webhook claim + 内部重试调度。
+- `backend/prisma/migrations/20260214_settlement_overrides_and_retry_fields/migration.sql`
+  - `Community` 新增结算规则覆盖字段（override）
+  - `SettlementItem` 新增 `attempts/nextAttemptAt`（Transfer 失败的 retry 节流与上限控制）
+- `backend/prisma/migrations/20260215_payment_dispute_fields/migration.sql`
+  - `Payment` 新增 `stripeDisputeId/stripeDisputeStatus/stripeDisputedAt/stripeDisputeResolvedAt`（Dispute 可追溯 + 结算阻塞依据）
 
 ### 支付/退款/对账核心（收敛到 payments 模块）
 - `backend/src/payments/payments.config.ts`
@@ -31,6 +39,9 @@
     - `SETTLEMENT_ENABLED`（默认 `false`）
     - `SETTLEMENT_REPORT_DIR`（默认 `.logs/settlement`）
     - `SETTLEMENT_RETRY_INTERVAL_MS`
+    - `SETTLEMENT_DELAY_DAYS` / `SETTLEMENT_WINDOW_DAYS` / `SETTLEMENT_MIN_TRANSFER_AMOUNT`
+    - `SETTLEMENT_ITEM_RETRY_DELAY_MS` / `SETTLEMENT_ITEM_MAX_ATTEMPTS` / `SETTLEMENT_ITEM_PROCESSING_TIMEOUT_MS`
+    - `SETTLEMENT_AUTORUN_ENABLED` / `SETTLEMENT_AUTORUN_HOUR` / `SETTLEMENT_AUTORUN_MINUTE`（时区沿用 `APP_TIMEZONE`）
   - 新增 `resetPaymentsConfigForTest()`（仅用于自测时重置缓存）。
 - `backend/src/payments/payments.service.ts`
   - `createStripeCheckout(...)`：
@@ -50,6 +61,8 @@
     - 业务处理失败也 ACK 200（事件已 durable），并通过 `PaymentGatewayEvent.nextAttemptAt` 内部重试扫表。
     - `processGatewayEventById(gatewayEventId)`：从 DB 读 payload 再处理，避免“传参 event 对象”分叉。
     - `retryOverdueStripeWebhookEvents(...)`：从 `PaymentGatewayEvent` 拉 due events（读 payload 重算）。
+  - `getCommunityBalance(...)`：
+    - `/console/communities/:communityId/balance` 追加 `settlement` 字段（基于 Ledger + SettlementItem 聚合），用于 console 财务 UI 在 platform charge 模型下展示“未受取/可结算金额”与“Stripe 残高”。
 - `backend/src/payments/webhook-retry.service.ts`
   - 新增定时重试（默认关闭）：`STRIPE_WEBHOOK_RETRY_SWEEP_INTERVAL_MS>0` 才启用。
 
@@ -57,16 +70,28 @@
 - `backend/src/payments/settlement.service.ts`
   - `runSettlementBatch({periodFrom, periodTo})`：
     - 计算 `host_net_position`（基于 Ledger 聚合：`host_payable - host_payable_reversal`，并扣减历史已结算额）。
+    - v1 结算条件（不可绕过）：
+      - `event.endAt + N(days)` 才可结算（N 可被 `Community.settlementDelayDaysOverride` 收紧）
+      - `Payment.status='disputed'` 的金额不结算（仅阻塞该笔 payment 的金额，不影响同 host 其他可结算金额）
+      - 未完成 Connected Account onboarding：不转账（item 标记为 `blocked`）
+      - `settlementMinTransferAmount` 门槛：低于门槛不转账（item 标记为 `blocked`）
+      - Batch `status=blocked`：仅当本批次 **所有结算项均因规则阻塞** 且 0 transfer 时才标记 `blocked`
     - 写入 `SettlementBatch/SettlementItem`。
     - `SETTLEMENT_ENABLED=false`：仅生成 batch/items 与报表，不调用 Stripe transfer（`status=dry_run`）。
     - `SETTLEMENT_ENABLED=true`：仅对净正数创建 Transfer（正向 transfer），失败不影响主流程，批次可 `retrySettlementBatch(batchId)` 重试。
     - 输出报表到 `SETTLEMENT_REPORT_DIR`：
       - `summary.json` / `items.csv`（同时写入带 batchId 的副本）。
     - 并发护栏：Transfer 前先 claim `SettlementItem`（`pending/failed/dry_run -> processing` 且 `stripeTransferId IS NULL`），避免重复转账。
+ - `backend/src/payments/settlement-scheduler.service.ts`
+   - 自动跑批（默认关闭）：按 `SETTLEMENT_AUTORUN_*` 每日触发（时区默认 `Asia/Tokyo`），periodTo 采用“当日固定时间点”，避免重复跑批窗口漂移。
+ - `backend/src/admin/admin-settlements.controller.ts`
+   - `/admin/settlements/*`：Batch 列表/详情/手动 run/retry/export（只负责触发与展示，不承载计算逻辑）。
+ - `frontend/src/views/admin/AdminSettlements.vue` / `frontend/src/views/admin/AdminSettlementBatchDetail.vue`
+   - `/admin` 财务区新增 Settlements 入口与页面展示，支持 run/retry/export。
 
 ### 自测（node:test）
 - `backend/tests/payments-platform-charge.test.ts`：覆盖 P1~P4、R1~R5（使用 Stripe/Prisma in-memory stub）。
-- `backend/tests/settlement.test.ts`：覆盖 S1~S4（dry-run / transfer fail / retry）。
+- `backend/tests/settlement.test.ts`：覆盖 S1~S6（dispute partial block / blocked batch / transfer）。
 - `backend/tests/payments-test-helpers.ts`：测试用 in-memory Prisma/Stripe stubs。
 
 ## 2) 风险评估与护栏
@@ -112,6 +137,8 @@
   - S3：`SETTLEMENT_ENABLED=false` → 仅生成 batch/items/report，不调用 transfer
   - S4：`SETTLEMENT_ENABLED=true` 且 transfer 失败 → 批次失败可 retry，且失败隔离
   - S4(并发)：并发触发 `retrySettlementBatch` → claim 生效，仅创建一次 transfer
+  - S5：Dispute 仅阻塞 disputed payment，对同 host 其他可结算金额不阻塞
+  - S6：当全部结算项因规则阻塞且 0 transfer → Batch status=blocked
 
 ## 4) Stripe 测试模式验证
 
@@ -141,8 +168,10 @@
 
 ## 6) 下一步建议
 
-- 增加一个受限的管理入口/脚本用于：
-  - 触发 `SettlementService.runSettlementBatch`、`retrySettlementBatch`
+- 已增加结算管理入口（Admin）：
+  - `/admin/settlements`：Batch 列表/详情/手动 run/retry/export
+  - `/admin/payments`：支付监控/诊断/退款
+- 建议后续补齐一个失败队列 UI（Admin）用于：
   - 查看 `PaymentGatewayEvent` webhook 重试队列与失败原因（`status/attempts/nextAttemptAt/errorMessage`）
 - 增加监控/日志字段（最小必要）：
   - `paymentId, chargeId, refundId, transferId, hostId, chargeModel, settlementBatchId`

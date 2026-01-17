@@ -322,6 +322,16 @@ export interface ConsoleCommunityBalance {
   platformFee: number;
   refunded: number;
   net: number;
+  settlement?: {
+    enabled: boolean;
+    asOf: string;
+    accruedNetAll: number;
+    paidOutAll: number;
+    hostBalance: number;
+    settleAmount: number;
+    carryReceivable: number;
+    accruedNetPeriod?: number;
+  };
   period?: 'month' | 'all';
   stripeBalance?: {
     available: number;
@@ -952,6 +962,88 @@ export interface AdminEventReviewItem {
     name: string;
     slug: string;
   } | null;
+}
+
+export interface AdminSettlementConfig {
+  timezone: string;
+  settlementEnabled: boolean;
+  settlementDelayDays: number;
+  settlementWindowDays: number;
+  settlementMinTransferAmount: number;
+  settlementItemRetryDelayMs: number;
+  settlementItemMaxAttempts: number;
+  settlementAutoRunEnabled: boolean;
+  settlementAutoRunHour: number;
+  settlementAutoRunMinute: number;
+  asOf: string;
+}
+
+export interface AdminSettlementBatchListItem {
+  batchId: string;
+  periodFrom: string;
+  periodTo: string;
+  currency: string;
+  status: string;
+  settlementEnabled: boolean;
+  createdAt: string;
+  runAt: string;
+  hosts: number;
+  counts: {
+    succeeded: number;
+    failed: number;
+    blocked: number;
+    pending: number;
+  };
+  triggerType: string | null;
+}
+
+export interface AdminSettlementBatchListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: AdminSettlementBatchListItem[];
+}
+
+export interface AdminSettlementBatchDetailItem {
+  itemId: string;
+  hostId: string;
+  communityName: string;
+  hostBalance: number;
+  settleAmount: number;
+  carryReceivable: number;
+  currency: string;
+  status: string;
+  stripeTransferId: string | null;
+  errorMessage: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+  counts: Record<string, any>;
+  blockedReasonCodes: string[];
+  disputedPayments: Array<{
+    paymentId: string;
+    stripeChargeId: string | null;
+    stripeDisputeId: string | null;
+    stripeDisputeStatus: string | null;
+  }>;
+  hostStripe: { stripeAccountId: string | null; stripeAccountOnboarded: boolean } | null;
+  ruleOverrides: {
+    settlementDelayDaysOverride: number | null;
+    settlementMinTransferAmountOverride: number | null;
+  } | null;
+}
+
+export interface AdminSettlementBatchDetailResponse {
+  batchId: string;
+  periodFrom: string;
+  periodTo: string;
+  currency: string;
+  status: string;
+  settlementEnabled: boolean;
+  triggerType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  runAt: string;
+  items: AdminSettlementBatchDetailItem[];
 }
 
 export interface AdminStatsSummary {

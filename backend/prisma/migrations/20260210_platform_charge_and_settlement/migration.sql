@@ -1,11 +1,15 @@
 -- Add ChargeModel enum and Payment.chargeModel (default to platform_charge)
-CREATE TYPE "ChargeModel" AS ENUM ('platform_charge', 'destination_charge');
+DO $$ BEGIN
+  CREATE TYPE "ChargeModel" AS ENUM ('platform_charge', 'destination_charge');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 ALTER TABLE "Payment"
-  ADD COLUMN "chargeModel" "ChargeModel" NOT NULL DEFAULT 'platform_charge';
+  ADD COLUMN IF NOT EXISTS "chargeModel" "ChargeModel" NOT NULL DEFAULT 'platform_charge';
 
 -- Event inbox for webhook idempotency
-CREATE TABLE "EventInbox" (
+CREATE TABLE IF NOT EXISTS "EventInbox" (
   "id" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "eventId" TEXT NOT NULL,
@@ -15,17 +19,16 @@ CREATE TABLE "EventInbox" (
   "lastError" TEXT,
   "nextAttemptAt" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "EventInbox_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "EventInbox_type_eventId_key" ON "EventInbox"("type", "eventId");
-CREATE INDEX "EventInbox_processedAt_idx" ON "EventInbox"("processedAt");
-CREATE INDEX "EventInbox_nextAttemptAt_idx" ON "EventInbox"("nextAttemptAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "EventInbox_type_eventId_key" ON "EventInbox"("type", "eventId");
+CREATE INDEX IF NOT EXISTS "EventInbox_processedAt_idx" ON "EventInbox"("processedAt");
+CREATE INDEX IF NOT EXISTS "EventInbox_nextAttemptAt_idx" ON "EventInbox"("nextAttemptAt");
 
 -- Settlement batching (delayed transfer to connected accounts)
-CREATE TABLE "SettlementBatch" (
+CREATE TABLE IF NOT EXISTS "SettlementBatch" (
   "id" TEXT NOT NULL,
   "periodFrom" TIMESTAMP(3) NOT NULL,
   "periodTo" TIMESTAMP(3) NOT NULL,
@@ -34,16 +37,15 @@ CREATE TABLE "SettlementBatch" (
   "runAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "meta" JSONB,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "SettlementBatch_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "SettlementBatch_periodFrom_idx" ON "SettlementBatch"("periodFrom");
-CREATE INDEX "SettlementBatch_periodTo_idx" ON "SettlementBatch"("periodTo");
-CREATE INDEX "SettlementBatch_status_idx" ON "SettlementBatch"("status");
+CREATE INDEX IF NOT EXISTS "SettlementBatch_periodFrom_idx" ON "SettlementBatch"("periodFrom");
+CREATE INDEX IF NOT EXISTS "SettlementBatch_periodTo_idx" ON "SettlementBatch"("periodTo");
+CREATE INDEX IF NOT EXISTS "SettlementBatch_status_idx" ON "SettlementBatch"("status");
 
-CREATE TABLE "SettlementItem" (
+CREATE TABLE IF NOT EXISTS "SettlementItem" (
   "id" TEXT NOT NULL,
   "batchId" TEXT NOT NULL,
   "hostId" TEXT NOT NULL,
@@ -56,19 +58,31 @@ CREATE TABLE "SettlementItem" (
   "stripeTransferId" TEXT,
   "errorMessage" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "SettlementItem_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "SettlementItem_batchId_hostId_key" ON "SettlementItem"("batchId", "hostId");
-CREATE INDEX "SettlementItem_batchId_idx" ON "SettlementItem"("batchId");
-CREATE INDEX "SettlementItem_hostId_idx" ON "SettlementItem"("hostId");
-CREATE INDEX "SettlementItem_status_idx" ON "SettlementItem"("status");
+CREATE UNIQUE INDEX IF NOT EXISTS "SettlementItem_batchId_hostId_key" ON "SettlementItem"("batchId", "hostId");
+CREATE INDEX IF NOT EXISTS "SettlementItem_batchId_idx" ON "SettlementItem"("batchId");
+CREATE INDEX IF NOT EXISTS "SettlementItem_hostId_idx" ON "SettlementItem"("hostId");
+CREATE INDEX IF NOT EXISTS "SettlementItem_status_idx" ON "SettlementItem"("status");
 
-ALTER TABLE "SettlementItem"
-  ADD CONSTRAINT "SettlementItem_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "SettlementBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- FKs might already exist; add them only if missing
+DO $$ BEGIN
+  ALTER TABLE "SettlementItem"
+    ADD CONSTRAINT "SettlementItem_batchId_fkey"
+    FOREIGN KEY ("batchId") REFERENCES "SettlementBatch"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-ALTER TABLE "SettlementItem"
-  ADD CONSTRAINT "SettlementItem_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "Community"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "SettlementItem"
+    ADD CONSTRAINT "SettlementItem_hostId_fkey"
+    FOREIGN KEY ("hostId") REFERENCES "Community"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 

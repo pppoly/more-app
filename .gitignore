@@ -8,6 +8,7 @@ frontend/.env*
 backend/.logs/
 **/.logs/
 legal/exports/
+docs/
 ############################
 # Build Artifacts (NEVER commit)
 ############################

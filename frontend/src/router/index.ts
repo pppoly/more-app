@@ -851,6 +851,25 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '決済モニター' },
   },
   {
+    path: '/admin/settlements',
+    name: 'admin-settlements',
+    component: () => import('../views/admin/AdminSettlements.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '結算モニター' },
+  },
+  {
+    path: '/admin/settlements/:batchId',
+    name: 'admin-settlement-batch',
+    component: () => import('../views/admin/AdminSettlementBatchDetail.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideShellHeader: true,
+      flushContent: true,
+      devPageName: '結算バッチ詳細',
+    },
+    props: true,
+  },
+  {
     path: '/admin/users',
     name: 'admin-users',
     component: () => import('../views/admin/AdminUsers.vue'),

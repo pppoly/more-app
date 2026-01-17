@@ -7,15 +7,16 @@
         <div class="banner-icon">{{ status.icon }}</div>
         <div>
           <p class="banner-title">{{ status.title }}</p>
-          <p class="banner-text">入金や返金は Stripe のセキュア画面で管理します。</p>
+          <p class="banner-text">受け取り設定は Stripe のセキュア画面で管理します。</p>
         </div>
       </div>
       <div class="hero">
-        <p class="hero-label">受け取り可能（Stripe残高）</p>
-        <p class="hero-value">{{ formatYen(stripeAvailable) }}</p>
+        <p class="hero-label">未受取（MORE内）</p>
+        <p class="hero-value">{{ formatYen(settleAmount) }}</p>
         <p class="hero-sub">
-          保留中 {{ formatYen(stripePending) }} ・ Stripe残高合計 {{ formatYen(stripeTotal) }}
+          Stripe残高 {{ formatYen(stripeAvailable) }}・保留中 {{ formatYen(stripePending) }}
         </p>
+        <p v-if="carryReceivable > 0" class="hero-sub">繰越（返金調整） {{ formatYen(carryReceivable) }}</p>
       </div>
       <div class="kpi-grid">
         <article class="kpi">
@@ -41,7 +42,7 @@
           <p class="kpi-value kpi-value--refund">{{ formatYen(balanceRefunded) }}</p>
         </article>
       </div>
-      <p class="note muted">※ 支払い待ちの取引は、確定収入・受け取り可能金額に含まれません。</p>
+      <p class="note muted">※ 支払い待ちの取引は、確定収入・未受取に含まれません。</p>
     </section>
 
     <section class="actions">
@@ -112,7 +113,6 @@ const stripeRestricted = computed(() => {
   if (!hasStripeAccount.value || !stripeReady.value) return false;
   if (stripeStatus.value?.disabledReason) return true;
   if (stripeStatus.value?.payoutsEnabled === false) return true;
-  if (stripeStatus.value?.chargesEnabled === false) return true;
   return false;
 });
 const stripeActionLabel = computed(() => {
@@ -149,18 +149,13 @@ const balanceFee = computed(() => balance.value?.platformFee ?? 0);
 const stripeFee = computed(() => balance.value?.stripeFee ?? 0);
 const stripeAvailable = computed(() => balance.value?.stripeBalance?.available ?? 0);
 const stripePending = computed(() => balance.value?.stripeBalance?.pending ?? 0);
-const stripeTotal = computed(() => stripeAvailable.value + stripePending.value);
 const transactionTotal = computed(() => balance.value?.transactionTotal ?? balanceGross.value);
+const settleAmount = computed(() => balance.value?.settlement?.settleAmount ?? 0);
+const carryReceivable = computed(() => balance.value?.settlement?.carryReceivable ?? 0);
 
 const communityId = computed(() => store.activeCommunityId.value);
 const hasStripeBalance = computed(() => stripeAvailable.value > 0 || stripePending.value > 0);
-const isEmpty = computed(
-  () =>
-    balanceGross.value === 0 &&
-    balanceRefunded.value === 0 &&
-    balanceFee.value === 0 &&
-    !hasStripeBalance.value,
-);
+const isEmpty = computed(() => transactionTotal.value === 0 && !hasStripeBalance.value);
 
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);

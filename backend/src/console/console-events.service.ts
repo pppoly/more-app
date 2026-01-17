@@ -99,6 +99,16 @@ export class ConsoleEventsService {
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const isDraft = rest?.status === 'draft';
+    const hasPaidTickets = (ticketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
+    if (!isDraft && hasPaidTickets) {
+      const stripe = await this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { stripeAccountId: true, stripeAccountOnboarded: true },
+      });
+      if (!stripe?.stripeAccountId || !stripe?.stripeAccountOnboarded) {
+        throw new BadRequestException('Stripe onboarding 未完了のため、有料イベントは公開できません');
+      }
+    }
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);
@@ -170,11 +180,22 @@ export class ConsoleEventsService {
     await this.permissions.assertEventManager(userId, eventId);
     const existing = await this.prisma.event.findUnique({
       where: { id: eventId },
-      select: { status: true, config: true, reviewStatus: true },
+      select: { status: true, config: true, reviewStatus: true, communityId: true, ticketTypes: { select: { price: true } } },
     });
     const wasDraft = existing?.status === 'draft';
     const { ticketTypes = [], ...rest } = data;
     const isDraft = rest?.status === 'draft';
+    const nextTicketTypes = ticketTypes && ticketTypes.length ? ticketTypes : existing?.ticketTypes ?? [];
+    const hasPaidTickets = (nextTicketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
+    if (!isDraft && hasPaidTickets && existing?.communityId) {
+      const stripe = await this.prisma.community.findUnique({
+        where: { id: existing.communityId },
+        select: { stripeAccountId: true, stripeAccountOnboarded: true },
+      });
+      if (!stripe?.stripeAccountId || !stripe?.stripeAccountOnboarded) {
+        throw new BadRequestException('Stripe onboarding 未完了のため、有料イベントは公開できません');
+      }
+    }
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);

@@ -5,6 +5,16 @@ export type PaymentsConfig = {
   settlementEnabled: boolean;
   settlementReportDir: string;
   settlementRetryIntervalMs: number;
+  settlementDelayDays: number;
+  settlementWindowDays: number;
+  settlementMinTransferAmount: number;
+  settlementItemRetryDelayMs: number;
+  settlementItemMaxAttempts: number;
+  settlementItemProcessingTimeoutMs: number;
+  settlementAutoRunEnabled: boolean;
+  settlementAutoRunHour: number;
+  settlementAutoRunMinute: number;
+  settlementTimeZone: string;
 };
 
 let cachedConfig: PaymentsConfig | null = null;
@@ -23,6 +33,19 @@ const parseChargeModel = (value: string | undefined): PaymentsChargeModel => {
   return 'platform_charge';
 };
 
+const parseInteger = (
+  value: string | undefined,
+  defaultValue: number,
+  params: { min: number; max: number },
+) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  const rounded = Math.trunc(parsed);
+  if (rounded < params.min) return params.min;
+  if (rounded > params.max) return params.max;
+  return rounded;
+};
+
 export const getPaymentsConfig = (): PaymentsConfig => {
   if (cachedConfig) return cachedConfig;
   cachedConfig = {
@@ -30,6 +53,25 @@ export const getPaymentsConfig = (): PaymentsConfig => {
     settlementEnabled: parseBoolean(process.env.SETTLEMENT_ENABLED, false),
     settlementReportDir: (process.env.SETTLEMENT_REPORT_DIR || '.logs/settlement').trim() || '.logs/settlement',
     settlementRetryIntervalMs: Number(process.env.SETTLEMENT_RETRY_INTERVAL_MS ?? 30_000),
+    settlementDelayDays: parseInteger(process.env.SETTLEMENT_DELAY_DAYS, 7, { min: 0, max: 365 }),
+    settlementWindowDays: parseInteger(process.env.SETTLEMENT_WINDOW_DAYS, 30, { min: 1, max: 3650 }),
+    settlementMinTransferAmount: parseInteger(process.env.SETTLEMENT_MIN_TRANSFER_AMOUNT, 0, {
+      min: 0,
+      max: 1_000_000_000,
+    }),
+    settlementItemRetryDelayMs: parseInteger(process.env.SETTLEMENT_ITEM_RETRY_DELAY_MS, 60_000, {
+      min: 1_000,
+      max: 86_400_000,
+    }),
+    settlementItemMaxAttempts: parseInteger(process.env.SETTLEMENT_ITEM_MAX_ATTEMPTS, 5, { min: 1, max: 50 }),
+    settlementItemProcessingTimeoutMs: parseInteger(process.env.SETTLEMENT_ITEM_PROCESSING_TIMEOUT_MS, 600_000, {
+      min: 1_000,
+      max: 86_400_000,
+    }),
+    settlementAutoRunEnabled: parseBoolean(process.env.SETTLEMENT_AUTORUN_ENABLED, false),
+    settlementAutoRunHour: parseInteger(process.env.SETTLEMENT_AUTORUN_HOUR, 3, { min: 0, max: 23 }),
+    settlementAutoRunMinute: parseInteger(process.env.SETTLEMENT_AUTORUN_MINUTE, 0, { min: 0, max: 59 }),
+    settlementTimeZone: (process.env.APP_TIMEZONE || 'Asia/Tokyo').trim() || 'Asia/Tokyo',
   };
   return cachedConfig;
 };

@@ -26,6 +26,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { ClassesModule } from './classes/classes.module';
 import { NotificationModule } from './notifications/notification.module';
 import { AdminNotificationsController } from './admin/admin-notifications.controller';
+import { AdminSettlementsController } from './admin/admin-settlements.controller';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { AdminNotificationsController } from './admin/admin-notifications.contro
     HelloController,
     AdminPaymentsController,
     AdminPaymentsOpsController,
+    AdminSettlementsController,
     AdminUsersController,
     AdminCommunitiesController,
     AdminEventsListController,

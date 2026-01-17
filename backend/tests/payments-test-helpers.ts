@@ -28,33 +28,67 @@ const matchesWhere = (record: any, where: any): boolean => {
       continue;
     }
     if (cond && typeof cond === 'object' && !Array.isArray(cond)) {
+      let handled = false;
       if ('in' in cond) {
+        handled = true;
         if (!Array.isArray((cond as any).in) || !(cond as any).in.includes(value)) return false;
-        continue;
       }
       if ('not' in cond) {
+        handled = true;
         const notVal = (cond as any).not;
         if (notVal === null) {
           if (value === null || value === undefined) return false;
         } else if (value === notVal) return false;
-        continue;
       }
       if ('lt' in cond) {
-        if (!(value instanceof Date) || value >= (cond as any).lt) return false;
-        continue;
+        handled = true;
+        const lt = (cond as any).lt;
+        if (value instanceof Date && lt instanceof Date) {
+          if (value >= lt) return false;
+        } else if (typeof value === 'number' && typeof lt === 'number') {
+          if (value >= lt) return false;
+        } else {
+          return false;
+        }
       }
       if ('lte' in cond) {
-        if (!(value instanceof Date) || value > (cond as any).lte) return false;
-        continue;
+        handled = true;
+        const lte = (cond as any).lte;
+        if (value instanceof Date && lte instanceof Date) {
+          if (value > lte) return false;
+        } else if (typeof value === 'number' && typeof lte === 'number') {
+          if (value > lte) return false;
+        } else {
+          return false;
+        }
       }
       if ('gt' in cond) {
-        if (!(value instanceof Date) || value <= (cond as any).gt) return false;
-        continue;
+        handled = true;
+        const gt = (cond as any).gt;
+        if (value instanceof Date && gt instanceof Date) {
+          if (value <= gt) return false;
+        } else if (typeof value === 'number' && typeof gt === 'number') {
+          if (value <= gt) return false;
+        } else {
+          return false;
+        }
       }
       if ('gte' in cond) {
-        if (!(value instanceof Date) || value < (cond as any).gte) return false;
-        continue;
+        handled = true;
+        const gte = (cond as any).gte;
+        if (value instanceof Date && gte instanceof Date) {
+          if (value < gte) return false;
+        } else if (typeof value === 'number' && typeof gte === 'number') {
+          if (value < gte) return false;
+        } else {
+          return false;
+        }
       }
+      if (!handled && value && typeof value === 'object' && !Array.isArray(value)) {
+        handled = true;
+        if (!matchesWhere(value, cond)) return false;
+      }
+      if (handled) continue;
     }
     if (value !== cond) return false;
   }
@@ -227,6 +261,16 @@ export class InMemoryPrisma {
       if (!created.occurredAt) created.occurredAt = new Date();
       this.ledgerEntries.push(created);
       return created;
+    },
+    aggregate: async (args: any) => {
+      const where = args?.where;
+      const rows = this.ledgerEntries.filter((e) => matchesWhere(e, where));
+      const sumSpec = args?._sum ?? {};
+      const result: any = { _sum: {} };
+      for (const key of Object.keys(sumSpec)) {
+        result._sum[key] = rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+      }
+      return result;
     },
     groupBy: async (args: any) => {
       const where = args?.where;
@@ -425,7 +469,9 @@ export class InMemoryPrisma {
 
   settlementItem = {
     create: async (args: any) => {
-      const created = { id: this.nextId('si'), createdAt: new Date(), updatedAt: new Date(), ...args.data };
+      const created: any = { id: this.nextId('si'), createdAt: new Date(), updatedAt: new Date(), ...args.data };
+      const batch = this.settlementBatches.find((b) => b.id === created.batchId) ?? null;
+      if (batch) created.batch = batch;
       this.settlementItems.push(created);
       return created;
     },
@@ -454,6 +500,16 @@ export class InMemoryPrisma {
         items = items.sort((a, b) => b.settleAmount - a.settleAmount);
       }
       return items;
+    },
+    aggregate: async (args: any) => {
+      const where = args?.where;
+      const rows = this.settlementItems.filter((i) => matchesWhere(i, where));
+      const sumSpec = args?._sum ?? {};
+      const result: any = { _sum: {} };
+      for (const key of Object.keys(sumSpec)) {
+        result._sum[key] = rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+      }
+      return result;
     },
     groupBy: async (args: any) => {
       const where = args?.where;

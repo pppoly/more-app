@@ -5,6 +5,7 @@ import { getPaymentsConfig } from './payments.config';
 import Stripe from 'stripe';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { addDays } from 'date-fns';
 
 type SettlementHostStats = {
   hostId: string;
@@ -13,12 +14,27 @@ type SettlementHostStats = {
   hostBalance: number;
   settleAmount: number;
   carryReceivable: number;
+  status: 'pending' | 'blocked' | 'skipped';
+  blockedReasons: string[];
   counts: {
     payments: number;
     refundedPayments: number;
     unreconciledPayments: number;
     totalGross: number;
     totalRefundedGross: number;
+    blocked?: {
+      notMaturedPayments: number;
+      notMaturedNet: number;
+      disputedPayments: number;
+      disputedNet: number;
+      missingEligibilityPayments: number;
+      missingEligibilityNet: number;
+    };
+    rules?: {
+      settlementDelayDays: number;
+      settlementMinTransferAmount: number;
+      settlementWindowDays: number;
+    };
   };
 };
 
@@ -138,61 +154,187 @@ export class SettlementService {
     };
   }
 
-  private async computeHostStats(periodTo: Date): Promise<SettlementHostStats[]> {
+  private async groupLedgerByHost(params: {
+    paymentIds: string[];
+    periodTo: Date;
+    entryType: 'host_payable' | 'host_payable_reversal';
+  }) {
+    if (!params.paymentIds.length) return new Map<string, number>();
+    const rows = await this.prisma.ledgerEntry.groupBy({
+      by: ['businessCommunityId'],
+      where: {
+        businessCommunityId: { not: null },
+        businessPaymentId: { in: params.paymentIds },
+        entryType: params.entryType,
+        provider: 'internal',
+        occurredAt: { lt: params.periodTo },
+      },
+      orderBy: { businessCommunityId: 'asc' },
+      _sum: { amount: true },
+    });
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.businessCommunityId) continue;
+      map.set(row.businessCommunityId, row._sum?.amount ?? 0);
+    }
+    return map;
+  }
+
+  private async computeHostStats(params: { periodFrom: Date; periodTo: Date }): Promise<SettlementHostStats[]> {
+    const config = getPaymentsConfig();
+
     const payments = await this.prisma.payment.findMany({
       where: {
         method: 'stripe',
         chargeModel: 'platform_charge',
         communityId: { not: null },
-        status: { in: ['paid', 'partial_refunded', 'refunded'] },
-        createdAt: { lt: periodTo },
+        status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
+        createdAt: { lt: params.periodTo },
       },
       select: {
         id: true,
         communityId: true,
         amount: true,
         refundedGrossTotal: true,
+        status: true,
+        createdAt: true,
+        eventId: true,
+        lessonId: true,
+        event: { select: { endTime: true } },
+        lesson: { select: { startAt: true, endAt: true } },
       },
     });
 
-    const paymentIds = payments.map((p) => p.id);
+    const hostIdsFromPayments = Array.from(
+      new Set(payments.map((p) => p.communityId).filter((v): v is string => Boolean(v))),
+    );
 
-    const [paidOutAgg, hostPayableAgg, hostPayableReversalAgg, payableRows] = await this.prisma.$transaction([
+    const communities = hostIdsFromPayments.length
+      ? await this.prisma.community.findMany({
+          where: { id: { in: hostIdsFromPayments } },
+          select: {
+            id: true,
+            stripeAccountId: true,
+            stripeAccountOnboarded: true,
+            settlementDelayDaysOverride: true,
+            settlementMinTransferAmountOverride: true,
+          },
+        })
+      : [];
+    const communityById = new Map(communities.map((c) => [c.id, c]));
+
+    const getEffectiveDelayDays = (hostId: string) => {
+      const override = communityById.get(hostId)?.settlementDelayDaysOverride ?? null;
+      const configured = Number.isFinite(config.settlementDelayDays) ? config.settlementDelayDays : 0;
+      const effective = override === null ? configured : Math.max(configured, override);
+      return Math.max(0, effective);
+    };
+
+    const getEffectiveMinTransferAmount = (hostId: string) => {
+      const override = communityById.get(hostId)?.settlementMinTransferAmountOverride ?? null;
+      const configured = Number.isFinite(config.settlementMinTransferAmount) ? config.settlementMinTransferAmount : 0;
+      const effective = override === null ? configured : Math.max(configured, override);
+      return Math.max(0, effective);
+    };
+
+    const settleablePaymentIds: string[] = [];
+    const blockedNotMaturedPaymentIds: string[] = [];
+    const blockedDisputePaymentIds: string[] = [];
+    const blockedMissingEligibilityPaymentIds: string[] = [];
+
+    const categoryByPaymentId = new Map<
+      string,
+      'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility'
+    >();
+
+    for (const payment of payments) {
+      const hostId = payment.communityId;
+      if (!hostId) continue;
+      const delayDays = getEffectiveDelayDays(hostId);
+      const endAt =
+        payment.event?.endTime ??
+        payment.lesson?.endAt ??
+        payment.lesson?.startAt ??
+        null;
+      if (!endAt) {
+        blockedMissingEligibilityPaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'missing_eligibility');
+        continue;
+      }
+
+      if (payment.status === 'disputed') {
+        blockedDisputePaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'disputed');
+        continue;
+      }
+
+      const eligibleAt = addDays(endAt, delayDays);
+      if (eligibleAt > params.periodTo) {
+        blockedNotMaturedPaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'not_matured');
+        continue;
+      }
+
+      settleablePaymentIds.push(payment.id);
+      categoryByPaymentId.set(payment.id, 'settleable');
+    }
+
+    const [
+      paidOutAgg,
+      eligiblePayableByHost,
+      eligibleReversalByHost,
+      blockedNotMaturedPayableByHost,
+      blockedNotMaturedReversalByHost,
+      blockedDisputePayableByHost,
+      blockedDisputeReversalByHost,
+      blockedMissingPayableByHost,
+      blockedMissingReversalByHost,
+    ] = await Promise.all([
       this.prisma.settlementItem.groupBy({
         by: ['hostId'],
         where: { status: { in: ['completed', 'transferred'] } },
         orderBy: { hostId: 'asc' },
         _sum: { settleAmount: true },
       }),
-      this.prisma.ledgerEntry.groupBy({
-        by: ['businessCommunityId'],
-        where: {
-          businessCommunityId: { not: null },
-          entryType: 'host_payable',
-          provider: 'internal',
-          occurredAt: { lt: periodTo },
-        },
-        orderBy: { businessCommunityId: 'asc' },
-        _sum: { amount: true },
+      this.groupLedgerByHost({
+        paymentIds: settleablePaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable',
       }),
-      this.prisma.ledgerEntry.groupBy({
-        by: ['businessCommunityId'],
-        where: {
-          businessCommunityId: { not: null },
-          entryType: 'host_payable_reversal',
-          provider: 'internal',
-          occurredAt: { lt: periodTo },
-        },
-        orderBy: { businessCommunityId: 'asc' },
-        _sum: { amount: true },
+      this.groupLedgerByHost({
+        paymentIds: settleablePaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable_reversal',
       }),
-      this.prisma.ledgerEntry.findMany({
-        where: {
-          businessPaymentId: { in: paymentIds },
-          entryType: 'host_payable',
-          provider: 'internal',
-        },
-        select: { businessPaymentId: true },
+      this.groupLedgerByHost({
+        paymentIds: blockedNotMaturedPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedNotMaturedPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable_reversal',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedDisputePaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedDisputePaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable_reversal',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedMissingEligibilityPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedMissingEligibilityPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable_reversal',
       }),
     ]);
 
@@ -201,18 +343,19 @@ export class SettlementService {
       paidOutByHost.set(row.hostId, row._sum?.settleAmount ?? 0);
     }
 
-    const hostPayableByHost = new Map<string, number>();
-    for (const row of hostPayableAgg) {
-      if (!row.businessCommunityId) continue;
-      hostPayableByHost.set(row.businessCommunityId, row._sum?.amount ?? 0);
-    }
-
-    const hostPayableReversalByHost = new Map<string, number>();
-    for (const row of hostPayableReversalAgg) {
-      if (!row.businessCommunityId) continue;
-      hostPayableReversalByHost.set(row.businessCommunityId, row._sum?.amount ?? 0);
-    }
-
+    const windowPaymentIds = payments
+      .filter((p) => p.createdAt >= params.periodFrom && p.createdAt < params.periodTo)
+      .map((p) => p.id);
+    const payableRows = windowPaymentIds.length
+      ? await this.prisma.ledgerEntry.findMany({
+          where: {
+            businessPaymentId: { in: windowPaymentIds },
+            entryType: 'host_payable',
+            provider: 'internal',
+          },
+          select: { businessPaymentId: true },
+        })
+      : [];
     const paymentIdsWithHostPayable = new Set<string>(payableRows.map((r) => r.businessPaymentId));
 
     const allHostIds = new Set<string>();
@@ -220,26 +363,76 @@ export class SettlementService {
       if (payment.communityId) allHostIds.add(payment.communityId);
     }
     for (const hostId of paidOutByHost.keys()) allHostIds.add(hostId);
-    for (const hostId of hostPayableByHost.keys()) allHostIds.add(hostId);
-    for (const hostId of hostPayableReversalByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of eligiblePayableByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of eligibleReversalByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of blockedNotMaturedPayableByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of blockedDisputePayableByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of blockedMissingPayableByHost.keys()) allHostIds.add(hostId);
 
     const statsByHost = new Map<string, SettlementHostStats>();
     for (const hostId of allHostIds) {
-      const accrued =
-        (hostPayableByHost.get(hostId) ?? 0) - (hostPayableReversalByHost.get(hostId) ?? 0);
+      const delayDays = getEffectiveDelayDays(hostId);
+      const minTransfer = getEffectiveMinTransferAmount(hostId);
+      const eligibleNet = (eligiblePayableByHost.get(hostId) ?? 0) - (eligibleReversalByHost.get(hostId) ?? 0);
+      const paidOut = paidOutByHost.get(hostId) ?? 0;
+      const hostBalance = eligibleNet - paidOut;
+      const carryReceivable = hostBalance < 0 ? Math.abs(hostBalance) : 0;
+
+      const blockedNotMaturedNet =
+        (blockedNotMaturedPayableByHost.get(hostId) ?? 0) - (blockedNotMaturedReversalByHost.get(hostId) ?? 0);
+      const blockedDisputeNet =
+        (blockedDisputePayableByHost.get(hostId) ?? 0) - (blockedDisputeReversalByHost.get(hostId) ?? 0);
+      const blockedMissingEligibilityNet =
+        (blockedMissingPayableByHost.get(hostId) ?? 0) - (blockedMissingReversalByHost.get(hostId) ?? 0);
+
+      const blockedReasons: string[] = [];
+      const candidate = hostBalance > 0 ? hostBalance : 0;
+      const onboarded = communityById.get(hostId)?.stripeAccountOnboarded ?? false;
+      if (candidate > 0 && !onboarded) blockedReasons.push('connected_account_not_onboarded');
+      if (candidate > 0 && minTransfer > 0 && candidate < minTransfer) blockedReasons.push('below_min_transfer_amount');
+      if (candidate <= 0 && blockedNotMaturedNet > 0) blockedReasons.push('not_matured');
+      if (candidate <= 0 && blockedDisputeNet > 0) blockedReasons.push('dispute_open');
+      if (candidate <= 0 && blockedMissingEligibilityNet > 0) blockedReasons.push('missing_eligibility_source');
+
+      const status: SettlementHostStats['status'] =
+        candidate > 0
+          ? blockedReasons.length
+            ? 'blocked'
+            : 'pending'
+          : blockedReasons.length
+            ? 'blocked'
+            : 'skipped';
+
+      const settleAmount = status === 'pending' ? candidate : 0;
+
       statsByHost.set(hostId, {
         hostId,
-        accruedNet: accrued,
-        paidOut: paidOutByHost.get(hostId) ?? 0,
-        hostBalance: 0,
-        settleAmount: 0,
-        carryReceivable: 0,
+        accruedNet: eligibleNet,
+        paidOut,
+        hostBalance,
+        settleAmount,
+        carryReceivable,
+        status,
+        blockedReasons,
         counts: {
           payments: 0,
           refundedPayments: 0,
           unreconciledPayments: 0,
           totalGross: 0,
           totalRefundedGross: 0,
+          blocked: {
+            notMaturedPayments: 0,
+            notMaturedNet: blockedNotMaturedNet,
+            disputedPayments: 0,
+            disputedNet: blockedDisputeNet,
+            missingEligibilityPayments: 0,
+            missingEligibilityNet: blockedMissingEligibilityNet,
+          },
+          rules: {
+            settlementDelayDays: delayDays,
+            settlementMinTransferAmount: minTransfer,
+            settlementWindowDays: config.settlementWindowDays,
+          },
         },
       });
     }
@@ -249,20 +442,24 @@ export class SettlementService {
       if (!hostId) continue;
       const entry = statsByHost.get(hostId);
       if (!entry) continue;
-      entry.counts.payments += 1;
-      entry.counts.totalGross += payment.amount ?? 0;
-      entry.counts.totalRefundedGross += payment.refundedGrossTotal ?? 0;
-      if ((payment.refundedGrossTotal ?? 0) > 0) entry.counts.refundedPayments += 1;
-      if (!paymentIdsWithHostPayable.has(payment.id)) entry.counts.unreconciledPayments += 1;
+
+      const inWindow = payment.createdAt >= params.periodFrom && payment.createdAt < params.periodTo;
+      if (inWindow) {
+        entry.counts.payments += 1;
+        entry.counts.totalGross += payment.amount ?? 0;
+        entry.counts.totalRefundedGross += payment.refundedGrossTotal ?? 0;
+        if ((payment.refundedGrossTotal ?? 0) > 0) entry.counts.refundedPayments += 1;
+        if (!paymentIdsWithHostPayable.has(payment.id)) entry.counts.unreconciledPayments += 1;
+      }
+
+      const category = categoryByPaymentId.get(payment.id);
+      if (!category || !inWindow || !entry.counts.blocked) continue;
+      if (category === 'not_matured') entry.counts.blocked.notMaturedPayments += 1;
+      if (category === 'disputed') entry.counts.blocked.disputedPayments += 1;
+      if (category === 'missing_eligibility') entry.counts.blocked.missingEligibilityPayments += 1;
     }
 
-    const stats = Array.from(statsByHost.values()).map((s) => {
-      const hostBalance = s.accruedNet - s.paidOut;
-      const settleAmount = hostBalance > 0 ? hostBalance : 0;
-      const carryReceivable = hostBalance < 0 ? Math.abs(hostBalance) : 0;
-      return { ...s, hostBalance, settleAmount, carryReceivable };
-    });
-
+    const stats = Array.from(statsByHost.values());
     stats.sort((a, b) => b.settleAmount - a.settleAmount);
     return stats;
   }
@@ -294,7 +491,11 @@ export class SettlementService {
     });
   }
 
-  async runSettlementBatch(params: { periodFrom: Date; periodTo: Date }) {
+  async runSettlementBatch(params: {
+    periodFrom: Date;
+    periodTo: Date;
+    trigger?: { type: 'auto' | 'manual'; userId?: string };
+  }) {
     const config = getPaymentsConfig();
     const settlementEnabled = config.settlementEnabled && this.stripeService.enabled;
 
@@ -310,12 +511,14 @@ export class SettlementService {
       return { batchId: existingBatch.id, status: existingBatch.status };
     }
 
-    const stats = await this.computeHostStats(params.periodTo);
+    const stats = await this.computeHostStats({ periodFrom: params.periodFrom, periodTo: params.periodTo });
     const hostIds = stats.map((s) => s.hostId);
-    const communities = await this.prisma.community.findMany({
-      where: { id: { in: hostIds } },
-      select: { id: true, stripeAccountId: true, stripeAccountOnboarded: true },
-    });
+    const communities = hostIds.length
+      ? await this.prisma.community.findMany({
+          where: { id: { in: hostIds } },
+          select: { id: true, stripeAccountId: true, stripeAccountOnboarded: true },
+        })
+      : [];
     const communityById = new Map(communities.map((c) => [c.id, c]));
 
     const batch = await this.prisma.settlementBatch.create({
@@ -328,6 +531,11 @@ export class SettlementService {
         meta: {
           settlementEnabled,
           settlementReportDir: config.settlementReportDir,
+          triggerType: params.trigger?.type ?? 'unknown',
+          triggeredByUserId: params.trigger?.userId ?? null,
+          settlementDelayDays: config.settlementDelayDays,
+          settlementWindowDays: config.settlementWindowDays,
+          settlementMinTransferAmount: config.settlementMinTransferAmount,
         },
       },
     });
@@ -344,7 +552,9 @@ export class SettlementService {
             settleAmount: s.settleAmount,
             carryReceivable: s.carryReceivable,
             counts: s.counts,
-            status: settlementEnabled ? (s.settleAmount > 0 ? 'pending' : 'skipped') : 'dry_run',
+            status: settlementEnabled ? s.status : 'dry_run',
+            attempts: 0,
+            nextAttemptAt: null,
           },
         });
         created.push(item);
@@ -357,21 +567,30 @@ export class SettlementService {
     if (settlementEnabled) {
       for (const item of items) {
         if (item.settleAmount <= 0) continue;
-        const claimed = await this.prisma.settlementItem.updateMany({
-          where: { id: item.id, status: 'pending', stripeTransferId: null },
-          data: { status: 'processing', errorMessage: null },
-        });
-        if (claimed.count !== 1) continue;
         const host = communityById.get(item.hostId);
         const stripeAccountId = host?.stripeAccountId ?? null;
         if (!stripeAccountId || !host?.stripeAccountOnboarded) {
-          transferFailed += 1;
-          await this.prisma.settlementItem.update({
-            where: { id: item.id },
-            data: { status: 'failed', errorMessage: 'connected_account_missing_or_not_onboarded' },
+          await this.prisma.settlementItem.updateMany({
+            where: { id: item.id, status: 'pending', stripeTransferId: null },
+            data: {
+              status: 'blocked',
+              settleAmount: 0,
+              errorMessage: 'connected_account_missing_or_not_onboarded',
+              nextAttemptAt: null,
+            },
           });
           continue;
         }
+        const claimed = await this.prisma.settlementItem.updateMany({
+          where: {
+            id: item.id,
+            status: 'pending',
+            stripeTransferId: null,
+            attempts: { lt: config.settlementItemMaxAttempts },
+          },
+          data: { status: 'processing', errorMessage: null, nextAttemptAt: null, attempts: { increment: 1 } },
+        });
+        if (claimed.count !== 1) continue;
         try {
           const transfer = await this.createTransferForItem({
             itemId: item.id,
@@ -386,27 +605,34 @@ export class SettlementService {
           transferSucceeded += 1;
           await this.prisma.settlementItem.update({
             where: { id: item.id },
-            data: { status: 'completed', stripeTransferId: transfer.id },
+            data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
           });
         } catch (err) {
           transferFailed += 1;
           const message = err instanceof Error ? err.message : String(err);
           this.logger.error(`[settlement] transfer failed batch=${batch.id} item=${item.id} host=${item.hostId} ${message}`);
+          const nextAttemptAt = new Date(Date.now() + config.settlementItemRetryDelayMs);
           await this.prisma.settlementItem.update({
             where: { id: item.id },
-            data: { status: 'failed', errorMessage: message },
+            data: {
+              status: 'failed',
+              errorMessage: message,
+              nextAttemptAt,
+            },
           });
         }
       }
     }
 
-    const finalStatus =
-      !settlementEnabled
-        ? 'dry_run'
-        : transferFailed > 0
-          ? transferSucceeded > 0
-            ? 'partial_failed'
-            : 'failed'
+    const allItemsBlocked = items.length > 0 && items.every((i) => i.status === 'blocked');
+    const finalStatus = !settlementEnabled
+      ? 'dry_run'
+      : transferFailed > 0
+        ? transferSucceeded > 0
+          ? 'partial_failed'
+          : 'failed'
+        : transferSucceeded === 0 && allItemsBlocked
+          ? 'blocked'
           : 'completed';
     await this.prisma.settlementBatch.update({
       where: { id: batch.id },
@@ -459,29 +685,44 @@ export class SettlementService {
 
     let transferSucceeded = 0;
     let transferFailed = 0;
+    const now = new Date();
+    const processingStaleBefore = new Date(now.getTime() - config.settlementItemProcessingTimeoutMs);
 
     for (const item of items) {
       if (item.settleAmount <= 0) continue;
       if (item.status === 'completed' || item.status === 'transferred') continue;
       if (item.stripeTransferId) continue;
+      if (item.attempts !== null && item.attempts >= config.settlementItemMaxAttempts) continue;
+      if (item.nextAttemptAt && item.nextAttemptAt > now) continue;
 
       const claimed = await this.prisma.settlementItem.updateMany({
         where: {
           id: item.id,
           stripeTransferId: null,
-          status: { in: ['pending', 'failed', 'dry_run'] },
+          attempts: { lt: config.settlementItemMaxAttempts },
+          OR: [
+            {
+              status: { in: ['pending', 'failed'] },
+              OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+            },
+            { status: 'processing', updatedAt: { lt: processingStaleBefore } },
+          ],
         },
-        data: { status: 'processing', errorMessage: null },
+        data: { status: 'processing', errorMessage: null, nextAttemptAt: null, attempts: { increment: 1 } },
       });
       if (claimed.count !== 1) continue;
 
       const host = communityById.get(item.hostId);
       const stripeAccountId = host?.stripeAccountId ?? null;
       if (!stripeAccountId || !host?.stripeAccountOnboarded) {
-        transferFailed += 1;
         await this.prisma.settlementItem.update({
           where: { id: item.id },
-          data: { status: 'failed', errorMessage: 'connected_account_missing_or_not_onboarded' },
+          data: {
+            status: 'blocked',
+            settleAmount: 0,
+            errorMessage: 'connected_account_missing_or_not_onboarded',
+            nextAttemptAt: null,
+          },
         });
         continue;
       }
@@ -500,15 +741,16 @@ export class SettlementService {
         transferSucceeded += 1;
         await this.prisma.settlementItem.update({
           where: { id: item.id },
-          data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null },
+          data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
         });
       } catch (err) {
         transferFailed += 1;
         const message = err instanceof Error ? err.message : String(err);
         this.logger.error(`[settlement] retry transfer failed batch=${batch.id} item=${item.id} host=${item.hostId} ${message}`);
+        const nextAttemptAt = new Date(now.getTime() + config.settlementItemRetryDelayMs);
         await this.prisma.settlementItem.update({
           where: { id: item.id },
-          data: { status: 'failed', errorMessage: message },
+          data: { status: 'failed', errorMessage: message, nextAttemptAt },
         });
       }
     }
@@ -520,8 +762,17 @@ export class SettlementService {
     const completedCount = refreshedItems.filter((i) => ['completed', 'transferred'].includes(i.status)).length;
     const failedCount = refreshedItems.filter((i) => i.status === 'failed').length;
     const pendingCount = refreshedItems.filter((i) => i.status === 'pending').length;
+    const allItemsBlocked = refreshedItems.length > 0 && refreshedItems.every((i) => i.status === 'blocked');
     const finalStatus =
-      failedCount > 0 ? (completedCount > 0 ? 'partial_failed' : 'failed') : pendingCount > 0 ? 'pending' : 'completed';
+      failedCount > 0
+        ? completedCount > 0
+          ? 'partial_failed'
+          : 'failed'
+        : pendingCount > 0
+          ? 'pending'
+          : completedCount === 0 && allItemsBlocked
+            ? 'blocked'
+            : 'completed';
 
     await this.prisma.settlementBatch.update({
       where: { id: batch.id },
@@ -557,5 +808,252 @@ export class SettlementService {
 
     await this.writeReport(batch.id, config.settlementReportDir, summary, csv);
     return { batchId: batch.id, status: finalStatus };
+  }
+
+  async listAdminSettlementBatches(params?: { page?: number; pageSize?: number; status?: string }) {
+    const page = Math.max(1, Number(params?.page ?? 1) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(params?.pageSize ?? 20) || 20));
+    const skip = (page - 1) * pageSize;
+    const where = params?.status ? { status: params.status } : {};
+
+    const [total, batches] = await this.prisma.$transaction([
+      this.prisma.settlementBatch.count({ where }),
+      this.prisma.settlementBatch.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+        include: { items: { select: { status: true } } },
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      pageSize,
+      items: batches.map((batch) => {
+        const items = batch.items ?? [];
+        const succeeded = items.filter((i) => ['completed', 'transferred'].includes(i.status)).length;
+        const failed = items.filter((i) => i.status === 'failed').length;
+        const blocked = items.filter((i) => i.status === 'blocked').length;
+        const pending = items.filter((i) => ['pending', 'processing'].includes(i.status)).length;
+        const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+        const settlementEnabled = Boolean(meta?.settlementEnabled);
+        return {
+          batchId: batch.id,
+          periodFrom: batch.periodFrom.toISOString(),
+          periodTo: batch.periodTo.toISOString(),
+          currency: batch.currency ?? 'jpy',
+          status: batch.status,
+          settlementEnabled,
+          createdAt: batch.createdAt.toISOString(),
+          runAt: batch.runAt.toISOString(),
+          hosts: items.length,
+          counts: {
+            succeeded,
+            failed,
+            blocked,
+            pending,
+          },
+          triggerType: typeof meta?.triggerType === 'string' ? meta.triggerType : null,
+        };
+      }),
+    };
+  }
+
+  async getAdminSettlementBatch(batchId: string) {
+    const batch = await this.prisma.settlementBatch.findUnique({
+      where: { id: batchId },
+      include: { items: true },
+    });
+    if (!batch) {
+      throw new Error(`SettlementBatch not found: ${batchId}`);
+    }
+
+    const hostIds = Array.from(new Set((batch.items ?? []).map((i) => i.hostId)));
+    const communities = hostIds.length
+      ? await this.prisma.community.findMany({
+          where: { id: { in: hostIds } },
+          select: {
+            id: true,
+            name: true,
+            stripeAccountId: true,
+            stripeAccountOnboarded: true,
+            settlementDelayDaysOverride: true,
+            settlementMinTransferAmountOverride: true,
+          },
+        })
+      : [];
+    const communityById = new Map(communities.map((c) => [c.id, c]));
+
+    const disputedPayments = hostIds.length
+      ? await this.prisma.payment.findMany({
+          where: {
+            communityId: { in: hostIds },
+            method: 'stripe',
+            chargeModel: 'platform_charge',
+            status: 'disputed',
+          },
+          select: {
+            id: true,
+            communityId: true,
+            stripeChargeId: true,
+            stripeDisputeId: true,
+            stripeDisputeStatus: true,
+          },
+        })
+      : [];
+    const disputedByHost = new Map<
+      string,
+      Array<{
+        paymentId: string;
+        stripeChargeId: string | null;
+        stripeDisputeId: string | null;
+        stripeDisputeStatus: string | null;
+      }>
+    >();
+    for (const payment of disputedPayments) {
+      if (!payment.communityId) continue;
+      const current = disputedByHost.get(payment.communityId) ?? [];
+      current.push({
+        paymentId: payment.id,
+        stripeChargeId: payment.stripeChargeId ?? null,
+        stripeDisputeId: payment.stripeDisputeId ?? null,
+        stripeDisputeStatus: payment.stripeDisputeStatus ?? null,
+      });
+      disputedByHost.set(payment.communityId, current);
+    }
+
+    const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+
+    const parseRules = (counts: unknown) => {
+      if (!counts || typeof counts !== 'object') return {};
+      const record = counts as Record<string, unknown>;
+      const rules = record.rules;
+      return rules && typeof rules === 'object' ? (rules as Record<string, unknown>) : {};
+    };
+
+    const parseBlocked = (counts: unknown) => {
+      if (!counts || typeof counts !== 'object') return {};
+      const record = counts as Record<string, unknown>;
+      const blocked = record.blocked;
+      return blocked && typeof blocked === 'object' ? (blocked as Record<string, unknown>) : {};
+    };
+
+    const pickNumber = (record: Record<string, unknown>, key: string) => {
+      const value = record[key];
+      return typeof value === 'number' ? value : null;
+    };
+
+    const items = (batch.items ?? []).map((item) => {
+      const host = communityById.get(item.hostId);
+      const rules = parseRules(item.counts);
+      const blocked = parseBlocked(item.counts);
+      const blockedReasonCodes: string[] = [];
+
+      if (item.status === 'blocked') {
+        if ((item.hostBalance ?? 0) > 0) {
+          if (!host?.stripeAccountId || !host?.stripeAccountOnboarded) {
+            blockedReasonCodes.push('connected_account_not_onboarded');
+          }
+          const minTransfer = pickNumber(rules, 'settlementMinTransferAmount');
+          if (minTransfer !== null && minTransfer > 0 && (item.hostBalance ?? 0) < minTransfer) {
+            blockedReasonCodes.push('below_min_transfer_amount');
+          }
+        } else {
+          const notMaturedNet = pickNumber(blocked, 'notMaturedNet');
+          const disputedNet = pickNumber(blocked, 'disputedNet');
+          const missingEligibilityNet = pickNumber(blocked, 'missingEligibilityNet');
+          if (notMaturedNet !== null && notMaturedNet > 0) blockedReasonCodes.push('not_matured');
+          if (disputedNet !== null && disputedNet > 0) blockedReasonCodes.push('dispute_open');
+          if (missingEligibilityNet !== null && missingEligibilityNet > 0) blockedReasonCodes.push('missing_eligibility_source');
+        }
+        if (!blockedReasonCodes.length) blockedReasonCodes.push('blocked');
+      }
+
+      return {
+        itemId: item.id,
+        hostId: item.hostId,
+        communityName: host?.name ?? '',
+        hostBalance: item.hostBalance,
+        settleAmount: item.settleAmount,
+        carryReceivable: item.carryReceivable,
+        currency: item.currency ?? 'jpy',
+        status: item.status,
+        stripeTransferId: item.stripeTransferId ?? null,
+        errorMessage: item.errorMessage ?? null,
+        attempts: item.attempts ?? 0,
+        nextAttemptAt: item.nextAttemptAt ? item.nextAttemptAt.toISOString() : null,
+        counts: item.counts ?? {},
+        blockedReasonCodes,
+        disputedPayments: disputedByHost.get(item.hostId) ?? [],
+        hostStripe: host
+          ? {
+              stripeAccountId: host.stripeAccountId ?? null,
+              stripeAccountOnboarded: host.stripeAccountOnboarded ?? false,
+            }
+          : null,
+        ruleOverrides: host
+          ? {
+              settlementDelayDaysOverride: host.settlementDelayDaysOverride ?? null,
+              settlementMinTransferAmountOverride: host.settlementMinTransferAmountOverride ?? null,
+            }
+          : null,
+      };
+    });
+
+    return {
+      batchId: batch.id,
+      periodFrom: batch.periodFrom.toISOString(),
+      periodTo: batch.periodTo.toISOString(),
+      currency: batch.currency ?? 'jpy',
+      status: batch.status,
+      settlementEnabled: Boolean(meta?.settlementEnabled),
+      triggerType: typeof meta?.triggerType === 'string' ? meta.triggerType : null,
+      createdAt: batch.createdAt.toISOString(),
+      updatedAt: batch.updatedAt.toISOString(),
+      runAt: batch.runAt.toISOString(),
+      items,
+    };
+  }
+
+  async exportAdminSettlementBatchCsv(batchId: string) {
+    const batch = await this.prisma.settlementBatch.findUnique({
+      where: { id: batchId },
+      include: { items: true },
+    });
+    if (!batch) {
+      throw new Error(`SettlementBatch not found: ${batchId}`);
+    }
+    const csv = this.buildBatchItemsCsv(
+      (batch.items ?? []).map((i) => ({
+        hostId: i.hostId,
+        hostBalance: i.hostBalance,
+        settleAmount: i.settleAmount,
+        carryReceivable: i.carryReceivable,
+        status: i.status,
+        stripeTransferId: i.stripeTransferId ?? null,
+        counts: i.counts,
+      })),
+    );
+    const filename = `settlement.${batch.id}.csv`;
+    return { filename, csv };
+  }
+
+  getAdminSettlementConfig() {
+    const config = getPaymentsConfig();
+    return {
+      timezone: config.settlementTimeZone,
+      settlementEnabled: config.settlementEnabled && this.stripeService.enabled,
+      settlementDelayDays: config.settlementDelayDays,
+      settlementWindowDays: config.settlementWindowDays,
+      settlementMinTransferAmount: config.settlementMinTransferAmount,
+      settlementItemRetryDelayMs: config.settlementItemRetryDelayMs,
+      settlementItemMaxAttempts: config.settlementItemMaxAttempts,
+      settlementAutoRunEnabled: config.settlementAutoRunEnabled,
+      settlementAutoRunHour: config.settlementAutoRunHour,
+      settlementAutoRunMinute: config.settlementAutoRunMinute,
+      asOf: new Date().toISOString(),
+    };
   }
 }

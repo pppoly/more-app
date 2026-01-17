@@ -173,7 +173,6 @@ const stripeRestricted = computed(() => {
   if (!hasStripeAccount.value || !stripeReady.value) return false;
   if (stripeStatus.value?.disabledReason) return true;
   if (stripeStatus.value?.payoutsEnabled === false) return true;
-  if (stripeStatus.value?.chargesEnabled === false) return true;
   return false;
 });
 const stripeActionLabel = computed(() => {

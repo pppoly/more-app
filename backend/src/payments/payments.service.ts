@@ -280,6 +280,9 @@ export class PaymentsService {
       throw new NotFoundException('Community not found');
     }
 
+    const now = new Date();
+    const paymentsConfig = getPaymentsConfig();
+
     const monthStart =
       period === 'month'
         ? (() => {
@@ -343,6 +346,73 @@ export class PaymentsService {
       }
     }
 
+    const [hostPayableAllAgg, hostPayableReversalAllAgg, paidOutAllAgg, hostPayablePeriodAgg, hostPayableReversalPeriodAgg] =
+      await this.prisma.$transaction([
+        this.prisma.ledgerEntry.aggregate({
+          where: {
+            businessCommunityId: communityId,
+            entryType: 'host_payable',
+            provider: 'internal',
+            occurredAt: { lt: now },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.ledgerEntry.aggregate({
+          where: {
+            businessCommunityId: communityId,
+            entryType: 'host_payable_reversal',
+            provider: 'internal',
+            occurredAt: { lt: now },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.settlementItem.aggregate({
+          where: {
+            hostId: communityId,
+            status: { in: ['completed', 'transferred'] },
+          },
+          _sum: { settleAmount: true },
+        }),
+        monthStart
+          ? this.prisma.ledgerEntry.aggregate({
+              where: {
+                businessCommunityId: communityId,
+                entryType: 'host_payable',
+                provider: 'internal',
+                occurredAt: { gte: monthStart, lt: now },
+              },
+              _sum: { amount: true },
+            })
+          : this.prisma.ledgerEntry.aggregate({
+              where: { id: '__skip__' },
+              _sum: { amount: true },
+            }),
+        monthStart
+          ? this.prisma.ledgerEntry.aggregate({
+              where: {
+                businessCommunityId: communityId,
+                entryType: 'host_payable_reversal',
+                provider: 'internal',
+                occurredAt: { gte: monthStart, lt: now },
+              },
+              _sum: { amount: true },
+            })
+          : this.prisma.ledgerEntry.aggregate({
+              where: { id: '__skip__' },
+              _sum: { amount: true },
+            }),
+      ]);
+
+    const accruedNetAll =
+      (hostPayableAllAgg._sum.amount ?? 0) - (hostPayableReversalAllAgg._sum.amount ?? 0);
+    const paidOutAll = paidOutAllAgg._sum.settleAmount ?? 0;
+    const hostBalance = accruedNetAll - paidOutAll;
+    const settleAmount = hostBalance > 0 ? hostBalance : 0;
+    const carryReceivable = hostBalance < 0 ? Math.abs(hostBalance) : 0;
+    const accruedNetPeriod = monthStart
+      ? (hostPayablePeriodAgg._sum.amount ?? 0) - (hostPayableReversalPeriodAgg._sum.amount ?? 0)
+      : undefined;
+
     const transactionTotal = allAgg._sum.amount ?? 0;
     const grossPaid = paidAgg._sum.amount ?? 0;
     const platformFee = paidAgg._sum.platformFee ?? 0;
@@ -359,6 +429,16 @@ export class PaymentsService {
       refunded,
       net,
       stripeBalance,
+      settlement: {
+        enabled: paymentsConfig.settlementEnabled && this.stripeService.enabled,
+        asOf: now.toISOString(),
+        accruedNetAll,
+        paidOutAll,
+        hostBalance,
+        settleAmount,
+        carryReceivable,
+        ...(accruedNetPeriod !== undefined ? { accruedNetPeriod } : {}),
+      },
       period: period === 'month' ? 'month' : 'all',
     };
   }
@@ -1919,15 +1999,73 @@ export class PaymentsService {
     if (eventType === 'charge.dispute.created') {
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'disputed', metadata: { ...(payment as any).metadata, disputeId: dispute.id } } as any,
+        data: {
+          status: 'disputed',
+          stripeDisputeId: dispute.id,
+          stripeDisputeStatus: dispute.status,
+          stripeDisputedAt: new Date(),
+          stripeDisputeResolvedAt: null,
+        },
       });
       this.logger.warn(`Payment ${payment.id} marked disputed (charge=${chargeId})`);
     } else if (eventType === 'charge.dispute.closed') {
       const won = dispute.status === 'won';
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: won ? 'paid' : 'refunded', stripeRefundId: won ? payment.stripeRefundId : payment.stripeRefundId },
+        data: {
+          status: won ? 'paid' : 'refunded',
+          stripeDisputeStatus: dispute.status,
+          stripeDisputeResolvedAt: new Date(),
+        },
       });
+      if (!won) {
+        try {
+          const [payableAgg, reversalAgg] = await this.prisma.$transaction([
+            this.prisma.ledgerEntry.aggregate({
+              where: {
+                businessPaymentId: payment.id,
+                entryType: 'host_payable',
+                provider: 'internal',
+              },
+              _sum: { amount: true },
+            }),
+            this.prisma.ledgerEntry.aggregate({
+              where: {
+                businessPaymentId: payment.id,
+                entryType: 'host_payable_reversal',
+                provider: 'internal',
+              },
+              _sum: { amount: true },
+            }),
+          ]);
+          const remainingPayable = Math.max(0, (payableAgg._sum.amount ?? 0) - (reversalAgg._sum.amount ?? 0));
+          if (remainingPayable > 0) {
+            await this.createLedgerEntryIfMissing({
+              tx: this.prisma,
+              businessPaymentId: payment.id,
+              businessRegistrationId: payment.registrationId ?? undefined,
+              businessLessonId: payment.lessonId ?? undefined,
+              businessCommunityId: payment.communityId ?? undefined,
+              entryType: 'host_payable_reversal',
+              direction: 'in',
+              amount: remainingPayable,
+              currency: payment.currency ?? 'jpy',
+              provider: 'internal',
+              providerObjectType: 'dispute',
+              providerObjectId: dispute.id,
+              idempotencyKey: `ledger:host_payable_reversal:dispute:${dispute.id}`,
+              occurredAt: new Date(),
+              metadata: { paymentId: payment.id, disputeId: dispute.id, chargeId },
+            });
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Failed to record host_payable_reversal for dispute loss (payment=${payment.id} dispute=${dispute.id}): ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
       this.logger.log(`Payment ${payment.id} dispute closed (${won ? 'won' : 'lost'})`);
     }
   }

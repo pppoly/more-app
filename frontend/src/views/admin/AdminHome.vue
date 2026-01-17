@@ -117,7 +117,10 @@ const sections = [
     id: 'finance',
     eyebrow: '財務',
     title: '決済と収益',
-    items: [{ id: 'payments', title: '決済モニター', desc: 'プラットフォーム手数料 / ステータス / 返金', route: { name: 'admin-payments' } }],
+    items: [
+      { id: 'payments', title: '決済モニター', desc: 'プラットフォーム手数料 / ステータス / 返金', route: { name: 'admin-payments' } },
+      { id: 'settlements', title: '結算モニター', desc: 'Settlement Run / バッチ / 失敗理由 / retry', route: { name: 'admin-settlements' } },
+    ],
   },
 ];
 

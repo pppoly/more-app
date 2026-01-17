@@ -40,6 +40,9 @@ import type {
   CommunityStripeStatusResponse,
   AdminStatsSummary,
   AdminEventReviewItem,
+  AdminSettlementBatchDetailResponse,
+  AdminSettlementBatchListResponse,
+  AdminSettlementConfig,
   ConsolePaymentItem,
   SupportedLanguagesResponse,
   RenderPromptRequest,
@@ -914,6 +917,49 @@ export async function adminDiagnosePayment(paymentId: string): Promise<{ payment
     `/admin/payments/ops/${paymentId}/diagnose`,
   );
   return data;
+}
+
+export async function fetchAdminSettlementConfig(): Promise<AdminSettlementConfig> {
+  const { data } = await apiClient.get<AdminSettlementConfig>('/admin/settlements/config');
+  return data;
+}
+
+export async function fetchAdminSettlementBatches(params?: {
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<AdminSettlementBatchListResponse> {
+  const { data } = await apiClient.get<AdminSettlementBatchListResponse>('/admin/settlements/batches', { params });
+  return data;
+}
+
+export async function fetchAdminSettlementBatch(batchId: string): Promise<AdminSettlementBatchDetailResponse> {
+  const { data } = await apiClient.get<AdminSettlementBatchDetailResponse>(`/admin/settlements/batches/${batchId}`);
+  return data;
+}
+
+export async function adminRunSettlement(payload?: {
+  periodFrom?: string;
+  periodTo?: string;
+}): Promise<{ batchId: string; status: string }> {
+  const { data } = await apiClient.post<{ batchId: string; status: string }>(`/admin/settlements/run`, payload ?? {});
+  return data;
+}
+
+export async function adminRetrySettlementBatch(batchId: string): Promise<{ batchId: string; status: string }> {
+  const { data } = await apiClient.post<{ batchId: string; status: string }>(`/admin/settlements/batches/${batchId}/retry`);
+  return data;
+}
+
+export async function fetchAdminSettlementBatchCsv(batchId: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await apiClient.get(`/admin/settlements/batches/${batchId}/export`, {
+    params: { format: 'csv' },
+    responseType: 'blob',
+  });
+  const disposition = res.headers?.['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="([^"]+)"/);
+  const filename = match?.[1] || `settlement.${batchId}.csv`;
+  return { blob: res.data as Blob, filename };
 }
 
 export async function fetchAiPrompts() {
