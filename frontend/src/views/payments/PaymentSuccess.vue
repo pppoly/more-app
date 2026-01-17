@@ -13,10 +13,10 @@
           to="/me/events"
           :class="['btn', status === 'timeout' || status === 'error' ? 'secondary' : 'primary']"
         >
-          申込状況を確認
+          マイチケットを見る
         </RouterLink>
-        <RouterLink v-if="status !== 'checking'" to="/" class="btn secondary">ホームに戻る</RouterLink>
-        <RouterLink v-else to="/" class="btn secondary">ホームに戻る</RouterLink>
+        <RouterLink v-if="status !== 'checking'" to="/events" class="btn secondary">イベント一覧へ戻る</RouterLink>
+        <RouterLink v-else to="/events" class="btn secondary">イベント一覧へ戻る</RouterLink>
       </div>
     </div>
   </section>

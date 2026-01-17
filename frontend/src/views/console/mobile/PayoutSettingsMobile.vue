@@ -12,11 +12,12 @@
       </div>
       <div class="hero">
         <p class="hero-label">未受取（MORE内）</p>
-        <p class="hero-value">{{ formatYen(settleAmount) }}</p>
+        <p class="hero-value">{{ formatYen(displaySettleAmount) }}</p>
         <p class="hero-sub">
           Stripe残高 {{ formatYen(stripeAvailable) }}・保留中 {{ formatYen(stripePending) }}
+          <span v-if="isPlatformCharge" class="hero-note">（プラットフォーム口座管理中）</span>
         </p>
-        <p v-if="carryReceivable > 0" class="hero-sub">繰越（返金調整） {{ formatYen(carryReceivable) }}</p>
+        <p v-if="carryReceivable > 0 && showSettlement" class="hero-sub">繰越（返金調整） {{ formatYen(carryReceivable) }}</p>
       </div>
       <div class="kpi-grid">
         <article class="kpi">
@@ -31,7 +32,10 @@
         </article>
         <article class="kpi">
           <p class="kpi-label">Stripe手数料<span v-if="stripeFeeRateText">（{{ stripeFeeRateText }}）</span></p>
-          <p class="kpi-value kpi-value--fee">{{ formatYen(stripeFee) }}</p>
+          <p class="kpi-value kpi-value--fee">
+            {{ formatYen(stripeFee) }}
+            <span v-if="chargeModel === 'destination_charge'" class="kpi-hint-inline">（Stripe側で控除済み表示）</span>
+          </p>
         </article>
         <article class="kpi">
           <p class="kpi-label">プラットフォーム手数料</p>
@@ -147,11 +151,15 @@ const balanceGross = computed(() => balance.value?.grossPaid ?? 0);
 const balanceRefunded = computed(() => balance.value?.refunded ?? 0);
 const balanceFee = computed(() => balance.value?.platformFee ?? 0);
 const stripeFee = computed(() => balance.value?.stripeFee ?? 0);
+const chargeModel = computed(() => balance.value?.chargeModel ?? 'platform_charge');
+const isPlatformCharge = computed(() => chargeModel.value === 'platform_charge');
 const stripeAvailable = computed(() => balance.value?.stripeBalance?.available ?? 0);
 const stripePending = computed(() => balance.value?.stripeBalance?.pending ?? 0);
 const transactionTotal = computed(() => balance.value?.transactionTotal ?? balanceGross.value);
-const settleAmount = computed(() => balance.value?.settlement?.settleAmount ?? 0);
-const carryReceivable = computed(() => balance.value?.settlement?.carryReceivable ?? 0);
+const showSettlement = computed(() => Boolean(balance.value?.settlement?.enabled && chargeModel.value === 'destination_charge'));
+const settleAmount = computed(() => (showSettlement.value ? balance.value?.settlement?.settleAmount ?? 0 : 0));
+const displaySettleAmount = computed(() => settleAmount.value);
+const carryReceivable = computed(() => (showSettlement.value ? balance.value?.settlement?.carryReceivable ?? 0 : 0));
 
 const communityId = computed(() => store.activeCommunityId.value);
 const hasStripeBalance = computed(() => stripeAvailable.value > 0 || stripePending.value > 0);
@@ -396,6 +404,11 @@ onMounted(async () => {
 }
 .kpi-value--fee {
   color: #ea580c;
+}
+.kpi-hint-inline {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
 }
 .kpi-hint {
   margin: 4px 0 0;

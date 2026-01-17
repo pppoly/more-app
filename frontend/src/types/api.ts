@@ -316,6 +316,7 @@ export interface ConsolePaymentList {
 export interface ConsoleCommunityBalance {
   communityId: string;
   currency: string;
+  chargeModel?: 'platform_charge' | 'destination_charge';
   transactionTotal?: number;
   grossPaid: number;
   stripeFee?: number;

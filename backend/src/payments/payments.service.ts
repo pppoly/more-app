@@ -282,6 +282,7 @@ export class PaymentsService {
 
     const now = new Date();
     const paymentsConfig = getPaymentsConfig();
+    const chargeModel = paymentsConfig.chargeModel === 'destination_charge' ? 'destination_charge' : 'platform_charge';
 
     const monthStart =
       period === 'month'
@@ -293,18 +294,23 @@ export class PaymentsService {
           })()
         : null;
 
+    const paidStatuses: Prisma.PaymentWhereInput['status'][] = ['paid', 'partial_refunded'];
+    const refundedStatuses: Prisma.PaymentWhereInput['status'][] = ['refunded', 'partial_refunded'];
+    const countedStatuses: Prisma.PaymentWhereInput['status'][] = ['paid', 'partial_refunded', 'refunded'];
+
     const paidWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: 'paid',
+      status: { in: paidStatuses },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const refundedWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: 'refunded',
+      status: { in: refundedStatuses },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const allWhere: Prisma.PaymentWhereInput = {
       communityId,
+      status: { in: countedStatuses },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const [paidAgg, refundedAgg, allAgg] = await Promise.all([
@@ -314,7 +320,7 @@ export class PaymentsService {
       }),
       this.prisma.payment.aggregate({
         where: refundedWhere,
-        _sum: { amount: true, platformFee: true },
+        _sum: { refundedGrossTotal: true },
       }),
       this.prisma.payment.aggregate({ where: allWhere, _sum: { amount: true } }),
     ]);
@@ -415,8 +421,16 @@ export class PaymentsService {
       (hostPayableAllAgg._sum.amount ?? 0) - (hostPayableReversalAllAgg._sum.amount ?? 0);
     const paidOutAll = paidOutAllAgg._sum.settleAmount ?? 0;
     const hostBalance = accruedNetAll - paidOutAll;
-    const settleAmount = hostBalance > 0 ? hostBalance : 0;
-    const carryReceivable = hostBalance < 0 ? Math.abs(hostBalance) : 0;
+    const settleAmount =
+      paymentsConfig.settlementEnabled && this.stripeService.enabled && chargeModel === 'destination_charge'
+        ? (hostBalance > 0 ? hostBalance : 0)
+        : 0;
+    const carryReceivable =
+      paymentsConfig.settlementEnabled && this.stripeService.enabled && chargeModel === 'destination_charge'
+        ? hostBalance < 0
+          ? Math.abs(hostBalance)
+          : 0
+        : 0;
     const accruedNetPeriod = monthStart
       ? (hostPayablePeriodAgg._sum.amount ?? 0) - (hostPayableReversalPeriodAgg._sum.amount ?? 0)
       : undefined;
@@ -424,13 +438,14 @@ export class PaymentsService {
     const transactionTotal = allAgg._sum.amount ?? 0;
     const grossPaid = paidAgg._sum.amount ?? 0;
     const platformFee = paidAgg._sum.platformFee ?? 0;
-    const refunded = refundedAgg._sum.amount ?? 0;
+    const refunded = refundedAgg._sum.refundedGrossTotal ?? 0;
     const stripeFee = stripeFeeAgg._sum.amount ?? 0;
     const net = Math.max(0, grossPaid - platformFee - refunded - stripeFee);
 
     return {
       communityId,
       currency: 'jpy',
+      chargeModel,
       transactionTotal,
       grossPaid,
       platformFee,
