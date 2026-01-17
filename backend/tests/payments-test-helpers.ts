@@ -167,6 +167,17 @@ export class InMemoryPrisma {
       applyUpdate(found, args?.data);
       return pickSelect(found, args?.select);
     },
+    updateMany: async (args: any) => {
+      const where = args?.where;
+      const data = args?.data;
+      let count = 0;
+      for (const p of this.payments) {
+        if (!matchesWhere(p, where)) continue;
+        applyUpdate(p, data);
+        count += 1;
+      }
+      return { count };
+    },
     upsert: async (args: any) => {
       const where = args?.where ?? {};
       const registrationId = where.registrationId;

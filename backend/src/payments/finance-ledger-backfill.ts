@@ -145,6 +145,17 @@ export async function backfillPlatformChargeLedgerFees(
     const gross = payment.amount ?? 0;
     const platformFee = payment.platformFee ?? 0;
     const stripeFeeActual = payment.stripeFeeAmountActual;
+    const merchantTransferAmount = payment.merchantTransferAmount;
+    const impliedStripeFee =
+      typeof merchantTransferAmount === 'number' && Number.isFinite(merchantTransferAmount)
+        ? gross - platformFee - merchantTransferAmount
+        : null;
+    const stripeFeeCandidate =
+      typeof stripeFeeActual === 'number' && stripeFeeActual > 0
+        ? stripeFeeActual
+        : typeof impliedStripeFee === 'number' && impliedStripeFee > 0
+          ? impliedStripeFee
+          : null;
 
     if (platformFee > 0) {
       const created = await ensureLedger({
@@ -166,7 +177,7 @@ export async function backfillPlatformChargeLedgerFees(
       if (created) result.created.platformFee += 1;
     }
 
-    if (typeof stripeFeeActual === 'number' && stripeFeeActual > 0) {
+    if (typeof stripeFeeCandidate === 'number') {
       const balanceTxId = payment.providerBalanceTxId ?? null;
       if (!balanceTxId) {
         result.skipped.missingProviderBalanceTxId += 1;
@@ -178,7 +189,7 @@ export async function backfillPlatformChargeLedgerFees(
           businessCommunityId: communityId,
           entryType: 'stripe_fee_actual',
           direction: 'out',
-          amount: stripeFeeActual,
+          amount: stripeFeeCandidate,
           currency,
           provider: 'stripe',
           providerObjectType: 'balance_transaction',
@@ -191,6 +202,8 @@ export async function backfillPlatformChargeLedgerFees(
             paymentIntentId: payment.stripePaymentIntentId ?? null,
             chargeId: payment.stripeChargeId ?? null,
             balanceTxId,
+            stripeFeeSource:
+              typeof stripeFeeActual === 'number' && stripeFeeActual > 0 ? 'payment_field' : 'implied_from_merchant_net',
             source: 'backfill',
           },
         });

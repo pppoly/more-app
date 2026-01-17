@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaymentsService } from '../src/payments/payments.service';
 import { backfillPlatformChargeLedgerFees } from '../src/payments/finance-ledger-backfill';
+import { backfillPlatformChargeLedgerFeesFromStripe } from '../src/payments/finance-ledger-backfill-stripe';
 import {
   InMemoryPrisma,
   StripeClientStub,
@@ -346,7 +347,7 @@ test('Community balance: stripe fee is backfilled from payment fields into ledge
     stripePaymentIntentId: 'pi_fee_1',
     stripeChargeId: 'ch_fee_1',
     providerBalanceTxId: 'bt_fee_1',
-    stripeFeeAmountActual: 200,
+    stripeFeeAmountActual: null,
     merchantTransferAmount: 9300,
     refundedGrossTotal: 0,
     refundedPlatformFeeTotal: 0,
@@ -384,6 +385,88 @@ test('Community balance: stripe fee is backfilled from payment fields into ledge
   const ledgerCount = prisma.ledgerEntries.length;
   await backfillPlatformChargeLedgerFees(prisma as any, { communityId: 'com_1' });
   assert.equal(prisma.ledgerEntries.length, ledgerCount);
+});
+
+test('Community balance: stripe fee is backfilled from Stripe balance transaction when payment is missing fee (Plan B)', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.communities.push({ id: 'com_1', stripeAccountId: null });
+
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    { enabled: false, client: {} } as any,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const createdAt = new Date('2026-01-10T10:00:00.000Z');
+  prisma.payments.push({
+    id: 'pay_fee_b_1',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_fee_b_1',
+    amount: 10000,
+    platformFee: 500,
+    currency: 'jpy',
+    status: 'paid',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripePaymentIntentId: 'pi_fee_b_1',
+    stripeChargeId: 'ch_fee_b_1',
+    providerBalanceTxId: 'bt_fee_b_1',
+    stripeFeeAmountActual: null,
+    // NOTE: existing merchantTransferAmount might be recorded without Stripe fee (gross - platformFee).
+    merchantTransferAmount: 9500,
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt,
+    updatedAt: createdAt,
+  });
+
+  const before = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(before.stripeFee, 0);
+
+  const stripe = {
+    balanceTransactions: {
+      retrieve: async (id: string) => {
+        assert.equal(id, 'bt_fee_b_1');
+        return {
+          id,
+          object: 'balance_transaction',
+          created: Math.floor(createdAt.getTime() / 1000),
+          currency: 'jpy',
+          fee: 200,
+          fee_details: [{ amount: 200 }],
+        } as any;
+      },
+    },
+  } as any;
+
+  const stripeBackfill = await backfillPlatformChargeLedgerFeesFromStripe(prisma as any, stripe, {
+    communityId: 'com_1',
+  });
+  assert.equal(stripeBackfill.scannedPayments, 1);
+  assert.equal(stripeBackfill.created.stripeFeeActual, 1);
+  assert.equal(stripeBackfill.updatedPayments, 1);
+
+  // Run DB-only to ensure other ledger entries are present if needed (idempotent).
+  await backfillPlatformChargeLedgerFees(prisma as any, { communityId: 'com_1' });
+
+  const after = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(after.stripeFee, 200);
+  assert.equal(after.platformFee, 500);
+  assert.equal(after.net, 9300);
+
+  const updatedPayment = prisma.payments.find((p) => p.id === 'pay_fee_b_1')!;
+  assert.equal(updatedPayment.stripeFeeAmountActual, 200);
+  assert.equal(updatedPayment.merchantTransferAmount, 9300);
+
+  const ledgerStripeFee = prisma.ledgerEntries.find(
+    (e) => e.entryType === 'stripe_fee_actual' && e.businessPaymentId === 'pay_fee_b_1',
+  );
+  assert.ok(ledgerStripeFee);
+  assert.equal(ledgerStripeFee.idempotencyKey, 'stripe:balance_tx.fee:bt_fee_b_1');
 });
 
 test('P2: payment_intent.payment_failed marks payment failed', async () => {
