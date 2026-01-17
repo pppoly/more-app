@@ -50,6 +50,15 @@ const computeStripeFeeFromBalanceTx = (balanceTx: Stripe.BalanceTransaction) => 
   return balanceTx.fee ?? 0;
 };
 
+const extractStripeId = (value: unknown): string | null => {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === 'string') return id;
+  }
+  return null;
+};
+
 const wait = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withStripeRetry = async <T>(
@@ -77,6 +86,50 @@ const withStripeRetry = async <T>(
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
+const resolveBalanceTxIdForPayment = async (
+  stripe: Stripe,
+  payment: StripeFeeBackfillPaymentRow,
+  request: <T>(fn: () => Promise<T>) => Promise<T>,
+): Promise<string | null> => {
+  if (payment.providerBalanceTxId) return payment.providerBalanceTxId;
+
+  const stripeChargeId = payment.stripeChargeId ?? null;
+  if (stripeChargeId) {
+    const charge = await request(() => stripe.charges.retrieve(stripeChargeId));
+    const balanceTxId = extractStripeId((charge as Stripe.Charge).balance_transaction);
+    if (balanceTxId) return balanceTxId;
+  }
+
+  let paymentIntentId = payment.stripePaymentIntentId ?? null;
+  const checkoutSessionId = payment.stripeCheckoutSessionId ?? null;
+  if (!paymentIntentId && checkoutSessionId) {
+    const session = await request(() =>
+      stripe.checkout.sessions.retrieve(checkoutSessionId),
+    );
+    paymentIntentId = extractStripeId((session as Stripe.Checkout.Session).payment_intent);
+  }
+
+  if (paymentIntentId) {
+    const intent = await request(() =>
+      stripe.paymentIntents.retrieve(paymentIntentId, {
+        expand: ['latest_charge.balance_transaction'],
+      }),
+    );
+    const latestCharge = (intent as Stripe.PaymentIntent).latest_charge;
+    const chargeId = extractStripeId(latestCharge);
+    if (chargeId) {
+      const charge =
+        typeof latestCharge === 'string'
+          ? await request(() => stripe.charges.retrieve(chargeId))
+          : (latestCharge as Stripe.Charge);
+      const balanceTxId = extractStripeId(charge.balance_transaction);
+      if (balanceTxId) return balanceTxId;
+    }
+  }
+
+  return null;
 };
 
 const ensureLedger = async (
@@ -171,7 +224,19 @@ export async function backfillPlatformChargeLedgerFeesFromStripe(
     const needsFeeBackfill = !(typeof payment.stripeFeeAmountActual === 'number' && payment.stripeFeeAmountActual > 0);
     if (!needsFeeBackfill) continue;
 
-    const balanceTxId = payment.providerBalanceTxId ?? null;
+    const request = async <T>(fn: () => Promise<T>) => {
+      result.stripeRequests += 1;
+      return withStripeRetry(fn);
+    };
+
+    let balanceTxId: string | null = null;
+    try {
+      balanceTxId = await resolveBalanceTxIdForPayment(stripe, payment, request);
+    } catch {
+      result.skipped.stripeError += 1;
+      continue;
+    }
+
     if (!balanceTxId) {
       result.skipped.missingBalanceTxId += 1;
       continue;
@@ -203,8 +268,7 @@ export async function backfillPlatformChargeLedgerFeesFromStripe(
 
     let balanceTx: Stripe.BalanceTransaction;
     try {
-      result.stripeRequests += 1;
-      balanceTx = await withStripeRetry(() => stripe.balanceTransactions.retrieve(balanceTxId));
+      balanceTx = await request(() => stripe.balanceTransactions.retrieve(balanceTxId));
     } catch {
       result.skipped.stripeError += 1;
       continue;

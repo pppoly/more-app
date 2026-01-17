@@ -412,8 +412,8 @@ test('Community balance: stripe fee is backfilled from Stripe balance transactio
     method: 'stripe',
     chargeModel: 'platform_charge',
     stripePaymentIntentId: 'pi_fee_b_1',
-    stripeChargeId: 'ch_fee_b_1',
-    providerBalanceTxId: 'bt_fee_b_1',
+    stripeChargeId: null,
+    providerBalanceTxId: null,
     stripeFeeAmountActual: null,
     // NOTE: existing merchantTransferAmount might be recorded without Stripe fee (gross - platformFee).
     merchantTransferAmount: 9500,
@@ -428,6 +428,19 @@ test('Community balance: stripe fee is backfilled from Stripe balance transactio
   assert.equal(before.stripeFee, 0);
 
   const stripe = {
+    paymentIntents: {
+      retrieve: async (id: string) => {
+        assert.equal(id, 'pi_fee_b_1');
+        return {
+          id,
+          object: 'payment_intent',
+          latest_charge: {
+            id: 'ch_fee_b_1',
+            balance_transaction: 'bt_fee_b_1',
+          },
+        } as any;
+      },
+    },
     balanceTransactions: {
       retrieve: async (id: string) => {
         assert.equal(id, 'bt_fee_b_1');
@@ -467,6 +480,98 @@ test('Community balance: stripe fee is backfilled from Stripe balance transactio
   );
   assert.ok(ledgerStripeFee);
   assert.equal(ledgerStripeFee.idempotencyKey, 'stripe:balance_tx.fee:bt_fee_b_1');
+});
+
+test('Community balance: Plan B can resolve balanceTx via checkout session when payment_intent id is missing', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.communities.push({ id: 'com_1', stripeAccountId: null });
+
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    { enabled: false, client: {} } as any,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+  );
+
+  const createdAt = new Date('2026-01-10T10:00:00.000Z');
+  prisma.payments.push({
+    id: 'pay_fee_b_2',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_fee_b_2',
+    amount: 10000,
+    platformFee: 500,
+    currency: 'jpy',
+    status: 'paid',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripeCheckoutSessionId: 'cs_fee_b_2',
+    stripePaymentIntentId: null,
+    stripeChargeId: null,
+    providerBalanceTxId: null,
+    stripeFeeAmountActual: null,
+    merchantTransferAmount: 9500,
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt,
+    updatedAt: createdAt,
+  });
+
+  const stripe = {
+    checkout: {
+      sessions: {
+        retrieve: async (id: string) => {
+          assert.equal(id, 'cs_fee_b_2');
+          return {
+            id,
+            object: 'checkout.session',
+            payment_intent: 'pi_fee_b_2',
+          } as any;
+        },
+      },
+    },
+    paymentIntents: {
+      retrieve: async (id: string) => {
+        assert.equal(id, 'pi_fee_b_2');
+        return {
+          id,
+          object: 'payment_intent',
+          latest_charge: {
+            id: 'ch_fee_b_2',
+            balance_transaction: 'bt_fee_b_2',
+          },
+        } as any;
+      },
+    },
+    balanceTransactions: {
+      retrieve: async (id: string) => {
+        assert.equal(id, 'bt_fee_b_2');
+        return {
+          id,
+          object: 'balance_transaction',
+          created: Math.floor(createdAt.getTime() / 1000),
+          currency: 'jpy',
+          fee: 200,
+          fee_details: [{ amount: 200 }],
+        } as any;
+      },
+    },
+  } as any;
+
+  const before = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(before.stripeFee, 0);
+
+  const stripeBackfill = await backfillPlatformChargeLedgerFeesFromStripe(prisma as any, stripe, {
+    communityId: 'com_1',
+  });
+  assert.equal(stripeBackfill.scannedPayments, 1);
+  assert.equal(stripeBackfill.created.stripeFeeActual, 1);
+  assert.equal(stripeBackfill.updatedPayments, 1);
+
+  const after = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(after.stripeFee, 200);
 });
 
 test('P2: payment_intent.payment_failed marks payment failed', async () => {
