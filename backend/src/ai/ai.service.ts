@@ -6137,6 +6137,7 @@ export class AiService {
 
     const jsonSchema = {
       name: 'MoreAppTranslations',
+      strict: true,
       schema: {
         type: 'object',
         additionalProperties: false,
@@ -6191,18 +6192,60 @@ export class AiService {
         return { translations: cachedTranslations };
       }
 
-      const parseJson = <T>(raw: string): T => {
+      const parseJsonValue = (raw: string): unknown => {
+        const tryParse = (json: string): unknown => JSON.parse(json) as unknown;
         try {
-          return JSON.parse(raw) as T;
+          return tryParse(raw);
         } catch (err) {
           const trimmed = raw.trim();
-          const start = trimmed.indexOf('{');
-          const end = trimmed.lastIndexOf('}');
-          if (start !== -1 && end !== -1 && end > start) {
-            return JSON.parse(trimmed.slice(start, end + 1)) as T;
+          const objectStart = trimmed.indexOf('{');
+          const objectEnd = trimmed.lastIndexOf('}');
+          if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+            try {
+              return tryParse(trimmed.slice(objectStart, objectEnd + 1));
+            } catch {
+              // continue to array fallback
+            }
+          }
+          const arrayStart = trimmed.indexOf('[');
+          const arrayEnd = trimmed.lastIndexOf(']');
+          if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+            return tryParse(trimmed.slice(arrayStart, arrayEnd + 1));
           }
           throw err;
         }
+      };
+
+      const parseTranslationsResult = (raw: string): TranslateTextResult => {
+        const parsed = parseJsonValue(raw);
+        const isRecord = (value: unknown): value is Record<string, unknown> =>
+          Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+        const isStringMap = (value: unknown): value is Record<string, string> => {
+          if (!isRecord(value)) return false;
+          return Object.values(value).every((v) => typeof v === 'string');
+        };
+
+        const isTranslationItem = (value: unknown): value is TranslateTextResult['translations'][number] => {
+          if (!isRecord(value)) return false;
+          if (typeof value.key !== 'string') return false;
+          if (typeof value.source !== 'string') return false;
+          if (!isStringMap(value.translated)) return false;
+          return true;
+        };
+
+        if (Array.isArray(parsed)) {
+          const translations = parsed.filter(isTranslationItem);
+          if (translations.length === parsed.length) {
+            return { translations };
+          }
+        } else if (isRecord(parsed) && Array.isArray(parsed.translations)) {
+          const translations = parsed.translations.filter(isTranslationItem);
+          if (translations.length === parsed.translations.length) {
+            return { translations };
+          }
+        }
+        throw new Error('Invalid translation response shape');
       };
 
       const mergeTranslations = (
@@ -6235,7 +6278,7 @@ export class AiService {
       const requestTranslations = async (targets: string[], chunkItems: TranslateTextDto['items']) => {
         const completion = await client.chat.completions.create({
           model: this.model,
-          temperature: 0.2,
+          temperature: 0,
           response_format: { type: 'json_schema', json_schema: jsonSchema },
           messages: [
             { role: 'system', content: systemPrompt },
@@ -6248,7 +6291,7 @@ export class AiService {
                 instructions:
                   'Keep placeholders such as {name}, {{count}}, <br>, markdown links intact. ' +
                   'Do not translate brand names, URLs, or variables. ' +
-                  'Return a JSON array with translations for each target language.',
+                  'Return a JSON object that matches the provided schema: { "translations": [ { "key": "...", "source": "...", "translated": { "<lang>": "..." } } ] }.',
                 items: chunkItems.map((item) => ({
                   key: item.key,
                   text: item.text,
@@ -6263,7 +6306,7 @@ export class AiService {
         if (!raw) {
           throw new Error('Empty response from AI');
         }
-        return parseJson<TranslateTextResult>(raw);
+        return parseTranslationsResult(raw);
       };
 
       const merged: TranslateTextResult['translations'] = [...cachedTranslations];
