@@ -294,9 +294,9 @@ export class PaymentsService {
           })()
         : null;
 
-    const paidStatuses: Prisma.PaymentWhereInput['status'][] = ['paid', 'partial_refunded'];
-    const refundedStatuses: Prisma.PaymentWhereInput['status'][] = ['refunded', 'partial_refunded'];
-    const countedStatuses: Prisma.PaymentWhereInput['status'][] = ['paid', 'partial_refunded', 'refunded'];
+    const paidStatuses: string[] = ['paid', 'partial_refunded'];
+    const refundedStatuses: string[] = ['refunded', 'partial_refunded'];
+    const countedStatuses: string[] = ['paid', 'partial_refunded', 'refunded'];
 
     const paidWhere: Prisma.PaymentWhereInput = {
       communityId,
