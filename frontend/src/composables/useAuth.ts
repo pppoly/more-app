@@ -297,19 +297,19 @@ async function bootstrapLiffAuth(force = false) {
         logDevAuth('not in liff client; skip login');
         return;
       }
+      const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
+      const toPath = window.location.pathname.startsWith('/liff')
+        ? window.location.pathname.replace(/^\/liff/, '') || '/'
+        : window.location.pathname;
+      const toQuery = window.location.search || '';
+      const toValue = `${toPath}${toQuery}`;
+      const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
       if (!loggedIn) {
         if (isLiffLoginInflight()) {
           logDevAuth('login inflight (localStorage TTL); skip new login');
           return;
         }
         markLiffLoginInflight();
-        const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
-        const toPath = window.location.pathname.startsWith('/liff')
-          ? window.location.pathname.replace(/^\/liff/, '') || '/'
-          : window.location.pathname;
-        const toQuery = window.location.search || '';
-        const toValue = `${toPath}${toQuery}`;
-        const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
         logDevAuth('calling liff.login', { reason: 'NOT_LOGGED_IN', redirect: cleanRedirect });
         liff.login({ redirectUri: cleanRedirect });
         return;
@@ -318,7 +318,20 @@ async function bootstrapLiffAuth(force = false) {
       const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
       logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
       if (!idToken) {
-        logDevAuth('no idToken after login; abort exchange');
+        if (isLiffLoginInflight()) {
+          logDevAuth('login inflight (missing idToken); skip new login');
+          return;
+        }
+        markLiffLoginInflight();
+        try {
+          if (typeof liff.logout === 'function') {
+            await liff.logout();
+          }
+        } catch (err) {
+          logDevAuth('liff.logout failed', err);
+        }
+        logDevAuth('no idToken after login; retrying liff.login');
+        liff.login({ redirectUri: cleanRedirect });
         return;
       }
       let profile: any = null;
