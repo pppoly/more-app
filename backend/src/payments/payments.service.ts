@@ -16,6 +16,7 @@ import Stripe from 'stripe';
 import { buildIdempotencyKey } from './idempotency.util';
 import { computeMerchantNet, computeProportionalAmount } from './settlement.utils';
 import { getPaymentsConfig } from './payments.config';
+import { createHash } from 'node:crypto';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
 const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15);
@@ -819,15 +820,6 @@ export class PaymentsService {
       },
     });
 
-    const sessionIdempotencyKey = buildIdempotencyKey(
-      'stripe',
-      'checkout_session',
-      'payment',
-      payment.id,
-      amount,
-      'jpy',
-    );
-
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
       payment_method_types: ['card'],
@@ -863,9 +855,20 @@ export class PaymentsService {
           registrationId,
           communityId: community.id,
           chargeModel,
-        },
       },
-    };
+    },
+  };
+
+    const sessionFingerprint = this.buildCheckoutSessionFingerprint(sessionParams);
+    const sessionIdempotencyKey = buildIdempotencyKey(
+      'stripe',
+      'checkout_session',
+      'payment',
+      payment.id,
+      amount,
+      'jpy',
+      sessionFingerprint,
+    );
 
     if (chargeModel === 'destination_charge') {
       sessionParams.payment_intent_data = {
@@ -1030,15 +1033,23 @@ export class PaymentsService {
     if (claimed.count !== 1) return { received: true };
 
     try {
-      const { event, ignored } = await this.prisma.$transaction(async (tx) => {
+      const { event, ignored, postProcessTasks } = await this.prisma.$transaction(async (tx) => {
         const result = await this.processGatewayEventById(gatewayEventId, tx);
         const status = result.ignored ? 'ignored' : 'processed';
         await tx.paymentGatewayEvent.update({
           where: { id: gatewayEventId },
           data: { status, processedAt: new Date(), errorMessage: null, nextAttemptAt: null },
         });
-        return { event: result.event, ignored: result.ignored };
+        return {
+          event: result.event,
+          ignored: result.ignored,
+          postProcessTasks: result.postProcessTasks ?? [],
+        };
       });
+
+      if (postProcessTasks.length) {
+        await Promise.all(postProcessTasks.map((task) => task()));
+      }
 
       this.notifyStripeWebhookSideEffects(event);
       return { received: true };
@@ -1059,7 +1070,10 @@ export class PaymentsService {
     }
   }
 
-  private async processGatewayEventById(gatewayEventId: string, tx: Prisma.TransactionClient) {
+  private async processGatewayEventById(
+    gatewayEventId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ event: Stripe.Event; ignored: boolean; postProcessTasks: Array<() => Promise<void>> }> {
     const gatewayEvent = await tx.paymentGatewayEvent.findUnique({
       where: { id: gatewayEventId },
       select: { payload: true },
@@ -1073,11 +1087,18 @@ export class PaymentsService {
     }
     const stripeEvent = event as Stripe.Event;
 
+    const postProcessTasks: Array<() => Promise<void>> = [];
     switch (stripeEvent.type) {
       case 'checkout.session.completed':
-      case 'checkout.session.async_payment_succeeded':
-        await this.handleCheckoutSessionCompleted(stripeEvent.data.object, tx, stripeEvent.id);
+      case 'checkout.session.async_payment_succeeded': {
+        const handlerResult = await this.handleCheckoutSessionCompleted(
+          stripeEvent.data.object,
+          tx,
+          stripeEvent.id,
+        );
+        postProcessTasks.push(...handlerResult.postProcessTasks);
         break;
+      }
       case 'payment_intent.succeeded': {
         const intent = stripeEvent.data.object as Stripe.PaymentIntent;
         const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
@@ -1144,10 +1165,10 @@ export class PaymentsService {
         break;
       default:
         this.logger.debug(`Unhandled Stripe event: ${stripeEvent.type}`);
-        return { event: stripeEvent, ignored: true };
+        return { event: stripeEvent, ignored: true, postProcessTasks: [] };
     }
 
-    return { event: stripeEvent, ignored: false };
+    return { event: stripeEvent, ignored: false, postProcessTasks };
   }
 
   private notifyStripeWebhookSideEffects(event: Stripe.Event) {
@@ -1478,7 +1499,7 @@ export class PaymentsService {
     session: Stripe.Checkout.Session,
     tx: Prisma.TransactionClient = this.prisma,
     eventId?: string,
-  ) {
+  ): Promise<{ postProcessTasks: Array<() => Promise<void>> }> {
     const registrationId = session.metadata?.registrationId;
     const paymentId = session.metadata?.paymentId;
     const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
@@ -1514,7 +1535,7 @@ export class PaymentsService {
         this.logger.log(
           `Community ${communityId} subscribed to plan ${planId} via checkout session ${session.id}`,
         );
-        return;
+        return { postProcessTasks: [] };
       }
       const message = `No payment found for checkout session ${session.id} paymentId=${paymentId ?? 'n/a'}`;
       if (paymentId) {
@@ -1530,7 +1551,7 @@ export class PaymentsService {
         message,
         payload: { sessionId: session.id },
       });
-      return;
+      return { postProcessTasks: [] };
     }
 
     const paymentIntentId =
@@ -1539,8 +1560,10 @@ export class PaymentsService {
         : session.payment_intent?.id ?? null;
 
     if (['refunded', 'partial_refunded', 'disputed'].includes(payment.status)) {
-      this.logger.warn(`Skip setting paid because payment ${payment.id} already in terminal status ${payment.status}`);
-      return;
+      this.logger.warn(
+        `Skip setting paid because payment ${payment.id} already in terminal status ${payment.status}`,
+      );
+      return { postProcessTasks: [] };
     }
 
     await tx.payment.update({
@@ -1549,13 +1572,9 @@ export class PaymentsService {
         status: 'paid',
         stripePaymentIntentId: paymentIntentId ?? payment.stripePaymentIntentId,
         stripeCheckoutSessionId: session.id,
-        lessonId: payment.lessonId ?? (session.metadata?.lessonId),
+        lessonId: payment.lessonId ?? session.metadata?.lessonId,
       },
     });
-
-    if (paymentIntentId) {
-      await this.reconcilePaymentSettlement(payment.id, paymentIntentId);
-    }
 
     if (payment.registrationId) {
       await tx.eventRegistration.update({
@@ -1568,44 +1587,51 @@ export class PaymentsService {
       });
     }
 
-    try {
-      await this.createLedgerEntryIfMissing({
-        tx,
-        businessPaymentId: payment.id,
-        businessRegistrationId: payment.registrationId ?? undefined,
-        businessLessonId: payment.lessonId ?? undefined,
-        businessCommunityId: payment.communityId ?? undefined,
-        entryType: 'charge',
-        direction: 'in',
-        amount: payment.amount,
-        currency: payment.currency ?? 'jpy',
-        provider: 'stripe',
-        providerObjectType: 'checkout.session',
-        providerObjectId: session.id,
-        providerAccountId: session.metadata?.communityId,
-        idempotencyKey: `stripe:checkout.completed:${session.id}`,
-        occurredAt: new Date(),
-        metadata: { paymentIntentId },
-        logContext: {
-          eventId,
-          sessionId: session.id,
-        },
-      });
-    } catch (err) {
-      const errorName = err instanceof Error ? err.name : 'UnknownError';
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      const shouldRetry = this.shouldRetryLedgerError(err);
-      this.logger.error(
-        `[ledger] failed event=${eventId ?? 'n/a'} session=${session.id} paymentId=${
-          session.metadata?.paymentId ?? payment.id ?? 'n/a'
-        } registrationId=${
-          session.metadata?.registrationId ?? payment.registrationId ?? 'n/a'
-        } paymentIntent=${paymentIntentId ?? 'n/a'} error=${errorName}: ${errorMessage} retry=${shouldRetry}`,
-      );
-      if (shouldRetry) {
-        throw err;
-      }
+    const postProcessTasks: Array<() => Promise<void>> = [];
+    if (paymentIntentId) {
+      postProcessTasks.push(() => this.reconcilePaymentSettlement(payment.id, paymentIntentId));
     }
+
+    postProcessTasks.push(async () => {
+      try {
+        await this.createLedgerEntryIfMissing({
+          tx: this.prisma,
+          businessPaymentId: payment.id,
+          businessRegistrationId: payment.registrationId ?? undefined,
+          businessLessonId: payment.lessonId ?? undefined,
+          businessCommunityId: payment.communityId ?? undefined,
+          entryType: 'charge',
+          direction: 'in',
+          amount: payment.amount,
+          currency: payment.currency ?? 'jpy',
+          provider: 'stripe',
+          providerObjectType: 'checkout.session',
+          providerObjectId: session.id,
+          providerAccountId: session.metadata?.communityId,
+          idempotencyKey: `stripe:checkout.completed:${session.id}`,
+          occurredAt: new Date(),
+          metadata: { paymentIntentId },
+          logContext: {
+            eventId,
+            sessionId: session.id,
+          },
+        });
+      } catch (err) {
+        const errorName = err instanceof Error ? err.name : 'UnknownError';
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        const shouldRetry = this.shouldRetryLedgerError(err);
+        this.logger.error(
+          `[ledger] failed event=${eventId ?? 'n/a'} session=${session.id} paymentId=${
+            session.metadata?.paymentId ?? payment.id ?? 'n/a'
+          } registrationId=${
+            session.metadata?.registrationId ?? payment.registrationId ?? 'n/a'
+          } paymentIntent=${paymentIntentId ?? 'n/a'} error=${errorName}: ${errorMessage} retry=${shouldRetry}`,
+        );
+        if (shouldRetry) {
+          throw err;
+        }
+      }
+    });
 
     await this.logGatewayEvent({
       gateway: 'stripe',
@@ -1619,6 +1645,8 @@ export class PaymentsService {
       userId: payment.userId,
       payload: { sessionId: session.id, paymentIntentId },
     });
+
+    return { postProcessTasks };
   }
 
   private async reconcilePaymentSettlement(
@@ -1632,46 +1660,36 @@ export class PaymentsService {
 
       const chargeModel: ChargeModel =
         payment.chargeModel === 'destination_charge' ? 'destination_charge' : 'platform_charge';
-      const intent = await this.withStripeRetry(() =>
-        this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
-          expand:
-            chargeModel === 'destination_charge'
-              ? ['latest_charge.balance_transaction', 'latest_charge.transfer']
-              : ['latest_charge.balance_transaction'],
-        }),
-      );
-      const latestCharge =
-        typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
-      const chargeId =
-        typeof intent.latest_charge === 'string'
-          ? intent.latest_charge
-          : intent.latest_charge?.id ?? null;
-      if (!chargeId) return;
-
+      const maxBalanceAttempts = 3;
+      let intent: Stripe.PaymentIntent | null = null;
+      let latestCharge: Stripe.Charge | null = null;
+      let chargeId: string | null = null;
       let balanceTx: Stripe.BalanceTransaction | null = null;
-      const latestBalanceTx = latestCharge?.balance_transaction ?? null;
-      if (latestBalanceTx && typeof latestBalanceTx !== 'string') {
-        balanceTx = latestBalanceTx;
-      } else if (typeof latestBalanceTx === 'string') {
-        balanceTx = await this.withStripeRetry(() =>
-          this.stripeService.client.balanceTransactions.retrieve(latestBalanceTx),
+      for (let attempt = 1; attempt <= maxBalanceAttempts; attempt += 1) {
+        intent = await this.withStripeRetry(() =>
+          this.stripeService.client.paymentIntents.retrieve(paymentIntentId, {
+            expand:
+              chargeModel === 'destination_charge'
+                ? ['latest_charge.balance_transaction', 'latest_charge.transfer']
+                : ['latest_charge.balance_transaction'],
+          }),
         );
-      }
-
-      if (!balanceTx) {
-        const charge = await this.withStripeRetry(() =>
-          this.stripeService.client.charges.retrieve(chargeId),
-        );
-        const chargeBalanceTx = charge.balance_transaction ?? null;
-        if (chargeBalanceTx && typeof chargeBalanceTx !== 'string') {
-          balanceTx = chargeBalanceTx as Stripe.BalanceTransaction;
-        } else if (typeof chargeBalanceTx === 'string') {
-          balanceTx = await this.withStripeRetry(() =>
-            this.stripeService.client.balanceTransactions.retrieve(chargeBalanceTx),
-          );
+        latestCharge =
+          typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
+        chargeId =
+          typeof intent.latest_charge === 'string'
+            ? intent.latest_charge
+            : intent.latest_charge?.id ?? null;
+        if (!chargeId) break;
+        balanceTx = await this.resolveBalanceTransaction(latestCharge, chargeId);
+        if (balanceTx) {
+          break;
+        }
+        if (attempt < maxBalanceAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
         }
       }
-
+      if (!chargeId) return;
       if (!balanceTx) {
         throw new Error(`stripe_balance_tx_missing payment=${paymentId} charge=${chargeId}`);
       }
@@ -2861,6 +2879,56 @@ export class PaymentsService {
     return balanceTx.fee ?? 0;
   }
 
+
+  private buildCheckoutSessionFingerprint(params: Stripe.Checkout.SessionCreateParams): string {
+    const payload = this.stableSerialize(params);
+    return createHash('sha256').update(payload).digest('hex');
+  }
+
+  private stableSerialize(value: unknown): string {
+    if (value === null) return 'null';
+    if (typeof value === 'undefined') return 'undefined';
+    if (typeof value === 'string') return `s:${value}`;
+    if (typeof value === 'number' || typeof value === 'boolean') return `p:${value}`;
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => this.stableSerialize(item)).join(',')}]`;
+    }
+    if (typeof value === 'object') {
+      const entry = value as Record<string, unknown>;
+      const keys = Object.keys(entry).sort();
+      return `{${keys
+        .map((key) => `${key}:${this.stableSerialize(entry[key])}`)
+        .join(',')}}`;
+    }
+    return String(value);
+  }
+
+  private async resolveBalanceTransaction(
+    latestCharge: Stripe.Charge | null,
+    chargeId: string | null,
+  ): Promise<Stripe.BalanceTransaction | null> {
+    const latestBalanceTx = latestCharge?.balance_transaction ?? null;
+    if (latestBalanceTx && typeof latestBalanceTx !== 'string') {
+      return latestBalanceTx;
+    }
+    if (typeof latestBalanceTx === 'string') {
+      return this.withStripeRetry(() =>
+        this.stripeService.client.balanceTransactions.retrieve(latestBalanceTx),
+      );
+    }
+    if (!chargeId) return null;
+    const charge = await this.withStripeRetry(() => this.stripeService.client.charges.retrieve(chargeId));
+    const chargeBalanceTx = charge.balance_transaction ?? null;
+    if (chargeBalanceTx && typeof chargeBalanceTx !== 'string') {
+      return chargeBalanceTx;
+    }
+    if (typeof chargeBalanceTx === 'string') {
+      return this.withStripeRetry(() =>
+        this.stripeService.client.balanceTransactions.retrieve(chargeBalanceTx),
+      );
+    }
+    return null;
+  }
 
   private hashPayload(payload: any): string {
     try {

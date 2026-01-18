@@ -8,6 +8,7 @@ export function buildIdempotencyKey(
   providerObjectId: string,
   amount?: number,
   currency?: string,
+  ...extraParts: string[]
 ): string {
   const safe = (v: string | undefined) => (v && v.trim().length > 0 ? v.trim().toLowerCase() : 'unknown');
   const parts = [
@@ -20,6 +21,9 @@ export function buildIdempotencyKey(
     parts.push(safe(currency), String(amount));
   } else if (amount !== undefined) {
     parts.push(String(amount));
+  }
+  for (const extra of extraParts) {
+    parts.push(safe(extra));
   }
   return parts.join(':');
 }
