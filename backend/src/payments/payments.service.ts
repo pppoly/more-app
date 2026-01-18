@@ -294,23 +294,19 @@ export class PaymentsService {
           })()
         : null;
 
-    const paidStatuses: string[] = ['paid', 'partial_refunded'];
-    const refundedStatuses: string[] = ['refunded', 'partial_refunded'];
-    const countedStatuses: string[] = ['paid', 'partial_refunded', 'refunded'];
-
     const paidWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: { in: paidStatuses },
+      status: { in: ['paid', 'partial_refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const refundedWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: { in: refundedStatuses },
+      status: { in: ['refunded', 'partial_refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const allWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: { in: countedStatuses },
+      status: { in: ['paid', 'partial_refunded', 'refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const [paidAgg, refundedAgg, allAgg] = await Promise.all([
