@@ -83,13 +83,19 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    redirect: (to) => ({ path: '/promo', query: { from: to.fullPath } }),
+    redirect: (to) =>
+      isMobile()
+        ? { name: 'events' }
+        : { path: '/promo', query: { from: to.fullPath } },
     meta: { devPageName: 'デスクトップホーム' },
   },
   {
     path: '/desktop-home',
     name: 'legacy-home',
-    redirect: (to) => ({ path: '/promo', query: { from: to.fullPath } }),
+    redirect: (to) =>
+      isMobile()
+        ? { name: 'events' }
+        : { path: '/promo', query: { from: to.fullPath } },
     meta: { devPageName: '旧デスクトップ' },
   },
   {
