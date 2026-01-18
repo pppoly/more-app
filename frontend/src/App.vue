@@ -159,7 +159,7 @@ const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
 const showLiffGuide = computed(
-  () => isProductionLiff() && isMobile.value && !isLiffClientMode.value,
+  () => isProductionLiff() && !isLiffClientMode.value,
 );
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
