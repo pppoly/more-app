@@ -37,8 +37,9 @@ function isMobile() {
     return true;
   }
   const ua = navigator.userAgent || '';
+  const hasTouch = typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 0;
   // モバイル判定を緩め、LIFF / WebView などの内蔵ブラウザに対応
-  return window.innerWidth < 1024 || /Mobile|Android|iPhone|iPod|iPad|Line/i.test(ua);
+  return hasTouch || window.innerWidth < 1024 || /Mobile|Android|iPhone|iPod|iPad|Line/i.test(ua);
 }
 
 const loadMobileOrDesktop = (
