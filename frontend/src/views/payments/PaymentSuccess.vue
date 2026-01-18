@@ -26,7 +26,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchMyEvents } from '../../api/client';
-import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
+import { MOBILE_CLASS_SUCCESS_KEY, MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { trackEvent } from '../../utils/analytics';
 
 type PendingPaymentPayload = {
@@ -34,6 +34,9 @@ type PendingPaymentPayload = {
   amount?: number | null;
   eventId?: string;
   source?: 'mobile' | 'desktop' | 'class' | string;
+  classId?: string;
+  lessonId?: string;
+  slug?: string;
 };
 
 const router = useRouter();
@@ -87,6 +90,21 @@ const finishAsSuccess = () => {
   if (pending.value.source === 'mobile' && pending.value.eventId) {
     sessionStorage.setItem(MOBILE_EVENT_SUCCESS_KEY, JSON.stringify(pending.value));
     router.replace({ name: 'MobileEventSuccess', params: { eventId: pending.value.eventId } });
+    return;
+  }
+  if (pending.value.source === 'class' && pending.value.classId && pending.value.slug) {
+    sessionStorage.setItem(
+      MOBILE_CLASS_SUCCESS_KEY,
+      JSON.stringify({
+        classId: pending.value.classId,
+        lessonId: pending.value.lessonId,
+      }),
+    );
+    router.replace({
+      name: 'community-class-detail',
+      params: { slug: pending.value.slug, classId: pending.value.classId },
+    });
+    return;
   }
 };
 

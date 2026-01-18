@@ -1127,7 +1127,7 @@ export class PaymentsService {
             providerObjectId: intent.id,
           },
         });
-        await this.reconcilePaymentSettlement(payment.id, intent.id);
+        postProcessTasks.push(() => this.reconcilePaymentSettlement(payment.id, intent.id));
         if (payment.registrationId) {
           await tx.eventRegistration.update({
             where: { id: payment.registrationId },

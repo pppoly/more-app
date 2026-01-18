@@ -442,6 +442,13 @@ const registrationStatus = computed(() => {
   }
 });
 const legacyRefund = computed(() => !refundRequest.value && ['refunded', 'pending_refund'].includes(registrationStatusRaw.value));
+const isHostRefundedCancellation = computed(() => {
+  if (!registrationItem.value) return false;
+  if (registrationStatusRaw.value !== 'cancelled') return false;
+  if (registrationItem.value.paymentStatus !== 'refunded') return false;
+  const amount = registrationItem.value.amount ?? 0;
+  return amount > 0;
+});
 const refundState = computed(() => {
   const req = refundRequest.value;
   if (req?.status === 'requested') return 'requested';
@@ -516,6 +523,20 @@ const computeCtaState = () => {
         : '主催者の確認をお待ちください。';
     return { label: 'キャンセル申請中', disabled: true, hint };
   }
+  if (legacyRefund.value) {
+    return {
+      label: '参加不可',
+      disabled: true,
+      hint: '主催者によって参加が取り消されました。',
+    };
+  }
+  if (isHostRefundedCancellation.value) {
+    return {
+      label: '参加不可',
+      disabled: true,
+      hint: '主催者によって参加が取り消されました。',
+    };
+  }
   if (registrationStatus.value === 'cancelled') {
     const canReapply = registrationWindow.value === 'open';
     return {
@@ -523,9 +544,6 @@ const computeCtaState = () => {
       disabled: !canReapply,
       hint: canReapply ? '再申込できます。' : '受付は終了しています。',
     };
-  }
-  if (legacyRefund.value) {
-    return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
   }
   if (!isLoggedIn.value) {
     return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false, hint: '' };
@@ -1211,7 +1229,7 @@ const closeBookingSheet = () => {
 
 const handleCtaClick = () => {
   if (!detail.value) return;
-  if (legacyRefund.value || registrationStatus.value === 'cancel_requested') return;
+  if (legacyRefund.value || isHostRefundedCancellation.value || registrationStatus.value === 'cancel_requested') return;
   if (registrationStatus.value === 'pending_payment') {
     const registrationId = registrationItem.value?.registrationId;
     if (registrationId) {
@@ -2244,6 +2262,8 @@ watch(
   z-index: 1;
   line-height: 1.2;
   min-height: 32px;
+  min-width: 110px;
+  white-space: nowrap;
 }
 .group-follow__icon {
   position: absolute;

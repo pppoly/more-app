@@ -1030,6 +1030,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
   margin: 0;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-value {
