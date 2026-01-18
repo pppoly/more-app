@@ -19,8 +19,14 @@ import { AdminUsersController } from './admin/admin-users.controller';
 import { AdminCommunitiesController } from './admin/admin-communities.controller';
 import { AdminEventsListController } from './admin/admin-events-list.controller';
 import { AdminCommunityTagsController } from './admin/admin-community-tags.controller';
+import { AdminStatsController } from './admin/admin-stats.controller';
 import { AssetModule } from './asset/asset.module';
 import { BullModule } from '@nestjs/bullmq';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { ClassesModule } from './classes/classes.module';
+import { NotificationModule } from './notifications/notification.module';
+import { AdminNotificationsController } from './admin/admin-notifications.controller';
+import { AdminSettlementsController } from './admin/admin-settlements.controller';
 
 @Module({
   imports: [
@@ -44,12 +50,27 @@ import { BullModule } from '@nestjs/bullmq';
     MeModule,
     PaymentsModule,
     ConsoleModule,
+    NotificationModule,
     AiModule,
     OrganizersModule,
     I18nModule,
     AssetModule,
+    AnalyticsModule,
+    ClassesModule,
   ],
-  controllers: [HealthController, HelloController, AdminPaymentsController, AdminPaymentsOpsController, AdminUsersController, AdminCommunitiesController, AdminEventsListController, AdminCommunityTagsController],
+  controllers: [
+    HealthController,
+    HelloController,
+    AdminPaymentsController,
+    AdminPaymentsOpsController,
+    AdminSettlementsController,
+    AdminUsersController,
+    AdminCommunitiesController,
+    AdminEventsListController,
+    AdminCommunityTagsController,
+    AdminNotificationsController,
+    AdminStatsController,
+  ],
   providers: [],
 })
 export class AppModule {}

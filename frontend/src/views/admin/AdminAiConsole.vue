@@ -2,19 +2,19 @@
   <main class="ai-console">
     <header class="page-head">
       <div>
-        <p class="eyebrow">SOCIALMORE · AI 控制台</p>
-        <h1>Prompt 测试与日志</h1>
-        <p class="subhead">可视化验证渲染/调用、翻译与评测结果，快速检查最新 Prompt。</p>
+        <p class="eyebrow">SOCIALMORE · AI コンソール</p>
+        <h1>Prompt テストとログ</h1>
+        <p class="subhead">レンダリング/呼び出し、翻訳、評価結果を可視化し、最新 Prompt を素早く確認できます。</p>
       </div>
       <div class="actions">
-        <button type="button" class="outline" @click="loadPrompts" :disabled="loading.prompts">刷新列表</button>
+        <button type="button" class="outline" @click="loadPrompts" :disabled="loading.prompts">一覧を更新</button>
       </div>
     </header>
 
     <section class="card">
       <div class="card-head">
-        <h2>Prompt 渲染 & 调用</h2>
-        <button type="button" class="ghost" @click="resetRenderForm">清空</button>
+        <h2>Prompt レンダリング & 呼び出し</h2>
+        <button type="button" class="ghost" @click="resetRenderForm">クリア</button>
       </div>
       <div class="form-grid">
         <label>
@@ -26,8 +26,8 @@
           </select>
         </label>
         <label>
-          模型
-          <input v-model="renderForm.model" type="text" placeholder="默认后端配置" />
+          モデル
+          <input v-model="renderForm.model" type="text" placeholder="バックエンドのデフォルト設定" />
         </label>
         <label>
           温度
@@ -39,7 +39,7 @@
         <textarea v-model="renderForm.paramsText" rows="3" placeholder='{"source_lang":"en","target_lang":"ja"}'></textarea>
       </label>
       <label>
-        Messages (JSON 数组)
+        Messages (JSON 配列)
         <textarea
           v-model="renderForm.messagesText"
           rows="4"
@@ -47,15 +47,15 @@
         ></textarea>
       </label>
       <div class="btn-row">
-        <button type="button" class="outline" @click="render" :disabled="loading.render">渲染</button>
-        <button type="button" class="primary" @click="complete" :disabled="loading.complete">调用</button>
+        <button type="button" class="outline" @click="render" :disabled="loading.render">レンダー</button>
+        <button type="button" class="primary" @click="complete" :disabled="loading.complete">実行</button>
       </div>
       <div v-if="renderResult" class="result">
-        <p class="muted">渲染结果</p>
+        <p class="muted">レンダリング結果</p>
         <pre>{{ renderResult }}</pre>
       </div>
       <div v-if="completeResult" class="result">
-        <p class="muted">调用结果</p>
+        <p class="muted">呼び出し結果</p>
         <pre>{{ completeResult }}</pre>
       </div>
       <div v-if="error.render" class="error">{{ error.render }}</div>
@@ -64,32 +64,32 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>翻译测试</h2>
-        <button type="button" class="ghost" @click="resetTranslate">清空</button>
+        <h2>翻訳テスト</h2>
+        <button type="button" class="ghost" @click="resetTranslate">クリア</button>
       </div>
       <div class="form-grid">
         <label>
-          源语言
+          元の言語
           <select v-model="translateForm.sourceLang">
             <option v-for="lang in supportedLanguages" :key="lang" :value="lang">{{ lang }}</option>
           </select>
         </label>
         <label>
-          目标语言
+          対象言語
           <select v-model="translateForm.targetLang">
             <option v-for="lang in supportedLanguages" :key="lang" :value="lang">{{ lang }}</option>
           </select>
         </label>
       </div>
       <label>
-        文本
-        <textarea v-model="translateForm.text" rows="3" placeholder="待翻译文本"></textarea>
+        テキスト
+        <textarea v-model="translateForm.text" rows="3" placeholder="翻訳するテキスト"></textarea>
       </label>
       <div class="btn-row">
-        <button type="button" class="primary" @click="translate" :disabled="loading.translate">测试翻译</button>
+        <button type="button" class="primary" @click="translate" :disabled="loading.translate">翻訳をテスト</button>
       </div>
       <div v-if="translateResult" class="result">
-        <p class="muted">翻译结果</p>
+        <p class="muted">翻訳結果</p>
         <pre>{{ translateResult }}</pre>
       </div>
       <div v-if="error.translate" class="error">{{ error.translate }}</div>
@@ -97,8 +97,8 @@
 
     <section class="card">
       <div class="card-head">
-        <h2>评测（渲染用例）</h2>
-        <button type="button" class="ghost" @click="runEval" :disabled="loading.eval">运行</button>
+        <h2>評価（レンダリング用例）</h2>
+        <button type="button" class="ghost" @click="runEval" :disabled="loading.eval">実行</button>
       </div>
       <label>
         Prompt
@@ -109,7 +109,7 @@
         </select>
       </label>
       <div v-if="evalResult" class="result">
-        <p class="muted">评测结果</p>
+        <p class="muted">評価結果</p>
         <pre>{{ evalResult }}</pre>
       </div>
       <div v-if="error.eval" class="error">{{ error.eval }}</div>
@@ -223,7 +223,7 @@ const render = async () => {
     });
     renderResult.value = JSON.stringify(res.messages, null, 2);
   } catch (err: any) {
-    error.value.render = err?.message || '渲染失败';
+    error.value.render = err?.message || 'レンダリングに失敗しました';
   } finally {
     loading.value.render = false;
   }
@@ -245,7 +245,7 @@ const complete = async () => {
     });
     completeResult.value = JSON.stringify(res, null, 2);
   } catch (err: any) {
-    error.value.complete = err?.message || '调用失败';
+    error.value.complete = err?.message || '呼び出しに失敗しました';
   } finally {
     loading.value.complete = false;
   }
@@ -263,7 +263,7 @@ const translate = async () => {
     });
     translateResult.value = JSON.stringify(res.translations, null, 2);
   } catch (err: any) {
-    error.value.translate = err?.message || '翻译失败';
+    error.value.translate = err?.message || '翻訳に失敗しました';
   } finally {
     loading.value.translate = false;
   }
@@ -277,7 +277,7 @@ const runEval = async () => {
     const res = await evalPrompt({ promptId: evalPromptId.value });
     evalResult.value = JSON.stringify(res, null, 2);
   } catch (err: any) {
-    error.value.eval = err?.message || '评测失败';
+    error.value.eval = err?.message || '評価に失敗しました';
   } finally {
     loading.value.eval = false;
   }

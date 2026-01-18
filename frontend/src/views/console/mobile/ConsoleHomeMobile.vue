@@ -1,5 +1,5 @@
 <template>
-  <div class="console-home">
+  <div class="console-home" data-scroll="main">
     <div v-if="!dataReady" class="console-skeleton">
       <div class="sk-header"></div>
       <div class="sk-stats">
@@ -9,47 +9,84 @@
         <div class="sk-tile" v-for="n in 6" :key="`tile-${n}`"></div>
       </div>
     </div>
-    <section class="top-bar">
+    <section v-if="showTopBar" class="top-bar" :class="{ 'top-bar--empty': !hasCommunity }">
       <div class="top-main">
-        <button class="avatar-btn" type="button" @click="goCommunitySettings">
-          <img :key="communityId || 'default'" :src="communityAvatar" alt="avatar" loading="lazy" />
+        <button
+          class="avatar-btn"
+          type="button"
+          @click="hasCommunity ? goCommunitySettings() : goCreateCommunity()"
+        >
+          <img
+            v-if="hasCommunity"
+            :key="communityId || 'default'"
+            :src="communityAvatar"
+            alt="avatar"
+            loading="lazy"
+          />
+          <span v-else class="avatar-placeholder">+</span>
         </button>
-        <div class="top-text" @click="goCommunitySettings">
-          <p class="top-label">社群</p>
+        <div class="top-text" @click="hasCommunity ? goCommunitySettings() : goCreateCommunity()">
+          <p class="top-label">{{ hasCommunity ? 'コミュニティ' : 'まだコミュニティがありません' }}</p>
           <div class="top-title-row">
             <h1 class="top-title">
-              {{ communityName || '未選択のコミュニティ' }}
-              <span v-if="roleLabel" class="role-chip">{{ roleLabel }}</span>
+              {{ hasCommunity ? communityName : 'コミュニティを作成' }}
+              <span v-if="hasCommunity && roleLabel" class="role-chip">{{ roleLabel }}</span>
             </h1>
-            <button v-if="planLabel" class="plan-chip" type="button" @click.stop="goSubscription">
+            <button
+              v-if="hasCommunity && planLabel"
+              class="plan-chip"
+              type="button"
+              @click.stop="goSubscription"
+            >
               {{ planDisplay }}
             </button>
           </div>
-          <p class="top-role">{{ hasCommunity ? 'タップして設定を開く' : 'まずはコミュニティを登録' }}</p>
+          <p class="top-role">
+            {{
+              hasCommunity
+                ? 'タップして設定を開く'
+                : 'イベントを公開するにはコミュニティを登録してください'
+            }}
+          </p>
         </div>
         <button
-          :class="['pill-btn', hasCommunity ? '' : 'pill-btn--primary']"
+          v-if="hasCommunity"
+          class="pill-btn"
           type="button"
           @click="openCommunityPicker"
         >
-          <span class="i-lucide-sparkles" v-if="!hasCommunity"></span>
           切り替え
+        </button>
+        <button
+          v-else
+          class="pill-btn pill-btn--primary"
+          type="button"
+          @click="goCreateCommunity"
+        >
+          新規作成
         </button>
       </div>
       <div class="stat-inline">
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月の収入</p>
-          <p class="stat-value">{{ hasCommunity ? stats.monthRevenueText : '¥0' }}</p>
+          <p class="stat-value">{{ statDisplay.revenue }}</p>
         </div>
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">今月のイベント</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+          <p class="stat-value">{{ statDisplay.events }}</p>
         </div>
-        <div class="stat-inline-item">
+        <div class="stat-inline-item" :class="{ 'is-empty': !hasCommunity }">
           <p class="stat-label">申込数</p>
-          <p class="stat-value">{{ hasCommunity ? stats.registrationCount : '0' }}</p>
+          <p class="stat-value">{{ statDisplay.registrations }}</p>
         </div>
       </div>
+    </section>
+
+    <section class="task-tip" :class="{ 'task-tip--empty': !hasCommunity }">
+      <p class="task-title">現在のフォーカス</p>
+      <p class="task-text">
+        {{ focusMessage }}
+      </p>
     </section>
 
     <button
@@ -66,147 +103,212 @@
     <section class="action-grid">
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goAllEvents">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" loading="lazy" />
+          <img :src="eventManageIcon" alt="" loading="lazy" />
         </div>
-        <p class="action-title">活动管理</p>
+        <p class="action-title">イベント管理</p>
+      </button>
+      <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goClasses">
+        <div class="action-icon">
+          <img :src="classIcon" alt="class" loading="lazy" class="action-icon__img" />
+        </div>
+        <p class="action-title">教室管理</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goPayout">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" loading="lazy" />
+          <img :src="payoutIcon" alt="" loading="lazy" />
         </div>
-        <p class="action-title">收益入金</p>
+        <p class="action-title">決済・受け取り</p>
       </button>
       <button class="action-tile" type="button" :class="{ 'is-disabled': !hasCommunity }" @click="goTicketScanner">
         <div class="action-icon">
-          <img :src="defaultActionIcon" alt="" />
+          <img :src="checkIcon" alt="" />
         </div>
-        <p class="action-title">验票扫码</p>
+        <p class="action-title">チェックイン</p>
       </button>
     </section>
 
-    <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
-      <div class="picker-sheet">
-        <header class="picker-head">
-          <p class="picker-title">社群を切り替え</p>
-          <button type="button" class="picker-close" @click="closeCommunityPicker">
-            <span class="i-lucide-x"></span>
-          </button>
+    <button
+      v-if="hasCommunity"
+      type="button"
+      class="portal-link"
+      @click="goPublicPortal"
+    >
+      コミュニティページへ
+      <span class="i-lucide-chevron-right"></span>
+    </button>
+
+    <section class="cards-grid">
+      <article class="panel">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">最近のイベント</p>
+            <p class="panel-sub">
+              {{ displayEvents.length ? '最新のアクティビティ' : 'まだイベントはありません' }}
+            </p>
+          </div>
         </header>
-        <div class="picker-list">
-          <div v-if="pickerLoading" class="picker-empty">読み込み中…</div>
-          <template v-else>
-            <button
-              v-for="item in managedCommunities"
-              :key="item.id"
-              class="picker-item"
-              :class="{ 'is-active': item.id === activeCommunityId }"
-              type="button"
-              @click="selectCommunity(item.id)"
-            >
-              <div class="picker-avatar">
-                <img
-                  v-if="item.logoImageUrl"
-                  :src="normalizeLogoUrl(item.logoImageUrl)"
-                  alt="logo"
-                  loading="lazy"
-                />
-                <span v-else>{{ item.name.slice(0, 1) }}</span>
-              </div>
-              <div class="picker-meta">
-                <p class="picker-name">{{ item.name }}</p>
-                <p class="picker-slug">@{{ item.slug }}</p>
-              </div>
-              <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
+        <div v-if="displayEvents.length" class="event-list">
+          <button
+            v-for="event in displayEvents"
+            :key="event.id"
+            type="button"
+            class="event-item"
+            @click="openManage(event.id)"
+          >
+            <div class="event-cover">
+              <img :src="event.coverUrl" alt="" loading="lazy" />
+            </div>
+            <div class="event-body">
+              <p class="event-title">{{ event.title }}</p>
+              <p class="event-meta">{{ event.dateTimeText }} · {{ event.entrySummary }}</p>
+            </div>
+            <span class="event-status">{{ event.statusLabel }}</span>
+          </button>
+        </div>
+        <div v-else class="empty-card">
+          <p class="empty-title">まだ告知していません</p>
+          <p class="empty-desc">最初のイベントを作成すると、このエリアに最近の進捗が表示されます。</p>
+        </div>
+      </article>
+
+      <article v-if="!displayEvents.length" class="panel ai-card">
+        <header class="panel-head">
+          <div>
+            <p class="panel-label">AI アシスタント</p>
+            <p class="panel-sub">一言入力で次のステップを提案します</p>
+          </div>
+        </header>
+        <div class="ai-hint">
+          <p class="ai-text">「今週末に30人向けの交流会を開きたい。場所は渋谷。」と送るだけで、募集文とチェックリストを返します。</p>
+          <p class="ai-subtext">質問は1つずつ。AIが次の確認事項を案内するので迷いません。</p>
+        </div>
+      </article>
+    </section>
+
+    <teleport to="body">
+      <div v-if="showCommunityPicker" class="picker-overlay" @click.self="closeCommunityPicker">
+        <div class="picker-sheet">
+          <header class="picker-head">
+            <p class="picker-title">コミュニティを切り替え</p>
+            <button type="button" class="picker-close" @click="closeCommunityPicker">
+              <span aria-hidden="true">×</span>
             </button>
-            <p v-if="!managedCommunities.length" class="picker-empty">まだ社群がありません。</p>
-            <button
-              type="button"
-              class="picker-add"
-              :class="{ 'is-disabled': !canCreateCommunity }"
-              @click="handleCreateClick"
-            >
-              <span class="i-lucide-plus"></span>
-              {{ canCreateCommunity ? '新しい社群を登録' : 'プランをアップグレード' }}
-            </button>
-            <p v-if="!canCreateCommunity" class="picker-hint">Free プランでは社群は 1 つまでです。アップグレードで増やせます。</p>
-          </template>
+          </header>
+          <div class="picker-list">
+            <div v-if="pickerLoading" class="picker-empty">読み込み中…</div>
+            <template v-else>
+              <button
+                v-for="item in managedCommunities"
+                :key="item.id"
+                class="picker-item"
+                :class="{ 'is-active': item.id === activeCommunityId }"
+                type="button"
+                @click="selectCommunity(item.id)"
+              >
+                <div class="picker-avatar">
+                  <img
+                    v-if="item.logoImageUrl"
+                    :src="normalizeLogoUrl(item.logoImageUrl)"
+                    alt="logo"
+                    loading="lazy"
+                  />
+                  <span v-else>{{ item.name.slice(0, 1) }}</span>
+                </div>
+                <div class="picker-meta">
+                  <p class="picker-name">{{ item.name }}</p>
+                  <p class="picker-slug">@{{ item.slug }}</p>
+                </div>
+                <span v-if="item.id === activeCommunityId" class="i-lucide-check"></span>
+              </button>
+              <p v-if="!managedCommunities.length" class="picker-empty">まだコミュニティがありません。</p>
+              <button
+                type="button"
+                class="picker-add"
+                :class="{ 'is-disabled': !canCreateCommunity }"
+                @click="handleCreateClick"
+              >
+                <span class="i-lucide-plus"></span>
+                {{ canCreateCommunity ? '新しいコミュニティを登録' : 'プランをアップグレード' }}
+              </button>
+              <p v-if="!canCreateCommunity" class="picker-hint">Free プランではコミュニティは 1 つまでです。アップグレードで増やせます。</p>
+            </template>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
-      <div class="create-sheet">
-        <header class="create-head">
-          <p class="create-title">怎么开始？</p>
-          <p class="create-subtitle">先选一个最省事的方式</p>
-        </header>
-        <div class="create-list">
-          <button type="button" class="create-item" @click="selectCreateMode('paste')">
-            <div class="create-icon">🧾</div>
-            <div class="create-body">
-              <p class="create-item-title">我已有活动方案</p>
-              <p class="create-item-desc">粘贴提纲，自动帮你填表，省时省力</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('assistant')">
-            <div class="create-icon">🤖</div>
-            <div class="create-body">
-              <p class="create-item-title">我只有想法</p>
-              <p class="create-item-desc">AI 一起讨论，几句口述生成活动内容</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('basic')">
-            <div class="create-icon">✍️</div>
-            <div class="create-body">
-              <p class="create-item-title">直接填活动</p>
-              <p class="create-item-desc">按表单一步步填写，熟悉流程最快</p>
-            </div>
-          </button>
-          <button type="button" class="create-item" @click="selectCreateMode('copy')">
-            <div class="create-icon">📄</div>
-            <div class="create-body">
-              <p class="create-item-title">复制一个历史活动</p>
-              <p class="create-item-desc">复用以前的配置，几秒办同款</p>
-            </div>
-          </button>
-        </div>
-    <button type="button" class="create-close" @click="closeCreateSheet">取消</button>
-  </div>
-</div>
-
-<div v-if="showCopyPicker" class="create-overlay" @click.self="closeCopyPicker">
-  <div class="create-sheet copy-sheet">
-    <div class="copy-list">
-      <template v-if="copyEvents.length">
-        <button
-          v-for="item in copyEvents"
-          :key="item.id"
-          type="button"
-          class="copy-item"
-          @click="handleCopySelect(item.id)"
-        >
-          <div class="copy-meta">
-            <p class="copy-title">{{ getLocalizedText(item.title) || '历史活动' }}</p>
-            <p class="copy-time">{{ formatDate(item.startTime) }}</p>
+      <div v-if="showCreateSheet" class="create-overlay" @click.self="closeCreateSheet">
+        <div class="create-sheet">
+          <header class="create-head">
+            <p class="create-title">イベント作成</p>
+            <p class="create-subtitle">メモや URL を貼るだけでもOK。AI がフォーム入力を手伝います。</p>
+          </header>
+          <div class="create-list">
+            <button type="button" class="create-item create-item--recommend" @click="selectCreateMode('paste')">
+              <div class="create-badge">おすすめ</div>
+              <div class="create-icon create-icon--accent">🧾</div>
+              <div class="create-body">
+                <p class="create-item-title">文章で作成</p>
+                <p class="create-item-desc">メモ/URL を貼ると AI が下書きを組み立てます</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('assistant')">
+              <div class="create-icon">🤖</div>
+              <div class="create-body">
+                <p class="create-item-title">AIと一緒に作る</p>
+                <p class="create-item-desc">質問に答えるだけで、イベントの中身がほぼ完成します</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('copy')">
+              <div class="create-icon">📄</div>
+              <div class="create-body">
+                <p class="create-item-title">過去のイベントをコピー</p>
+                <p class="create-item-desc">以前とほぼ同じ内容なら</p>
+              </div>
+            </button>
+            <button type="button" class="create-item" @click="selectCreateMode('basic')">
+              <div class="create-icon">✍️</div>
+              <div class="create-body">
+                <p class="create-item-title">ゼロから作成</p>
+                <p class="create-item-desc">フォームに沿って、すべて自分で入力します</p>
+              </div>
+            </button>
           </div>
-        </button>
-      </template>
-      <p v-else-if="!copyLoading && !copyError" class="empty-text">暂无历史活动</p>
-      <p v-if="copyError" class="empty-text">{{ copyError }}</p>
-      <p v-if="copyLoading" class="empty-text">加载中...</p>
-    </div>
-    <div class="copy-actions">
-      <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">加载更多</button>
-      <button type="button" class="create-close" @click="closeCopyPicker">取消</button>
-    </div>
-  </div>
-</div>
+        </div>
+      </div>
+
+      <div v-if="showCopyPicker" class="create-overlay" @click.self="closeCopyPicker">
+        <div class="create-sheet copy-sheet">
+          <div class="copy-list">
+            <template v-if="copyEvents.length">
+              <button
+                v-for="item in copyEvents"
+                :key="item.id"
+                type="button"
+                class="copy-item"
+                @click="handleCopySelect(item.id)"
+              >
+                <div class="copy-meta">
+                  <p class="copy-title">{{ getLocalizedText(item.title) || '過去のイベント' }}</p>
+                  <p class="copy-time">{{ formatDate(item.startTime) }}</p>
+                </div>
+              </button>
+            </template>
+            <p v-else-if="!copyLoading && !copyError" class="empty-text">過去のイベントはまだありません</p>
+            <p v-if="copyError" class="empty-text">{{ copyError }}</p>
+            <p v-if="copyLoading" class="empty-text">読み込み中…</p>
+          </div>
+          <div class="copy-actions">
+            <button v-if="!copyLoading" type="button" class="copy-more" @click="loadCopyPage">もっと見る</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import {
   fetchConsoleCommunity,
@@ -214,23 +316,32 @@ import {
   fetchCommunityBalance,
   fetchCommunityAiUsage,
   fetchCommunityAnalytics,
+  fetchOrganizerPayoutPolicyStatus,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { resolveAssetUrl } from '../../../utils/assetUrl';
-// Inline SVG data URIs to avoid network requests and首屏闪现
+import { getEventStatus } from '../../../utils/eventStatus';
+import payoutIcon from '../../../assets/account.svg';
+import checkIcon from '../../../assets/check.svg';
+import eventManageIcon from '../../../assets/enventmanagement.svg';
+import classIcon from '../../../assets/class.svg';
+import { isLineInAppBrowser } from '../../../utils/liff';
+// Inline SVG data URIs to avoid network requests and initial flicker
 const defaultCommunityAvatar =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='; // transparent pixel to avoid placeholder art
-const defaultActionIcon =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjYiIHkxPSI2IiB4Mj0iNDIiIHkyPSI0MiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iMTIiIGZpbGw9InVybCgjZykiLz4KICA8cGF0aCBkPSJNMjQgMTR2MjBNMTQgMjRoMjAiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIwLjk1Ii8+Cjwvc3ZnPgo=';
 const defaultEventCover =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjM2MCIgdmlld0JveD0iMCAwIDY0MCAzNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iODAiIHkxPSI0MCIgeDI9IjU2MCIgeTI9IjMyMCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8c3RvcCBzdG9wLWNvbG9yPSIjMjU2M0VCIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzIyQzU1RSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2xvdyIgeDE9IjE0MCIgeTE9IjYwIiB4Mj0iNTIwIiB5Mj0iMzAwIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxzdG9wIHN0b3AtY29sb3I9IndoaXRlIiBzdG9wLW9wYWNpdHk9IjAuMzIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSJ3aGl0ZSIgc3RvcC1vcGFjaXR5PSIwLjA1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIyNCIgeT0iMjAiIHdpZHRoPSI1OTIiIGhlaWdodD0iMzIwIiByeD0iMjgiIGZpbGw9InVybCgjYmcpIi8+CiAgPHJlY3QgeD0iNDgiIHk9IjQ0IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjI3MiIgcng9IjI0IiBmaWxsPSJ1cmwoI2dsb3cpIi8+CiAgPGNpcmNsZSBjeD0iMTgwIiBjeT0iMTQwIiByPSIyMCIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC41NSIvPgogIDxjaXJjbGUgY3g9IjI0MCIgY3k9IjE0MCIgcj0iMTIiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNDAiIHI9IjMwIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjQ4Ii8+CiAgPGNpcmNsZSBjeD0iNDIwIiBjeT0iMTQwIiByPSIxNiIgZmlsbD0id2hpdGUiIGZpbGwtb3BhY2l0eT0iMC40Ii8+CiAgPHJlY3QgeD0iMTcwIiB5PSIyMTAiIHdpZHRoPSIzMDAiIGhlaWdodD0iMTYiIHJ4PSI4IiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjkiLz4KICA8cmVjdCB4PSIyMjAiIHk9IjIzNiIgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMCIgcng9IjUiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOCIvPgo8L3N2Zz4K';
 import type { ConsoleCommunityDetail, ConsoleEventSummary, CommunityAnalytics } from '../../../types/api';
 
 const router = useRouter();
+const route = useRoute();
 const communityStore = useConsoleCommunityStore();
 const events = ref<ConsoleEventSummary[]>([]);
 const loading = ref(false);
+const refreshInFlight = ref(false);
+const lastFetchedAt = ref(0);
+const STALE_MS = 60_000;
 const analytics = ref<CommunityAnalytics | null>(null);
 const showCommunityPicker = ref(false);
 const showCreateSheet = ref(false);
@@ -243,6 +354,8 @@ const copyPageSize = 10;
 const pickerLoading = ref(false);
 const pricingPlanId = ref<string | null>(null);
 const monthRevenueText = ref<string>('¥0');
+// ヒーロー/統計カードは LIFF でも表示する。ナビゲーションは MobileShell 側で非表示にする。
+const showTopBar = computed(() => true);
 const heroLogoUrl = ref<string | null>(null);
 const heroLoading = ref(true);
 let logoRequestId = 0;
@@ -279,9 +392,67 @@ const planLabel = computed(() => {
   return id;
 });
 const isFreePlan = computed(() => planLabel.value.toLowerCase().includes('free'));
-const planDisplay = computed(() => (isFreePlan.value ? 'Free · 1社群まで' : planLabel.value));
+const planDisplay = computed(() => (isFreePlan.value ? 'Free · コミュニティ1つまで' : planLabel.value));
 const canCreateCommunity = computed(() => !isFreePlan.value || managedCommunities.value.length < 1);
 const aiMinutesSaved = ref<number | null>(null);
+const hasPublishedEvent = computed(() =>
+  events.value.some(
+    (event) => event.status === 'open' && (event.visibility === 'public' || event.visibility === 'unlisted'),
+  ),
+);
+const nearestUpcomingEvent = computed(() => {
+  const now = Date.now();
+  const upcoming = events.value
+    .filter(
+      (event) =>
+        event.status === 'open' &&
+        (event.visibility === 'public' || event.visibility === 'unlisted') &&
+        new Date(event.startTime).getTime() > now,
+    )
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  return upcoming[0] ?? null;
+});
+const isWithinThreeDays = computed(() => {
+  if (!nearestUpcomingEvent.value) return false;
+  const start = new Date(nearestUpcomingEvent.value.startTime).getTime();
+  if (Number.isNaN(start)) return false;
+  const diff = start - Date.now();
+  return diff > 0 && diff <= 3 * 24 * 60 * 60 * 1000;
+});
+const focusMessage = computed(() => {
+  if (!hasCommunity.value) return 'まずコミュニティを登録し、プロフィールを整えましょう。';
+  if (!hasPublishedEvent.value) return 'まずはイベントを1本作成して、仲間に共有してみましょう';
+  if (isWithinThreeDays.value) return 'もうすぐ開催だね。準備チェックしよう。';
+  return 'そろそろ募集はじめよう。';
+});
+const nextActionHint = computed(() => {
+  if (!hasCommunity.value) return 'コミュニティを登録して、プロフィールを整えましょう';
+  if (events.value.length) return '次のイベントのタイトルと日程を決めて公開準備を進めましょう';
+  return 'まずはイベントを1本作成して、仲間に共有してみましょう';
+});
+const statDisplay = computed(() => {
+  const revenue = hasCommunity.value
+    ? monthRevenueText.value === '¥0' || monthRevenueText.value === '--'
+      ? 'まだありません'
+      : monthRevenueText.value
+    : 'まだありません';
+  const activeEvents = events.value.filter((event) => event.status !== 'cancelled');
+  const eventCountText = hasCommunity.value
+    ? activeEvents.length
+      ? `${activeEvents.length} 件`
+      : 'まだありません'
+    : 'まだありません';
+  const registrationRaw = stats.value.registrationCount;
+  const registrationText =
+    hasCommunity.value && registrationRaw !== '--' && registrationRaw !== 0
+      ? `${registrationRaw} 件`
+      : 'まだありません';
+  return {
+    revenue,
+    events: eventCountText,
+    registrations: registrationText,
+  };
+});
 
 const stats = computed(() => ({
   monthRevenueText: monthRevenueText.value,
@@ -292,15 +463,28 @@ const stats = computed(() => ({
 
 const activeCommunityVersion = computed(() => communityStore.activeCommunityVersion.value);
 
+const resolveConsoleStatus = (event: ConsoleEventSummary) => {
+  if (event.status === 'draft') return { state: 'draft', label: '下書き' };
+  if (event.status === 'pending_review') return { state: 'draft', label: '審査中' };
+  return getEventStatus(event);
+};
+
 const displayEvents = computed(() =>
-  events.value.slice(0, 5).map((event) => ({
-    id: event.id,
-    title: getLocalizedText(event.title),
-    status: event.status,
-    dateTimeText: formatDate(event.startTime, event.endTime),
-    entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
-    coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
-  })),
+  events.value
+    .filter((event) => event.status !== 'cancelled')
+    .slice(0, 5)
+    .map((event) => {
+      const statusInfo = resolveConsoleStatus(event);
+      return {
+        id: event.id,
+        title: getLocalizedText(event.title),
+        status: event.status,
+        statusLabel: statusInfo.label,
+        dateTimeText: formatDate(event.startTime, event.endTime),
+        entrySummary: event.visibility === 'public' ? '公開イベント' : '限定公開',
+        coverUrl: event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl) : defaultEventCover,
+      };
+    }),
 );
 
 const formatJPY = (amount: number) =>
@@ -313,7 +497,8 @@ const fetchMonthBalance = async () => {
   }
   try {
     const balance = await fetchCommunityBalance(communityId.value, { period: 'month' });
-    monthRevenueText.value = formatJPY(balance.net ?? 0);
+    const monthRevenue = balance.settlement?.accruedNetPeriod ?? balance.net ?? 0;
+    monthRevenueText.value = formatJPY(monthRevenue);
   } catch (err) {
     monthRevenueText.value = '¥0';
   }
@@ -354,6 +539,20 @@ const loadAnalytics = async () => {
   } catch (err) {
     analytics.value = null;
   }
+};
+
+const refreshHome = async () => {
+  if (!communityId.value || refreshInFlight.value) return;
+  refreshInFlight.value = true;
+  await Promise.allSettled([
+    loadEvents(),
+    loadActiveCommunityDetail(),
+    fetchMonthBalance(),
+    fetchAiUsage(),
+    loadAnalytics(),
+  ]);
+  lastFetchedAt.value = Date.now();
+  refreshInFlight.value = false;
 };
 
 const openCommunityPicker = async () => {
@@ -406,8 +605,12 @@ const goAllEvents = () => {
   router.push({ name: 'ConsoleMobileCommunityEvents', params: { communityId: communityId.value } });
 };
 
+const goClasses = () => {
+  router.push({ name: 'ConsoleMobileClasses' });
+};
+
 const openManage = (eventId: string) => {
-  router.push({ name: 'ConsoleMobileEventManage', params: { eventId } });
+  router.push({ name: 'ConsoleMobileEventManage', params: { eventId }, query: { source: 'home' } });
 };
 
 const openCreateEventSheet = () => {
@@ -481,7 +684,7 @@ const loadCopyPage = async () => {
       copyPage.value += 1;
     }
   } catch (err: any) {
-    copyError.value = err?.message || '历史活动加载失败';
+    copyError.value = err?.message || '過去のイベントを読み込めませんでした';
   } finally {
     copyLoading.value = false;
   }
@@ -516,31 +719,36 @@ const formatDate = (start: string, end?: string) => {
   return `${startText}〜${endText}`;
 };
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    default:
-      return '下書き';
-  }
-};
-
 const statusBadgeClass = (status: string) => {
   switch (status) {
     case 'open':
       return 'bg-emerald-100 text-emerald-700';
     case 'closed':
       return 'bg-slate-100 text-slate-500';
+    case 'cancelled':
+      return 'bg-rose-100 text-rose-700';
     default:
       return 'bg-amber-100 text-amber-700';
   }
 };
 
 const stripeOnboardLoading = ref(false);
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId: communityId.value || '' },
+  });
+  return false;
+};
 const startStripeOnboard = async () => {
   if (!communityId.value || stripeOnboardLoading.value) return;
+  if (!(await ensurePayoutPolicyAccepted())) return;
   stripeOnboardLoading.value = true;
   try {
     const { url } = await startCommunityStripeOnboarding(communityId.value);
@@ -559,29 +767,28 @@ onMounted(async () => {
     communityStore.ensureActiveCommunity();
   }
   if (communityId.value) {
-    loadEvents();
-    loadActiveCommunityDetail();
-    fetchMonthBalance();
-    fetchAiUsage();
-    loadAnalytics();
+    await refreshHome();
   }
+});
+
+onActivated(() => {
+  if (!lastFetchedAt.value || refreshInFlight.value) return;
+  if (Date.now() - lastFetchedAt.value < STALE_MS) return;
+  void refreshHome();
 });
 
 watch(
   () => communityId.value,
   (newId, oldId) => {
     if (newId && newId !== oldId) {
-      loadEvents();
-      loadActiveCommunityDetail();
-      fetchMonthBalance();
-      fetchAiUsage();
-      loadAnalytics();
+      void refreshHome();
     }
     if (!newId) {
       heroLogoUrl.value = null;
       monthRevenueText.value = '¥0';
       aiMinutesSaved.value = null;
       analytics.value = null;
+      lastFetchedAt.value = 0;
     }
   },
 );
@@ -590,8 +797,7 @@ watch(
   () => activeCommunityVersion.value,
   () => {
     if (communityId.value) {
-      loadActiveCommunityDetail();
-      loadAnalytics();
+      void refreshHome();
     }
   },
 );
@@ -651,29 +857,34 @@ const normalizeLogoUrl = (raw?: string | null) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .top-bar {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 16px;
+  gap: 12px;
   background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
-  border-radius: 14px;
-  padding: 18px 14px 16px;
-  box-shadow: 0 12px 24px rgba(34, 210, 255, 0.14);
+  border-radius: 0;
+  margin: calc(-0.4rem - env(safe-area-inset-top, 0px)) -0.6rem 0;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 0.6rem 12px;
+  box-shadow: none;
   position: relative;
 }
 
 .top-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .avatar-btn {
-  width: 60px;
-  height: 60px;
+  width: 54px;
+  height: 54px;
   border-radius: 12px;
   border: none;
   padding: 0;
@@ -747,21 +958,6 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-weight: 700;
   vertical-align: middle;
 }
-.plan-chip {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.32);
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.01em;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
-  cursor: pointer;
-}
 .top-title-row {
   display: flex;
   align-items: center;
@@ -769,6 +965,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   flex-wrap: wrap;
 }
 .plan-chip {
+  position: static;
   padding: 6px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.32);
@@ -778,6 +975,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   letter-spacing: 0.01em;
   border: 1px solid rgba(255, 255, 255, 0.65);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .top-role {
@@ -814,25 +1012,31 @@ const normalizeLogoUrl = (raw?: string | null) => {
 }
 
 .stat-inline-item {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  padding: 10px 8px;
+  padding: 8px 8px;
   text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.stat-inline-item.is-empty {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .stat-label {
   margin: 0;
   font-size: 12px;
-  color: rgba(19, 75, 58, 0.9);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .stat-value {
   margin: 2px 0 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: #0b4f8f;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
 }
 
 .action-grid {
@@ -840,6 +1044,169 @@ const normalizeLogoUrl = (raw?: string | null) => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding: 4px;
+}
+
+.cards-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel-head h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.panel-label {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.panel-sub {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.event-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.event-cover {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.event-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.event-meta {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.event-status {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.empty-card {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px dashed #d8e4f4;
+  background: #f8fafc;
+}
+
+.empty-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.empty-desc {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.ai-card {
+  background: linear-gradient(135deg, #f8fafc, #eef2ff);
+  border-color: #e0e7ff;
+}
+
+.ai-hint {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-text {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
+.ai-subtext {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.portal-link {
+  margin: 6px 2px 2px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  align-self: flex-start;
+}
+
+.portal-link span {
+  color: #94a3b8;
 }
 
 .action-tile {
@@ -865,10 +1232,22 @@ const normalizeLogoUrl = (raw?: string | null) => {
   align-items: center;
   justify-content: center;
 }
+.action-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.action-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
 
 .action-icon img {
-  width: 28px;
-  height: 28px;
+  width: 56px;
+  height: 56px;
+  display: block;
+  margin: 0 auto;
 }
 
 .action-title {
@@ -876,6 +1255,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-size: 13px;
   font-weight: 700;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .action-tile.is-disabled {
@@ -885,6 +1267,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
 .fab {
   position: fixed;
   right: 16px;
+  /* 48px above the tab bar top to avoid overlap; tab bar ≈72px tall */
   bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   width: 68px;
   height: 68px;
@@ -895,7 +1278,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.28);
+  box-shadow: none;
 }
 .fab--disabled {
   opacity: 0.6;
@@ -904,6 +1287,33 @@ const normalizeLogoUrl = (raw?: string | null) => {
   width: 30px;
   height: 30px;
 }
+
+.task-tip {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px dashed #d8e4f4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.task-tip--empty {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+.task-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+}
+.task-text {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
 .picker-overlay {
   position: fixed;
   inset: 0;
@@ -919,9 +1329,11 @@ const normalizeLogoUrl = (raw?: string | null) => {
   padding: 16px;
   box-shadow: 0 -18px 30px rgba(15, 23, 42, 0.2);
 }
+
 .picker-head {
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 12px;
 }
@@ -931,11 +1343,23 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-weight: 600;
 }
 .picker-close {
+  position: absolute;
+  right: 0;
   border: none;
   background: rgba(15, 23, 42, 0.05);
   border-radius: 12px;
   width: 32px;
   height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: #0f172a;
+}
+.picker-close span {
+  display: block;
+  line-height: 1;
 }
 .picker-list {
   display: flex;
@@ -943,14 +1367,14 @@ const normalizeLogoUrl = (raw?: string | null) => {
   gap: 12px;
 }
 .picker-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
   align-items: center;
+  column-gap: 12px;
   padding: 12px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid transparent;
-  gap: 12px;
 }
 .picker-item.is-active {
   border-color: #0ea5e9;
@@ -965,6 +1389,7 @@ const normalizeLogoUrl = (raw?: string | null) => {
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.35);
+  justify-self: center;
 }
 .picker-avatar img {
   width: 100%;
@@ -977,6 +1402,11 @@ const normalizeLogoUrl = (raw?: string | null) => {
   min-width: 0;
   display: grid;
   gap: 2px;
+  justify-items: center;
+  text-align: center;
+}
+.picker-item .i-lucide-check {
+  justify-self: center;
 }
 .picker-name {
   margin: 0;
@@ -1137,6 +1567,12 @@ const normalizeLogoUrl = (raw?: string | null) => {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   text-align: left;
 }
+.create-item--recommend {
+  border: 1px solid #bedfff;
+  background: linear-gradient(135deg, #f2f7ff, #ffffff);
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.16);
+  min-height: 120px;
+}
 
 .create-icon {
   width: 44px;
@@ -1147,6 +1583,9 @@ const normalizeLogoUrl = (raw?: string | null) => {
   align-items: center;
   justify-content: center;
   font-size: 20px;
+}
+.create-icon--accent {
+  background: linear-gradient(135deg, #e0f2ff, #d5e9ff);
 }
 
 .create-body {
@@ -1167,6 +1606,17 @@ const normalizeLogoUrl = (raw?: string | null) => {
   font-size: 13px;
   color: #475569;
   line-height: 1.4;
+}
+
+.create-badge {
+  grid-column: 1 / -1;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
 }
 
 .create-close {

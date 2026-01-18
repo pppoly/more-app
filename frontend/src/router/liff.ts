@@ -3,6 +3,12 @@ import MobileEvents from '../views/mobile/MobileEvents.vue';
 import MobileEventDetail from '../views/mobile/MobileEventDetail.vue';
 import MobileMe from '../views/mobile/MobileMe.vue';
 import Login from '../views/auth/Login.vue';
+import {
+  beginNav,
+  beginNavPending,
+  clearPopstateBackPending,
+  endNavPending,
+} from '../composables/useNavStack';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/events' },
@@ -36,6 +42,46 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory('/liff'),
   routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) return savedPosition;
+    return { left: 0, top: 0 };
+  },
+});
+
+let replacePending = false;
+const originalReplace = router.replace.bind(router);
+router.replace = ((to) => {
+  replacePending = true;
+  return originalReplace(to);
+}) as typeof router.replace;
+const originalPush = router.push.bind(router);
+router.push = ((to) => {
+  clearPopstateBackPending();
+  if (typeof to === 'object' && to && 'replace' in to && (to as any).replace) {
+    replacePending = true;
+  }
+  return originalPush(to);
+}) as typeof router.push;
+
+router.beforeEach((to, from, next) => {
+  endNavPending();
+  const isReplaceNav = replacePending;
+  replacePending = false;
+  beginNav(to, from, { replaced: isReplaceNav });
+  beginNavPending();
+  next();
+});
+
+router.beforeResolve(() => {
+  endNavPending();
+});
+
+router.afterEach(() => {
+  endNavPending();
+});
+
+router.onError(() => {
+  endNavPending();
 });
 
 export default router;

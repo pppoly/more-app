@@ -1,67 +1,49 @@
 <template>
   <div class="community-settings">
-    <header class="nav-bar">
-      <button class="nav-btn" type="button" @click="router.back()">
-        <span class="i-lucide-chevron-left"></span>
-      </button>
-      <div class="nav-title">{{ form.name || '社群設定' }}</div>
-      <button class="nav-btn nav-link" type="button" @click="goPortal">
-        ポータル
-      </button>
-    </header>
-
+    <ConsoleTopBar v-if="showTopBar" :title="pageTitle" @back="goBack">
+      <template #right>
+        <button type="button" class="link-btn" @click="goPortal">ポータル</button>
+      </template>
+    </ConsoleTopBar>
     <form class="form-sections" @submit.prevent="handleSave">
       <section class="form-card sheet">
         <p class="card-label">基本情報</p>
-        <div class="list-row list-row--field">
-          <div class="list-meta">
-            <p class="list-title">社群名称</p>
-            <p class="list-desc">タップして編集</p>
+        <div class="ios-input-block">
+          <div class="ios-input-group">
+            <div class="ios-row ios-row--input">
+              <span class="ios-label">コミュニティ名</span>
+              <div class="ios-value ios-value--inline-input">
+                <input v-model="form.name" type="text" placeholder="Tokyo Community..." />
+              </div>
+            </div>
+            <div class="ios-row ios-row--input" :class="{ 'ios-row--disabled': !isCreateMode }">
+              <span class="ios-label">ホームページ名</span>
+              <div class="ios-value ios-value--inline-input">
+                <input v-model="form.slug" type="text" :disabled="!isCreateMode" />
+                <span v-if="isCreateMode" class="ios-suffix">設定</span>
+              </div>
+            </div>
           </div>
-          <input v-model="form.name" type="text" class="list-input" placeholder="Tokyo Community..." />
+          <div v-if="slugPreviewUrl" class="slug-preview" :class="{ 'is-expanded': isSlugPreviewExpanded }">
+            <span
+              class="slug-url"
+              :class="{ 'is-expanded': isSlugPreviewExpanded }"
+              :title="slugPreviewUrl"
+              role="button"
+              tabindex="0"
+              :aria-expanded="isSlugPreviewExpanded ? 'true' : 'false'"
+              @click="toggleSlugPreview"
+              @keydown.enter.prevent="toggleSlugPreview"
+              @keydown.space.prevent="toggleSlugPreview"
+            >
+              {{ slugPreviewUrl }}
+            </span>
+            <button v-if="canCopySlug" type="button" class="slug-copy" @click="copySlugUrl">
+              コピー
+            </button>
+          </div>
+          <p class="slug-note">この名前であなたのホームページが作られます。</p>
         </div>
-        <div class="list-row list-row--field is-disabled">
-          <div class="list-meta">
-            <p class="list-title">Slug</p>
-            <p class="list-desc">URL 識別子</p>
-          </div>
-          <input v-model="form.slug" type="text" class="list-input" :disabled="!isCreateMode" />
-        </div>
-      </section>
-
-      <section class="form-card sheet">
-        <div class="card-head">
-          <p class="card-label">ラベル</p>
-          <p class="card-hint">最大 5 つまで選択</p>
-        </div>
-        <button type="button" class="list-row" @click="openTagSheet">
-          <div class="list-meta">
-            <p class="list-title">社群のタグ</p>
-            <p class="list-desc">タップして選択</p>
-          </div>
-          <div class="tag-badge-group">
-            <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
-            <span v-if="!labelChips.length" class="tag-placeholder">未選択</span>
-          </div>
-          <span class="i-lucide-chevron-right list-chevron"></span>
-        </button>
-      </section>
-
-      <section class="form-card sheet">
-        <button type="button" class="list-row" @click="visibilitySheetOpen = true">
-          <div class="list-meta">
-            <p class="list-title">公開範囲</p>
-            <p class="list-desc">ユーザーにどこまで見せるか</p>
-          </div>
-          <div class="visible-pill">
-            <span class="visible-label">{{ currentVisibleOption.label }}</span>
-          </div>
-          <span class="i-lucide-chevron-right list-chevron"></span>
-        </button>
-      </section>
-
-      <section class="form-card sheet">
-        <p class="card-label">ビジュアル</p>
         <button type="button" class="list-row" @click="triggerLogoUpload()">
           <div class="list-meta">
             <p class="list-title">ロゴ</p>
@@ -75,7 +57,7 @@
         </button>
         <button type="button" class="list-row" @click="triggerCoverUpload()">
           <div class="list-meta">
-            <p class="list-title">カバー画像</p>
+            <p class="list-title">カバー画像（任意）</p>
             <p class="list-desc">16:9 横長、1MB 以内</p>
           </div>
           <div class="list-thumb list-thumb--wide">
@@ -87,16 +69,39 @@
       </section>
 
       <section class="form-card sheet">
-        <div class="card-head">
-          <p class="card-label">社群紹介</p>
-          <div class="card-head__right">
-            <p class="card-hint">AI の憲法/歓迎文にも引用されます</p>
+        <button type="button" class="list-row" @click="openTagSheet">
+          <div class="list-meta">
+            <p class="list-title">コミュニティのタグ</p>
+            <p class="list-desc">最大 5 つまで</p>
           </div>
+          <div class="tag-badge-group">
+            <span v-for="chip in labelChips" :key="chip" class="tag-badge">{{ chip }}</span>
+            <span v-if="!labelChips.length" class="tag-placeholder">未選択</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
+      </section>
+
+      <section class="form-card sheet">
+        <button type="button" class="list-row" @click="visibilitySheetOpen = true">
+          <div class="list-meta">
+            <p class="list-title">公開範囲</p>
+          </div>
+          <div class="visible-pill">
+            <span class="visible-label">{{ currentVisibleOption.label }}</span>
+          </div>
+          <span class="i-lucide-chevron-right list-chevron"></span>
+        </button>
+      </section>
+
+      <section class="form-card sheet">
+        <div class="card-head">
+          <p class="card-label">コミュニティ紹介</p>
         </div>
         <textarea
           v-model="form.description"
-          rows="6"
-          placeholder="社群のビジョン・活動内容・歓迎する人などを記載してください。"
+          rows="12"
+          placeholder="コミュニティのビジョン・活動内容・歓迎する人などを記載してください。"
         ></textarea>
       </section>
 
@@ -104,14 +109,10 @@
     </form>
 
     <footer class="form-footer">
-      <button type="button" class="ghost-btn" :disabled="saving" @click="router.back()">戻る</button>
       <button type="button" class="primary-btn" :disabled="saving" @click="handleSave">
         {{ saving ? '保存中…' : '保存する' }}
       </button>
     </footer>
-      <button class="hero-back" type="button" @click="router.back()">
-        <span class="i-lucide-arrow-left"></span>
-      </button>
     <input ref="logoInput" type="file" class="hidden-input" accept="image/*" @change="handleLogoUpload" />
     <input ref="coverInput" type="file" class="hidden-input" accept="image/*" @change="handleCoverUpload" />
     <ImageCropperModal
@@ -136,7 +137,7 @@
           <header class="sheet-head">
             <p class="sheet-title">タグを選択（最大5つ）</p>
             <button type="button" class="sheet-close" @click="tagSheetOpen = false">
-              <span class="i-lucide-x"></span>
+              ×
             </button>
           </header>
           <div class="tag-sheet">
@@ -175,7 +176,7 @@
           <header class="sheet-head">
             <p class="sheet-title">公開範囲を選択</p>
             <button type="button" class="sheet-close" @click="visibilitySheetOpen = false">
-              <span class="i-lucide-x"></span>
+              ×
             </button>
           </header>
           <div class="visible-list">
@@ -221,7 +222,11 @@ import { resolveAssetUrl } from '../../../utils/assetUrl';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import { useI18n } from 'vue-i18n';
 import { useToast } from '../../../composables/useToast';
+import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
+import { APP_TARGET } from '../../../config';
 import ImageCropperModal from '../../../components/ImageCropperModal.vue';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -230,6 +235,17 @@ const communityId = ref<string | null>((route.params.communityId as string) || n
 const { t } = useI18n();
 const toast = useToast();
 const isCreateMode = computed(() => !communityId.value || communityId.value === 'new');
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffEntry = computed(() => {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('liff.state') || params.has('liff.referrer')) return true;
+  const from = params.get('from') || params.get('src') || params.get('entrySource');
+  if (from && from.toLowerCase() === 'liff') return true;
+  if (typeof document !== 'undefined' && document.referrer.includes('liff.line.me')) return true;
+  return false;
+});
+const showTopBar = computed(() => !isLiffClientMode.value && !isLiffEntry.value);
 
 const form = reactive({
   name: '',
@@ -253,6 +269,7 @@ const tagCategories = ref<CommunityTagCategory[]>([]);
 const tagLoading = ref(false);
 const tagLoaded = ref(false);
 const visibilitySheetOpen = ref(false);
+const isSlugPreviewExpanded = ref(false);
 
 const saving = ref(false);
 const creatingFromUpload = ref(false);
@@ -261,6 +278,25 @@ const showCropper = ref(false);
 const cropSource = ref<string | null>(null);
 const cropTarget = ref<'cover' | 'logo' | null>(null);
 const selectedTags = ref<string[]>([]);
+const pageTitle = computed(() => (isCreateMode.value ? 'コミュニティ作成' : 'コミュニティ設定'));
+const goBack = () => {
+  router.back();
+};
+
+const copySlugUrl = async () => {
+  if (!slugPreviewUrl.value) return;
+  if (!navigator?.clipboard?.writeText) {
+    toast.show('コピーに失敗しました。手動でコピーしてください。', 'error');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(slugPreviewUrl.value);
+    toast.show('リンクをコピーしました', 'success');
+  } catch (err) {
+    console.warn('Failed to copy slug url', err);
+    toast.show('コピーに失敗しました。時間をおいて再試行してください。', 'error');
+  }
+};
 
 const toggleTag = (tag: string) => {
   const value = tag.trim();
@@ -279,19 +315,21 @@ const toggleTag = (tag: string) => {
 const visibleOptions = [
   {
     value: 'public',
-    label: '公開',
-    desc: '誰でも閲覧できる。ポータルや外部リンクからも表示されます。',
+    label: '公開（誰でも見える）',
+    desc: 'ログイン不要。ポータル・検索・共有リンクから表示されます。',
+    note: '外部向けに広く見せたい場合におすすめ。',
   },
   {
     value: 'semi-public',
-    label: '社群限定',
-    desc: 'Console 内とフォロー/参加済みのユーザーだけが閲覧可能。',
-    note: 'メンバー = この社群をフォロー（参加）しているユーザー。',
+    label: 'メンバー限定',
+    desc: 'ログイン済みのフォロー/参加メンバーと運営だけが閲覧できます。',
+    note: '非メンバーは閲覧できません。',
   },
   {
     value: 'private',
-    label: '非公開',
-    desc: '運営メモ用。外部/メンバーにも表示しません。',
+    label: '運営のみ（非公開）',
+    desc: '運営・管理者だけが閲覧可能。メンバーにも表示しません。',
+    note: '準備中や内部メモ向け。',
   },
 ];
 
@@ -299,6 +337,23 @@ const labelChips = computed(() => selectedTags.value.slice(0, 5));
 const currentVisibleOption = computed(
   () => visibleOptions.find((o) => o.value === form.visibleLevel) ?? visibleOptions[0],
 );
+const portalBaseUrl = computed(() => {
+  if (typeof window === 'undefined') return '/community/';
+  return `${window.location.origin}/community/`;
+});
+const slugPreviewUrl = computed(() => {
+  const slug = form.slug.trim();
+  if (!slug) return '';
+  return `${portalBaseUrl.value}${slug}`;
+});
+const canCopySlug = computed(() => Boolean(slugPreviewUrl.value) && !isCreateMode.value);
+const toggleSlugPreview = () => {
+  isSlugPreviewExpanded.value = !isSlugPreviewExpanded.value;
+};
+
+watch(slugPreviewUrl, () => {
+  isSlugPreviewExpanded.value = false;
+});
 
 const loadCommunity = async () => {
   if (isCreateMode.value || !communityId.value) return;
@@ -325,7 +380,7 @@ const loadCommunity = async () => {
       portalTheme.value = themeOptions.includes(theme) ? theme : 'immersive';
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '社群情報の取得に失敗しました';
+    error.value = err instanceof Error ? err.message : 'コミュニティ情報の取得に失敗しました';
   }
 };
 
@@ -389,7 +444,7 @@ const readFileAsDataUrl = (file: File) =>
 const ensureCommunityReady = async () => {
   if (communityId.value) return communityId.value;
   if (!form.name.trim()) {
-    form.name = '未命名社群';
+    form.name = '名称未設定';
   }
   if (!form.slug.trim()) {
     form.slug = `community-${Date.now().toString(36)}`;
@@ -407,10 +462,10 @@ const ensureCommunityReady = async () => {
     communityId.value = created.id;
     await communityStore.loadCommunities(true);
     communityStore.refreshActiveCommunity();
-    toast.show('社群已保存，可继续上传图片', 'success');
+    toast.show('保存しました。続けて画像をアップできます', 'success');
     return created.id;
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '社群保存に失敗しました';
+    error.value = err instanceof Error ? err.message : 'コミュニティの保存に失敗しました';
     return null;
   } finally {
     creatingFromUpload.value = false;
@@ -512,7 +567,7 @@ const handleSave = async () => {
     return;
   }
   if (!form.name.trim() || !form.slug.trim()) {
-    error.value = '社群名称とSlugは必須です';
+    error.value = 'コミュニティ名とホームページ名は必須です';
     saving.value = false;
     return;
   }
@@ -597,46 +652,32 @@ watch(
 
 <style scoped>
 .community-settings {
-  min-height: auto;
-  background: linear-gradient(180deg, #f9fafb 0%, #eef2ff 100%);
-  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  min-height: 100vh;
+  background: #f8fafc;
+  padding: 0 0 calc(90px + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
 }
-.nav-bar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+.hero-meta {
+  padding: 8px 16px 4px;
 }
-.nav-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  display: grid;
-  place-items: center;
-  background: #fff;
-  color: #0f172a;
-}
-.nav-btn.nav-link {
-  padding: 0 10px;
-  width: auto;
-  height: 36px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-.nav-title {
+.hero-title {
+  margin: 0;
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
-  flex: 1;
-  text-align: center;
+}
+.hero-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.link-btn {
+  border: none;
+  background: none;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 6px 8px;
 }
 .hero-card {
   margin: 16px 16px 0;
@@ -723,10 +764,17 @@ watch(
   font-size: 12px;
 }
 .form-sections {
-  padding: 0 16px 24px;
+  padding: 12px 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.section-eyebrow {
+  margin: 12px 16px 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
 }
 .form-card {
   background: #fff;
@@ -770,13 +818,6 @@ watch(
 .list-row + .list-row {
   margin-top: 10px;
 }
-.list-row--field {
-  padding-left: 14px;
-  padding-right: 14px;
-}
-.list-row.is-disabled {
-  opacity: 0.7;
-}
 .list-meta {
   flex: 1;
   min-width: 0;
@@ -792,23 +833,115 @@ watch(
   font-size: 12px;
   color: #94a3b8;
 }
-.list-input {
+.ios-input-group {
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.98);
+}
+.ios-input-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ios-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ios-row + .ios-row {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+.ios-row--disabled {
+  opacity: 0.7;
+}
+.ios-label {
+  flex: 0 0 32%;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.ios-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ios-value--inline-input input {
+  width: 100%;
   border: none;
   background: transparent;
-  border-radius: 0;
-  padding: 4px 0;
-  font-size: 15px;
-  min-width: 120px;
-  max-width: 48%;
+  padding: 2px 0;
+  font-size: 16px;
+  line-height: 1.3;
   text-align: right;
-  margin-left: auto;
-  flex-shrink: 1;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.list-input:focus {
+.ios-value--inline-input input:focus {
   outline: none;
-  box-shadow: none;
-  border-bottom-color: rgba(14, 165, 233, 0.7);
+}
+.ios-value--inline-input input:disabled {
+  color: #94a3b8;
+}
+.ios-suffix {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+.slug-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+}
+.slug-preview.is-expanded {
+  align-items: flex-start;
+}
+.slug-note {
+  margin: 6px 2px 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.slug-url {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+.slug-url.is-expanded {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-all;
+}
+.slug-copy {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.slug-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .card-head__right {
   display: flex;
@@ -913,7 +1046,7 @@ watch(
 }
 .tag-group-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -937,7 +1070,7 @@ watch(
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #f8fafc;
   color: #0f172a;
-  font-size: 13px;
+  font-size: 15px;
 }
 .tag-chip.is-selected {
   border-color: rgba(14, 165, 233, 0.7);
@@ -976,18 +1109,18 @@ watch(
 }
 .visible-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
 }
 .visible-desc {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: 15px;
   color: #475569;
 }
 .visible-note {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: 14px;
   color: #64748b;
 }
 .visible-pill {
@@ -1137,7 +1270,7 @@ watch(
 .tag-label {
   flex: 1;
   text-align: left;
-  font-size: 14px;
+  font-size: 15px;
 }
 .form-card textarea {
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1158,7 +1291,7 @@ watch(
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   padding: 12px;
   z-index: 80;
@@ -1179,7 +1312,7 @@ watch(
 }
 .sheet-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -1192,7 +1325,10 @@ watch(
   display: grid;
   place-items: center;
   color: #0f172a;
+  font-size: 18px;
+  line-height: 1;
 }
+
 .sheet-preview {
   padding: 12px 16px 0;
 }
@@ -1225,6 +1361,7 @@ watch(
 .sheet-actions .ghost-btn,
 .sheet-actions .primary-btn {
   border-radius: 12px;
+  font-size: 16px;
 }
 .sheet-panel--full {
   height: 90vh;
@@ -1270,9 +1407,9 @@ watch(
   border: 1px solid rgba(15, 23, 42, 0.12);
 }
 .primary-btn {
-  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  background: #0090d9;
   color: #fff;
-  box-shadow: 0 12px 25px rgba(37, 99, 235, 0.25);
+  box-shadow: none;
 }
 .primary-btn:disabled {
   opacity: 0.6;

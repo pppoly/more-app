@@ -1,53 +1,53 @@
 <template>
   <div class="success-page">
-    <section class="success-card">
-      <div class="success-icon">
-        <span class="i-lucide-party-popper"></span>
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventSuccess.title" @back="router.back()" />
+    <div class="content">
+      <div class="hero">
+        <div class="hero-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="img">
+            <defs>
+              <linearGradient id="success-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0ea5e9" />
+                <stop offset="100%" stop-color="#22c55e" />
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="30" fill="url(#success-grad)" />
+            <path d="M22 32.5 29.5 40 42 24" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div class="hero-text">
+          <h1>申込が完了しました</h1>
+          <p>参加が確定しました</p>
+        </div>
       </div>
-      <h1>报名成功</h1>
-      <p class="success-message">我们已经为你保留了名额，稍后可在「我的活动」查看报名详情。</p>
-      <div class="success-actions">
-        <RouterLink class="primary-btn" :to="eventDetailPath">返回活动详情</RouterLink>
-        <RouterLink class="ghost-btn" to="/me/events">查看我的报名</RouterLink>
+
+      <div class="actions">
+        <RouterLink class="btn primary" to="/me/events">マイチケットを見る</RouterLink>
+        <RouterLink class="btn secondary" to="/events">イベント一覧へ戻る</RouterLink>
       </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
 
-type SuccessPayload = {
-  eventId: string;
-  title: string;
-  timeText: string;
-  locationText: string;
-  priceText?: string;
-  registrationId?: string;
-  paymentStatus: 'free' | 'paid';
-  holdExpiresAt?: string;
-};
-
-const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
-const payload = ref<SuccessPayload | null>(null);
-
-const eventDetailPath = computed(() => {
-  const eventId = payload.value?.eventId ?? props.eventId ?? (route.params.eventId as string | undefined);
-  return eventId ? `/events/${eventId}` : '/events';
-});
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 onMounted(() => {
+  // 成功ページのデータをクリアし、参照元がなければ一覧へ戻る
   try {
     const raw = sessionStorage.getItem(MOBILE_EVENT_SUCCESS_KEY);
     if (!raw) {
       router.replace('/events');
       return;
     }
-    payload.value = JSON.parse(raw) as SuccessPayload;
     sessionStorage.removeItem(MOBILE_EVENT_SUCCESS_KEY);
   } catch {
     router.replace('/events');
@@ -57,88 +57,98 @@ onMounted(() => {
 
 <style scoped>
 .success-page {
+  flex-direction: column;
   min-height: 100vh;
   background: #f8fafc;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 32px 20px calc(60px + env(safe-area-inset-bottom, 0px));
-}
-
-.success-card {
-  width: 100%;
-  max-width: 460px;
-  background: #fff;
-  border-radius: 24px;
-  padding: 28px;
-  text-align: center;
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
   gap: 12px;
   box-sizing: border-box;
-  overflow: hidden;
 }
 
-.success-icon {
-  width: 64px;
-  height: 64px;
+
+.topbar {
+  width: 100%;
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+}
+.content {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  text-align: left;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.hero-icon {
+  width: 88px;
+  height: 88px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
-  color: #fff;
-  margin: 0 auto;
-  box-shadow: 0 15px 30px rgba(14, 165, 233, 0.3);
+  box-shadow: none;
 }
 
-.success-card h1 {
-  margin: 8px 0 0;
-  font-size: 22px;
+.hero-icon svg {
+  width: 88px;
+  height: 88px;
+  display: block;
+}
+
+.hero-text h1 {
+  margin: 0;
+  font-size: 21px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.success-message {
-  margin: 0;
-  font-size: 14px;
+.hero-text p {
+  margin: 4px 0 0;
+  font-size: 13px;
   color: #475569;
-  line-height: 1.6;
 }
 
-.success-actions {
-  margin-top: 18px;
+.actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 100%;
 }
 
-.primary-btn,
-.ghost-btn {
+.btn {
   width: 100%;
-  border-radius: 16px;
-  padding: 14px 18px;
-  font-weight: 600;
+  height: 48px;
+  border-radius: 12px;
   font-size: 15px;
-  text-decoration: none;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-decoration: none;
   box-sizing: border-box;
 }
 
-.primary-btn {
-  background: linear-gradient(135deg, #0090d9, #22bbaa);
-  color: #fff;
+.btn.primary {
   border: none;
-  box-shadow: 0 12px 30px rgba(0, 144, 217, 0.35);
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #fff;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.2);
 }
 
-.ghost-btn {
-  border: 1px solid rgba(15, 23, 42, 0.15);
+.btn.secondary {
+  border: 1px solid rgba(15, 23, 42, 0.16);
   background: #fff;
   color: #0f172a;
 }

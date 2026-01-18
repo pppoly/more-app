@@ -14,11 +14,28 @@
     <section class="filters card">
       <div class="filter-row">
         <label>
+          キーワード
+          <input
+            v-model="filters.q"
+            type="search"
+            placeholder="name / email"
+            @keyup.enter="load"
+          />
+        </label>
+        <label>
           Status
           <select v-model="filters.status">
             <option value="">すべて</option>
             <option value="active">active</option>
             <option value="banned">banned</option>
+          </select>
+        </label>
+        <label>
+          主催者
+          <select v-model="filters.isOrganizer">
+            <option value="">すべて</option>
+            <option value="true">主催者のみ</option>
+            <option value="false">主催者以外</option>
           </select>
         </label>
       </div>
@@ -46,24 +63,82 @@
           </div>
           <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
           <div class="actions">
+            <button class="ghost" type="button" @click="openDetail(item)">詳細を見る</button>
+            <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="openConfirm(item)">
+              {{ item.status === 'banned' ? '解除' : '封禁' }}
+            </button>
             <button
-              class="ghost danger"
+              class="ghost"
               type="button"
               :disabled="busyId === item.id"
-              @click="updateStatus(item.id, item.status === 'banned' ? 'active' : 'banned')"
+              @click="openOrganizerConfirm(item)"
             >
-              {{ item.status === 'banned' ? '解除' : '封禁' }}
+              {{ item.isOrganizer ? '主催者解除' : '主催者にする' }}
             </button>
           </div>
         </article>
+        <button
+          v-if="hasMore"
+          class="ghost full"
+          type="button"
+          :disabled="loading || loadingMore"
+          @click="loadMore"
+        >
+          さらに読み込む
+        </button>
       </div>
     </section>
+
+    <AdminConfirmModal
+      :open="!!confirmTarget"
+      :title="confirmTarget?.status === 'banned' ? '封禁を解除しますか？' : '封禁しますか？'"
+      :message="confirmTarget ? `${confirmTarget.email || confirmTarget.name || confirmTarget.id}` : ''"
+      :loading="busyId === confirmTarget?.id"
+      @close="confirmTarget = null"
+      @confirm="submitConfirm"
+    />
+    <AdminConfirmModal
+      :open="!!organizerTarget"
+      :title="organizerTarget?.isOrganizer ? '主催者権限を解除しますか？' : '主催者にしますか？'"
+      :message="organizerTarget ? `${organizerTarget.email || organizerTarget.name || organizerTarget.id}` : ''"
+      :loading="busyId === organizerTarget?.id"
+      @close="organizerTarget = null"
+      @confirm="submitOrganizerConfirm"
+    />
+
+    <div v-if="detailTarget" class="modal" @click.self="closeDetail">
+      <div class="modal-body detail">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">{{ detailTarget.email || '—' }}</p>
+            <h3>{{ detailTarget.name || '—' }}</h3>
+            <p class="meta">作成: {{ formatDate(detailTarget.createdAt) }}</p>
+          </div>
+          <button class="icon-button" type="button" @click="closeDetail" aria-label="close">
+            <span class="i-lucide-x"></span>
+          </button>
+        </div>
+        <div class="chips">
+          <span class="pill" :class="detailTarget.status === 'banned' ? 'pill-danger' : 'pill-live'">
+            {{ detailTarget.status }}
+          </span>
+          <span class="pill" :class="detailTarget.isAdmin ? 'pill-live' : 'pill-info'">
+            {{ detailTarget.isAdmin ? 'Admin' : 'User' }}
+          </span>
+          <span class="pill" :class="detailTarget.isOrganizer ? 'pill-live' : 'pill-info'">
+            {{ detailTarget.isOrganizer ? 'Organizer' : 'Member' }}
+          </span>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { adminListUsers, adminUpdateUserStatus } from '../../api/client';
+import { computed, onMounted, ref } from 'vue';
+import { adminListUsers, adminUpdateUserStatus, adminUpdateUserOrganizer } from '../../api/client';
+import { useToast } from '../../composables/useToast';
+import AdminConfirmModal from '../../components/admin/AdminConfirmModal.vue';
 
 interface AdminUserItem {
   id: string;
@@ -75,37 +150,112 @@ interface AdminUserItem {
   createdAt: string;
 }
 
+const toast = useToast();
 const items = ref<AdminUserItem[]>([]);
 const loading = ref(false);
+const loadingMore = ref(false);
 const error = ref<string | null>(null);
-const filters = ref<{ status?: string }>({});
+const filters = ref<{ status?: string; q?: string; isOrganizer?: string }>({});
 const busyId = ref<string | null>(null);
+const confirmTarget = ref<AdminUserItem | null>(null);
+const detailTarget = ref<AdminUserItem | null>(null);
+const organizerTarget = ref<AdminUserItem | null>(null);
+const page = ref(1);
+const pageSize = 20;
+const total = ref(0);
+const hasMore = computed(() => items.value.length < total.value);
 
 const formatDate = (val: string) =>
   new Date(val).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-const load = async () => {
-  loading.value = true;
+const load = async (reset = true) => {
+  if (reset) {
+    loading.value = true;
+    page.value = 1;
+    items.value = [];
+    total.value = 0;
+  } else {
+    loadingMore.value = true;
+  }
   error.value = null;
   try {
-    items.value = await adminListUsers({ status: filters.value.status });
+    const res = await adminListUsers({
+      status: filters.value.status,
+      q: filters.value.q?.trim() || undefined,
+      isOrganizer: filters.value.isOrganizer || undefined,
+      page: page.value,
+      pageSize,
+    });
+    const list = res.items ?? [];
+    total.value = res.total ?? list.length;
+    items.value = reset ? list : [...items.value, ...list];
+    const fetched = list.length;
+    if (items.value.length < total.value && fetched > 0) {
+      page.value += 1;
+    } else if (items.value.length >= total.value) {
+      page.value = Math.max(1, page.value);
+    }
   } catch (err) {
     error.value = 'ロードに失敗しました';
+    toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
 };
 
-const updateStatus = async (id: string, status: string) => {
-  busyId.value = id;
+const loadMore = () => {
+  if (loading.value || loadingMore.value || !hasMore.value) return;
+  void load(false);
+};
+
+const openConfirm = (item: AdminUserItem) => {
+  confirmTarget.value = item;
+};
+
+const submitConfirm = async () => {
+  if (!confirmTarget.value) return;
+  const targetStatus = confirmTarget.value.status === 'banned' ? 'active' : 'banned';
+  busyId.value = confirmTarget.value.id;
   try {
-    await adminUpdateUserStatus(id, status);
+    await adminUpdateUserStatus(confirmTarget.value.id, targetStatus);
     await load();
+    toast.show('更新しました', 'success');
   } catch (err) {
     error.value = '更新に失敗しました';
+    toast.show('更新に失敗しました', 'error');
   } finally {
+    confirmTarget.value = null;
     busyId.value = null;
   }
+};
+
+const openOrganizerConfirm = (item: AdminUserItem) => {
+  organizerTarget.value = item;
+};
+
+const submitOrganizerConfirm = async () => {
+  if (!organizerTarget.value) return;
+  const next = !organizerTarget.value.isOrganizer;
+  busyId.value = organizerTarget.value.id;
+  try {
+    await adminUpdateUserOrganizer(organizerTarget.value.id, next);
+    await load();
+    toast.show('更新しました', 'success');
+  } catch (err) {
+    error.value = '更新に失敗しました';
+    toast.show('更新に失敗しました', 'error');
+  } finally {
+    organizerTarget.value = null;
+    busyId.value = null;
+  }
+};
+
+const openDetail = (item: AdminUserItem) => {
+  detailTarget.value = item;
+};
+const closeDetail = () => {
+  detailTarget.value = null;
 };
 
 onMounted(load);
@@ -135,6 +285,10 @@ onMounted(load);
   background: #fff;
   border-radius: 10px;
   padding: 8px 12px;
+}
+.ghost.full {
+  width: 100%;
+  text-align: center;
 }
 .card {
   background: #fff;
@@ -181,10 +335,12 @@ onMounted(load);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
+.filters input,
 .filters select {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 8px;
+  width: 100%;
 }
 .primary {
   border: none;
@@ -227,5 +383,35 @@ onMounted(load);
 .danger {
   border-color: rgba(185, 28, 28, 0.4);
   color: #b91c1c;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  padding: 16px;
+}
+.modal-body {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.icon-button {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
 }
 </style>

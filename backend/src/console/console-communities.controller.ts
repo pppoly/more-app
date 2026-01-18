@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents */
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -104,6 +105,11 @@ export class ConsoleCommunitiesController {
   @Post(':communityId/stripe/onboard')
   startStripeOnboarding(@Param('communityId') communityId: string, @Req() req: any) {
     return this.service.startStripeOnboarding(req.user.id, communityId);
+  }
+
+  @Post(':communityId/stripe/login')
+  createStripeLoginLink(@Param('communityId') communityId: string, @Req() req: any) {
+    return this.service.createStripeLoginLink(req.user.id, communityId);
   }
 
   @Post(':communityId/stripe/sync')

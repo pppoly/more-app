@@ -1,8 +1,14 @@
 <template>
   <div class="portal-config-page">
     <header class="portal-config__header">
-      <button class="ghost-icon-btn" type="button" @click="goBack">
-        <span class="i-lucide-arrow-left"></span>
+      <button
+        v-if="showBackButton"
+        class="ghost-icon-btn"
+        type="button"
+        aria-label="戻る"
+        @click="goBack"
+      >
+        <img :src="backIcon" class="back-icon" alt="" aria-hidden="true" />
       </button>
       <div class="header-center">
         <p class="header-eyebrow">{{ t('console.portal.title') }}</p>
@@ -93,7 +99,9 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { fetchCommunityPortalConfig, updateCommunityPortalConfig, fetchConsoleCommunity } from '../../../api/client';
+import backIcon from '../../../assets/icons/arrow-back.svg';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
+import { isLineInAppBrowser } from '../../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -107,6 +115,7 @@ const error = ref<string | null>(null);
 const locked = ref(false);
 const selectedTheme = ref('immersive');
 const selectedLayout = ref<string[]>(['hero', 'about', 'upcoming', 'past', 'moments']);
+const showBackButton = computed(() => !isLineInAppBrowser());
 
 const themes = computed(() => [
   { id: 'clean', name: t('console.portal.themes.clean.name'), desc: t('console.portal.themes.clean.desc'), previewClass: 'preview-clean' },
@@ -175,7 +184,13 @@ const saveConfig = async () => {
   }
 };
 
-const goBack = () => router.back();
+const goBack = () => {
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    router.replace({ name: 'console-communities' });
+  }
+};
 const goSubscription = () => {
   router.push({ name: 'ConsoleMobileSubscriptionStandalone' });
 };
@@ -322,6 +337,11 @@ onMounted(loadConfig);
   align-items: center;
   justify-content: center;
   color: #0f172a;
+  padding: 0;
+}
+.back-icon {
+  width: 20px;
+  height: 20px;
 }
 
 .portal-config__card {

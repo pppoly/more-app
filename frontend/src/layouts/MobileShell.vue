@@ -1,5 +1,5 @@
 <template>
-<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage }">
+<div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': isLiffMode }">
   <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
       <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
@@ -25,11 +25,29 @@
         isFixedPage ? 'mobile-shell__content--fixed' : '',
         isFlush ? 'mobile-shell__content--flush' : '',
       ]"
+      :style="contentTopPaddingStyle"
     >
       <div :class="['mobile-shell__view', isFixedPage ? 'mobile-shell__view--fixed' : '']">
-        <Transition name="tab-slide" mode="out-in">
-          <slot :key="route.path" />
-        </Transition>
+        <RouterView v-slot="{ Component, route: viewRoute }">
+          <Transition :name="getTransitionName(viewRoute)">
+            <div
+              :key="viewRoute.fullPath"
+              ref="pageStageRef"
+              class="page-stage"
+            >
+              <KeepAlive v-if="shouldKeepAlive(viewRoute)">
+                <component :is="Component" :key="viewRoute.fullPath" v-bind="resolveRouteProps(viewRoute)" />
+              </KeepAlive>
+              <component v-else :is="Component" :key="viewRoute.fullPath" v-bind="resolveRouteProps(viewRoute)" />
+            </div>
+          </Transition>
+        </RouterView>
+        <div v-if="showNavOverlay" class="nav-loading" role="status" aria-live="polite" aria-busy="true">
+          <div class="entry-loading">
+            <span class="entry-loading__spinner" aria-hidden="true"></span>
+            <p class="entry-loading__text">読み込み中…</p>
+          </div>
+        </div>
       </div>
     </main>
     <nav v-if="showTabbar" class="mobile-shell__tabbar" :style="tabbarSafeAreaStyle">
@@ -90,15 +108,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useResourceConfig } from '../composables/useResourceConfig';
 import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
+import { APP_TARGET } from '../config';
+import { setNextTransitionOverride } from '../composables/useNavStack';
+import { isLineInAppBrowser } from '../utils/liff';
+import { getTransitionName, restoreScroll, saveScroll, useNavPending } from '../composables/useNavStack';
 
+const props = defineProps<{
+  forceHideHeader?: boolean;
+  showBrandTopBar?: boolean;
+  showBrandDebug?: boolean;
+  brandDebugText?: string;
+  rootNavRoute?: boolean;
+  isLiff?: boolean;
+}>();
 const route = useRoute();
 const router = useRouter();
 const { user, setUserProfile } = useAuth();
@@ -106,10 +137,13 @@ const resourceConfig = useResourceConfig();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
-const scrollPositions = new Map<string, number>();
-const contentEl = ref<HTMLElement | null>(null);
+const pageStageRef = ref<HTMLElement | null>(null);
+const lastRouteSnapshot = ref<{ fullPath: string; meta?: Record<string, unknown> } | null>(null);
+const navPending = useNavPending();
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
+const contentTopPaddingStyle = computed(() => ({}));
+const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff' || isLineInAppBrowser());
 
 const tabIcons = {
   events: {
@@ -171,14 +205,30 @@ const activeTab = computed(() => {
 const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ログイン'));
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
-  return tabs.value.some((tab) => route.path === tab.path || route.path.startsWith(`${tab.path}/`));
+  // LIFF 時はトップレベルのみタブ表示
+  if (isLiffMode.value && !props.rootNavRoute) return false;
+  const topLevelOnly = props.showBrandTopBar || isLiffMode.value;
+  const baseMatch = (path: string, tabPath: string) =>
+    topLevelOnly ? path === tabPath : path === tabPath || path.startsWith(`${tabPath}/`);
+  return tabs.value.some((tab) => baseMatch(route.path, tab.path));
 });
 
 const isFixedPage = computed(() => Boolean(route.meta?.fixedPage));
-const showHeader = computed(() => !route.meta?.hideShellHeader);
+const showHeader = computed(() => {
+  const hideForLiff =
+    isLiffMode.value &&
+    (route.path.startsWith('/me') || route.path.startsWith('/console') || route.path.startsWith('/admin'));
+  if (hideForLiff) return false;
+  if (props.showBrandTopBar) return false;
+  return !route.meta?.hideShellHeader && !props.forceHideHeader;
+});
 const isFlush = computed(() => Boolean(route.meta?.flushContent));
 const showHeaderActions = computed(() => !route.meta?.hideShellActions);
 const routeReady = ref(false);
+const showNavOverlay = computed(() => {
+  if (showTabbar.value) return false;
+  return navPending.value;
+});
 
 const handlePrimaryAction = () => {
   if (user.value) {
@@ -195,6 +245,7 @@ const goAdmin = () => {
 
 const go = (path: string) => {
   if (route.path === path) return;
+  setNextTransitionOverride('none');
   router.push(path);
 };
 
@@ -203,28 +254,57 @@ const headerSafeAreaStyle = computed(() => ({
 }));
 
 const tabbarSafeAreaStyle = computed(() => ({
-  paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))',
+  paddingBottom: 'env(safe-area-inset-bottom, 0px)',
 }));
 
-const saveScrollPosition = (path: string) => {
-  if (!path) return;
-  const top = contentEl.value ? contentEl.value.scrollTop : window.scrollY;
-  scrollPositions.set(path, top);
+const shouldKeepAlive = (viewRoute: { meta?: Record<string, unknown> }) => viewRoute.meta?.keepAlive === true;
+
+const resolveRouteProps = (viewRoute: RouteLocationNormalizedLoaded) => {
+  const matched = viewRoute.matched[viewRoute.matched.length - 1];
+  if (!matched || !matched.props || !matched.props.default) {
+    return {};
+  }
+  const config = matched.props.default;
+  if (config === true) {
+    return viewRoute.params;
+  }
+  if (typeof config === 'function') {
+    return config(viewRoute);
+  }
+  return config ?? {};
 };
 
-const restoreScrollPosition = (path: string) => {
-  const saved = scrollPositions.get(path) ?? 0;
-  if (contentEl.value) {
-    contentEl.value.scrollTo({ top: saved, behavior: 'auto' });
-  }
-  window.scrollTo({ top: saved, behavior: 'auto' });
+const getScrollContainer = () => {
+  // Only restore scroll for explicitly-marked containers.
+  const stage = pageStageRef.value;
+  if (!stage) return null;
+  return stage.querySelector('[data-scroll="main"]') as HTMLElement | null;
+};
+
+const snapshotRoute = (viewRoute: RouteLocationNormalizedLoaded) => ({
+  fullPath: viewRoute.fullPath,
+  meta: viewRoute.meta ?? {},
+});
+
+const saveScrollForRoute = (snapshot: { fullPath: string; meta?: Record<string, unknown> } | null) => {
+  if (!snapshot || !shouldKeepAlive(snapshot)) return;
+  const scroller = getScrollContainer();
+  if (!scroller) return;
+  saveScroll(snapshot, scroller);
+};
+
+const restoreScrollForRoute = (snapshot: { fullPath: string; meta?: Record<string, unknown> } | null) => {
+  if (!snapshot || !shouldKeepAlive(snapshot)) return;
+  const scroller = getScrollContainer();
+  if (!scroller) return;
+  restoreScroll(snapshot, scroller);
 };
 
 const localeLabelMap: Record<string, string> = {
   ja: '日本語',
   en: 'English',
-  zh: '简体中文',
-  'zh-tw': '繁體中文',
+  zh: '中国語(簡体字)',
+  'zh-tw': '中国語(繁体字)',
   vi: 'Tiếng Việt',
   ko: '한국어',
   tl: 'Tagalog',
@@ -275,26 +355,39 @@ const selectLocale = async (locale: string) => {
 };
 
 onMounted(() => {
-  contentEl.value = document.querySelector('.mobile-shell__content');
-  // 避免首屏闪出默认头部，等待路由就绪后再展示
+  // 初回表示でデフォルトヘッダーがちらつくのを避け、ルート準備完了後に表示
   router.isReady().then(() => {
     routeReady.value = true;
   });
+  const currentSnapshot = snapshotRoute(route);
+  lastRouteSnapshot.value = currentSnapshot;
+  nextTick(() => {
+    restoreScrollForRoute(currentSnapshot);
+  });
+});
+
+onActivated(() => {
+  // Restore cached list scroll when returning via KeepAlive.
+  restoreScrollForRoute(snapshotRoute(route));
+});
+
+onDeactivated(() => {
+  saveScrollForRoute(snapshotRoute(route));
 });
 
 watch(
   () => route.fullPath,
-  async (to, from) => {
-    if (from) {
-      saveScrollPosition(from);
-    }
+  async () => {
+    saveScrollForRoute(lastRouteSnapshot.value);
+    const currentSnapshot = snapshotRoute(route);
+    lastRouteSnapshot.value = currentSnapshot;
     await nextTick();
+    restoreScrollForRoute(currentSnapshot);
     routeReady.value = true;
-    restoreScrollPosition(to);
     const active = document.activeElement as HTMLElement | null;
     if (active?.blur) active.blur();
   },
-  { flush: 'post' },
+  { flush: 'pre' },
 );
 </script>
 
@@ -302,11 +395,15 @@ watch(
 .mobile-shell {
   min-height: 100vh;
   width: 100%;
+  max-width: 100vw;
   display: flex;
   flex-direction: column;
   background: #f3f4f6;
+  --app-bg: #f3f4f6;
   color: #0f172a;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
+  box-sizing: border-box;
 }
 .mobile-shell--fixed {
   height: 100vh;
@@ -395,11 +492,15 @@ watch(
   flex: 1;
   background: #f3f4f6;
   color: #0f172a;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__content--tabbed {
-  padding: 0 0 5.25rem;
+  padding: 0 0 calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .mobile-shell__content--plain {
@@ -416,19 +517,29 @@ watch(
   padding: 0;
 }
 .mobile-shell__view {
-  min-height: 100%;
-  height: auto;
-  overflow: visible;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__view--fixed {
   height: 100%;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 :deep(.mobile-shell__view--fixed > *) {
   height: 100%;
   overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .mobile-shell__tabbar {
@@ -437,21 +548,25 @@ watch(
   right: 0;
   bottom: 0;
   z-index: 20;
-  padding: 0 calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px))
-    calc(10px + env(safe-area-inset-left, 0px));
+  padding: 0 calc(10px + env(safe-area-inset-right, 0px)) 0 calc(10px + env(safe-area-inset-left, 0px));
   background: #ffffff;
   border-top: none;
   box-shadow: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
 }
 
 .tabbar {
   margin: 0;
   width: 100%;
+  max-width: 100%;
   display: flex;
   gap: 8px;
   background: #ffffff;
-  padding: 10px 0;
+  padding: 6px 0;
   border-radius: 0;
+  box-sizing: border-box;
 }
 
 .tabbar__item {
@@ -462,8 +577,8 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
+  gap: 3px;
+  padding: 6px 4px;
   font-size: 12px;
   font-weight: 600;
   color: #9ca3af;
@@ -601,7 +716,7 @@ watch(
   transform: translateX(10px);
 }
 .tabbar__icon-img {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
 }
 </style>

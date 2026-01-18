@@ -28,6 +28,13 @@
 - 静态资源同时暴露在 `/uploads/**` 与 `/api/v1/uploads/**`，若前端与后端不在同一主机（或仅反向代理 `/api`），请优先访问 `/api/v1/uploads/**`。
 - 在云端或容器环境中请将 `UPLOAD_ROOT` 指向挂载的持久化卷（例如 `/data/more-app/uploads`），并确保相同卷被所有副本共享，避免图片/文件因实例重启或扩缩容而丢失。
 
+## Event Assistant 宪章开关（默认关闭）
+
+- 环境变量 `EVENT_ASSISTANT_CONSTITUTION_MODE` 控制是否在输出层注入宪章文案：
+  - `off`（默认）：所有阶段都剥离宪章
+  - `lite` / `full`：仅在 `ready/operate` 输出阶段允许注入；collect/normalizer 等底层阶段强制不注入
+- 目的：先保证解析/状态机稳定，再逐步开启风格约束。
+
 ## 本地开发配置步骤
 
 1. 安装依赖：

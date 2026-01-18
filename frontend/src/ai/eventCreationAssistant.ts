@@ -29,7 +29,7 @@ You are the SOCIALMORE Event Creation Assistant.
 - Mission: understand the organizer's intention, encourage them when they hesitate, and then help them commit to clear written decisions.
 - Persona: warm coach at first, precise editor later. Never turn the conversation into a rigid form.
 - Languages: default to Japanese, but mirror the user's input language when possible.
-- Process: Listen (感性) → Guide (構造化) → Write (草稿を提示) → Confirm (ユーザーに最終判断を委ねる).`;
+- Process: Listen (感性) → Guide (構造化) → Write (下書きを提示) → Confirm (ユーザーに最終判断を委ねる).`;
 
 const STAGE_PROMPTS: Record<EventAssistantStage, string> = {
   coach: `Current stage: 感性モード (Coach).
@@ -44,7 +44,7 @@ Forbidden:
 Goals:
 - Organize concrete decisions (title, time, location, ticketing, requirements).
 - Offer options with pros/cons when the organizer hesitates.
-- Highlight contradictions or risks (e.g., "想要開放但又限定費用很高").
+- Highlight contradictions or risks (e.g., "開放したいが料金が高すぎる" のような矛盾) .
 Guidelines:
 - Provide concise bullet structures or A/B drafts.
 - Ask clarifying questions only for the missing fields listed below.`,
@@ -131,11 +131,9 @@ function missingFieldReport(draft?: Partial<EventDraft>): string {
 export function buildEventAssistantPrompt(options: BuildEventAssistantPromptOptions) {
   const stage = options.explicitStage ?? determineEventAssistantStage(options.draft);
   const localeLine =
-    options.locale === 'zh'
-      ? '回答は簡体字中文でもよいですが、ユーザーの入力言語に合わせてください。'
-      : options.locale === 'en'
-        ? 'Respond in English unless the organizer prefers Japanese.'
-        : '回答は日本語をベースに、ユーザーの言語に合わせてカスタマイズしてください。';
+    options.locale === 'en'
+      ? 'Respond in English unless the organizer prefers Japanese.'
+      : '回答は日本語をベースに、必要な場合のみユーザーの言語に合わせてください。';
 
   const actorContext = [
     options.userName ? `Organizer: ${options.userName}` : null,

@@ -2,64 +2,65 @@
   <section class="finance-page" v-if="community">
     <header class="hero">
       <div class="hero-text">
-        <p class="eyebrow">收银台 · {{ community.slug }}</p>
-        <h2>{{ stripeReady ? '可以收钱啦' : '先把收款开起来' }}</h2>
-        <p class="sub">
-          {{ stripeReady ? '资料正确就能正常打款，信息变了可以随时更新。' : '跟着 Stripe 填信息，很快就能收票款。' }}
-        </p>
+        <p class="eyebrow">受け取り設定 · {{ community.slug }}</p>
+        <h2>{{ heroTitle }}</h2>
+        <p class="sub">{{ heroSubText }}</p>
         <div class="hero-actions">
           <button class="primary" @click="handleOnboarding" :disabled="onboarding">
-            {{ onboarding ? '跳转中...' : stripeReady ? '更新收款信息' : '去开通 Stripe 收款' }}
+            {{ onboarding ? '移動中…' : stripeActionLabel }}
           </button>
-          <span :class="stripeReady ? 'pill success' : 'pill warn'">
-            {{ stripeReady ? '已准备' : '待开通' }}
+          <button class="secondary" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
+            {{ payoutLoading ? '移動中…' : withdrawLabel }}
+          </button>
+          <span :class="`pill ${stripeAccountBadgeClass}`">
+            {{ stripeAccountBadgeLabel }}
           </span>
         </div>
       </div>
       <div class="hero-meta">
-        <p>Stripe 账户</p>
-        <strong>{{ community.stripeAccountId || '未创建' }}</strong>
-        <small>{{ stripeReady ? '可收款' : '需要完成资料' }}</small>
+        <p>Stripe アカウント</p>
+        <strong>{{ community.stripeAccountId || '未作成' }}</strong>
+        <small>{{ stripeAccountMetaLabel }}</small>
       </div>
     </header>
 
     <div class="grid">
       <article class="card">
         <header>
-          <h3>账户状态</h3>
-          <span :class="stripeReady ? 'status success' : 'status warn'">
-            {{ stripeReady ? '已联通' : '尚未开通' }}
+          <h3>アカウント状態</h3>
+          <span :class="`status ${stripeAccountBadgeClass}`">
+            {{ stripeAccountBadgeLabel }}
           </span>
         </header>
-        <p class="muted">先把账户开好，活动收入才打得进来。</p>
+        <p class="muted">アカウントを整えると、イベント収益を受け取れます。</p>
         <ul class="info-list">
           <li>
-            <span>账户 ID</span>
-            <strong>{{ community.stripeAccountId || '未创建' }}</strong>
+            <span>アカウントID</span>
+            <strong>{{ community.stripeAccountId || '未作成' }}</strong>
           </li>
           <li>
-            <span>状态</span>
-            <strong>{{ stripeReady ? '已通过审核' : '待提交/审核中' }}</strong>
+            <span>ステータス</span>
+            <strong>{{ stripeAccountStatusDetail }}</strong>
           </li>
         </ul>
         <button class="primary" @click="handleOnboarding" :disabled="onboarding">
-          {{ onboarding ? '跳转中...' : stripeReady ? '更新资料' : '立即开通收款' }}
+          {{ onboarding ? '移動中…' : stripeActionLabelShort }}
         </button>
-        <p class="hint">跳到 Stripe 填完信息，再回来就能继续收钱。</p>
+        <p class="hint">Stripe で情報入力を完了すると、受け取りを開始できます。</p>
       </article>
 
       <article class="card">
         <header>
-          <h3>MORE 收款方案</h3>
+          <h3>MORE 受け取りプラン</h3>
           <span class="status info">
             {{
               activePlan
                 ? `${activePlan.name} / 月¥${activePlan.monthlyFee}`
-                : '未选择'
+                : '未選択'
             }}
           </span>
         </header>
-        <p class="muted">挑一个最合适的方案，看看手续费和支持内容。</p>
+        <p class="muted">最適なプランを選び、手数料と内容を確認しましょう。</p>
         <div class="plan-list">
           <label v-for="plan in pricingPlans" :key="plan.id" :class="['plan-card', { selected: selectedPlanId === plan.id }]">
             <input
@@ -71,8 +72,9 @@
             />
             <div>
               <h4>{{ plan.name }}</h4>
-              <p>月费 ¥{{ plan.monthlyFee }} ｜ 手续费 {{ plan.transactionFeePercent }}% + ¥{{ plan.transactionFeeFixed }}</p>
-              <small>结算频率: {{ plan.payoutSchedule }}</small>
+              <p>月額 ¥{{ plan.monthlyFee }} ｜ プラットフォーム手数料 {{ formatPlatformFee(plan) }}</p>
+              <small>{{ t('subscription.stripeFee') }} {{ stripeFeeDisplay }}</small>
+              <small>入金頻度: {{ plan.payoutSchedule }}</small>
               <ul class="feature-list" v-if="Array.isArray(plan.features?.items)">
                 <li v-for="item in plan.features.items" :key="item">· {{ item }}</li>
               </ul>
@@ -80,12 +82,12 @@
           </label>
         </div>
         <div class="actions">
-          <button class="secondary" @click="resetSelection" :disabled="planUpdating || !planChanged">撤销修改</button>
+          <button class="secondary" @click="resetSelection" :disabled="planUpdating || !planChanged">変更を取り消す</button>
           <button class="primary" @click="savePlan" :disabled="planUpdating || !planChanged || pricingPlans.length === 0">
-            {{ planUpdating ? '保存中...' : '保存选择' }}
+            {{ planUpdating ? '保存中…' : '選択を保存' }}
           </button>
         </div>
-        <p class="hint">选择后立即生效；收费方案会在资料完成后才开始扣款。</p>
+        <p class="hint">選択後すぐ反映されます。課金は情報の入力完了後に開始されます。</p>
       </article>
     </div>
 
@@ -97,25 +99,36 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import {
   fetchConsoleCommunity,
+  createCommunityStripeLoginLink,
+  fetchOrganizerPayoutPolicyStatus,
   fetchPricingPlans,
+  refreshCommunityStripeStatus,
   startCommunityStripeOnboarding,
   subscribeCommunityPlan,
 } from '../../api/client';
-import type { ConsoleCommunityDetail, PricingPlan } from '../../types/api';
+import type { ConsoleCommunityDetail, PricingPlan, StripeAccountStatus } from '../../types/api';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../config';
 
 const route = useRoute();
+const router = useRouter();
 const communityId = route.params.communityId as string;
 
 const community = ref<ConsoleCommunityDetail | null>(null);
 const pricingPlans = ref<PricingPlan[]>([]);
+const stripeStatus = ref<StripeAccountStatus | null>(null);
+const lastStripeRefreshAt = ref(0);
+const STRIPE_STATUS_TTL = 60_000;
 const selectedPlanId = ref<string>('');
 const savedPlanId = ref<string>('');
 const onboarding = ref(false);
+const payoutLoading = ref(false);
 const planUpdating = ref(false);
 const error = ref<string | null>(null);
+const { t } = useI18n();
 
 const load = async () => {
   error.value = null;
@@ -125,16 +138,134 @@ const load = async () => {
     pricingPlans.value = plans;
     savedPlanId.value = community.value?.pricingPlanId || plans[0]?.id || '';
     selectedPlanId.value = savedPlanId.value;
+    void loadStripeStatus();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '設定情報の取得に失敗しました';
   }
 };
 
+const loadStripeStatus = async () => {
+  if (!community.value?.id || !community.value?.stripeAccountId) {
+    stripeStatus.value = null;
+    return;
+  }
+  if (!community.value?.stripeAccountOnboarded) return;
+  const now = Date.now();
+  if (stripeStatus.value && now - lastStripeRefreshAt.value < STRIPE_STATUS_TTL) return;
+  try {
+    const status = await refreshCommunityStripeStatus(community.value.id);
+    stripeStatus.value = status.stripeAccountStatus ?? null;
+    lastStripeRefreshAt.value = now;
+    if (community.value) {
+      community.value.stripeAccountId = status.stripeAccountId ?? community.value.stripeAccountId;
+      if (status.stripeAccountOnboarded !== undefined) {
+        community.value.stripeAccountOnboarded = status.stripeAccountOnboarded;
+      }
+    }
+  } catch (err) {
+    stripeStatus.value = null;
+  }
+};
+
+const hasStripeAccount = computed(() => Boolean(community.value?.stripeAccountId));
 const stripeReady = computed(() => Boolean(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded));
+const stripeRestricted = computed(() => {
+  if (!hasStripeAccount.value || !stripeReady.value) return false;
+  if (stripeStatus.value?.disabledReason) return true;
+  if (stripeStatus.value?.payoutsEnabled === false) return true;
+  return false;
+});
+const stripeActionLabel = computed(() => {
+  if (!hasStripeAccount.value) return 'Stripe 受け取りを開始';
+  if (stripeRestricted.value) return 'Stripeで確認';
+  if (!stripeReady.value) return '連携を完了する';
+  return '受け取り情報を更新';
+});
+const stripeActionLabelShort = computed(() => {
+  if (!hasStripeAccount.value) return '受け取りを開始';
+  if (stripeRestricted.value) return 'Stripeで確認';
+  if (!stripeReady.value) return '連携を完了する';
+  return '情報を更新';
+});
+const stripeAccountBadgeLabel = computed(() => {
+  if (!hasStripeAccount.value) return '未開設';
+  if (stripeRestricted.value) return '受け取り制限';
+  if (!stripeReady.value) return '連携中';
+  return '準備完了';
+});
+const stripeAccountBadgeClass = computed(() => {
+  if (stripeRestricted.value) return 'danger';
+  return stripeReady.value ? 'success' : 'warn';
+});
+const stripeAccountStatusDetail = computed(() => {
+  if (!hasStripeAccount.value) return '未開設';
+  if (stripeRestricted.value) return '受け取り制限中';
+  if (!stripeReady.value) return '未提出 / 審査中';
+  return '審査済み';
+});
+const stripeAccountMetaLabel = computed(() => stripeAccountStatusDetail.value);
+const heroTitle = computed(() => {
+  if (stripeRestricted.value) return '受け取りが制限されています';
+  return stripeReady.value ? '受け取り準備完了' : '受け取りを有効にしましょう';
+});
+const heroSubText = computed(() => {
+  if (stripeRestricted.value) {
+    return 'Stripe 側で追加情報の提出が必要です。';
+  }
+  if (stripeReady.value) {
+    return '情報が正しければ入金できます。変更があればいつでも更新できます。';
+  }
+  if (hasStripeAccount.value) {
+    return 'Stripe の案内に沿って入力を完了してください。';
+  }
+  return 'Stripe の案内に沿って入力すれば、すぐに受け取りを開始できます。';
+});
+const canWithdraw = computed(() => hasStripeAccount.value && stripeReady.value && !stripeRestricted.value);
+const withdrawLabel = computed(() => {
+  if (!hasStripeAccount.value) return '出金する';
+  if (!stripeReady.value) return '出金する（連携未完了）';
+  if (stripeRestricted.value) return '出金する（制限中）';
+  return '出金する';
+});
 const planChanged = computed(() => selectedPlanId.value !== savedPlanId.value);
 const activePlan = computed(() => pricingPlans.value.find((plan) => plan.id === savedPlanId.value) || null);
+const formatYen = (value: number) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+const stripeFeeRateText = computed(() => {
+  const percent = STRIPE_FEE_PERCENT;
+  if (!Number.isFinite(percent)) return '';
+  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+  }
+  return percentText;
+});
+const stripeFeeDisplay = computed(
+  () => stripeFeeRateText.value || t('subscription.plans.free.stripeFee'),
+);
+const formatPlatformFee = (plan: PricingPlan) => {
+  if (PLATFORM_FEE_WAIVED) return t('subscription.betaPlatformFeeValue');
+  const fixed = plan.transactionFeeFixed ?? 0;
+  const fixedText = fixed > 0 ? ` + ${formatYen(fixed)}` : '';
+  return `${plan.transactionFeePercent}%${fixedText}`;
+};
+
+const ensurePayoutPolicyAccepted = async () => {
+  try {
+    const status = await fetchOrganizerPayoutPolicyStatus();
+    if (status.acceptedAt) return true;
+  } catch (error) {
+    console.warn('Failed to load payout policy status', error);
+  }
+  router.push({
+    path: '/organizer/payout-policy',
+    query: { returnTo: route.fullPath, next: 'stripe-onboard', communityId },
+  });
+  return false;
+};
 
 const handleOnboarding = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
   onboarding.value = true;
   error.value = null;
   try {
@@ -144,6 +275,24 @@ const handleOnboarding = async () => {
     error.value = err instanceof Error ? err.message : 'Stripe連携リンクの生成に失敗しました';
   } finally {
     onboarding.value = false;
+  }
+};
+
+const handleWithdraw = async () => {
+  if (!(await ensurePayoutPolicyAccepted())) return;
+  if (!hasStripeAccount.value) {
+    error.value = 'Stripe 口座が未開設です。先に連携を完了してください。';
+    return;
+  }
+  payoutLoading.value = true;
+  error.value = null;
+  try {
+    const { url } = await createCommunityStripeLoginLink(communityId);
+    window.location.href = url;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Stripe画面の起動に失敗しました';
+  } finally {
+    payoutLoading.value = false;
   }
 };
 
@@ -246,6 +395,11 @@ onMounted(load);
   color: #fef3c7;
 }
 
+.pill.danger {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fee2e2;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -284,6 +438,11 @@ onMounted(load);
 .status.warn {
   background: #fef3c7;
   color: #b45309;
+}
+
+.status.danger {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .status.info {
@@ -333,6 +492,11 @@ onMounted(load);
   padding: 0.55rem 1.1rem;
   border-radius: 999px;
   font-weight: 600;
+}
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .plan-list {

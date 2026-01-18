@@ -2,34 +2,34 @@
   <div class="assistant-dashboard">
     <header class="dashboard-head">
       <div>
-        <p class="dashboard-label">AI助手</p>
-        <h1>Prompt 迭代仪表盘</h1>
+        <p class="dashboard-label">AIアシスタント</p>
+        <h1>プロンプト改善ダッシュボード</h1>
       </div>
       <button type="button" class="refresh-button" @click="loadData" :disabled="loading">
         <span class="i-lucide-refresh-ccw mr-1"></span>
-        刷新
+        更新
       </button>
     </header>
 
     <section class="stats-grid" v-if="dashboard">
       <article class="stat-card">
-        <p>记录总数</p>
+        <p>セッション総数</p>
         <strong>{{ dashboard.stats.totalSessions }}</strong>
       </article>
       <article class="stat-card">
-        <p>完成方案</p>
+        <p>完了提案</p>
         <strong>{{ dashboard.stats.readySessions }}</strong>
         <span>{{ dashboard.stats.readyRate }}%</span>
       </article>
       <article class="stat-card">
-        <p>平均回合</p>
+        <p>平均ターン</p>
         <strong>{{ dashboard.stats.averageTurns }}</strong>
       </article>
     </section>
 
     <section v-if="dashboard" class="breakdown">
       <div class="breakdown-card">
-        <h3>Prompt 版本</h3>
+        <h3>プロンプトバージョン</h3>
         <ul>
           <li v-for="(count, version) in dashboard.stats.promptVersions" :key="version">
             <span>{{ version }}</span>
@@ -38,7 +38,7 @@
         </ul>
       </div>
       <div class="breakdown-card">
-        <h3>语言分布</h3>
+        <h3>言語別</h3>
         <ul>
           <li v-for="(count, lang) in dashboard.stats.languages" :key="lang">
             <span>{{ lang }}</span>
@@ -50,22 +50,22 @@
 
     <section class="logs-section">
       <div class="logs-head">
-        <h2>最近对话</h2>
-        <span v-if="loading">读取中...</span>
+        <h2>最近の会話</h2>
+        <span v-if="loading">読み込み中...</span>
       </div>
       <div v-if="error" class="error-banner">{{ error }}</div>
-      <div v-else-if="!dashboard" class="placeholder">暂无数据</div>
+      <div v-else-if="!dashboard" class="placeholder">データがありません</div>
       <ul v-else class="log-list">
         <li v-for="log in dashboard.logs" :key="log.id" class="log-item">
           <div class="log-meta">
             <p class="log-title">
-              {{ log.summary || '未命名草案' }}
+              {{ log.summary || '名称未設定の下書き' }}
             </p>
             <span class="log-status" :class="log.status">{{ log.status ?? 'collecting' }}</span>
           </div>
           <p class="log-detail">
-            prompt: {{ log.promptVersion || 'N/A' }} · 回合: {{ log.turnCount ?? 0 }} · 语言:
-            {{ log.language || '未知' }}
+            prompt: {{ log.promptVersion || 'N/A' }} · ターン: {{ log.turnCount ?? 0 }} · 言語:
+            {{ log.language || '不明' }}
           </p>
           <p class="log-time">{{ new Date(log.createdAt).toLocaleString() }}</p>
         </li>
@@ -93,7 +93,7 @@ const loadData = async () => {
   try {
     dashboard.value = await fetchAssistantDashboard(communityId.value);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载仪表盘失败';
+    error.value = err instanceof Error ? err.message : 'ダッシュボードの読み込みに失敗しました';
   } finally {
     loading.value = false;
   }

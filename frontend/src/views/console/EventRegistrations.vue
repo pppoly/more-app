@@ -16,7 +16,7 @@
         <div class="summary-header">
           <div>
             <h3>{{ summary.title }}</h3>
-            <span :class="['badge', summary.status]">{{ statusLabel(summary.status) }}</span>
+            <span :class="['badge', eventStatusClass]">{{ eventStatusLabel }}</span>
           </div>
           <div class="summary-actions">
             <button type="button" class="secondary" @click="downloadCsv" :disabled="downloading">
@@ -58,8 +58,7 @@
         </div>
         <div class="avatar-wall" v-if="summary.avatars.length">
           <div v-for="avatar in summary.avatars" :key="avatar.userId" class="avatar-item">
-            <img v-if="avatar.avatarUrl" :src="avatar.avatarUrl" :alt="avatar.name || 'member'" />
-            <div v-else class="avatar-fallback">{{ avatarInitial(avatar.name) }}</div>
+            <AppAvatar :src="avatar.avatarUrl" :name="avatar.name" :size="48" />
             <small>{{ avatar.name || 'ゲスト' }}</small>
           </div>
         </div>
@@ -73,7 +72,7 @@
               {{ downloading ? '生成中…' : 'CSV をエクスポート' }}
             </button>
             <button type="button" class="danger" :disabled="cancelling" @click="confirmCancel">
-              {{ cancelling ? '取消处理中…' : '取消活动' }}
+              {{ cancelling ? 'キャンセル処理中…' : 'イベントをキャンセル' }}
             </button>
           </div>
         </div>
@@ -83,7 +82,7 @@
               <th>参加者</th>
               <th>チケット</th>
               <th>支払い</th>
-              <th>状态</th>
+              <th>ステータス</th>
               <th>出席</th>
               <th>申込時間</th>
               <th></th>
@@ -94,8 +93,7 @@
               <tr>
                 <td>
                   <div class="user-cell">
-                    <img v-if="reg.user.avatarUrl" :src="reg.user.avatarUrl" :alt="reg.user.name" />
-                    <div class="avatar-fallback" v-else>{{ avatarInitial(reg.user.name) }}</div>
+                    <AppAvatar :src="reg.user.avatarUrl" :name="reg.user.name" :size="40" />
                     <div>
                       <p>{{ reg.user.name }}</p>
                       <small>ID: {{ reg.user.id }}</small>
@@ -125,14 +123,6 @@
                     <div v-if="reg.status === 'pending'" class="actions-inline">
                       <button
                         type="button"
-                        class="secondary tiny"
-                        :disabled="actionLoading[reg.registrationId]"
-                        @click="handleApprove(reg.registrationId)"
-                      >
-                        {{ actionLoading[reg.registrationId] ? '処理中…' : '承認' }}
-                      </button>
-                      <button
-                        type="button"
                         class="ghost tiny"
                         :disabled="actionLoading[reg.registrationId]"
                         @click="handleReject(reg.registrationId)"
@@ -140,21 +130,39 @@
                         {{ actionLoading[reg.registrationId] ? '処理中…' : '拒否' }}
                       </button>
                     </div>
-                    <button type="button" class="ghost" @click="toggleAnswers(reg.registrationId)">
+                    <div v-if="reg.status === 'cancel_requested'" class="actions-inline">
+                      <button
+                        type="button"
+                        class="ghost tiny"
+                        :disabled="actionLoading[reg.registrationId]"
+                        @click="handleApproveRefund(reg)"
+                      >
+                        {{ actionLoading[reg.registrationId] ? '処理中…' : '返金を承認' }}
+                      </button>
+                    </div>
+                    <button
+                      v-if="hasRegistrationForm"
+                      type="button"
+                      class="ghost"
+                      @click="toggleAnswers(reg.registrationId)"
+                    >
                       {{ expandedRows[reg.registrationId] ? 'フォームを閉じる' : 'フォームを見る' }}
                     </button>
+                    <span v-else class="muted">申込フォームなし</span>
                   </div>
                 </td>
               </tr>
               <tr v-if="expandedRows[reg.registrationId]" class="answers-row">
                 <td colspan="7">
-                  <div v-if="formEntries(reg).length" class="answers">
+                  <div v-if="hasRegistrationForm && formEntries(reg).length" class="answers">
                     <div v-for="[key, value] in formEntries(reg)" :key="key" class="answer-row">
                       <span class="answer-label">{{ key }}</span>
                       <span class="answer-value">{{ formatAnswer(value) }}</span>
                     </div>
                   </div>
-                  <p v-else class="muted">追加情報はありません。</p>
+                  <p v-else class="muted">
+                    {{ hasRegistrationForm ? '回答はありません。' : 'このイベントは申込フォーム未設定です。' }}
+                  </p>
                 </td>
               </tr>
             </template>
@@ -167,7 +175,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import type { RouteLocationRaw } from 'vue-router';
 import {
@@ -175,8 +183,8 @@ import {
   fetchEventRegistrationsSummary,
   fetchEventRegistrations,
   exportEventRegistrationsCsv,
-  approveEventRegistration,
   rejectEventRegistration,
+  decideRefundRequest,
   cancelConsoleEvent,
 } from '../../api/client';
 import { useConfirm } from '../../composables/useConfirm';
@@ -186,6 +194,8 @@ import type {
   EventRegistrationsSummary,
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { getEventStatusLabel, resolveEventStatusState } from '../../utils/eventStatus';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const eventId = route.params.eventId as string;
@@ -203,6 +213,28 @@ const downloading = ref(false);
 const actionLoading = ref<Record<string, boolean>>({});
 const cancelling = ref(false);
 const { confirm: confirmDialog } = useConfirm();
+
+const eventStatusState = computed(() => {
+  if (!eventDetail.value) return 'closed';
+  return resolveEventStatusState({
+    status: eventDetail.value.status,
+    startTime: eventDetail.value.startTime,
+    endTime: eventDetail.value.endTime,
+    regStartTime: eventDetail.value.regStartTime,
+    regEndTime: eventDetail.value.regEndTime,
+    regDeadline: eventDetail.value.regDeadline,
+    maxParticipants: eventDetail.value.maxParticipants ?? null,
+    config: {
+      ...(eventDetail.value.config ?? {}),
+      currentParticipants: summary.value?.totalRegistrations ?? undefined,
+    },
+  });
+});
+const eventStatusLabel = computed(() => getEventStatusLabel(eventStatusState.value));
+const eventStatusClass = computed(() => (eventStatusState.value === 'open' ? 'open' : 'closed'));
+const hasRegistrationForm = computed(
+  () => Boolean(eventDetail.value?.registrationFormSchema?.length),
+);
 
 const load = async () => {
   loading.value = true;
@@ -231,19 +263,6 @@ const formatDate = (value: string) =>
     timeStyle: 'short',
   });
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'open':
-      return '受付中';
-    case 'closed':
-      return '終了';
-    case 'cancelled':
-      return '取消';
-    default:
-      return status;
-  }
-};
-
 const paymentLabel = (status: string) => {
   switch (status) {
     case 'paid':
@@ -262,6 +281,9 @@ const attendanceLabel = (reg: ConsoleEventRegistrationItem) => {
   if (reg.noShow) return '無断欠席';
   return '未開始';
 };
+
+const formatYen = (value?: number | null) =>
+  new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 }).format(Math.max(0, value ?? 0));
 
 const progressPercent = (group: { count: number; capacity?: number | null }) => {
   const fallback = group.count || 1;
@@ -300,7 +322,7 @@ const registrationStatusLabel = (status: string) => {
     case 'pending_refund':
       return '返金待ち';
     case 'cancelled':
-      return 'キャンセル';
+      return 'キャンセル済み';
     default:
       return status;
   }
@@ -315,21 +337,6 @@ const statusClass = (status: string) => {
   return 'pending';
 };
 
-const handleApprove = async (registrationId: string) => {
-  actionLoading.value = { ...actionLoading.value, [registrationId]: true };
-  try {
-    await approveEventRegistration(eventId, registrationId);
-    const target = registrations.value.find((r) => r.registrationId === registrationId);
-    if (target) {
-      target.status = 'approved';
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '审批失败，请重试';
-  } finally {
-    actionLoading.value = { ...actionLoading.value, [registrationId]: false };
-  }
-};
-
 const handleReject = async (registrationId: string) => {
   actionLoading.value = { ...actionLoading.value, [registrationId]: true };
   try {
@@ -339,9 +346,27 @@ const handleReject = async (registrationId: string) => {
       target.status = 'rejected';
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '拒绝失败，请重试';
+    error.value = err instanceof Error ? err.message : '拒否に失敗しました。再試行してください。';
   } finally {
     actionLoading.value = { ...actionLoading.value, [registrationId]: false };
+  }
+};
+
+const handleApproveRefund = async (reg: ConsoleEventRegistrationItem) => {
+  if (!reg.refundRequest?.id) return;
+  const amount = reg.refundRequest.requestedAmount ?? reg.amount ?? 0;
+  const sure = await confirmDialog(
+    `この申込の返金を承認しますか？返金額: ¥${formatYen(amount)}`,
+  );
+  if (!sure) return;
+  actionLoading.value = { ...actionLoading.value, [reg.registrationId]: true };
+  try {
+    await decideRefundRequest(reg.refundRequest.id, { decision: 'approve_full' });
+    await load();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '返金の承認に失敗しました。再試行してください。';
+  } finally {
+    actionLoading.value = { ...actionLoading.value, [reg.registrationId]: false };
   }
 };
 
@@ -366,7 +391,9 @@ const downloadCsv = async () => {
 
 const confirmCancel = async () => {
   if (!eventDetail.value) return;
-  const sure = await confirmDialog('确认取消活动吗？收费报名将自动尝试退款，此操作不可逆。');
+  const sure = await confirmDialog(
+    'イベントをキャンセルしますか？有料の申込は全額自動で返金処理を試みます。この操作は元に戻せません。',
+  );
   if (!sure) return;
   cancelling.value = true;
   error.value = null;
@@ -374,7 +401,7 @@ const confirmCancel = async () => {
     await cancelConsoleEvent(eventId, { notify: false });
     await load();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '取消失败，请稍后再试';
+    error.value = err instanceof Error ? err.message : 'キャンセルに失敗しました。時間をおいて再試行してください。';
   } finally {
     cancelling.value = false;
   }
@@ -537,6 +564,7 @@ onMounted(load);
   border-radius: 999px;
   font-size: 0.85rem;
   background: #f1f5f9;
+  cursor: default;
 }
 .pill.paid {
   background: #dcfce7;

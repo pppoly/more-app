@@ -1,133 +1,94 @@
 <template>
-  <div class="mobile-checkout">
-    <header class="checkout-header">
-      <button class="back-button" type="button" @click="goBackToForm">
-        <span class="i-lucide-chevron-left text-lg"></span>
-      </button>
-      <div class="header-info">
-        <p class="header-label">確認と決済</p>
-        <h1>{{ detail?.title ?? '読み込み中…' }}</h1>
-      </div>
-    </header>
-
-    <section v-if="loading" class="checkout-skeleton">
-      <div class="skeleton-hero shimmer"></div>
-      <div class="skeleton-card shimmer"></div>
-      <div class="skeleton-card shimmer"></div>
-    </section>
-
+  <div class="mobile-pay-confirm">
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventCheckout.title" @back="goBack" />
+    <section v-if="loading" class="state-card">読み込み中…</section>
     <section v-else-if="error" class="state-card state-card--error">
       {{ error }}
-      <button type="button" class="retry-btn" @click="loadEvent">再試行</button>
+      <button type="button" class="ghost-btn" @click="loadEvent">再読み込み</button>
     </section>
 
-    <section v-else-if="detail" class="checkout-body">
-      <article class="hero-card">
-        <p class="hero-label">参加概要</p>
-        <h2 class="hero-title">{{ detail.title }}</h2>
-        <p class="hero-meta">{{ detail.timeText }}</p>
-        <p class="hero-meta">{{ detail.locationText }}</p>
-        <p class="hero-price">{{ detail.priceText }}</p>
-      </article>
+    <section v-else-if="detail" class="body">
+      <div class="summary">
+        <p class="summary-label">申込内容</p>
+        <p class="summary-title">{{ detail.title }}</p>
+        <p class="summary-line">{{ detail.timeText }}</p>
+      </div>
 
-      <article class="ios-panel">
-        <header class="panel-head">
-          <div>
-            <p class="panel-label">入力内容の確認</p>
-            <p class="panel-hint">この内容で主催者に送信されます。</p>
+      <div class="summary summary--payment">
+        <p class="summary-label">支払い内容</p>
+        <div class="payment-list">
+          <div class="payment-item">
+            <p class="payment-name">チケット</p>
+            <p class="payment-value">{{ ticketNameText }}</p>
           </div>
-        </header>
-        <ul class="confirm-list" v-if="formFields.length">
-          <li v-for="(field, index) in formFields" :key="fieldKey(field, index)">
-            <p class="confirm-label">{{ field.label }}</p>
-            <p class="confirm-value">{{ displayValue(field, index) }}</p>
-          </li>
-        </ul>
-        <p v-else class="panel-hint">特別な入力項目はありませんでした。</p>
-      </article>
-
-      <article class="ios-panel">
-        <header class="panel-head">
-          <div>
-            <p class="panel-label">決済・完了</p>
-            <p class="panel-hint">申込を確定後、必要に応じて決済へ進みます。</p>
-          </div>
-        </header>
-        <div class="checkout-actions">
-          <button type="button" class="rails-cta" :class="{ 'is-disabled': submitting }" :disabled="submitting" @click="submitRegistration">
-            <span class="i-lucide-check-circle"></span>
-            {{ submitting ? '処理中…' : '申込を確定する' }}
-          </button>
-          <p v-if="paymentMessage" class="payment-hint">{{ paymentMessage }}</p>
-          <p v-if="holdExpireText" class="payment-hint subtle">
-            枠は {{ holdExpireText }} まで保持されます。
-          </p>
-          <div v-if="pendingPayment" class="payment-buttons">
-            <Button variant="primary" size="md" class="flex-1 justify-center" :disabled="isRedirecting" @click="handleStripeCheckout">
-              {{ isRedirecting ? 'Stripeへ移動中…' : 'Stripeで支払う' }}
-            </Button>
-            <Button variant="outline" size="md" class="flex-1 justify-center" :disabled="isPaying" @click="handleMockPayment">
-              {{ isPaying ? 'Mock 決済中…' : 'Mock 支払い（デモ）' }}
-            </Button>
+          <div class="payment-item">
+            <p class="payment-name">参加費</p>
+            <p class="payment-value payment-value--amount">{{ amountText }}</p>
           </div>
         </div>
-        <p v-if="registrationError" class="ios-error">{{ registrationError }}</p>
-      </article>
+      </div>
+
+      <div v-if="refundPolicyText" class="summary summary--refund">
+        <p class="summary-label">キャンセル・返金ルール（本申込の参加費について）</p>
+        <p class="summary-line summary-line--wrap">{{ refundPolicyText }}</p>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn primary" :disabled="ctaDisabled" @click="handlePay">
+          {{ ctaLabel }}
+        </button>
+      </div>
+      <p v-if="registrationError" class="error-text">{{ registrationError }}</p>
+
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isAxiosError } from 'axios';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import {
-  createMockPayment,
-  createRegistration,
-  createStripeCheckout,
-  fetchEventById,
-} from '../../api/client';
-import type { EventDetail, RegistrationFormField, EventRegistrationSummary } from '../../types/api';
+import { createRegistration, createStripeCheckout, fetchEventById, fetchMyEvents } from '../../api/client';
+import type { EventDetail } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
-import Button from '../../components/ui/Button.vue';
-import { useAuth } from '../../composables/useAuth';
-import {
-  MOBILE_EVENT_PENDING_PAYMENT_KEY,
-  MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
-  MOBILE_EVENT_SUCCESS_KEY,
-} from '../../constants/mobile';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_REGISTRATION_DRAFT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
+
+type PendingPaymentPayload = {
+  registrationId: string;
+  amount?: number | null;
+  eventId?: string;
+  source?: string;
+};
+
+type RegistrationDraftPayload = {
+  eventId: string;
+  formAnswers?: Record<string, any>;
+  ticketTypeId?: string;
+  savedAt?: number;
+};
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
-const { user } = useAuth();
 const { preferredLangs } = useLocale();
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const submitting = ref(false);
 const registrationError = ref<string | null>(null);
-const pendingPayment = ref<{ registrationId: string; amount?: number } | null>(null);
-const paymentMessage = ref<string | null>(null);
-const isPaying = ref(false);
-const isRedirecting = ref(false);
-const holdExpiresAt = ref<string | null>(null);
-
-const answers = reactive<Record<string, any>>({});
-type SuccessPayload = {
-  eventId: string;
-  title: string;
-  timeText: string;
-  locationText: string;
-  priceText?: string;
-  paymentStatus: 'free' | 'paid';
-  holdExpiresAt: string;
-};
-const HOLD_DURATION_MS = 30 * 60 * 1000;
+const pendingPayment = ref<PendingPaymentPayload | null>(null);
 
 const eventId = computed(() => props.eventId ?? (route.params.eventId as string));
+
+const normalizeQueryValue = (value: unknown) => {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+};
 
 const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   style: 'currency',
@@ -135,481 +96,460 @@ const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   maximumFractionDigits: 0,
 });
 
-const derivePriceText = (target: EventDetail | null) => {
-  if (!target?.ticketTypes?.length) return '無料 / 未定';
-  const prices = target.ticketTypes.map((ticket) => ticket.price ?? 0);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  if (max === 0) return '無料';
-  if (min === max) return currencyFormatter.format(max);
-  return `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
-};
-
-const resolveErrorMessage = (err: unknown, fallback: string) => {
-  if (isAxiosError(err)) {
-    const message = err.response?.data?.message;
-    if (typeof message === 'string') {
-      return message;
-    }
-    if (Array.isArray(message) && message.length) {
-      const first = message[0];
-      if (typeof first === 'string') {
-        return first;
-      }
-    }
-    return err.message;
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return fallback;
-};
-
 const detail = computed(() => {
   if (!event.value) return null;
   const start = formatDate(event.value.startTime);
   const end = event.value.endTime ? formatDate(event.value.endTime) : '未定';
+  const title = getLocalizedText(event.value.title, preferredLangs.value);
   return {
     id: event.value.id,
-    title: getLocalizedText(event.value.title, preferredLangs.value),
+    title,
     timeText: `${start} 〜 ${end}`,
-    locationText: event.value.locationText || '場所未定',
-    priceText: event.value.config?.priceText ?? derivePriceText(event.value),
   };
 });
 
-const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
-const defaultTicketId = computed(() => {
-  if (!event.value?.ticketTypes?.length) return null;
-  const paidOrFirst = event.value.ticketTypes.find((ticket) => (ticket.price ?? 0) > 0) ?? event.value.ticketTypes[0];
-  return paidOrFirst?.id ?? null;
-});
-const holdExpireText = computed(() => {
-  if (!holdExpiresAt.value) return null;
-  const date = new Date(holdExpiresAt.value);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
+
+const amountText = computed(() => {
+  if (!pendingPayment.value) {
+    const prices = event.value?.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+    if (!prices.length) return '無料 / 未定';
+    const max = Math.max(...prices);
+    if (max === 0) return '無料';
+    const min = Math.min(...prices);
+    return min === max ? currencyFormatter.format(max) : `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
+  }
+  const amount = pendingPayment.value.amount;
+  if (amount === null || amount === undefined) {
+    const prices = event.value?.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+    if (!prices.length) return '無料 / 未定';
+    const max = Math.max(...prices);
+    if (max === 0) return '無料';
+    const min = Math.min(...prices);
+    return min === max ? currencyFormatter.format(max) : `${currencyFormatter.format(min)} 〜 ${currencyFormatter.format(max)}`;
+  }
+  return amount === 0 ? '無料' : currencyFormatter.format(amount);
 });
 
-const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => {
-  if (!detail.value) return null;
-  return {
-    eventId: detail.value.id,
-    title: detail.value.title,
-    timeText: detail.value.timeText,
-    locationText: detail.value.locationText,
-    priceText: detail.value.priceText,
-    paymentStatus: status,
-    holdExpiresAt: new Date(Date.now() + HOLD_DURATION_MS).toISOString(),
-  };
+const ticketNameText = computed(() => {
+  const ticketTypes = event.value?.ticketTypes ?? [];
+  if (!ticketTypes.length) return '通常';
+  const draft = loadDraftPayload();
+  const targetId = pendingPayment.value?.ticketTypeId ?? draft?.ticketTypeId ?? ticketTypes[0].id;
+  const ticket = ticketTypes.find((entry) => entry.id === targetId) ?? ticketTypes[0];
+  return ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '通常';
+});
+
+const hasPaidTicket = computed(
+  () => event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
+);
+
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: true, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '申込受付は終了しています。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
 };
 
-const goToSuccessPage = (payload: SuccessPayload) => {
-  sessionStorage.setItem(MOBILE_EVENT_SUCCESS_KEY, JSON.stringify(payload));
-  router.replace({ name: 'MobileEventSuccess', params: { eventId: payload.eventId } });
+const registrationWindow = computed(() => resolveRegistrationWindow(event.value));
+
+const isFreeEvent = computed(() => {
+  const prices = event.value?.ticketTypes?.map((t) => t.price ?? 0) ?? [];
+  if (!prices.length) return true;
+  return Math.max(...prices) === 0;
+});
+
+const ctaLabel = computed(() => {
+  const amount = pendingPayment.value?.amount ?? null;
+  if (submitting.value) return '処理中…';
+  if (!pendingPayment.value && !registrationWindow.value.open) return '受付終了';
+  if (amount !== null && amount > 0) return `${currencyFormatter.format(amount)} を支払う`;
+  if (!pendingPayment.value) return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
+  return hasPaidTicket.value ? '支払いへ進む' : '無料で申し込む';
+});
+
+const ctaDisabled = computed(
+  () => submitting.value || (!pendingPayment.value && !registrationWindow.value.open),
+);
+
+const loadPendingPayment = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as PendingPaymentPayload;
+    if (!stored?.registrationId) return null;
+    if (stored?.eventId && stored.eventId !== eventId.value) return null;
+    return stored;
+  } catch {
+    return null;
+  }
 };
 
-const storePendingPayment = (registration: EventRegistrationSummary) => {
-  const payload = buildSuccessPayload('paid');
-  if (!payload) return;
-  holdExpiresAt.value = payload.holdExpiresAt;
-  const pendingRecord = {
+const loadDraftPayload = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as RegistrationDraftPayload & { answers?: Record<string, any> };
+    if (stored?.eventId !== eventId.value) return null;
+    return {
+      eventId: stored.eventId,
+      formAnswers: stored.formAnswers ?? stored.answers ?? undefined,
+      ticketTypeId: stored.ticketTypeId ?? undefined,
+      savedAt: stored.savedAt ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const storePendingPayment = (payload: PendingPaymentPayload) => {
+  const data: PendingPaymentPayload = {
     ...payload,
-    registrationId: registration.registrationId,
+    eventId: payload.eventId ?? eventId.value,
+    source: payload.source ?? 'mobile',
   };
-  sessionStorage.setItem(MOBILE_EVENT_PENDING_PAYMENT_KEY, JSON.stringify(pendingRecord));
+  sessionStorage.setItem(MOBILE_EVENT_PENDING_PAYMENT_KEY, JSON.stringify(data));
 };
 
-const clearPendingPayment = () => {
-  sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+const loadPendingFromServer = async (preferredRegistrationId?: string) => {
+  try {
+    const myEvents = await fetchMyEvents();
+    const matched =
+      (preferredRegistrationId
+        ? myEvents.find((item) => item.registrationId === preferredRegistrationId)
+        : null) ??
+      myEvents.find((item) => item.event?.id === eventId.value);
+    if (!matched) return null;
+    const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+    const paid = paidLike.includes(matched.paymentStatus || '') || paidLike.includes(matched.status);
+    const amount = matched.amount ?? 0;
+    if (amount > 0 && !paid) {
+      return {
+        registrationId: matched.registrationId,
+        amount,
+        eventId: matched.event?.id ?? eventId.value,
+        source: 'mobile',
+      } as PendingPaymentPayload;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const hydratePendingPayment = async () => {
+  if (pendingPayment.value) return;
+  const registrationId = normalizeQueryValue(route.query.registrationId);
+  if (registrationId) {
+    const serverPending = await loadPendingFromServer(registrationId);
+    if (serverPending) {
+      pendingPayment.value = serverPending;
+      return;
+    }
+    pendingPayment.value = {
+      registrationId,
+      amount: null,
+      eventId: eventId.value,
+      source: 'mobile',
+    };
+    return;
+  }
+  const serverPending = await loadPendingFromServer();
+  if (serverPending) pendingPayment.value = serverPending;
 };
 
 const loadEvent = async () => {
   if (!eventId.value) {
-    error.value = 'イベントが見つかりませんでした。';
+    error.value = 'イベントが見つかりません';
+    loading.value = false;
     return;
   }
   loading.value = true;
   error.value = null;
   try {
     event.value = await fetchEventById(eventId.value);
-    loadAnswersFromDraft();
   } catch (err) {
-    error.value = resolveErrorMessage(err, 'イベント情報の取得に失敗しました');
+    error.value = 'イベント情報を取得できませんでした';
   } finally {
     loading.value = false;
   }
 };
 
-watch(
-  () => eventId.value,
-  (newId, oldId) => {
-    if (newId && newId !== oldId && user.value) {
-      loadEvent();
-    }
-  },
-);
-
-const loadAnswersFromDraft = () => {
-  try {
-    const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
-    if (!raw) {
-      error.value = '入力情報が見つかりませんでした。もう一度入力してください。';
-      router.replace({ name: 'MobileEventRegister', params: { eventId: eventId.value } });
-      return;
-    }
-    const stored = JSON.parse(raw);
-    if (stored?.eventId !== eventId.value || !stored?.answers) {
-      router.replace({ name: 'MobileEventRegister', params: { eventId: eventId.value } });
-      return;
-    }
-    Object.keys(answers).forEach((key) => delete answers[key]);
-    Object.assign(answers, stored.answers);
-  } catch {
-    router.replace({ name: 'MobileEventRegister', params: { eventId: eventId.value } });
-  }
-};
-
 onMounted(() => {
-  if (!user.value) {
-    router.replace({ name: 'organizer-apply', query: { redirect: route.fullPath } });
-    return;
-  }
-  loadEvent();
+  // ここでは主催者申請ページへはリダイレクトせず、利用者がそのまま申し込みできるようにする。
+  // 未ログインの場合は後続の API で認証エラーとなるので、フロント側で適宜ログイン誘導を行う。
+  loadEvent().then(() => {
+    if (event.value && isFreeEvent.value) {
+      const payload = buildSuccessPayload('free');
+      if (payload) {
+        goToSuccessPage(payload);
+      }
+    }
+  });
+  pendingPayment.value = loadPendingPayment();
+  void hydratePendingPayment();
 });
 
-const submitRegistration = async () => {
+const handlePay = async () => {
   if (!eventId.value) return;
   submitting.value = true;
   registrationError.value = null;
   try {
-    const registration = await createRegistration(eventId.value, {
-      ticketTypeId: defaultTicketId.value ?? undefined,
-      formAnswers: { ...answers },
-    });
-    handleRegistrationResult(registration);
-    sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    if (!pendingPayment.value) {
+      const draft = loadDraftPayload();
+      if (!draft) {
+        await hydratePendingPayment();
+        if (!pendingPayment.value) {
+          if (!registrationWindow.value.open) {
+            registrationError.value =
+              registrationWindow.value.reason ?? '申込受付は終了しました。';
+          } else {
+            registrationError.value = '申込記録が見つかりません。最初からやり直してください。';
+          }
+          return;
+        }
+      }
+      if (!pendingPayment.value) {
+        if (!registrationWindow.value.open) {
+          registrationError.value =
+            registrationWindow.value.reason ?? '申込受付は終了しました。';
+          return;
+        }
+        const registration = await createRegistration(eventId.value, {
+          ticketTypeId: draft?.ticketTypeId,
+          formAnswers: draft?.formAnswers,
+        });
+        sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+        if (!registration.paymentRequired || (registration.amount ?? 0) === 0) {
+          sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+          const payload = buildSuccessPayload('free');
+          if (payload) {
+            goToSuccessPage(payload);
+          }
+          return;
+        }
+        pendingPayment.value = {
+          registrationId: registration.registrationId,
+          amount: registration.amount,
+          eventId: registration.eventId,
+          source: 'mobile',
+        };
+      }
+    }
+
+    const activePayment = pendingPayment.value;
+    if (!activePayment) {
+      registrationError.value = '支払い情報を取得できませんでした。';
+      return;
+    }
+
+    const { checkoutUrl, resume } = await createStripeCheckout(activePayment.registrationId);
+    if (resume) {
+      window.alert('未完了の決済があります。決済を再開してください。');
+    }
+    storePendingPayment(activePayment);
+    window.location.href = checkoutUrl;
   } catch (err) {
-    registrationError.value = resolveErrorMessage(err, '申込に失敗しました');
+    registrationError.value = '処理に失敗しました';
   } finally {
     submitting.value = false;
   }
 };
 
-const handleRegistrationResult = (registration: EventRegistrationSummary) => {
-  if (registration.paymentRequired) {
-    pendingPayment.value = {
-      registrationId: registration.registrationId,
-      amount: registration.amount,
-    };
-    storePendingPayment(registration);
-    const expiresAt = holdExpireText.value;
-    paymentMessage.value = expiresAt
-      ? `お支払いを完了すると参加が確定します。枠は ${expiresAt} まで保持されます。`
-      : 'お支払いを完了すると参加が確定します。';
-    sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
-  } else {
-    pendingPayment.value = null;
-    const payload = buildSuccessPayload('free');
-    sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
-    if (payload) {
-      goToSuccessPage(payload);
-    }
-  }
+const buildSuccessPayload = (status: 'free' | 'paid') => {
+  if (!detail.value) return null;
+  return {
+    eventId: detail.value.id,
+    title: detail.value.title,
+    timeText: detail.value.timeText,
+    paymentStatus: status,
+  };
 };
 
-const handleMockPayment = async () => {
-  if (!pendingPayment.value) return;
-  isPaying.value = true;
-  registrationError.value = null;
-  try {
-    await createMockPayment(pendingPayment.value.registrationId);
-    pendingPayment.value = null;
-    paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
-    clearPendingPayment();
-    const payload = buildSuccessPayload('paid');
-    if (payload) {
-      goToSuccessPage(payload);
-      return;
-    }
-  } catch (err) {
-    registrationError.value = resolveErrorMessage(err, '決済処理に失敗しました');
-  } finally {
-    isPaying.value = false;
-  }
+const goToSuccessPage = (payload: any) => {
+  sessionStorage.setItem(MOBILE_EVENT_SUCCESS_KEY, JSON.stringify(payload));
+  router.replace({ name: 'MobileEventSuccess', params: { eventId: payload.eventId } });
 };
 
-const handleStripeCheckout = async () => {
-  if (!pendingPayment.value) return;
-  isRedirecting.value = true;
-  registrationError.value = null;
-  try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
-    window.location.href = checkoutUrl;
-  } catch (err: any) {
-    const message =
-      err?.response?.data?.message ?? (err instanceof Error ? err.message : 'Stripe Checkoutの開始に失敗しました');
-    registrationError.value = message;
-    isRedirecting.value = false;
-  }
+const goBack = () => {
+  router.back();
 };
 
-const goBackToForm = () => {
-  router.push({ name: 'MobileEventRegister', params: { eventId: eventId.value } });
+const formatDate = (value: string) => {
+  const d = new Date(value);
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()}(${wd}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-
-const fieldKey = (field: RegistrationFormField, index: number) => field.id ?? `${field.label ?? 'field'}-${index}`;
-const displayValue = (field: RegistrationFormField, index: number) => {
-  const value = answers[fieldKey(field, index)];
-  if (Array.isArray(value)) {
-    return value.length ? value.join(', ') : '未入力';
-  }
-  if (typeof value === 'boolean') {
-    return value ? 'はい' : 'いいえ';
-  }
-  return value || '未入力';
-};
-
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    weekday: 'short',
-    hour: '2-digit',
-  });
 </script>
 
 <style scoped>
-.mobile-checkout {
+.mobile-pay-confirm {
   background: #f8fafc;
   min-height: 100vh;
-}
-
-.checkout-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 16px 6px;
-}
-
-.back-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: none;
-  background: #fff;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-}
-
-.header-info h1 {
-  font-size: 18px;
-  margin: 2px 0 0;
-  font-weight: 600;
-}
-
-.header-label {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
-  margin: 0;
-  letter-spacing: 0.1em;
-}
-
-.checkout-body {
-  padding: 0 16px 80px;
+  padding: 16px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.hero-card {
-  background: linear-gradient(135deg, #14213d, #4860f1);
-  color: #f0f5ff;
-  border-radius: 20px;
-  padding: 18px;
+.topbar {
+  width: 100%;
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary {
+  background: #fff;
+  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.05);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
 }
 
-.hero-title {
-  font-size: 20px;
+.summary-label {
   margin: 0;
-}
-
-.hero-meta {
-  margin: 0;
-  font-size: 13px;
-  opacity: 0.85;
-}
-
-.hero-price {
-  margin: 4px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.ios-panel {
-  background: #fff;
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-}
-
-.panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.panel-label {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.panel-hint {
-  margin: 4px 0 0;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
+  color: #64748b;
+  letter-spacing: 0.08em;
 }
 
-.confirm-list {
-  list-style: none;
-  padding: 0;
-  margin: 16px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.summary-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
-.confirm-label {
+.summary-line {
   margin: 0;
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.5);
+  color: #475569;
 }
 
-.confirm-value {
-  margin: 2px 0 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.9);
+.summary-line--wrap {
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
-.checkout-actions {
+.summary--refund {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: none;
+}
+.summary--payment {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+.payment-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  margin-top: 6px;
 }
-
-.payment-hint {
+.payment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.payment-name {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.payment-value {
   margin: 0;
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
+  font-weight: 600;
+  color: #0f172a;
 }
-.payment-hint.subtle {
-  color: rgba(15, 23, 42, 0.55);
+.payment-value--amount {
+  font-size: 15px;
+  font-weight: 800;
+  color: #22c55e;
 }
 
-.payment-buttons {
+.summary-amount {
+  margin: 4px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.actions {
   display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
-.rails-cta {
+.btn {
   width: 100%;
-  border: none;
-  border-radius: 999px;
-  padding: 14px 18px;
+  height: 48px;
+  border-radius: 12px;
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  background: #0090d9;
-  color: #fff;
-  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
-.rails-cta:active:not(.is-disabled) {
-  transform: scale(0.98);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
-}
-
-.rails-cta.is-disabled,
-.rails-cta:disabled {
-  background: #92d0f5;
-  color: rgba(255, 255, 255, 0.8);
-  box-shadow: none;
-  transform: none;
-}
-
-.ios-error {
-  margin-top: 10px;
-  font-size: 13px;
-  color: #dc2626;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(220, 38, 38, 0.08);
+.btn.primary {
+  border: none;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  color: #fff;
 }
 
 .state-card {
-  padding: 18px;
-  margin: 24px 16px;
-  border-radius: 16px;
+  padding: 16px;
+  border-radius: 12px;
   background: #fff;
+  color: #0f172a;
   text-align: center;
+  border: 1px solid rgba(15, 23, 42, 0.05);
 }
 
 .state-card--error {
-  border: 1px solid rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.ghost-btn {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.error-text {
+  margin: 6px 0 0;
+  font-size: 13px;
   color: #dc2626;
 }
 
-.retry-btn {
-  margin-top: 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-primary, #0ea5e9);
-  font-size: 14px;
-}
-
-.checkout-skeleton {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.skeleton-hero,
-.skeleton-card {
-  width: 100%;
-  border-radius: 20px;
-  height: 120px;
-}
-
-.skeleton-hero {
-  height: 200px;
-}
-
-.shimmer {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(90deg, #edf2ff 25%, #e2e8f8 37%, #edf2ff 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -100% 0;
-  }
-}
 </style>

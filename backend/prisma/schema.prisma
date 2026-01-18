@@ -1,5 +1,3 @@
-// Prisma schema for MORE App backend
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,81 +8,97 @@ datasource db {
 }
 
 model User {
-  id            String              @id @default(cuid())
-  lineUserId    String?             @unique
-  email         String?             @unique
-  name          String?
-  avatarUrl     String?
-  language      String?
-  preferredLocale String?           @default("ja")
-  prefecture    String?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  isOrganizer   Boolean             @default(false)
-  isAdmin       Boolean             @default(false)
-  status        String              @default("active")
-  communities   Community[]         @relation("CommunityOwner")
-  memberships   CommunityMember[]
-  registrations EventRegistration[]
-  payments      Payment[]
-  organizerApplications OrganizerApplication[]
-  aiEventDraftLogs AiEventDraftLog[]
-  promptAudits  PromptAuditLog[]
-  promptDefinitionsCreated PromptDefinition[] @relation("PromptCreatedBy")
-  promptDefinitionsUpdated PromptDefinition[] @relation("PromptUpdatedBy")
-  promptDefinitionsApproved PromptDefinition[] @relation("PromptApprovedBy")
-  updatedI18nMessages I18nMessage[] @relation("I18nMessageUpdatedBy")
+  id                        String                 @id @default(cuid())
+  lineUserId                String?                @unique
+  email                     String?                @unique
+  phone                     String?                @unique
+  name                      String?
+  avatarUrl                 String?
+  language                  String?
+  preferredLocale           String?                @default("ja")
+  authProviders             String[]               @default([])
+  emailVerifiedAt           DateTime?
+  phoneVerifiedAt           DateTime?
+  lastLoginAt               DateTime?
+  organizerPayoutPolicyAcceptedAt DateTime?
+  prefecture                String?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  isOrganizer               Boolean                @default(false)
+  isAdmin                   Boolean                @default(false)
+  status                    String                 @default("active")
+  aiEventDraftLogs          AiEventDraftLog[]
+  analyticsEvents           AnalyticsEvent[]
+  communities               Community[]            @relation("CommunityOwner")
+  memberships               CommunityMember[]
+  communityFollows          CommunityFollow[]
+  eventFollows              EventFollow[]
+  registrations             EventRegistration[]
+  updatedI18nMessages       I18nMessage[]          @relation("I18nMessageUpdatedBy")
+  organizerApplications     OrganizerApplication[]
+  payments                  Payment[]
+  promptAudits              PromptAuditLog[]
+  promptDefinitionsApproved PromptDefinition[]     @relation("PromptApprovedBy")
+  promptDefinitionsCreated  PromptDefinition[]     @relation("PromptCreatedBy")
+  promptDefinitionsUpdated  PromptDefinition[]     @relation("PromptUpdatedBy")
+  notificationPreferences   NotificationPreference[]
+  notificationDeliveries    NotificationDelivery[]
 }
 
 model Community {
-  id             String             @id @default(cuid())
-  ownerId        String
-  name           String
-  slug           String             @unique
-  description    Json
-  coverImageUrl  String?
-  labels         String[]
-  visibleLevel   String
-  language       String?
-  pricingPlanId  String?
-  stripeAccountId String?
-  stripeAccountOnboarded Boolean    @default(false)
-  stripeSubscriptionId String?
-  stripeCustomerId String?
-  status         String             @default("active")
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  owner          User               @relation("CommunityOwner", fields: [ownerId], references: [id])
-  pricingPlan    PricingPlan?       @relation(fields: [pricingPlanId], references: [id])
-  members        CommunityMember[]
-  events         Event[]
-  payments       Payment[]
-  aiEventDraftLogs AiEventDraftLog[]
+  id                     String            @id @default(cuid())
+  ownerId                String
+  name                   String
+  slug                   String            @unique
+  description            Json
+  coverImageUrl          String?
+  labels                 String[]
+  visibleLevel           String
+  language               String?
+  pricingPlanId          String?
+  stripeAccountId        String?
+  stripeAccountOnboarded Boolean           @default(false)
+  stripeSubscriptionId   String?
+  stripeCustomerId       String?
+  settlementDelayDaysOverride        Int?
+  settlementMinTransferAmountOverride Int?
+  status                 String            @default("active")
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  aiEventDraftLogs       AiEventDraftLog[]
+  classes                Class[]
+  owner                  User              @relation("CommunityOwner", fields: [ownerId], references: [id])
+  pricingPlan            PricingPlan?      @relation(fields: [pricingPlanId], references: [id])
+  members                CommunityMember[]
+  follows                CommunityFollow[]
+  events                 Event[]
+  payments               Payment[]
+  settlementItems        SettlementItem[]
 }
 
 model CommunityTagCategory {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   nameJa    String
   nameEn    String?
   nameZh    String?
-  order     Int      @default(1000)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  order     Int            @default(1000)
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
   tags      CommunityTag[]
 }
 
 model CommunityTag {
-  id          String   @id @default(cuid())
-  categoryId  String
-  nameJa      String
-  nameEn      String?
-  nameZh      String?
-  order       Int      @default(1000)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  category    CommunityTagCategory @relation(fields: [categoryId], references: [id])
+  id         String               @id @default(cuid())
+  categoryId String
+  nameJa     String
+  nameEn     String?
+  nameZh     String?
+  order      Int                  @default(1000)
+  active     Boolean              @default(true)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  category   CommunityTagCategory @relation(fields: [categoryId], references: [id])
 
   @@index([categoryId])
 }
@@ -106,13 +120,26 @@ model CommunityMember {
   @@unique([communityId, userId])
 }
 
+model CommunityFollow {
+  id          String    @id @default(cuid())
+  communityId String
+  userId      String
+  createdAt   DateTime  @default(now())
+  community   Community @relation(fields: [communityId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+}
+
 model Event {
-  id                     String               @id @default(cuid())
+  id                     String              @id @default(cuid())
   communityId            String
   title                  Json
   description            Json
   descriptionHtml        String?
-  originalLanguage       String               @default("ja")
+  originalLanguage       String              @default("ja")
   category               String?
   startTime              DateTime
   endTime                DateTime
@@ -125,9 +152,9 @@ model Event {
   minParticipants        Int?
   maxParticipants        Int?
   visibility             String
-  requireApproval        Boolean              @default(false)
+  requireApproval        Boolean             @default(false)
   status                 String
-  reviewStatus           String               @default("pending_review")
+  reviewStatus           String              @default("pending_review")
   reviewReason           String?
   reviewReviewedAt       DateTime?
   reviewReviewerId       String?
@@ -135,91 +162,387 @@ model Event {
   config                 Json?
   refundPolicy           Json?
   coverType              String?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  community              Community            @relation(fields: [communityId], references: [id])
-  ticketTypes            EventTicketType[]
-  registrations          EventRegistration[]
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  community              Community           @relation(fields: [communityId], references: [id])
   checkins               EventCheckin[]
   galleries              EventGallery[]
+  registrations          EventRegistration[]
+  ticketTypes            EventTicketType[]
   payments               Payment[]
+  follows                EventFollow[]
+}
+
+model EventFollow {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model Class {
+  id                String    @id @default(cuid())
+  communityId       String
+  title             Json
+  description       Json?
+  coverImageUrl     String?
+  locationName      String?
+  priceYenPerLesson Int
+  defaultCapacity   Int?
+  status            String    @default("active")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  community         Community @relation(fields: [communityId], references: [id])
+  lessons           Lesson[]
+}
+
+model Lesson {
+  id             String              @id @default(cuid())
+  classId        String
+  startAt        DateTime
+  endAt          DateTime?
+  capacity       Int?
+  status         String              @default("scheduled")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  checkins       EventCheckin[]
+  registrations  EventRegistration[]
+  class          Class               @relation(fields: [classId], references: [id])
+  payments       Payment[]
+  refundRequests RefundRequest[]
+
+  @@index([classId, startAt])
 }
 
 model EventTicketType {
-  id         String   @id @default(cuid())
-  eventId    String
-  name       Json
-  type       String
-  price      Int
-  quota      Int?
-  createdAt  DateTime @default(now())
-  event      Event    @relation(fields: [eventId], references: [id])
+  id            String              @id @default(cuid())
+  eventId       String
+  name          Json
+  type          String
+  price         Int
+  quota         Int?
+  createdAt     DateTime            @default(now())
   registrations EventRegistration[]
+  event         Event               @relation(fields: [eventId], references: [id])
 }
 
 model EventRegistration {
-  id            String          @id @default(cuid())
-  eventId       String
+  id            String           @id @default(cuid())
+  eventId       String?
   userId        String
-  ticketTypeId  String
+  ticketTypeId  String?
   status        String
   formAnswers   Json?
-  amount        Int             @default(0)
-  paidAmount    Int             @default(0)
+  amount        Int              @default(0)
+  paidAmount    Int              @default(0)
   paymentStatus String
-  attended      Boolean         @default(false)
-  noShow        Boolean         @default(false)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  event         Event           @relation(fields: [eventId], references: [id])
-  user          User            @relation(fields: [userId], references: [id])
-  ticketType    EventTicketType @relation(fields: [ticketTypeId], references: [id])
+  attended      Boolean          @default(false)
+  noShow        Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  lessonId      String?
   checkins      EventCheckin[]
-  payment       Payment?        @relation("RegistrationPayment")
+  event         Event?           @relation(fields: [eventId], references: [id])
+  lesson        Lesson?          @relation(fields: [lessonId], references: [id])
+  ticketType    EventTicketType? @relation(fields: [ticketTypeId], references: [id])
+  user          User             @relation(fields: [userId], references: [id])
+  payment       Payment?         @relation("RegistrationPayment")
+  refundRequest RefundRequest?
+
+  @@unique([userId, lessonId])
+  @@unique([userId, eventId])
+}
+
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  channel   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, channel])
+  @@index([userId])
+}
+
+model NotificationDelivery {
+  id               String   @id @default(cuid())
+  idempotencyKey   String   @unique
+  userId           String?
+  role             String
+  type             String
+  category         String
+  channel          String
+  status           String
+  providerMessageId String?
+  errorMessage     String?
+  meta             Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
 }
 
 model EventCheckin {
-  id             String           @id @default(cuid())
-  eventId        String
+  id             String            @id @default(cuid())
+  eventId        String?
   registrationId String
-  checkinAt      DateTime         @default(now())
+  checkinAt      DateTime          @default(now())
   checkinType    String
-  event          Event            @relation(fields: [eventId], references: [id])
+  lessonId       String?
+  event          Event?            @relation(fields: [eventId], references: [id])
+  lesson         Lesson?           @relation(fields: [lessonId], references: [id])
   registration   EventRegistration @relation(fields: [registrationId], references: [id])
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  eventName String
+  timestamp DateTime @default(now())
+  sessionId String
+  userId    String?
+  path      String?
+  isLiff    Boolean  @default(false)
+  userAgent String?
+  payload   Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([eventName, timestamp])
+  @@index([sessionId])
 }
 
 model EventGallery {
   id        String   @id @default(cuid())
   eventId   String
-  event     Event    @relation(fields: [eventId], references: [id])
   imageUrl  String
   isCover   Boolean  @default(true)
   order     Int      @default(0)
   createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id])
 }
 
 model Payment {
-  id                      String    @id @default(cuid())
+  id                      String             @id @default(cuid())
   userId                  String
   communityId             String?
   eventId                 String?
-  registrationId          String?  @unique
+  registrationId          String?            @unique
   amount                  Int
-  platformFee             Int      @default(0)
+  platformFee             Int                @default(0)
   feePercent              Float?
-  currency                String   @default("jpy")
-  status                  String   @default("pending")
-  method                  String   @default("stripe")
+  currency                String             @default("jpy")
+  status                  String             @default("pending")
+  method                  String             @default("stripe")
+  chargeModel             ChargeModel
   stripePaymentIntentId   String?
   stripeChargeId          String?
+  stripeDisputeId         String?
+  stripeDisputeStatus     String?
+  stripeDisputedAt        DateTime?
+  stripeDisputeResolvedAt DateTime?
+  stripeTransferId        String?
   stripeRefundId          String?
-  stripeCheckoutSessionId String? @unique
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  user                    User     @relation(fields: [userId], references: [id])
-  community               Community? @relation(fields: [communityId], references: [id])
-  event                   Event?    @relation(fields: [eventId], references: [id])
+  stripeCheckoutSessionId String?            @unique
+  stripeFeeAmountActual   Int?
+  stripeFeeAmountEstimated Int?
+  merchantTransferAmount  Int?
+  refundedGrossTotal      Int               @default(0)
+  refundedPlatformFeeTotal Int              @default(0)
+  reversedMerchantTotal   Int               @default(0)
+  stripeFeeReversalId     String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  lessonId                String?
+  provider                String?
+  providerObjectId        String?
+  providerObjectType      String?
+  providerAccountId       String?
+  providerBalanceTxId     String?
+  idempotencyKey          String?            @unique
+  community               Community?         @relation(fields: [communityId], references: [id])
+  event                   Event?             @relation(fields: [eventId], references: [id])
+  lesson                  Lesson?            @relation(fields: [lessonId], references: [id])
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
+  user                    User               @relation(fields: [userId], references: [id])
+  refundRequests          RefundRequest[]
+
+  @@index([provider, providerObjectId])
+  @@index([providerBalanceTxId])
+  @@index([stripePaymentIntentId])
+  @@index([communityId, createdAt])
+  @@index([communityId, status, createdAt])
+}
+
+enum ChargeModel {
+  platform_charge
+  destination_charge
+}
+
+model EventInbox {
+  id          String   @id @default(cuid())
+  type        String
+  eventId     String
+  payloadHash String?
+  processedAt DateTime?
+  attempts    Int      @default(0)
+  lastError   String?
+  nextAttemptAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([type, eventId])
+  @@index([processedAt])
+  @@index([nextAttemptAt])
+}
+
+model SettlementBatch {
+  id         String   @id @default(cuid())
+  periodFrom DateTime
+  periodTo   DateTime
+  currency   String   @default("jpy")
+  status     String   @default("pending")
+  runAt      DateTime @default(now())
+  meta       Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items      SettlementItem[]
+
+  @@unique([periodFrom, periodTo, currency])
+  @@index([periodFrom])
+  @@index([periodTo])
+  @@index([status])
+}
+
+model SettlementItem {
+  id              String   @id @default(cuid())
+  batchId         String
+  hostId          String
+  currency        String   @default("jpy")
+  hostBalance     Int
+  settleAmount    Int
+  carryReceivable Int
+  status          String   @default("pending")
+  counts          Json?
+  stripeTransferId String?
+  errorMessage    String?
+  attempts        Int      @default(0)
+  nextAttemptAt   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  batch SettlementBatch @relation(fields: [batchId], references: [id])
+  host  Community      @relation(fields: [hostId], references: [id])
+
+  @@unique([batchId, hostId])
+  @@index([batchId])
+  @@index([hostId])
+  @@index([status])
+  @@index([nextAttemptAt])
+}
+
+model RefundRequest {
+  id              String            @id @default(cuid())
+  registrationId  String            @unique
+  paymentId       String?
+  decision        String?
+  status          String            @default("requested")
+  requestedAmount Int
+  approvedAmount  Int?
+  refundedAmount  Int?
+  reason          String?
+  gatewayRefundId String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  lessonId        String?
+  lesson          Lesson?           @relation(fields: [lessonId], references: [id])
+  payment         Payment?          @relation(fields: [paymentId], references: [id])
+  registration    EventRegistration @relation(fields: [registrationId], references: [id])
+}
+
+model PaymentGatewayEvent {
+  id                String    @id @default(cuid())
+  paymentId         String?
+  registrationId    String?
+  eventId           String?
+  lessonId          String?
+  communityId       String?
+  userId            String?
+  gateway           String
+  provider          String?
+  providerEventId   String?
+  providerAccountId String?
+  providerObjectId  String?
+  eventType         String
+  status            String
+  message           String?
+  payload           Json?
+  payloadHash       String?
+  receivedAt        DateTime  @default(now())
+  nextAttemptAt     DateTime?
+  processedAt       DateTime?
+  attempts          Int       @default(0)
+  errorMessage      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([provider, providerEventId], name: "provider_providerEventId")
+  @@index([paymentId])
+  @@index([registrationId])
+  @@index([eventId])
+  @@index([lessonId])
+  @@index([communityId])
+  @@index([userId])
+  @@index([gateway, eventType])
+  @@index([status])
+  @@index([nextAttemptAt])
+  @@index([processedAt])
+}
+
+model LedgerEntry {
+  id                     String   @id @default(cuid())
+  businessPaymentId      String
+  businessRegistrationId String?
+  businessLessonId       String?
+  businessCommunityId    String?
+  userId                 String?
+  entryType              String
+  direction              String
+  amount                 Int
+  currency               String   @default("jpy")
+  provider               String
+  providerObjectType     String?
+  providerObjectId       String?
+  providerBalanceTxId    String?
+  providerAccountId      String?
+  idempotencyKey         String   @unique
+  status                 String   @default("booked")
+  reversalOfLedgerId     String?
+  reversedByLedgerId     String?
+  occurredAt             DateTime @default(now())
+  metadata               Json?
+  createdAt              DateTime @default(now())
+
+  @@index([provider, providerObjectId])
+  @@index([businessPaymentId])
+  @@index([businessRegistrationId])
+  @@index([businessLessonId])
+  @@index([businessCommunityId])
+  @@index([userId])
+  @@index([providerBalanceTxId])
+  @@index([entryType])
+  @@index([businessCommunityId, entryType, occurredAt])
 }
 
 model I18nMessage {
@@ -247,8 +570,8 @@ model PricingPlan {
   features              Json?
   stripePriceId         String?
   active                Boolean     @default(true)
-  feePolicies           FeePolicy[]
   communities           Community[]
+  feePolicies           FeePolicy[]
 }
 
 model PromptAuditLog {
@@ -263,72 +586,72 @@ model PromptAuditLog {
 }
 
 model PromptDefinition {
-  id            String   @id
-  name          String
-  description   String?
-  version       String?
-  system        String
-  instructions  String?
-  params        Json?
-  tags          Json?
-  meta          Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  createdById   String?
-  updatedById   String?
-  createdBy     User?    @relation("PromptCreatedBy", fields: [createdById], references: [id])
-  updatedBy     User?    @relation("PromptUpdatedBy", fields: [updatedById], references: [id])
-  status        String   @default("draft")
-  approvedById  String?
-  approvedAt    DateTime?
-  approvedBy    User?    @relation("PromptApprovedBy", fields: [approvedById], references: [id])
+  id           String    @id
+  name         String
+  description  String?
+  version      String?
+  system       String
+  instructions String?
+  params       Json?
+  tags         Json?
+  meta         Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdById  String?
+  updatedById  String?
+  status       String    @default("draft")
+  approvedById String?
+  approvedAt   DateTime?
+  approvedBy   User?     @relation("PromptApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User?     @relation("PromptCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?     @relation("PromptUpdatedBy", fields: [updatedById], references: [id])
 }
 
 model FeePolicy {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   pricingPlanId String
-  pricingPlan   PricingPlan @relation(fields: [pricingPlanId], references: [id])
   percent       Float
   fixed         Int
-  startAt       DateTime @default(now())
+  startAt       DateTime    @default(now())
   endAt         DateTime?
+  pricingPlan   PricingPlan @relation(fields: [pricingPlanId], references: [id])
 }
 
 model OrganizerApplication {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  status     String   @default("pending")
+  status     String    @default("pending")
   reason     String?
   experience String?
+  contact    String?
   note       String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   reviewedAt DateTime?
   reviewerId String?
+  user       User      @relation(fields: [userId], references: [id])
 }
 
 model AiEventDraftLog {
-  id           String    @id @default(cuid())
-  communityId  String
-  userId       String
-  stage        String
-  summary      String?
-  qaState      Json?
-  messages     Json
-  aiResult     Json?
-  promptVersion String?  @default("coach-v1")
-  status       String?   @default("collecting")
-  turnCount    Int?      @default(0)
-  language     String?
-  meta         Json?
-  createdAt    DateTime  @default(now())
-  community    Community @relation(fields: [communityId], references: [id])
-  user         User      @relation(fields: [userId], references: [id])
+  id            String    @id @default(cuid())
+  communityId   String
+  userId        String
+  stage         String
+  summary       String?
+  qaState       Json?
+  messages      Json
+  aiResult      Json?
+  promptVersion String?   @default("coach-v1")
+  status        String?   @default("collecting")
+  turnCount     Int?      @default(0)
+  language      String?
+  meta          Json?
+  createdAt     DateTime  @default(now())
+  community     Community @relation(fields: [communityId], references: [id])
+  user          User      @relation(fields: [userId], references: [id])
 }
 
-// Managed asset for UGC images/files
 model ManagedAsset {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   tenantId         String
   ownerId          String
   resourceType     String
@@ -343,12 +666,12 @@ model ManagedAsset {
   variants         Json?
   width            Int?
   height           Int?
-  status           String   @default("pending")
-  moderationStatus String   @default("pending")
+  status           String    @default("pending")
+  moderationStatus String    @default("pending")
   moderationReason String?
-  visibility       String   @default("public")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  visibility       String    @default("public")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
   @@index([resourceType, resourceId])

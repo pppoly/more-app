@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/unbound-method */
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { promises as fs } from 'fs';
@@ -9,6 +10,7 @@ import { AiService, TranslateTextDto } from '../ai/ai.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { assetKeyToDiskPath, buildAssetUrl } from '../common/storage/asset-path';
 import { ContentModerationService, ModerationResult } from '../common/moderation/content-moderation.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const EVENT_UPLOAD_PREFIX = 'events';
 
@@ -21,16 +23,22 @@ interface LocalizedField {
 
 @Injectable()
 export class ConsoleEventsService {
+  private readonly logger = new Logger(ConsoleEventsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly paymentsService: PaymentsService,
     private readonly aiService: AiService,
     private readonly moderationService: ContentModerationService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
+    const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
+    };
     const events = await this.prisma.event.findMany({
       where: { communityId },
       orderBy: { startTime: 'desc' },
@@ -40,24 +48,47 @@ export class ConsoleEventsService {
         title: true,
         startTime: true,
         endTime: true,
+        regStartTime: true,
+        regEndTime: true,
+        regDeadline: true,
         status: true,
         visibility: true,
+        maxParticipants: true,
+        config: true,
         galleries: {
           orderBy: { order: 'asc' },
           take: 1,
           select: { imageUrl: true },
         },
+        _count: {
+          select: {
+            registrations: { where: successRegistrationWhere },
+          },
+        },
       },
     });
     return events.map((event) => {
-      const coverImageUrl = buildAssetUrl(event.galleries[0]?.imageUrl);
+      const { _count, ...rest } = event;
+      const coverImageUrl = buildAssetUrl(rest.galleries[0]?.imageUrl);
+      const currentParticipants = _count?.registrations ?? 0;
+      const baseConfig =
+        rest.config && typeof rest.config === 'object' ? { ...(rest.config as Record<string, any>) } : {};
+      const config = {
+        ...baseConfig,
+        currentParticipants,
+      };
       return {
-        id: event.id,
-        title: event.title,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        status: event.status,
-        visibility: event.visibility,
+        id: rest.id,
+        title: rest.title,
+        startTime: rest.startTime,
+        endTime: rest.endTime,
+        regStartTime: rest.regStartTime,
+        regEndTime: rest.regEndTime,
+        regDeadline: rest.regDeadline,
+        status: rest.status,
+        visibility: rest.visibility,
+        maxParticipants: rest.maxParticipants,
+        config,
         coverImageUrl,
       };
     });
@@ -67,18 +98,34 @@ export class ConsoleEventsService {
     await this.permissions.assertOrganizer(userId);
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
+    const isDraft = rest?.status === 'draft';
+    const hasPaidTickets = (ticketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
+    if (!isDraft && hasPaidTickets) {
+      const stripe = await this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { stripeAccountId: true, stripeAccountOnboarded: true },
+      });
+      if (!stripe?.stripeAccountId || !stripe?.stripeAccountOnboarded) {
+        throw new BadRequestException('Stripe onboarding 未完了のため、有料イベントは公開できません');
+      }
+    }
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
-    // 跳过审核，直接通过
-    const moderation = await this.moderateEventText(rest);
-    this.applyModerationToEventData(eventData, moderation, false);
-    eventData.status = 'open';
-    eventData.reviewStatus = 'approved';
-    eventData.reviewReason = null;
+    if (!isDraft) {
+      const moderation = await this.moderateEventText(rest);
+      this.applyModerationToEventData(eventData, moderation, false);
+      eventData.status = 'open';
+      eventData.reviewStatus = 'approved';
+      eventData.reviewReason = null;
+    } else {
+      eventData.status = 'draft';
+      eventData.reviewStatus = 'draft';
+      eventData.reviewReason = null;
+    }
     const created = await this.prisma.event.create({
       data: {
         ...eventData,
         community: { connect: { id: communityId } },
-        reviewStatus: eventData.reviewStatus ?? 'approved',
+        reviewStatus: eventData.reviewStatus ?? (isDraft ? 'draft' : 'approved'),
         reviewReason: eventData.reviewReason ?? null,
         ticketTypes: {
           create: ticketTypes.map((ticket: any) => ({
@@ -91,22 +138,27 @@ export class ConsoleEventsService {
       },
       include: { ticketTypes: true },
     });
-    await this.prisma.event.update({
-      where: { id: created.id },
-      data: {
-        config: this.mergeReviewConfig(created.config, {
-          status: 'approved',
-          reviewerId: 'system',
-          reason: eventData.reviewReason ?? null,
-          reviewedAt: new Date(),
-        }),
-      },
-    });
-    this.queueEventTranslation(created.id, created.originalLanguage, {
-      title: created.title,
-      description: created.description,
-      descriptionHtml: created.descriptionHtml,
-    });
+    if (!isDraft) {
+      await this.prisma.event.update({
+        where: { id: created.id },
+        data: {
+          config: this.mergeReviewConfig(created.config, {
+            status: 'approved',
+            reviewerId: 'system',
+            reason: eventData.reviewReason ?? null,
+            reviewedAt: new Date(),
+          }),
+        },
+      });
+      this.queueEventTranslation(created.id, created.originalLanguage, {
+        title: created.title,
+        description: created.description,
+        descriptionHtml: created.descriptionHtml,
+      });
+      void this.notifications.notifyEventPublished(created.id).catch((error) => {
+        this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     return this.prisma.event.findUnique({ where: { id: created.id }, include: { ticketTypes: true } });
   }
 
@@ -128,22 +180,38 @@ export class ConsoleEventsService {
     await this.permissions.assertEventManager(userId, eventId);
     const existing = await this.prisma.event.findUnique({
       where: { id: eventId },
-      select: { status: true, config: true, reviewStatus: true },
+      select: { status: true, config: true, reviewStatus: true, communityId: true, ticketTypes: { select: { price: true } } },
     });
+    const wasDraft = existing?.status === 'draft';
     const { ticketTypes = [], ...rest } = data;
+    const isDraft = rest?.status === 'draft';
+    const nextTicketTypes = ticketTypes && ticketTypes.length ? ticketTypes : existing?.ticketTypes ?? [];
+    const hasPaidTickets = (nextTicketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
+    if (!isDraft && hasPaidTickets && existing?.communityId) {
+      const stripe = await this.prisma.community.findUnique({
+        where: { id: existing.communityId },
+        select: { stripeAccountId: true, stripeAccountOnboarded: true },
+      });
+      if (!stripe?.stripeAccountId || !stripe?.stripeAccountOnboarded) {
+        throw new BadRequestException('Stripe onboarding 未完了のため、有料イベントは公開できません');
+      }
+    }
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
-    const moderation = await this.moderateEventText(rest);
-    this.applyModerationToEventData(eventData, moderation, true);
+    if (!isDraft) {
+      const moderation = await this.moderateEventText(rest);
+      this.applyModerationToEventData(eventData, moderation, true);
+    }
     const baseConfig = eventData.config ?? existing?.config ?? null;
+    const reviewStatus = isDraft ? 'draft' : 'approved';
     eventData.config = this.mergeReviewConfig(baseConfig as any, {
-      status: 'approved',
-      reviewerId: 'system',
+      status: reviewStatus,
+      reviewerId: isDraft ? null : 'system',
       reason: (eventData as any).reviewReason ?? null,
-      reviewedAt: new Date(),
+      reviewedAt: isDraft ? null : new Date(),
     });
-    eventData.reviewStatus = 'approved';
+    eventData.reviewStatus = reviewStatus;
     eventData.reviewReason = null;
-    eventData.status = 'open';
+    eventData.status = isDraft ? 'draft' : 'open';
     const updated = await this.prisma.event.update({
       where: { id: eventId },
       data: eventData,
@@ -173,11 +241,18 @@ export class ConsoleEventsService {
       }
     }
 
-    this.queueEventTranslation(eventId, updated.originalLanguage, {
-      title: updated.title,
-      description: updated.description,
-      descriptionHtml: updated.descriptionHtml,
-    });
+    if (!isDraft) {
+      this.queueEventTranslation(eventId, updated.originalLanguage, {
+        title: updated.title,
+        description: updated.description,
+        descriptionHtml: updated.descriptionHtml,
+      });
+      if (wasDraft) {
+        void this.notifications.notifyEventPublished(eventId).catch((error) => {
+          this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+    }
 
     return this.prisma.event.findUnique({ where: { id: eventId }, include: { ticketTypes: true } });
   }
@@ -190,6 +265,18 @@ export class ConsoleEventsService {
       include: {
         user: { select: { id: true, name: true, avatarUrl: true } },
         ticketType: { select: { id: true, name: true, price: true } },
+        payment: { select: { id: true } },
+        refundRequest: {
+          select: {
+            id: true,
+            status: true,
+            decision: true,
+            requestedAmount: true,
+            approvedAmount: true,
+            refundedAmount: true,
+            reason: true,
+          },
+        },
       },
     });
 
@@ -211,6 +298,18 @@ export class ConsoleEventsService {
           : null,
         status: reg.status,
         paymentStatus: reg.paymentStatus,
+        paymentId: reg.payment?.id ?? null,
+        refundRequest: reg.refundRequest
+          ? {
+              id: reg.refundRequest.id,
+              status: reg.refundRequest.status,
+              decision: reg.refundRequest.decision ?? null,
+              requestedAmount: reg.refundRequest.requestedAmount,
+              approvedAmount: reg.refundRequest.approvedAmount ?? null,
+              refundedAmount: reg.refundRequest.refundedAmount ?? null,
+              reason: reg.refundRequest.reason ?? null,
+            }
+          : null,
         attended: reg.attended,
         noShow: reg.noShow,
         amount: reg.amount,
@@ -233,6 +332,11 @@ export class ConsoleEventsService {
       where: { id: registrationId },
       data: { status: 'approved', paymentStatus: registration.paymentStatus ?? 'unpaid' },
     });
+    if ((registration.amount ?? 0) === 0 || registration.paymentStatus === 'paid') {
+      void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
+        this.logger.warn(`Failed to notify approved registration: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     return { registrationId, status: 'approved' };
   }
 
@@ -252,6 +356,183 @@ export class ConsoleEventsService {
     return { registrationId, status: 'rejected' };
   }
 
+  async cancelRegistration(
+    userId: string,
+    eventId: string,
+    registrationId: string,
+    options?: { reason?: string },
+  ) {
+    await this.permissions.assertEventManager(userId, eventId);
+    const registration = await this.prisma.eventRegistration.findUnique({
+      where: { id: registrationId },
+      include: { payment: true },
+    });
+    if (!registration || registration.eventId !== eventId) {
+      throw new NotFoundException('Registration not found');
+    }
+    if (['cancelled', 'refunded'].includes(registration.status)) {
+      return { registrationId, status: registration.status };
+    }
+    if (['pending_refund', 'cancel_requested'].includes(registration.status)) {
+      return { registrationId, status: registration.status };
+    }
+
+    const payment =
+      registration.payment ??
+      (await this.prisma.payment.findFirst({ where: { registrationId: registration.id } }));
+
+    if (registration.paymentStatus === 'paid' && (registration.amount ?? 0) > 0) {
+      if (!payment) {
+        throw new BadRequestException('支払い情報が見つかりません');
+      }
+      await this.paymentsService.refundStripePayment(userId, payment.id, options?.reason);
+      return { registrationId, status: 'refunded', paymentId: payment.id };
+    }
+
+    if (payment && !['paid', 'refunded', 'cancelled'].includes(payment.status)) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'cancelled' },
+      });
+    }
+
+    await this.prisma.eventRegistration.update({
+      where: { id: registration.id },
+      data: {
+        status: 'cancelled',
+        paymentStatus: 'cancelled',
+        paidAmount: 0,
+        attended: false,
+        noShow: false,
+      },
+    });
+    return { registrationId, status: 'cancelled' };
+  }
+
+  async decideRefundRequest(
+    userId: string,
+    requestId: string,
+    payload: { decision: 'approve_full' | 'approve_partial' | 'reject'; amount?: number; reason?: string },
+  ) {
+    const request = await this.prisma.refundRequest.findUnique({
+      where: { id: requestId },
+      include: {
+        registration: {
+          include: {
+            event: { select: { id: true } },
+            payment: true,
+          },
+        },
+        payment: true,
+      },
+    });
+    if (!request) {
+      throw new NotFoundException('Refund request not found');
+    }
+    const registration = request.registration;
+    if (registration.eventId) {
+      await this.permissions.assertEventManager(userId, registration.eventId);
+    } else if (registration.lessonId) {
+      const lesson = await this.prisma.lesson.findUnique({
+        where: { id: registration.lessonId },
+        include: { class: true },
+      });
+      if (!lesson) throw new NotFoundException('Lesson not found');
+      await this.permissions.assertCommunityManager(userId, lesson.class.communityId);
+    } else {
+      throw new BadRequestException('紐付けイベントがありません');
+    }
+
+    if (['processing', 'completed', 'rejected'].includes(request.status)) {
+      throw new ConflictException('Refund request already processed');
+    }
+
+    if (payload.decision === 'reject') {
+    await this.prisma.$transaction([
+      this.prisma.refundRequest.update({
+        where: { id: requestId },
+        data: {
+          decision: 'reject',
+          status: 'rejected',
+            approvedAmount: 0,
+            refundedAmount: 0,
+            reason: payload.reason ?? request.reason ?? null,
+          },
+        }),
+      this.prisma.eventRegistration.update({
+        where: { id: registration.id },
+        data: { status: 'cancelled' },
+      }),
+    ]);
+      return { requestId, status: 'rejected', decision: 'reject' };
+    }
+
+    const payment =
+      request.payment ??
+      registration.payment ??
+      (await this.prisma.payment.findFirst({ where: { registrationId: registration.id } }));
+
+    if (!payment) {
+      throw new BadRequestException('Refund対象の支払いが見つかりません');
+    }
+
+    const approvedAmount =
+      payload.decision === 'approve_partial'
+        ? payload.amount
+        : request.requestedAmount || registration.amount || payment.amount;
+
+    if (!approvedAmount || approvedAmount < 0) {
+      throw new BadRequestException('返金額が不正です');
+    }
+    if (approvedAmount > payment.amount) {
+      throw new BadRequestException('返金額が支払い額を超えています');
+    }
+
+    await this.prisma.refundRequest.update({
+      where: { id: requestId },
+      data: {
+        decision: payload.decision,
+        approvedAmount,
+        status: 'processing',
+        paymentId: payment.id,
+        reason: payload.reason ?? request.reason ?? null,
+      },
+    });
+
+    let refundId: string | null = null;
+    if (payment.method === 'stripe') {
+      const result = await this.paymentsService.refundStripePaymentInternal(userId, payment.id, approvedAmount, payload.reason);
+      refundId = (result as any)?.refundId ?? null;
+    } else {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'refunded' },
+      });
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.refundRequest.update({
+        where: { id: requestId },
+        data: { status: 'completed', refundedAmount: approvedAmount, gatewayRefundId: refundId ?? undefined },
+      }),
+      this.prisma.eventRegistration.update({
+        where: { id: registration.id },
+        data: {
+          status: 'cancelled',
+          paymentStatus: 'refunded',
+          paidAmount: Math.max((registration.paidAmount ?? 0) - approvedAmount, 0),
+        },
+      }),
+    ]);
+
+    void this.notifications
+      .notifyRefundSuccess({ registrationId: registration.id, refundAmount: approvedAmount, refundId })
+      .catch((error) => {
+        this.logger.warn(`Failed to notify refund success: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    return { requestId, status: 'completed', approvedAmount, refundId };
+  }
+
   async getRegistrationsSummary(userId: string, eventId: string) {
     const event = await this.permissions.assertEventManager(userId, eventId);
     const fullEvent = await this.prisma.event.findUnique({
@@ -268,20 +549,20 @@ export class ConsoleEventsService {
       include: { user: { select: { id: true, name: true, avatarUrl: true } } },
     });
 
-    const activeRegistrations = registrations.filter((reg) => reg.status !== 'rejected');
-    const total = activeRegistrations.length;
-    const paid = activeRegistrations.filter((reg) => reg.paymentStatus === 'paid').length;
-    const attended = activeRegistrations.filter((reg) => reg.attended).length;
-    const noShow = activeRegistrations.filter((reg) => reg.noShow).length;
+    const successfulRegistrations = registrations.filter((reg) => this.isSuccessfulRegistration(reg));
+    const total = successfulRegistrations.length;
+    const paid = successfulRegistrations.filter((reg) => reg.paymentStatus === 'paid').length;
+    const attended = successfulRegistrations.filter((reg) => reg.attended).length;
+    const noShow = successfulRegistrations.filter((reg) => reg.noShow).length;
     const capacity = fullEvent.maxParticipants ?? null;
 
     const groups = fullEvent.ticketTypes.map((ticket) => ({
       label: this.getLocalizedText(ticket.name),
-      count: activeRegistrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
+      count: successfulRegistrations.filter((reg) => reg.ticketTypeId === ticket.id).length,
       capacity: ticket.quota ?? capacity,
     }));
 
-    const avatars = activeRegistrations.slice(0, 20).map((reg) => ({
+    const avatars = successfulRegistrations.slice(0, 20).map((reg) => ({
       userId: reg.userId,
       name: reg.user?.name ?? 'ゲスト',
       avatarUrl: reg.user?.avatarUrl ?? null,
@@ -302,16 +583,79 @@ export class ConsoleEventsService {
     };
   }
 
+  private isSuccessfulRegistration(reg: { status?: string | null; paymentStatus?: string | null; amount?: number | null }) {
+    const status = reg.status ?? '';
+    const paymentStatus = reg.paymentStatus ?? '';
+    const amount = reg.amount ?? 0;
+    if (!['paid', 'approved'].includes(status)) return false;
+    return paymentStatus === 'paid' || amount === 0;
+  }
+
   async exportRegistrationsCsv(userId: string, eventId: string) {
     const event = await this.permissions.assertEventManager(userId, eventId);
     const fullEvent = await this.prisma.event.findUnique({ where: { id: event.id } });
     if (!fullEvent) throw new NotFoundException('Event not found');
 
+    const formatPaymentStatus = (status?: string | null) => {
+      switch (status) {
+        case 'paid':
+          return '支払済み';
+        case 'unpaid':
+          return '未払い';
+        case 'refunded':
+          return '返金済み';
+        case 'pending_refund':
+          return '返金待ち';
+        case 'pending':
+          return '処理中';
+        case 'cancelled':
+          return 'キャンセル';
+        default:
+          return status ? '不明' : '';
+      }
+    };
+
+    const formatRegistrationStatus = (status?: string | null) => {
+      switch (status) {
+        case 'pending':
+          return '審査待ち';
+        case 'approved':
+          return '承認済み';
+        case 'cancel_requested':
+          return '返金申請中';
+        case 'rejected':
+          return '拒否';
+        case 'paid':
+          return '支払済み';
+        case 'refunded':
+          return '返金済み';
+        case 'pending_refund':
+          return '返金待ち';
+        case 'cancelled':
+          return 'キャンセル';
+        case 'checked_in':
+          return '受付済み';
+        default:
+          return status ? '不明' : '';
+      }
+    };
+
+    const formatBoolean = (value: boolean) => (value ? 'はい' : 'いいえ');
+    const formatAmount = (value?: number | null) => (value == null ? '' : value.toString());
+    const dateFormatter = new Intl.DateTimeFormat('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
     const formSchema = Array.isArray(fullEvent.registrationFormSchema)
       ? (fullEvent.registrationFormSchema as Array<Record<string, any>>)
       : [];
     const dynamicColumns = formSchema.map((field, index) => {
-      const label = field?.label ? String(field.label) : `Field ${index + 1}`;
+      const label = field?.label ? String(field.label) : `項目${index + 1}`;
       const key = field?.id ? String(field.id) : `${field?.label ?? 'field'}-${index}`;
       return { key, label };
     });
@@ -326,16 +670,16 @@ export class ConsoleEventsService {
     });
 
     const baseHeaders = [
-      'User Name',
-      'User ID',
-      'Ticket Name',
-      'Ticket Price',
-      'Amount',
-      'Payment Status',
-      'Status',
-      'Attended',
-      'No Show',
-      'Created At',
+      '参加者名',
+      '参加者ID',
+      'チケット名',
+      'チケット金額(円)',
+      '支払金額(円)',
+      '支払い状況',
+      '申込ステータス',
+      '出席',
+      '無断欠席',
+      '申込日時',
     ];
     const headerRow = [...baseHeaders, ...dynamicColumns.map((col) => col.label)];
 
@@ -345,21 +689,26 @@ export class ConsoleEventsService {
         reg.user?.name ?? 'ゲスト',
         reg.user?.id ?? '',
         ticketName,
-        (reg.ticketType?.price ?? '').toString(),
-        reg.amount?.toString() ?? '',
-        reg.paymentStatus,
-        reg.status,
-        reg.attended ? 'yes' : 'no',
-        reg.noShow ? 'yes' : 'no',
-        reg.createdAt.toISOString(),
+        formatAmount(reg.ticketType?.price ?? null),
+        formatAmount(reg.amount ?? null),
+        formatPaymentStatus(reg.paymentStatus),
+        formatRegistrationStatus(reg.status),
+        formatBoolean(reg.attended),
+        formatBoolean(reg.noShow),
+        dateFormatter.format(reg.createdAt),
       ];
 
       const answers = (reg.formAnswers ?? {}) as Record<string, any>;
       const dynamicValues = dynamicColumns.map((col) => {
         const raw = answers[col.key] ?? answers[col.label];
         if (raw === undefined || raw === null) return '';
-        if (Array.isArray(raw)) return raw.join('; ');
-        if (typeof raw === 'object') return JSON.stringify(raw);
+        if (Array.isArray(raw)) return raw.join('、');
+        if (typeof raw === 'object') {
+          const record = raw as Record<string, unknown>;
+          if (typeof record.label === 'string' && record.label.trim()) return record.label;
+          if (typeof record.value === 'string' && record.value.trim()) return record.value;
+          return JSON.stringify(raw);
+        }
         return String(raw);
       });
 
@@ -575,7 +924,7 @@ export class ConsoleEventsService {
       data: {
         status: 'cancelled',
         config: {
-          ...(event.config as Record<string, any>),
+          ...(event.config && typeof event.config === 'object' ? (event.config as Record<string, any>) : {}),
           cancelledAt: new Date(),
           cancelledBy: userId,
           cancelReason: options?.reason ?? null,
@@ -1006,3 +1355,4 @@ export class ConsoleEventsService {
     };
   }
 }
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/unbound-method */

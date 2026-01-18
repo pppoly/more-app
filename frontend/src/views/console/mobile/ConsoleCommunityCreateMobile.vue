@@ -5,24 +5,24 @@
         <span class="i-lucide-chevron-left"></span>
       </button>
       <div class="hero-text">
-        <p class="hero-eyebrow">{{ isEdit ? '社群設定' : '新しい社群' }}</p>
-        <h1>{{ isEdit ? '社群資料を更新' : '社群を登録' }}</h1>
+        <p class="hero-eyebrow">{{ isEdit ? 'コミュニティ設定' : '新しいコミュニティ' }}</p>
+        <h1>{{ isEdit ? 'コミュニティ情報を更新' : 'コミュニティを登録' }}</h1>
         <p class="hero-subtext">
-          AI が社群情報を参照しながら活動助手を最適化します。ベーシックな情報から入力しましょう。
+          AI がコミュニティ情報を参照しながらイベントアシスタントを最適化します。ベーシックな情報から入力しましょう。
         </p>
       </div>
-      <span class="hero-status">{{ isEdit ? '編集中' : '草稿' }}</span>
+      <span class="hero-status">{{ isEdit ? '編集中' : '下書き' }}</span>
     </header>
 
     <form class="form-sections" @submit.prevent="handleSubmit">
       <section class="form-card">
         <p class="card-label">基本情報</p>
         <div class="ios-field">
-          <label>社群名称</label>
+          <label>コミュニティ名</label>
           <input v-model="form.name" type="text" placeholder="Tokyo Community..." required />
         </div>
         <div class="ios-field">
-          <label>Slug</label>
+          <label>ホームページ名</label>
           <input v-model="form.slug" type="text" :disabled="isEdit" placeholder="tokyo-community" required />
         </div>
       </section>
@@ -74,7 +74,7 @@
             </div>
           </div>
           <div class="upload-card">
-            <p class="upload-title">カバー画像</p>
+            <p class="upload-title">カバー画像（任意）</p>
             <div class="upload-drop" @click="triggerCoverUpload">
               <input ref="coverInput" type="file" accept="image/*" class="hidden-input" @change="handleCoverUpload" />
               <div v-if="coverPreview" class="upload-preview">
@@ -96,7 +96,7 @@
         </div>
         <textarea
           v-model="form.description"
-          rows="6"
+          rows="12"
           placeholder="例：Tokyo Community Organizations Group は..."
         ></textarea>
       </section>
@@ -149,9 +149,21 @@ const submitting = ref(false);
 const error = ref<string | null>(null);
 
 const visibleOptions = [
-  { value: 'public', label: '公開', desc: '誰でも閲覧できる' },
-  { value: 'semi-public', label: '社群内公開', desc: 'Console / 既存メンバーのみ' },
-  { value: 'private', label: '非公開', desc: '運営メモ用・外部非公開' },
+  {
+    value: 'public',
+    label: '公開（誰でも見える）',
+    desc: 'ログイン不要。ポータル・検索・共有リンクから表示されます。',
+  },
+  {
+    value: 'semi-public',
+    label: 'メンバー限定',
+    desc: 'ログイン済みのフォロー/参加メンバーと運営だけが閲覧できます。',
+  },
+  {
+    value: 'private',
+    label: '運営のみ（非公開）',
+    desc: '運営・管理者だけが閲覧可能。メンバーにも表示しません。',
+  },
 ];
 
 const labelChips = computed(() =>

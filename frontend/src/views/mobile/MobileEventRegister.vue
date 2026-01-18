@@ -1,14 +1,6 @@
 <template>
   <div class="mobile-register">
-    <header class="register-header">
-      <button class="back-button" type="button" @click="router.back()">
-        <span class="i-lucide-chevron-left text-lg"></span>
-      </button>
-      <div class="header-info">
-        <p class="header-label">イベント申込</p>
-        <h1>{{ detail?.title ?? '読み込み中…' }}</h1>
-      </div>
-    </header>
+    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventRegister.title" @back="router.back()" />
 
     <section v-if="loading" class="register-skeleton">
       <div class="skeleton-hero shimmer"></div>
@@ -22,26 +14,43 @@
     </section>
 
     <section v-else-if="detail" class="register-body">
-      <article class="hero-card">
-        <p class="hero-label">対象イベント</p>
-        <h2 class="hero-title">{{ detail.title }}</h2>
-        <p class="hero-meta">{{ detail.timeText }}</p>
-        <p class="hero-meta">{{ detail.locationText }}</p>
-        <p class="hero-price">{{ detail.priceText }}</p>
+      <article class="summary-card">
+        <div class="summary-meta">
+          <p class="summary-time">
+            <span class="i-lucide-calendar-days"></span>
+            {{ detail.timeText }}
+          </p>
+          <p class="summary-location">
+            <span class="i-lucide-map-pin"></span>
+            {{ detail.locationText }}
+          </p>
+        </div>
+        <div class="summary-title-row">
+          <h1 class="summary-title">{{ detail.title }}</h1>
+        </div>
+      </article>
+
+      <article class="ticket-line ticket-line--choice">
+        <div>
+          <p class="line-label">{{ hasMultipleTickets ? 'チケット選択' : '参加チケット' }}</p>
+          <p class="line-value">{{ selectedTicket?.name || '参加チケット' }}</p>
+          <p class="line-fee">
+            参加費：<span class="line-fee__amount">{{ ticketPriceText }}</span>
+          </p>
+        </div>
+        <span class="line-meta">{{ hasMultipleTickets ? '選択してください' : '変更する（任意）' }}</span>
       </article>
 
       <p v-if="registrationUnavailableReason" class="ios-notice">
         {{ registrationUnavailableReason }}
       </p>
 
-      <article class="ios-panel">
+      <article v-if="formFields.length" class="form-panel">
         <header class="panel-head">
-          <div>
-            <p class="panel-label">参加者情報</p>
-          </div>
-          <span class="badge">{{ formFields.length ? `${formFields.length}項目` : '入力不要' }}</span>
+          <p class="panel-label">参加者情報</p>
+          <span class="badge">{{ `${formFields.length}項目` }}</span>
         </header>
-        <div v-if="formFields.length" class="ios-section">
+        <div class="ios-section">
           <div v-for="(field, index) in formFields" :key="fieldKey(field, index)" class="ios-row">
             <div class="ios-label">
               {{ field.label }}
@@ -51,7 +60,7 @@
               <template v-if="['text', 'email', 'phone', 'number', 'date'].includes(field.type)">
                 <input
                   :type="inputType(field.type)"
-                  :placeholder="field.placeholder || '请输入...'"
+                  :placeholder="field.placeholder || '入力してください'"
                   v-model="formValues[fieldKey(field, index)]"
                   class="ios-input-control"
                 />
@@ -59,7 +68,7 @@
               <textarea
                 v-else-if="field.type === 'textarea'"
                 rows="3"
-                :placeholder="field.placeholder || '请输入...'"
+                :placeholder="field.placeholder || '入力してください'"
                 v-model="formValues[fieldKey(field, index)]"
                 class="ios-input-control"
               ></textarea>
@@ -109,33 +118,40 @@
             </div>
           </div>
         </div>
-        <div class="ios-consent">
-          <p v-if="formFields.length === 0">このイベントでは追加情報の入力は必要ありません。</p>
-          <p>
-            お客様の個人情報は、日本の個人情報保護法およびSOCIALMOREのプライバシーポリシーに基づき適切に管理します。
-            提供いただいた内容はイベント運営および緊急連絡の目的に限って利用されます。
-          </p>
-          <label class="ios-consent__row">
-            <input type="checkbox" v-model="hasAgreedTerms" />
-            <span>上記内容に同意し、個人情報の取扱いに同意します。</span>
-          </label>
+      </article>
+
+      <article v-if="refundPolicyText" class="ticket-line ticket-line--refund">
+        <div>
+          <p class="line-label">キャンセル・返金ルール（参考）</p>
+          <p class="line-value line-value--wrap">{{ refundPolicyText }}</p>
+          <p class="line-note">※支払い前に再確認できます</p>
         </div>
       </article>
 
-      <article class="ios-panel">
-        <header class="panel-head">
+      <article class="accordion">
+        <button type="button" class="accordion-head" @click="showGuideline = !showGuideline">
           <div>
-            <p class="panel-label">注意事項</p>
-            <p class="panel-hint">申し込み前に必ずお読みください。</p>
+            <p class="accordion-title">注意事項</p>
+            <p class="accordion-summary">申し込み前に必ずご確認ください。</p>
           </div>
-        </header>
-        <ul class="ios-guideline">
-          <li>キャンセルは開催前日までにご連絡ください。</li>
-          <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
-          <li>次の画面で内容を確認後、決済（必要な場合）へ進みます。</li>
-          <li>お客様の個人情報は日本の個人情報保護法に基づき厳重に管理されます。</li>
-        </ul>
+          <span :class="showGuideline ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"></span>
+        </button>
+        <div v-if="showGuideline" class="accordion-body">
+          <ul class="ios-guideline">
+            <li>キャンセルは開催前日までにご連絡ください。</li>
+            <li>入力いただいた情報は主催コミュニティ間でのみ共有されます。</li>
+            <li>次の画面で内容を確認後、必要な場合は決済へ進みます。</li>
+          </ul>
+        </div>
       </article>
+
+      <section class="consent-line">
+        申し込みを確定すると、
+        <button type="button" class="inline-link" @click="openTerms">利用規約</button>
+        ・
+        <button type="button" class="inline-link" @click="openPrivacy">プライバシーポリシー</button>
+        に同意したものとみなされます。
+      </section>
 
       <p v-if="registrationError" class="ios-error">{{ registrationError }}</p>
 
@@ -164,25 +180,29 @@ import { useRoute, useRouter } from 'vue-router';
 import { createRegistration, fetchEventById } from '../../api/client';
 import type { EventDetail, RegistrationFormField } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import {
   MOBILE_EVENT_REGISTRATION_DRAFT_KEY,
   MOBILE_EVENT_SUCCESS_KEY,
 } from '../../constants/mobile';
 import { useLocale } from '../../composables/useLocale';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const props = defineProps<{ eventId?: string }>();
 const route = useRoute();
 const router = useRouter();
 const { user } = useAuth();
 const { preferredLangs } = useLocale();
+const showTopBar = computed(() => !isLineInAppBrowser());
 
 const event = ref<EventDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const registrationError = ref<string | null>(null);
-const hasAgreedTerms = ref(false);
 const submittingInline = ref(false);
+const showGuideline = ref(false);
 
 const formValues = reactive<Record<string, any>>({});
 const fieldErrors = reactive<Record<string, string | null>>({});
@@ -207,10 +227,10 @@ const derivePriceText = (target: EventDetail | null) => {
 
 const resolveErrorMessage = (err: unknown, fallback: string) => {
   if (isAxiosError(err)) {
-    return '提交失败，请稍后再试';
+    return '送信に失敗しました。時間をおいて再試行してください。';
   }
   if (err instanceof Error) {
-    return '提交失败，请稍后再试';
+    return '送信に失敗しました。時間をおいて再試行してください。';
   }
   return fallback;
 };
@@ -228,32 +248,57 @@ const detail = computed(() => {
   };
 });
 
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
+
 const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
 const defaultTicketId = computed(() => {
   if (!event.value?.ticketTypes?.length) return null;
   const freeTicket = event.value.ticketTypes.find((ticket) => (ticket.price ?? 0) === 0);
   return freeTicket?.id ?? event.value.ticketTypes[0].id;
 });
-const requiresPayment = computed(() =>
-  event.value?.ticketTypes?.some((ticket) => (ticket.price ?? 0) > 0 && ticket.type !== 'free') ?? false,
-);
+const selectedTicket = computed(() => {
+  if (!event.value?.ticketTypes?.length) return null;
+  const targetId = defaultTicketId.value;
+  const ticket = event.value.ticketTypes.find((entry) => entry.id === targetId) ?? event.value.ticketTypes[0];
+  return {
+    name: ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '参加チケット',
+    price: ticket.price ?? 0,
+  };
+});
+const hasMultipleTickets = computed(() => (event.value?.ticketTypes?.length ?? 0) > 1);
+const ticketPriceText = computed(() => {
+  const price = selectedTicket.value?.price ?? 0;
+  return price === 0 ? '無料' : currencyFormatter.format(price);
+});
+const requiresPayment = computed(() => (selectedTicket.value?.price ?? 0) > 0);
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '現在このイベントは申込受付を行っていません。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
 const registrationUnavailableReason = computed(() => {
   if (!event.value) return null;
-  if (event.value.status !== 'open') {
-    return '現在このイベントは申込受付を行っていません。';
-  }
   if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
     return '公開範囲の制限により申し込みできません。';
   }
-  return null;
+  const window = resolveRegistrationWindow(event.value);
+  return window.open ? null : window.reason;
 });
 const ctaLabel = computed(() => {
   if (registrationUnavailableReason.value) return '受付終了';
   if (submittingInline.value) return '処理中…';
-  return requiresPayment.value ? '情報を確認' : '無料で申込む';
+  return requiresPayment.value ? '申し込みを確定する' : '無料で申し込む';
 });
 const isCtaDisabled = computed(
-  () => Boolean(registrationUnavailableReason.value) || !hasAgreedTerms.value || submittingInline.value,
+  () => Boolean(registrationUnavailableReason.value) || submittingInline.value,
 );
 
 type SuccessPayload = {
@@ -262,6 +307,8 @@ type SuccessPayload = {
   timeText: string;
   locationText: string;
   priceText?: string;
+  ticketName?: string;
+  amount?: number | null;
   paymentStatus: 'free' | 'paid';
   holdExpiresAt: string;
 };
@@ -276,6 +323,8 @@ const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => 
     timeText: detail.value.timeText,
     locationText: detail.value.locationText,
     priceText: detail.value.priceText,
+    ticketName: selectedTicket.value?.name,
+    amount: selectedTicket.value?.price ?? null,
     paymentStatus: status,
     holdExpiresAt: status === 'paid' ? new Date(Date.now() + HOLD_DURATION_MS).toISOString() : new Date().toISOString(),
   };
@@ -298,7 +347,7 @@ const loadEvent = async () => {
     initializeFormValues();
     applyDraftAnswers();
   } catch (err) {
-    error.value = '活动信息加载失败，请稍后再试';
+    error.value = 'イベント情報の読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -314,10 +363,7 @@ watch(
 );
 
 onMounted(() => {
-  if (!user.value) {
-    router.replace({ name: 'organizer-apply', query: { redirect: route.fullPath } });
-    return;
-  }
+  // 主催者申請へのリダイレクトは行わず、未ログイン時は後続処理でログイン誘導とする
   loadEvent();
 });
 
@@ -335,7 +381,6 @@ const initializeFormValues = () => {
     }
     fieldErrors[key] = null;
   });
-  hasAgreedTerms.value = false;
 };
 
 const applyDraftAnswers = () => {
@@ -343,11 +388,12 @@ const applyDraftAnswers = () => {
     const raw = sessionStorage.getItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
     if (!raw) return;
     const stored = JSON.parse(raw);
-    if (stored?.eventId !== eventId.value || !stored?.answers) return;
+    const answers = stored?.formAnswers ?? stored?.answers;
+    if (stored?.eventId !== eventId.value || !answers) return;
     formFields.value.forEach((field, index) => {
       const key = fieldKey(field, index);
-      if (stored.answers[key] !== undefined) {
-        formValues[key] = stored.answers[key];
+      if (answers[key] !== undefined) {
+        formValues[key] = answers[key];
       }
     });
   } catch {
@@ -361,21 +407,28 @@ const proceedToCheckout = () => {
     return;
   }
   if (!validateForm()) return;
-  if (!hasAgreedTerms.value) {
-    registrationError.value = '個人情報の取扱いに関する同意が必要です。';
-    return;
-  }
   if (!requiresPayment.value) {
     submitFreeRegistration();
     return;
   }
   const payload = {
     eventId: eventId.value,
-    answers: { ...formValues },
+    formAnswers: { ...formValues },
+    ticketTypeId: defaultTicketId.value ?? undefined,
     savedAt: Date.now(),
   };
   sessionStorage.setItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY, JSON.stringify(payload));
   router.push({ name: 'MobileEventCheckout', params: { eventId: eventId.value } });
+};
+
+const openTerms = () => {
+  const url = `${window.location.origin}/legal/terms`;
+  window.open(url, '_blank', 'noopener');
+};
+
+const openPrivacy = () => {
+  const url = `${window.location.origin}/legal/privacy`;
+  window.open(url, '_blank', 'noopener');
 };
 
 const submitFreeRegistration = async () => {
@@ -397,7 +450,7 @@ const submitFreeRegistration = async () => {
       goToSuccessPage(payload);
     }
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = '申込に失敗しました。時間をおいて再試行してください。';
   } finally {
     submittingInline.value = false;
   }
@@ -461,13 +514,12 @@ const inputType = (type: string) => {
   }
 };
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    weekday: 'short',
-    hour: '2-digit',
-  });
+const formatDate = (value: string) => {
+  const d = new Date(value);
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()}(${wd}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 </script>
 
 <style scoped>
@@ -476,133 +528,206 @@ const formatDate = (value: string) =>
   min-height: 100vh;
 }
 
+.mobile-register p,
+.mobile-register h1,
+.mobile-register h2,
+.mobile-register h3 {
+  text-align: left;
+}
+
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
+}
+
 .register-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 16px 6px;
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 8px;
 }
 
 .back-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   border: none;
   background: #fff;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
-.header-info h1 {
-  font-size: 18px;
-  margin: 2px 0 0;
-  font-weight: 600;
-}
-
 .header-label {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
   margin: 0;
-  letter-spacing: 0.1em;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .register-body {
-  padding: 0 16px 80px;
+  padding: 24px 16px 90px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
-.hero-card {
-  background: linear-gradient(135deg, #0f3057, #2ba7b4);
-  color: #f0faff;
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: 0 25px 45px rgba(15, 23, 42, 0.28);
+.summary-card {
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(14, 165, 233, 0.08));
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transform: translateY(0);
-  animation: heroReveal 0.5s ease;
+  gap: 8px;
 }
 
-.hero-title {
-  font-size: 24px;
+.summary-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.summary-title {
   margin: 0;
+  font-size: 18px;
   font-weight: 700;
+  color: #0f172a;
   line-height: 1.3;
 }
 
-.hero-meta {
-  margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.01em;
-  opacity: 0.95;
-}
-
-.hero-price {
-  margin: 10px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-}
-
-@keyframes heroReveal {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.ios-panel {
-  background: #fff;
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+.summary-meta {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.summary-time,
+.summary-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.price-chip {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.price-chip--ghost {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ticket-line {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+.ticket-line--choice {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.line-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.line-label {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.line-value {
+  margin: 2px 0 0;
+  font-weight: 600;
+  color: #0f172a;
+}
+.line-fee {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #475569;
+}
+.line-fee__amount {
+  font-weight: 700;
+  color: #22c55e;
+}
+
+.ticket-line--refund .line-value {
+  font-size: 13px;
+  color: #475569;
+}
+.line-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.ticket-line--refund {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.line-value--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.form-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
 }
 
 .panel-label {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.panel-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .badge {
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11px;
-  background: rgba(15, 23, 42, 0.05);
-  color: rgba(15, 23, 42, 0.7);
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 12px;
 }
 
 .ios-section {
-  border-top: 1px solid rgba(15, 23, 42, 0.05);
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .ios-row {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .ios-row:last-child {
@@ -610,10 +735,10 @@ const formatDate = (value: string) =>
 }
 
 .ios-label {
-  flex: 0 0 120px;
-  font-weight: 700;
-  font-size: 16px;
-  color: rgba(15, 23, 42, 0.95);
+  flex: 0 0 110px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
 }
 
 .ios-label .required {
@@ -623,46 +748,39 @@ const formatDate = (value: string) =>
 
 .ios-input {
   flex: 1;
-  font-size: 15px;
-  color: rgba(15, 23, 42, 0.9);
+  font-size: 14px;
+  color: #0f172a;
 }
 
 .ios-input-control {
   width: 100%;
   border: none;
-  padding: 0;
-  font-size: 15px;
+  padding: 2px 2px;
+  font-size: 14px;
   background: transparent;
-  color: rgba(15, 23, 42, 0.95);
+  color: #0f172a;
   font-family: inherit;
-  text-align: right;
+  box-sizing: border-box;
 }
 
 .ios-input-control:focus {
   outline: none;
 }
 
-.ios-input select {
-  appearance: none;
-}
-
-.ios-choice {
+.ios-choice,
+.ios-checkbox {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.ios-choice label {
+.ios-choice label,
+.ios-checkbox label {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-}
-
-.ios-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  font-size: 13px;
+  color: #0f172a;
 }
 
 .ios-field-error {
@@ -671,32 +789,61 @@ const formatDate = (value: string) =>
   color: #dc2626;
 }
 
+.accordion {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.accordion-head {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accordion-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.accordion-summary {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.accordion-body {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 10px 12px 12px;
+}
+
 .ios-guideline {
   margin: 0;
   padding-left: 18px;
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
+  color: #475569;
   line-height: 1.5;
 }
 
-.ios-consent {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.04);
-  font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
+.consent-line {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.5;
 }
 
-.ios-consent__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.ios-consent__row input {
-  width: 18px;
-  height: 18px;
+.inline-link {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
+  font-weight: 600;
+  padding: 0 4px;
 }
 
 .ios-error {
@@ -716,12 +863,8 @@ const formatDate = (value: string) =>
   border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
-.ios-actions {
-  margin-top: 8px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
-}
 .mobile-register__spacer {
-  height: 140px;
+  height: 80px;
 }
 
 .ios-tabbar {
@@ -729,62 +872,53 @@ const formatDate = (value: string) =>
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
-  gap: 12px;
-  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
-  background: rgba(248, 250, 252, 0.95);
-  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.15);
+  z-index: 20;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.1);
 }
 
 .rails-cta {
-  flex: 1;
+  width: 100%;
   border: none;
-  border-radius: 999px;
-  padding: 14px 18px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  background: #0090d9;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
   color: #fff;
-  box-shadow: none;
-  display: inline-flex;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.rails-cta:active:not(.is-disabled) {
-  transform: scale(0.98);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
 }
 
 .rails-cta.is-disabled {
-  background: #92d0f5;
-  color: rgba(255, 255, 255, 0.8);
-  box-shadow: none;
-  transform: none;
+  opacity: 0.6;
 }
+
 .state-card {
-  padding: 18px;
   margin: 24px 16px;
-  border-radius: 16px;
+  padding: 18px;
+  border-radius: 14px;
   background: #fff;
+  color: #0f172a;
   text-align: center;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
 .state-card--error {
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.25);
 }
 
 .retry-btn {
   margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
   border: none;
-  background: transparent;
-  color: var(--color-primary, #0ea5e9);
-  font-size: 14px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
 }
 
 .register-skeleton {
@@ -796,29 +930,32 @@ const formatDate = (value: string) =>
 
 .skeleton-hero,
 .skeleton-card {
-  width: 100%;
-  border-radius: 20px;
+  border-radius: 14px;
+  background: #e2e8f0;
   height: 120px;
 }
 
-.skeleton-hero {
-  height: 200px;
+.skeleton-card {
+  height: 80px;
 }
 
 .shimmer {
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(90deg, #edf2ff 25%, #e2e8f8 37%, #edf2ff 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
 }
 
 @keyframes shimmer {
   0% {
-    background-position: 100% 0;
+    background-position: 200% 0;
   }
   100% {
-    background-position: -100% 0;
+    background-position: -200% 0;
   }
+}
+
+.ios-placeholder {
+  color: rgba(15, 23, 42, 0.5);
+  font-size: 13px;
 }
 </style>

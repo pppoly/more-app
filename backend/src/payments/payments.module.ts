@@ -1,13 +1,25 @@
 import { Module } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
+import { PaymentExpirationService } from './payment-expiration.service';
+import { WebhookRetryService } from './webhook-retry.service';
+import { SettlementService } from './settlement.service';
+import { SettlementSchedulerService } from './settlement-scheduler.service';
 import { PaymentsController } from './payments.controller';
 import { StripeModule } from '../stripe/stripe.module';
 import { PermissionsService } from '../auth/permissions.service';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
-  imports: [StripeModule],
+  imports: [StripeModule, NotificationModule],
   controllers: [PaymentsController],
-  providers: [PaymentsService, PermissionsService],
-  exports: [PaymentsService],
+  providers: [
+    PaymentsService,
+    PaymentExpirationService,
+    WebhookRetryService,
+    SettlementService,
+    SettlementSchedulerService,
+    PermissionsService,
+  ],
+  exports: [PaymentsService, SettlementService],
 })
 export class PaymentsModule {}

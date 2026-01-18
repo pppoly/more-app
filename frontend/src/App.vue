@@ -1,36 +1,64 @@
 <template>
-  <div class="app-shell" :class="{ 'app-shell--mobile': isMobile }">
+  <div
+    class="app-shell"
+    :class="{ 'app-shell--mobile': isMobile }"
+    :data-liff-ready="liffReady"
+  >
     <div v-if="showDevPageName" class="dev-page-overlay">
       {{ currentPageName }}
     </div>
     <AppToast />
     <AppConfirm />
-    <template v-if="isMobile">
-      <RouterView v-slot="{ Component, route }">
-        <MobileShell>
-          <template v-if="route.meta?.keepAlive">
-            <KeepAlive :include="keepAliveRoutes">
-              <component
-                :is="Component"
-                v-bind="resolveRouteProps(route)"
-                :key="(route.name as string) || 'keepalive'"
-              />
-            </KeepAlive>
-          </template>
-          <template v-else>
-            <component
-              :is="Component"
-              v-bind="resolveRouteProps(route)"
-              :key="route.fullPath"
-            />
-          </template>
-        </MobileShell>
-      </RouterView>
+    <LiffOpenPrompt />
+    <LiffDebugPanel :visible="false" />
+    <LoginRequiredSheet
+      :visible="authSheets.state.login.visible"
+      :pending-action="authSheets.state.login.pendingAction"
+      @login="authSheets.goLogin"
+      @close="authSheets.hideLoginSheet"
+    />
+    <ForbiddenSheet
+      :visible="authSheets.state.forbidden.visible"
+      :reason="authSheets.state.forbidden.reason"
+      @primary="onForbiddenPrimary"
+      @close="authSheets.hideForbiddenSheet"
+    />
+    <button
+      v-if="showLiffOpenButton"
+      type="button"
+      class="liff-open-inline"
+      @click="openInLine"
+    >
+      LINEで開く
+    </button>
+    <template v-if="isMobile && showLineModal && !allowWebContinue">
+      <LineRedirectOverlay @continue-web="continueWeb" />
+    </template>
+
+    <template v-if="isMobile && (showBrandBar || allowWebContinue || (!showLineModal && !uaLine))">
+      <AppShell
+        :show-brand-top-bar="brandBarForRoute"
+        :logo-src="brandLogo"
+        :debug-text="showBrandDebug ? brandDebugText : undefined"
+        :debug-flag="debugParam"
+        :is-liff-client="isLiffClientMode"
+        :ua-line="uaLine"
+        :is-liff-entry="isLiffEntry"
+      >
+        <MobileShell
+          :force-hide-header="hideLegacyHeader"
+          :show-brand-top-bar="brandBarForRoute"
+          :show-brand-debug="showBrandDebug"
+          :brand-debug-text="brandDebugText"
+          :root-nav-route="isRootNavRoute"
+          :is-liff="isLiffClientMode"
+        />
+      </AppShell>
     </template>
     <template v-else>
-      <header class="app-header">
+      <header v-if="!showBrandBar && !hideDesktopNav" class="app-header">
         <div class="brand">
-          <h1>MORE App (モア アプリ)</h1>
+          <h1>SOCIALMORE</h1>
           <nav>
             <RouterLink to="/">Home</RouterLink>
             <RouterLink to="/events">Events</RouterLink>
@@ -40,7 +68,7 @@
             >
               Console
             </RouterLink>
-            <RouterLink v-else-if="user" to="/organizer/apply">主理人申請</RouterLink>
+            <RouterLink v-else-if="user" to="/organizer/apply">主催者申請</RouterLink>
             <RouterLink v-if="user?.isAdmin" to="/admin">Admin</RouterLink>
             <RouterLink v-if="user" to="/me/events">My Events</RouterLink>
           </nav>
@@ -67,7 +95,7 @@
                 class="apply-link"
                 to="/organizer/apply"
               >
-                主理人申請
+                主催者申請
               </RouterLink>
               <button type="button" @click="logout">Logout</button>
             </div>
@@ -82,35 +110,104 @@
       </main>
     </template>
   </div>
+  <div v-if="debugParam" class="build-version" aria-hidden="true">build: {{ BUILD_VERSION }}</div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import MobileShell from './layouts/MobileShell.vue';
+import { setupPopstateListener } from './composables/useNavStack';
 import { useAuth } from './composables/useAuth';
 import AppToast from './components/common/AppToast.vue';
 import AppConfirm from './components/common/AppConfirm.vue';
 import { useLocale } from './composables/useLocale';
+import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
+import { useAppShellMode } from './composables/useAppShellMode';
+import { isLineBrowser } from './utils/device';
+import { BUILD_VERSION } from './version';
+import AppShell from './layouts/AppShell.vue';
+import logo1 from './assets/images/logo1.svg';
+import LineRedirectOverlay from './components/common/LineRedirectOverlay.vue';
+import LiffDebugPanel from './components/common/LiffDebugPanel.vue';
+import LoginRequiredSheet from './components/auth/LoginRequiredSheet.vue';
+import ForbiddenSheet from './components/auth/ForbiddenSheet.vue';
+import { useAuthSheets, injectAuthSheetsContext } from './composables/useAuthSheets';
 
-const { user, initializing, logout } = useAuth();
+const { user, initializing, logout, loginWithLiffProfile, needsLiffOpen } = useAuth();
 const isMobile = ref(false);
+const liffReady = inject('isLiffReady', ref(false));
+const {
+  isLiffClientMode,
+  showBrandBar,
+  showBrandDebug,
+  brandDebugText,
+  debugParam,
+  uaLine,
+  isLiffEntry,
+} = useAppShellMode();
+const brandLogo = logo1;
+const allowWebContinue = ref(false);
+const showLineModal = ref(false);
+const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
+const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
+const brandBarForRoute = computed(() => showBrandBar.value && currentRoute.path === '/events');
+const hideLegacyHeader = computed(() => isLiffClientMode.value || showBrandBar.value);
+const hideDesktopNav = computed(() => Boolean(currentRoute.meta?.hideDesktopNav));
 const mediaQuery =
   typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)') : null;
 const router = useRouter();
 const currentRoute = useRoute();
-const showDevPageName = computed(() => import.meta.env.DEV);
+injectAuthSheetsContext(router, currentRoute);
+const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
-const keepAliveRoutes = ['MobileEvents'];
+const authSheets = useAuthSheets();
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;
   const metaTitle = currentRoute.meta?.title as string | undefined;
   if (metaTitle) return metaTitle;
   if (typeof currentRoute.name === 'string') return currentRoute.name;
-  return '未命名页面';
+  return '未設定のページ';
 });
+
+const allowWebKey = 'allowWebInLine';
+const showLiffOpenButton = computed(
+  () => isLiffEntry.value && needsLiffOpen.value && !isLiffClientMode.value,
+);
+
+const isFromLiffEntry = () => {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('liff.state') || params.has('liff.referrer')) return true;
+  const from = params.get('from');
+  const src = params.get('src');
+  if ((from && from.toLowerCase() === 'liff') || (src && src.toLowerCase() === 'liff')) return true;
+  if (document.referrer && document.referrer.includes('liff.line.me')) return true;
+  return false;
+};
+
+const waitForLiffClient = (timeoutMs = 800) =>
+  new Promise<boolean>((resolve) => {
+    if (isLiffClientMode.value) {
+      resolve(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      stop();
+      resolve(isLiffClientMode.value);
+    }, timeoutMs);
+    const stop = watch(
+      () => isLiffClientMode.value,
+      (val) => {
+        if (val) {
+          window.clearTimeout(timer);
+          stop();
+          resolve(true);
+        }
+      },
+    );
+  });
 
 if (mediaQuery) {
   isMobile.value = mediaQuery.matches;
@@ -121,10 +218,56 @@ const handleViewportChange = () => {
   isMobile.value = mediaQuery.matches;
 };
 
+const continueWeb = () => {
+  allowWebContinue.value = true;
+  showLineModal.value = false;
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.setItem(allowWebKey, '1');
+  }
+};
+
 onMounted(() => {
+  setupPopstateListener();
   handleViewportChange();
   mediaQuery?.addEventListener('change', handleViewportChange);
+  if (debugParam.value) {
+    console.info('[build]', BUILD_VERSION);
+  }
+  // Decide overlay logic
+  const allowSession = typeof window !== 'undefined' && window.sessionStorage.getItem(allowWebKey) === '1';
+  if (allowSession) {
+    allowWebContinue.value = true;
+    return;
+  }
+  if (isFromLiffEntry()) {
+    allowWebContinue.value = true;
+    return;
+  }
+  // LINE 内蔵ブラウザの場合は「LINE で開く」提示を出さない
+  if (uaLine.value && isLineBrowser()) {
+    allowWebContinue.value = true;
+    return;
+  }
+  if (!uaLine.value) return;
+  if (typeof window !== 'undefined' && window.location.hostname !== 'test.socialmore.jp') return;
+  void waitForLiffClient().then((isLiff) => {
+    if (isLiff) {
+      allowWebContinue.value = true;
+      return;
+    }
+    showLineModal.value = true;
+  });
 });
+
+watch(
+  () => isLiffEntry.value,
+  (val) => {
+    if (val) {
+      void loginWithLiffProfile(true);
+    }
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   mediaQuery?.removeEventListener('change', handleViewportChange);
@@ -135,20 +278,20 @@ const goToLogin = () => {
   router.push({ name: 'auth-login', query: { redirect } });
 };
 
-const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
-  const matched = route.matched[route.matched.length - 1];
-  if (!matched || !matched.props || !matched.props.default) {
-    return {};
+const onForbiddenPrimary = () => {
+  if (authSheets.state.forbidden.reason === 'NOT_ORGANIZER') {
+    authSheets.goOrganizerApply();
+    return;
   }
-  const config = matched.props.default;
-  if (config === true) {
-    return route.params;
-  }
-  if (typeof config === 'function') {
-    return config(route);
-  }
-  return config ?? {};
+  authSheets.hideForbiddenSheet();
 };
+
+const openInLine = () => {
+  if (typeof window === 'undefined') return;
+  const current = currentRoute.fullPath || window.location.pathname + window.location.search;
+  window.location.href = `https://liff.line.me/2008600730-qxlPrj5Q?to=${encodeURIComponent(current)}`;
+};
+
 </script>
 
 <style scoped>
@@ -157,6 +300,9 @@ const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
   color: #1f2933;
   min-height: 100vh;
   background: #f6f8fb;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .dev-page-overlay {
@@ -173,6 +319,30 @@ const resolveRouteProps = (route: RouteLocationNormalizedLoaded) => {
   z-index: 9999;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
   pointer-events: none;
+}
+
+.build-version {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  z-index: 900;
+  pointer-events: none;
+}
+
+.liff-open-inline {
+  position: fixed;
+  bottom: 72px;
+  right: 12px;
+  z-index: 1300;
+  background: #00c300;
+  color: #0b1b03;
+  border: none;
+  border-radius: 16px;
+  padding: 10px 14px;
+  font-weight: 700;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
 }
 
 .app-header {

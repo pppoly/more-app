@@ -1,10 +1,87 @@
-node_modules/
-frontend/node_modules/
+############################
+# Environment & Secrets
+############################
+.env
+.env.*
+backend/.env*
+frontend/.env*
+backend/.logs/
+**/.logs/
+legal/exports/
+docs/
+############################
+# Build Artifacts (NEVER commit)
+############################
+# Frontend
 frontend/dist/
+frontend/dist-liff/
+
+# Backend
+backend/dist/
+
+############################
+# Dependency Directories
+############################
+frontend/node_modules/
+backend/node_modules/
+
+############################
+# Runtime / Process Managers
+############################
+ecosystem.config.js
+pm2.log
+logs/
+*.log
+
+############################
+# Prisma / Migration Trash
+############################
+_migration_trash/
+prisma/migrations__disabled/
+
+############################
+# OS / Editor Junk
+############################
 .DS_Store
-frontend/.env.local
-frontend/.env.liff
-backend/.env
-backend/abs/
-backend/.env.example
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+############################
+# Generated / Derived Frontend Files
+############################
+frontend/public/legal/
+frontend/dist*
+frontend/.vite/
+
+############################
+# Legal & Compliance Docs
+# (Handled separately, low-frequency changes)
+############################
+legal/docs/*.md
+backend/docs/legal-*.md
+
+############################
+# Temporary / Scratch
+############################
+tmp/
+temp/
+.cache/
+coverage/
+
+############################
+# Ignore lockfiles ONLY if you explicitly choose so
+# (Comment these OUT if you want lockfiles tracked)
+############################
+# frontend/package-lock.json
+# backend/package-lock.json
+
+############################
+# Misc
+############################
+*.pid
+*.seed
+
 backend/uploads/

@@ -33,20 +33,22 @@
 
       <div class="info-card">
         <div class="card-header">
-          <span v-if="event.category" class="category-chip">#{{ event.category }}</span>
+          <span v-if="eventCategoryLabel" class="category-chip">#{{ eventCategoryLabel }}</span>
           <p class="card-title">{{ title }}</p>
         </div>
         <div class="info-row">
           <span class="label">日時</span>
-          <span>{{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}</span>
+          <span class="info-row__value info-row__value--multiline">
+            {{ formatDate(event.startTime) }} 〜 {{ event.endTime ? formatDate(event.endTime) : '未定' }}
+          </span>
         </div>
         <div class="info-row">
           <span class="label">場所</span>
-          <span>
-            {{ event.locationText }}
-            <button type="button" class="link" @click="openMap" :disabled="!mapUrl">
-              地図を開く
+          <span class="info-row__value">
+            <button v-if="mapUrl" type="button" class="location-link" @click="openMap">
+              {{ event.locationText }}
             </button>
+            <span v-else>{{ event.locationText }}</span>
           </span>
         </div>
         <div class="info-row">
@@ -55,8 +57,8 @@
         </div>
         <div class="info-row">
           <span class="label">ステータス</span>
-          <span class="status-pill" :class="event.status === 'open' ? 'open' : 'closed'">
-            {{ event.status === 'open' ? '受付中' : '終了' }}
+          <span class="status-pill" :class="statusPill.variant">
+            {{ statusPill.label }}
           </span>
         </div>
       </div>
@@ -72,7 +74,7 @@
         <ul>
           <li v-if="event.config.requireCheckin">✔ チェックイン必須</li>
           <li v-if="event.config.enableWaitlist">✔ キャンセル待ちあり</li>
-          <li v-if="event.config.refundPolicy">返金: {{ event.config.refundPolicy }}</li>
+          <li v-if="refundPolicyText">返金: {{ refundPolicyText }}</li>
           <li v-if="event.config.riskNoticeEnabled">⚠️ 注意事項をご確認ください。</li>
         </ul>
       </div>
@@ -192,10 +194,14 @@ import {
   createStripeCheckout,
   fetchEventById,
   fetchEventGallery,
+  fetchMyEvents,
 } from '../../api/client';
 import type { EventDetail, EventRegistrationSummary, RegistrationFormField, EventGalleryItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { getEventCategoryLabel } from '../../utils/eventCategory';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
 const route = useRoute();
 const router = useRouter();
@@ -209,14 +215,108 @@ const isRegistering = ref(false);
 const hasRegistered = ref(false);
 const registrationError = ref<string | null>(null);
 const pendingPayment = ref<{ registrationId: string; amount?: number } | null>(null);
+const pendingApproval = ref(false);
 const isPaying = ref(false);
 const isRedirecting = ref(false);
 const paymentMessage = ref<string | null>(null);
 const showFormModal = ref(false);
 const formAnswers = reactive<Record<string, any>>({});
+const eventCategoryLabel = computed(() =>
+  event.value?.category ? getEventCategoryLabel(event.value.category) : '',
+);
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
 
 const auth = useAuth();
 const isLoggedIn = computed(() => Boolean(auth.user.value));
+
+const requiresApproval = computed(() => {
+  if (!event.value) return false;
+  const config = (event.value.config as Record<string, any>) ?? {};
+  return Boolean(event.value.requireApproval ?? config.requireApproval);
+});
+
+const capacityState = computed(() => {
+  if (!event.value) {
+    return { capacity: null, currentParticipants: 0, enableWaitlist: false, isFull: false };
+  }
+  const config = (event.value.config as Record<string, any>) ?? {};
+  const capacityRaw =
+    typeof event.value.maxParticipants === 'number'
+      ? event.value.maxParticipants
+      : typeof config.capacity === 'number'
+        ? config.capacity
+        : typeof config.maxParticipants === 'number'
+          ? config.maxParticipants
+          : null;
+  const capacity = typeof capacityRaw === 'number' && Number.isFinite(capacityRaw) ? capacityRaw : null;
+  const currentRaw = config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0;
+  const currentParticipants = Number.isFinite(Number(currentRaw)) ? Number(currentRaw) : 0;
+  const enableWaitlist = Boolean(config.enableWaitlist);
+  const isFull = capacity !== null && capacity > 0 ? currentParticipants >= capacity : false;
+  return { capacity, currentParticipants, enableWaitlist, isFull };
+});
+
+const eventLifecycle = computed(() => {
+  if (!event.value) return 'scheduled';
+  if (event.value.status === 'cancelled') return 'cancelled';
+  const now = new Date();
+  const start = new Date(event.value.startTime);
+  const end = event.value.endTime ? new Date(event.value.endTime) : null;
+  if (now < start) return 'scheduled';
+  if (end && now > end) return 'ended';
+  return 'ongoing';
+});
+
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '現在このイベントは申込受付を行っていません。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
+
+const registrationWindowState = computed(() => resolveRegistrationWindow(event.value));
+
+const registrationUnavailableReason = computed(() => {
+  if (!event.value) return null;
+  if (event.value.visibility && !['public', 'community-only'].includes(event.value.visibility)) {
+    return '公開範囲の制限により申し込みできません。';
+  }
+  if (eventLifecycle.value === 'cancelled') {
+    return 'イベントはキャンセルされました。';
+  }
+  if (eventLifecycle.value === 'ended') {
+    return 'イベントは終了しました。';
+  }
+  const window = registrationWindowState.value;
+  if (!window.open) return window.reason;
+  if (capacityState.value.isFull) {
+    return capacityState.value.enableWaitlist
+      ? '満席のためキャンセル待ちのみ受付中です。'
+      : '満席のため受付終了しました。';
+  }
+  return null;
+});
+
+const statusPill = computed(() => {
+  if (!event.value) return { label: '読み込み中…', variant: 'closed' };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止', variant: 'closed' };
+  if (eventLifecycle.value === 'ended') return { label: '終了', variant: 'closed' };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付前' : '受付終了';
+    return { label, variant: 'closed' };
+  }
+  if (capacityState.value.isFull) {
+    return { label: '満席', variant: 'closed' };
+  }
+  return { label: '受付中', variant: 'open' };
+});
 
 const loadEvent = async (id: string) => {
   if (!id) {
@@ -226,6 +326,7 @@ const loadEvent = async (id: string) => {
   hasRegistered.value = false;
   registrationError.value = null;
   pendingPayment.value = null;
+  pendingApproval.value = false;
   paymentMessage.value = null;
   loading.value = true;
   error.value = null;
@@ -234,7 +335,7 @@ const loadEvent = async (id: string) => {
     gallery.value = await fetchEventGallery(id);
     currentSlide.value = 0;
   } catch (err) {
-    error.value = '活动加载失败，请稍后再试';
+    error.value = 'イベントの読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -265,12 +366,30 @@ const mapUrl = computed(() => {
   }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ev.locationText)}`;
 });
-const ctaLabel = computed(() => {
-  if (!isLoggedIn.value) return 'ログイン';
-  if (hasRegistered.value) return '参加予定です';
-  return '参加する';
+const ctaState = computed(() => {
+  if (!event.value) return { label: '読み込み中…', disabled: true };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止しました', disabled: true };
+  if (pendingPayment.value) return { label: '支払いへ進む', disabled: false };
+  if (pendingApproval.value) return { label: '予約済み', disabled: true };
+  if (hasRegistered.value) return { label: '参加予定です', disabled: true };
+  if (!isLoggedIn.value) {
+    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false };
+  }
+  if (eventLifecycle.value === 'ended') return { label: '終了しました', disabled: true };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付開始前' : '受付終了';
+    return { label, disabled: true };
+  }
+  if (capacityState.value.isFull) {
+    if (capacityState.value.enableWaitlist) {
+      return { label: 'キャンセル待ちで申し込む', disabled: true };
+    }
+    return { label: '満席', disabled: true };
+  }
+  return { label: requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む', disabled: false };
 });
-const ctaDisabled = computed(() => isRegistering.value || hasRegistered.value || Boolean(pendingPayment.value));
+const ctaLabel = computed(() => ctaState.value.label);
+const ctaDisabled = computed(() => ctaState.value.disabled || isRegistering.value || isRedirecting.value);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '--';
@@ -285,6 +404,17 @@ const formatDate = (value?: string | null) => {
 const startRegistration = async () => {
   if (!eventId.value || !isLoggedIn.value) {
     registrationError.value = 'ログインしてください';
+    return;
+  }
+  if (pendingPayment.value) {
+    await handleStripeCheckout();
+    return;
+  }
+  if (pendingApproval.value) {
+    return;
+  }
+  if (registrationUnavailableReason.value) {
+    registrationError.value = registrationUnavailableReason.value;
     return;
   }
   if (formFields.value.length) {
@@ -304,16 +434,25 @@ const submitRegistration = async (answers: Record<string, any>) => {
     const registration = await createRegistration(eventId.value!, { formAnswers: answers });
     handleRegistrationResult(registration);
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = '申込に失敗しました。時間をおいて再試行してください。';
   } finally {
     isRegistering.value = false;
   }
 };
 
 const handleRegistrationResult = (registration: EventRegistrationSummary) => {
-  if (registration.paymentRequired) {
+  pendingApproval.value = false;
+  if (registration.status === 'pending') {
+    pendingPayment.value = null;
+    hasRegistered.value = false;
+    pendingApproval.value = true;
+    paymentMessage.value = '申込を審査中です。';
+    return;
+  }
+  if (registration.paymentRequired && (registration.amount ?? 0) > 0) {
     pendingPayment.value = { registrationId: registration.registrationId, amount: registration.amount };
     paymentMessage.value = 'お支払いを完了すると参加が確定します。';
+    hasRegistered.value = false;
   } else {
     hasRegistered.value = true;
     pendingPayment.value = null;
@@ -331,7 +470,7 @@ const handleMockPayment = async () => {
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
   } catch (err) {
-    registrationError.value = '支付失败，请稍后再试';
+    registrationError.value = '決済に失敗しました。時間をおいて再試行してください。';
   } finally {
     isPaying.value = false;
   }
@@ -342,7 +481,19 @@ const handleStripeCheckout = async () => {
   isRedirecting.value = true;
   registrationError.value = null;
   try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
+    const { checkoutUrl, resume } = await createStripeCheckout(pendingPayment.value.registrationId);
+    if (resume) {
+      window.alert('未完了の決済があります。決済を再開してください。');
+    }
+    sessionStorage.setItem(
+      MOBILE_EVENT_PENDING_PAYMENT_KEY,
+      JSON.stringify({
+        registrationId: pendingPayment.value.registrationId,
+        amount: pendingPayment.value.amount,
+        eventId: eventId.value,
+        source: 'desktop',
+      }),
+    );
     window.location.href = checkoutUrl;
   } catch (err: any) {
     const message =
@@ -426,6 +577,54 @@ const openMap = () => {
     window.open(mapUrl.value, '_blank');
   }
 };
+
+
+const syncRegistrationStatus = async () => {
+  if (!isLoggedIn.value || !eventId.value) {
+    hasRegistered.value = false;
+    pendingPayment.value = null;
+    pendingApproval.value = false;
+    return;
+  }
+  pendingApproval.value = false;
+  try {
+    const myEvents = await fetchMyEvents();
+    const matched = myEvents.find((item) => item.event?.id === eventId.value) ?? null;
+    if (!matched) {
+      hasRegistered.value = false;
+      pendingPayment.value = null;
+      return;
+    }
+    if (matched.status === 'pending') {
+      pendingApproval.value = true;
+      hasRegistered.value = false;
+      pendingPayment.value = null;
+      return;
+    }
+    const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+    const paid =
+      paidLike.includes(matched.paymentStatus || '') ||
+      paidLike.includes(matched.status);
+    const amount = matched.amount ?? 0;
+    if (amount > 0 && !paid) {
+      pendingPayment.value = { registrationId: matched.registrationId, amount };
+      hasRegistered.value = false;
+      return;
+    }
+    pendingPayment.value = null;
+    hasRegistered.value = true;
+  } catch {
+    // ignore fetch failures
+  }
+};
+
+watch(
+  () => [eventId.value, isLoggedIn.value],
+  () => {
+    syncRegistrationStatus();
+  },
+  { immediate: true },
+);
 </script>
 
 <style scoped>
@@ -553,12 +752,50 @@ const openMap = () => {
   color: var(--color-subtext);
 }
 
+.info-row__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+
+.info-row__value--multiline {
+  align-items: flex-start;
+  max-width: 70%;
+  white-space: normal;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.date-link {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: right;
+}
+
 .link {
   border: none;
   background: transparent;
   color: var(--color-primary);
   font-size: 0.8rem;
   margin-left: 0.5rem;
+}
+
+.info-row__value .link {
+  margin-left: 0;
+}
+
+.location-link {
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .status-pill {

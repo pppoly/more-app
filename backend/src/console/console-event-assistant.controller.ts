@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents */
 import { Body, Controller, ForbiddenException, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ConsoleEventAssistantService } from './console-event-assistant.service';
@@ -12,6 +13,7 @@ export class ConsoleEventAssistantController {
     @Param('communityId') communityId: string,
     @Body()
     body: {
+      logId?: string;
       stage?: string;
       summary?: string;
       qaState?: any;
@@ -31,6 +33,15 @@ export class ConsoleEventAssistantController {
   @Get('logs')
   listLogs(@Param('communityId') communityId: string, @Req() req: any) {
     return this.assistantService.listLogs(req.user.id, communityId);
+  }
+
+  @Get('logs/:logId')
+  getLog(
+    @Param('communityId') communityId: string,
+    @Param('logId') logId: string,
+    @Req() req: any,
+  ) {
+    return this.assistantService.getLog(req.user.id, communityId, logId);
   }
 
   @Get('dashboard')

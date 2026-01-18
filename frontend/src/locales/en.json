@@ -15,6 +15,9 @@
     "stripeLinkFailed": "Could not create the link. Please try again later or contact support.",
     "qrScanFailed": "Scan failed. Try again or upload a photo of the code."
   },
+  "payments": {
+    "title": "Payment history"
+  },
   "console": {
     "access": {
       "logo": "MORE Console",
@@ -31,6 +34,9 @@
       "noManagedTitle": "No managed communities",
       "noManagedHint": "Create a community to get started.",
       "createNew": "Create a new community"
+    },
+    "eventForm": {
+      "title": "Create event"
     }
   },
   "subscription": {
@@ -40,6 +46,7 @@
     "currentCommunity": "Community",
     "currentPlan": "Current plan",
     "platformFee": "Platform fee:",
+    "betaPlatformFeeValue": "0% (beta)",
     "stripeFee": "Stripe fees:",
     "perMonth": "month",
     "loading": "Loading…",
@@ -171,17 +178,36 @@
         "label": "Language",
         "meta": "Choose display language"
       },
-      "notifications": {
-        "label": "Notifications & app",
-        "meta": "App permissions and preferences"
-      },
-      "localeSheet": {
-        "title": "Choose display language",
-        "subtitle": "Changing this may affect how titles are shown",
-        "active": "Active"
-      },
+  "notifications": {
+    "label": "Notifications & app",
+    "meta": "App permissions and preferences"
+  },
+  "legal": {
+    "title": "Legal & compliance",
+    "terms": {
+      "label": "Terms of Service",
+      "meta": "Conditions for using MORE"
+    },
+    "privacy": {
+      "label": "Privacy Policy",
+      "meta": "How we handle your data"
+    }
+  },
+  "about": {
+    "title": "App info",
+    "version": {
+      "label": "Version",
+      "meta": "Build number"
+    }
+  },
+  "localeSheet": {
+    "title": "Choose display language",
+    "subtitle": "Changing this may affect how titles are shown",
+    "active": "Active"
+  },
       "toast": {
-        "notificationsPending": "Notification settings coming soon"
+        "notificationsPending": "Notification settings coming soon",
+        "languagePending": "Language settings coming soon"
       }
     },
     "me": {
@@ -214,6 +240,11 @@
       "zhTw": "Traditional Chinese"
     }
   },
+  "me": {
+    "payments": {
+      "title": "Payment history"
+    }
+  },
   "nav": {
     "back": "Back",
     "events": "Events",
@@ -232,5 +263,72 @@
     "active": "Active",
     "saved": "Language updated",
     "saveFailed": "Failed to save language. Please try again."
+  },
+  "organizerPayoutPolicy": {
+    "title": "Payment flow & refunds (Organizer must read)",
+    "readTime": "About 3 minutes to read",
+    "lede": "Please review this to avoid misunderstandings and disputes.",
+    "sections": {
+      "flow": {
+        "title": "Payment & payout flow",
+        "items": [
+          "Participants pay by credit card (Stripe)",
+          "MORE receives payments via Stripe and settles payouts on a settlement cycle",
+          "Payouts are not instant and may vary due to review and payout schedules"
+        ]
+      },
+      "refund": {
+        "title": "About refunds",
+        "items": [
+          "For a full refund, participants receive the full amount back",
+          "Card processing fees may not be returned on refunds (industry standard)",
+          "In v1, MORE absorbs those fees (not deducted from your payout)"
+        ]
+      },
+      "negative": {
+        "title": "When balance can go negative",
+        "items": [
+          "If refunds or disputes happen before settlement",
+          "Your settlement balance in MORE may temporarily go negative",
+          "Negative amounts are offset against future revenue (your Stripe available balance should not go negative)"
+        ]
+      },
+      "responsibility": {
+        "title": "Responsibility boundaries",
+        "items": [
+          "Organizers are responsible for event fulfillment and setting refund terms",
+          "MORE receives payments, processes refunds, and settles payouts (payouts may be adjusted/paused due to refunds or disputes)",
+          "This prevents abuse and protects serious organizers"
+        ]
+      },
+      "why": {
+        "title": "Why these rules exist",
+        "items": [
+          "Prevent abuse and sudden cancellations",
+          "Protect trust across the platform and other organizers",
+          "Keep the platform stable long-term"
+        ]
+      }
+    },
+    "example": {
+      "title": "Example",
+      "body": "Full refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned; in v1, MORE absorbs those fees (not deducted from your payout)."
+    },
+    "accept": {
+      "title": "Confirmation",
+      "flow": "I understand and agree to the payment/refund mechanism above",
+      "fee": "I understand card fees may not be returned on refunds"
+    },
+    "actions": {
+      "accept": "Agree and continue",
+      "later": "Read later",
+      "loading": "Checking..."
+    },
+    "toast": {
+      "requireAccept": "You must agree before continuing onboarding.",
+      "loadFailed": "Failed to load the content. Please try again.",
+      "acceptFailed": "Failed to save your agreement. Please try again."
+    },
+    "help": "If you have questions, contact platform support."
   }
 }

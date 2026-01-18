@@ -1,5 +1,6 @@
 <template>
   <div class="mobile-settings m-page">
+    <ConsoleTopBar v-if="!isLiffClientMode" class="topbar" :title="t('mobile.settings.title')" @back="goBack" />
     <section class="settings-section">
       <h2 class="m-section-title">{{ t('mobile.settings.title') }}</h2>
       <div class="settings-list">
@@ -17,6 +18,38 @@
           </div>
           <span class="i-lucide-chevron-right"></span>
         </button>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="m-section-title">{{ t('mobile.settings.legal.title') }}</h2>
+      <div class="settings-list">
+        <a class="settings-item" href="/legal/terms" target="_blank" rel="noopener">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.legal.terms.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.legal.terms.meta') }}</p>
+          </div>
+          <span class="i-lucide-external-link"></span>
+        </a>
+        <a class="settings-item" href="/legal/privacy" target="_blank" rel="noopener">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.legal.privacy.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.legal.privacy.meta') }}</p>
+          </div>
+          <span class="i-lucide-external-link"></span>
+        </a>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="m-section-title">{{ t('mobile.settings.about.title') }}</h2>
+      <div class="settings-list">
+        <div class="settings-item settings-item--static">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.about.version.label') }}</p>
+            <p class="settings-item__meta">{{ buildVersion }}</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -79,17 +112,24 @@ import { useLocale } from '../../composables/useLocale';
 import { updateProfile } from '../../api/client';
 import { useToast } from '../../composables/useToast';
 import { useI18n } from 'vue-i18n';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../utils/device';
+import { isLineInAppBrowser } from '../../utils/liff';
+import { APP_TARGET } from '../../config';
+import { BUILD_VERSION } from '../../version';
 
 const router = useRouter();
 const { logout, user, setUserProfile } = useAuth();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const buildVersion = BUILD_VERSION;
 
 const isLoggedIn = computed(() => Boolean(user.value));
 
 const openLanguage = () => {
-  showLocaleSheet.value = true;
+  toast.show(t('mobile.settings.toast.languagePending'), 'info');
 };
 
 const openNotification = () => {
@@ -99,6 +139,15 @@ const openNotification = () => {
 const logoutUser = () => {
   logout();
   router.replace({ path: '/' });
+};
+
+const goBack = () => {
+  const back = typeof window !== 'undefined' ? window.history.state?.back : null;
+  if (back) {
+    router.back();
+    return;
+  }
+  router.replace({ name: 'MobileMe' });
 };
 
 const localeOptions = computed(() =>
@@ -140,8 +189,19 @@ const selectLocale = async (locale: string) => {
 <style scoped>
 .mobile-settings {
   min-height: 100vh;
-  padding: 1.25rem 1.25rem 5rem;
-  background: var(--m-color-bg, #f7f7fb);
+  background: #f5f7fb;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 auto;
+  overflow-x: hidden;
+}
+.topbar {
+  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
+  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
+  margin-top: calc(-8px - env(safe-area-inset-top, 0px));
 }
 
 .settings-section + .settings-section {
@@ -166,11 +226,15 @@ const selectLocale = async (locale: string) => {
   justify-content: space-between;
   text-align: left;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
 }
 
 .settings-item--danger {
   background: #fff5f5;
   color: #b91c1c;
+}
+.settings-item--static {
+  cursor: default;
 }
 
 .settings-item__label {

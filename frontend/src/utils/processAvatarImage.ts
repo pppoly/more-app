@@ -1,19 +1,19 @@
 export interface ProcessAvatarOptions {
-  size?: number; // 输出正方形边长
+  size?: number; // 出力する正方形の辺長
   quality?: number; // 0-1
 }
 
 const DEFAULT_SIZE = 720;
 const DEFAULT_QUALITY = 0.86;
 
-// 读取文件 -> 旋转纠正 EXIF -> 居中裁剪成正方形 -> 压缩输出 Blob
+// ファイル読込 → EXIF 回転補正 → 中央トリミングで正方形化 → 圧縮して Blob 出力
 export const processAvatarImage = (file: File, options: ProcessAvatarOptions = {}) =>
   new Promise<Blob>((resolve, reject) => {
     const size = options.size ?? DEFAULT_SIZE;
     const quality = options.quality ?? DEFAULT_QUALITY;
 
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('无法读取图片'));
+    reader.onerror = () => reject(new Error('画像を読み込めませんでした'));
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
@@ -23,10 +23,11 @@ export const processAvatarImage = (file: File, options: ProcessAvatarOptions = {
           canvas.height = size;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            reject(new Error('无法处理图片')); return;
+            reject(new Error('画像を処理できませんでした'));
+            return;
           }
 
-          // 居中裁剪为正方形
+          // 中央トリミングで正方形化
           const minSide = Math.min(img.naturalWidth, img.naturalHeight);
           const sx = (img.naturalWidth - minSide) / 2;
           const sy = (img.naturalHeight - minSide) / 2;
@@ -37,16 +38,16 @@ export const processAvatarImage = (file: File, options: ProcessAvatarOptions = {
           canvas.toBlob(
             (blob) => {
               if (blob) resolve(blob);
-              else reject(new Error('图片压缩失败'));
+              else reject(new Error('画像の圧縮に失敗しました'));
             },
             'image/jpeg',
             quality,
           );
         } catch (err) {
-          reject(err instanceof Error ? err : new Error('图片处理异常'));
+          reject(err instanceof Error ? err : new Error('画像処理中にエラーが発生しました'));
         }
       };
-      img.onerror = () => reject(new Error('图片加载失败'));
+      img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
       img.src = reader.result as string;
     };
     reader.readAsDataURL(file);

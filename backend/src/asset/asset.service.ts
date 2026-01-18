@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresignUploadDto } from './dto/presign-upload.dto';
@@ -10,7 +11,7 @@ import { Queue } from 'bullmq';
 import { IMAGE_QUEUE_NAME, PROCESS_IMAGE_JOB } from './image.queue';
 import type { Express } from 'express';
 
-const ALLOWED_RESOURCE_TYPES = ['community', 'event', 'user-avatar', 'event-gallery', 'banner'];
+const ALLOWED_RESOURCE_TYPES = ['community', 'event', 'class', 'user-avatar', 'event-gallery', 'banner'];
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const MAX_SIZE = 20 * 1024 * 1024; // 20MB
 

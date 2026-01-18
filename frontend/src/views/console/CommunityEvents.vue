@@ -1,53 +1,52 @@
 <template>
   <section class="console-feed" v-if="community">
     <header class="console-nav">
-      <button type="button" class="back-btn" @click="router.back()">返回</button>
+      <button type="button" class="back-btn" @click="router.back()">戻る</button>
       <div class="console-nav__spacer"></div>
     </header>
 
     <div class="toolbar">
       <div>
-        <p class="eyebrow">社群 · {{ community.slug }}</p>
+        <p class="eyebrow">コミュニティ · {{ community.slug }}</p>
         <h2>{{ community.name }}</h2>
-        <p class="sub">集中管理活动，随时创建和更新。</p>
+        <p class="sub">イベントをまとめて管理し、いつでも作成・更新できます。</p>
       </div>
       <div class="toolbar-actions">
         <RouterLink
           :to="{ name: 'console-community-finance', params: { communityId: community.id } }"
           class="ghost"
         >
-          收款设置
+          受け取り設定
         </RouterLink>
         <RouterLink
           :to="{ name: 'console-event-create', params: { communityId: community.id } }"
           class="primary"
         >
-          ＋ 新建活动
+          ＋ イベントを作成
         </RouterLink>
       </div>
     </div>
 
-    <p v-if="loading" class="status">活动加载中...</p>
+    <p v-if="loading" class="status">イベントを読み込み中…</p>
     <p v-else-if="error" class="status error">{{ error }}</p>
 
     <div v-else class="body">
       <div v-if="!events.length" class="empty-state">
-        还没有活动，点击右上“新建活动”开始。
+        まだイベントがありません。右上の「イベントを作成」から始めましょう。
       </div>
       <ul v-else class="event-grid">
         <li v-for="event in events" :key="event.id" class="event-card">
           <div class="event-thumb" :style="coverStyle(event)">
             <span class="badge" :class="event.status === 'open' ? 'open' : 'closed'">
-              {{ event.status === 'open' ? '报名中' : '已结束' }}
+              {{ event.status === 'open' ? '受付中' : '終了' }}
             </span>
           </div>
           <div class="event-body">
             <p class="event-date">{{ formatDate(event.startTime) }}</p>
             <h3 class="event-title">{{ getTitle(event) }}</h3>
             <div class="event-actions">
-              <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">编辑</RouterLink>
-              <RouterLink :to="{ name: 'event-detail', params: { eventId: event.id } }">预览</RouterLink>
-              <RouterLink :to="{ name: 'console-event-registrations', params: { eventId: event.id } }">报名</RouterLink>
+              <RouterLink :to="{ name: 'console-event-edit', params: { eventId: event.id } }">編集</RouterLink>
+              <RouterLink :to="{ name: 'event-detail', params: { eventId: event.id } }">プレビュー</RouterLink>
             </div>
           </div>
         </li>

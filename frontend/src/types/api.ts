@@ -6,12 +6,23 @@ export interface LocalizedContent {
 export interface UserProfile {
   id: string;
   name: string;
+  email?: string | null;
+  phone?: string | null;
   language?: string | null;
   preferredLocale?: string | null;
   prefecture?: string | null;
   avatarUrl?: string | null;
+  authProviders?: string[];
+  emailVerifiedAt?: string | null;
+  phoneVerifiedAt?: string | null;
+  lastLoginAt?: string | null;
   isOrganizer?: boolean;
   isAdmin?: boolean;
+}
+
+export interface AnalyticsEventResponse {
+  success: boolean;
+  stored: number;
 }
 
 export interface CommunitySummary {
@@ -49,6 +60,9 @@ export interface EventSummary {
   descriptionHtml?: string | null;
   startTime: string;
   endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   locationText: string;
   locationLat?: number | null;
   locationLng?: number | null;
@@ -84,6 +98,15 @@ export interface EventGalleryItem {
   order: number;
 }
 
+export interface FavoriteEventItem {
+  id: string;
+  title: LocalizedContent;
+  startTime?: string;
+  endTime?: string | null;
+  locationText?: string | null;
+  coverImageUrl?: string | null;
+}
+
 export interface EventDetail {
   id: string;
   status: string;
@@ -102,6 +125,7 @@ export interface EventDetail {
   category?: string | null;
   minParticipants?: number | null;
   maxParticipants?: number | null;
+  requireApproval?: boolean;
   registrationFormSchema?: RegistrationFormField[] | null;
   config?: Record<string, any> | null;
   ticketTypes?: Array<{
@@ -117,10 +141,16 @@ export interface EventDetail {
 export interface CommunityPortalEvent {
   id: string;
   startTime: string;
+  endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   locationText: string;
   status: string;
   title?: LocalizedContent;
   coverImageUrl?: string | null;
+  maxParticipants?: number | null;
+  config?: Record<string, any> | null;
 }
 
 export interface CommunityPortal {
@@ -146,6 +176,33 @@ export interface CommunityPortal {
   };
 }
 
+export interface Lesson {
+  id: string;
+  classId: string;
+  startAt: string;
+  endAt?: string | null;
+  capacity?: number | null;
+  status: string;
+  registrationCount?: number;
+}
+
+export interface ClassSummary {
+  id: string;
+  communityId: string;
+  title: string;
+  description?: string | null;
+  coverImageUrl?: string | null;
+  locationName?: string | null;
+  priceYenPerLesson: number;
+  defaultCapacity?: number | null;
+  status: string;
+  nextLesson?: Lesson | null;
+}
+
+export interface ClassDetail extends ClassSummary {
+  upcomingLessons: Lesson[];
+}
+
 export interface DevLoginResponse {
   accessToken: string;
   user: UserProfile;
@@ -159,6 +216,7 @@ export interface EventWithCommunity {
   locationText: string;
   community: CommunitySummary;
   coverImageUrl?: string | null;
+  config?: Record<string, any> | null;
 }
 
 export interface EventRegistrationSummary {
@@ -177,9 +235,33 @@ export interface MyEventItem {
   status: string;
   paymentStatus?: string;
   amount?: number | null;
+  createdAt?: string;
+  paymentMethod?: string | null;
+  paymentCreatedAt?: string | null;
   attended?: boolean;
   noShow?: boolean;
-  event: EventWithCommunity;
+  refundRequest?: {
+    id: string;
+    status: string;
+    decision?: string | null;
+    requestedAmount?: number | null;
+    approvedAmount?: number | null;
+    refundedAmount?: number | null;
+    reason?: string | null;
+  } | null;
+  event: EventWithCommunity | null;
+  lesson?: {
+    id: string;
+    startAt: string;
+    endAt?: string | null;
+    status: string;
+    class?: {
+      id: string;
+      title: string | LocalizedContent;
+      locationName?: string | null;
+      community?: CommunitySummary;
+    } | null;
+  } | null;
 }
 
 export interface MockPaymentResponse {
@@ -187,6 +269,18 @@ export interface MockPaymentResponse {
   status: string;
   registrationId: string;
   amount: number;
+}
+
+export interface ConsolePaymentRefundRequest {
+  id: string;
+  status: string;
+  decision?: string | null;
+  requestedAmount: number;
+  approvedAmount?: number | null;
+  refundedAmount?: number | null;
+  reason?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ConsolePaymentItem {
@@ -209,6 +303,7 @@ export interface ConsolePaymentItem {
   createdAt: string;
   stripePaymentIntentId?: string | null;
   stripeRefundId?: string | null;
+  refundRequest?: ConsolePaymentRefundRequest | null;
 }
 
 export interface ConsolePaymentList {
@@ -221,10 +316,23 @@ export interface ConsolePaymentList {
 export interface ConsoleCommunityBalance {
   communityId: string;
   currency: string;
+  chargeModel?: 'platform_charge' | 'destination_charge';
+  transactionTotal?: number;
   grossPaid: number;
+  stripeFee?: number;
   platformFee: number;
   refunded: number;
   net: number;
+  settlement?: {
+    enabled: boolean;
+    asOf: string;
+    accruedNetAll: number;
+    paidOutAll: number;
+    hostBalance: number;
+    settleAmount: number;
+    carryReceivable: number;
+    accruedNetPeriod?: number;
+  };
   period?: 'month' | 'all';
   stripeBalance?: {
     available: number;
@@ -234,6 +342,7 @@ export interface ConsoleCommunityBalance {
 
 export interface StripeCheckoutResponse {
   checkoutUrl: string;
+  resume?: boolean;
 }
 
 export interface SubscriptionResponse {
@@ -280,13 +389,30 @@ export interface ConsoleCommunityDetail extends ManagedCommunity {
   stripeCustomerId?: string | null;
 }
 
+export interface StripeAccountStatus {
+  payoutsEnabled?: boolean | null;
+  chargesEnabled?: boolean | null;
+  disabledReason?: string | null;
+}
+
+export interface CommunityStripeStatusResponse {
+  stripeAccountId?: string | null;
+  stripeAccountOnboarded?: boolean;
+  stripeAccountStatus?: StripeAccountStatus | null;
+}
+
 export interface ConsoleEventSummary {
   id: string;
   title: LocalizedContent;
   startTime: string;
   endTime?: string;
+  regStartTime?: string | null;
+  regEndTime?: string | null;
+  regDeadline?: string | null;
   status: string;
   visibility: string;
+  maxParticipants?: number | null;
+  config?: Record<string, any> | null;
   reviewStatus?: string | null;
   reviewReason?: string | null;
   coverImageUrl?: string | null;
@@ -359,6 +485,16 @@ export interface ConsoleEventRegistrationItem {
   } | null;
   status: string;
   paymentStatus: string;
+  paymentId?: string | null;
+  refundRequest?: {
+    id: string;
+    status: string;
+    decision?: string | null;
+    requestedAmount?: number | null;
+    approvedAmount?: number | null;
+    refundedAmount?: number | null;
+    reason?: string | null;
+  } | null;
   attended: boolean;
   noShow: boolean;
   amount?: number | null;
@@ -373,10 +509,21 @@ export interface ConsoleEventRegistrationsResponse {
 
 export interface ConsoleEventAssistantMessage {
   id: string;
+  clientMessageId?: string;
   role: 'user' | 'assistant';
   type: 'text' | 'proposal';
   content: string;
+  contentText?: string | null;
+  contentJson?: Record<string, unknown> | null;
   createdAt: string;
+  serverCreatedAt?: string | null;
+  status?: 'pending' | 'sent' | 'failed';
+  action?: string | null;
+  thinkingSteps?: string[];
+  coachPrompts?: string[];
+  editorChecklist?: string[];
+  writerSummary?: EventAssistantReply['writerSummary'];
+  confirmQuestions?: string[];
   payload?: Record<string, unknown> | null;
 }
 
@@ -420,6 +567,7 @@ export interface OrganizerApplicationInfo {
   status: string;
   reason?: string | null;
   experience?: string | null;
+  contact?: string | null;
   note?: string | null;
   createdAt: string;
   reviewedAt?: string | null;
@@ -430,6 +578,10 @@ export interface OrganizerApplicationStatus {
   hasApplied: boolean;
   isOrganizer: boolean;
   application: OrganizerApplicationInfo | null;
+}
+
+export interface OrganizerPayoutPolicyStatus {
+  acceptedAt: string | null;
 }
 
 export interface CommunityAnalytics {
@@ -449,6 +601,7 @@ export interface GeneratedEventContent {
   description: LocalizedContent;
   notes: LocalizedContent;
   riskNotice: LocalizedContent;
+  expertComment?: string;
   snsCaptions: {
     line: Record<string, string>;
     instagram: Record<string, string>;
@@ -469,6 +622,10 @@ export interface GeneratedEventContent {
   requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
   registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
   visibility?: EventVisibility;
+  requireApproval?: boolean;
+  enableWaitlist?: boolean;
+  requireCheckin?: boolean;
+  refundPolicy?: string;
 }
 
 export interface GenerateEventCopyInput {
@@ -477,6 +634,7 @@ export interface GenerateEventCopyInput {
   audience: string;
   style: string;
   details: string;
+  titleSeed?: string;
 }
 
 export interface EventAssistantMessage {
@@ -486,30 +644,200 @@ export interface EventAssistantMessage {
 
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
+  action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
+  uiAction?: 'confirm_draft' | 'continue_edit' | 'open_preview' | 'go_form' | null;
+  uiMode?: 'explain' | 'collecting';
+  requestId?: string;
+  conversationId?: string;
+  messageId?: string;
+  clientLocale?: string;
+  clientTimezone?: string;
 }
 
-export type EventAssistantStatus = 'collecting' | 'options' | 'ready';
+export type EventAssistantState = 'collecting' | 'options' | 'ready' | 'completed';
+
+export interface EventAssistantOption {
+  title: string;
+  description?: string;
+  pros?: string;
+  cons?: string;
+}
+
+export interface EventAssistantPublicDraft {
+  title?: string;
+  shortDescription?: string;
+  detailedDescription?: string;
+  ageRange?: string;
+  highlights?: string[];
+  requirements?: Array<{ label: string; type?: 'must' | 'nice-to-have' }>;
+  schedule?: { date?: string; duration?: string; location?: string; startTime?: string; endTime?: string };
+  price?: number | string | null;
+  capacity?: number | string | null;
+  signupNotes?: string;
+  registrationForm?: Array<{ label: string; type: string; required?: boolean }>;
+  visibility?: string;
+  requireApproval?: boolean;
+  enableWaitlist?: boolean;
+  requireCheckin?: boolean;
+  refundPolicy?: string;
+  riskNotice?: string;
+  expertComment?: string;
+}
+
+export interface EventAssistantExecutionPlan {
+  objective?: string;
+  coreExperienceDesign?: string;
+  runOfShow?: string[];
+  materials?: string[];
+  staffing?: string[];
+  risksAndMitigation?: string[];
+  prepChecklist?: string[];
+}
 
 export interface EventAssistantReply {
-  status: EventAssistantStatus;
-  message: string;
-  options?: string[];
-  proposal?: GeneratedEventContent;
-  thinkingSteps?: string[];
-  stage?: 'coach' | 'editor' | 'writer';
-  coachPrompts?: string[];
-  editorChecklist?: string[];
-  writerSummary?: {
-    headline?: string;
-    audience?: string;
-    logistics?: string;
-    riskNotes?: string;
-    nextSteps?: string;
+  state: EventAssistantState;
+  status?: EventAssistantState;
+  uiPhase?:
+    | 'collecting'
+    | 'decision'
+    | 'compare'
+    | 'ready'
+    | 'operate'
+    | 'revise_select'
+    | 'revise_edit';
+  message?: string;
+  ui?: {
+    message?: string;
+    question?: {
+      key:
+        | 'title'
+        | 'time'
+        | 'location'
+        | 'price'
+        | 'capacity'
+        | 'details'
+        | 'visibility'
+        | 'registrationForm'
+        | 'requireApproval'
+        | 'enableWaitlist'
+        | 'requireCheckin'
+        | 'refundPolicy'
+        | 'riskNotice';
+      text: string;
+    };
+    options?: Array<{ label: string; value: string; recommended?: boolean }>;
+    mode?: 'explain' | 'collecting' | 'decision';
   };
+  questionMeta?: {
+    key:
+      | 'title'
+      | 'time'
+      | 'location'
+      | 'price'
+      | 'capacity'
+      | 'details'
+      | 'visibility'
+      | 'registrationForm'
+      | 'requireApproval'
+      | 'enableWaitlist'
+      | 'requireCheckin'
+      | 'refundPolicy'
+      | 'riskNotice';
+    exampleLines: string[];
+  };
+  thinkingSteps?: string[];
+  coachPrompt?: string;
+  editorChecklist?: string[];
+  writerSummary?:
+    | string
+    | {
+        headline?: string;
+        audience?: string;
+        logistics?: string;
+        riskNotes?: string;
+        nextSteps?: string;
+      };
+  questions?: string[];
+  options?: string[]; // compatibility: textual options
+  optionDetails?: EventAssistantOption[];
+  publicActivityDraft?: EventAssistantPublicDraft;
+  internalExecutionPlan?: EventAssistantExecutionPlan;
   confirmQuestions?: string[];
+  coachPrompts?: string[];
+  optionTexts?: string[];
   promptVersion: string;
   language: string;
   turnCount: number;
+  stage?: 'coach' | 'editor' | 'writer';
+  slots?: {
+    title?: string;
+    time?: string;
+    location?: string;
+    price?: string;
+    capacity?: string;
+    details?: string;
+    visibility?: string;
+    registrationForm?: string;
+    requireApproval?: string;
+    enableWaitlist?: string;
+    requireCheckin?: string;
+    refundPolicy?: string;
+    riskNotice?: string;
+  };
+  confidence?: Record<
+    | 'title'
+    | 'time'
+    | 'location'
+    | 'price'
+    | 'capacity'
+    | 'details'
+    | 'visibility'
+    | 'registrationForm'
+    | 'requireApproval'
+    | 'enableWaitlist'
+    | 'requireCheckin'
+    | 'refundPolicy'
+    | 'riskNotice',
+    number
+  >;
+  draftReady?: boolean;
+  applyEnabled?: boolean;
+  draftId?: string;
+  intent?: 'create' | 'explore' | 'unknown';
+  titleSuggestions?: string[];
+  autoTitle?: string;
+  miniPreview?: { bullets: string[]; note?: string };
+  choiceQuestion?: {
+    key: string;
+    prompt: string;
+    options: Array<{ label: string; value: string; recommended?: boolean }>;
+  };
+  compareCandidates?: Array<{
+    id: string;
+    summary: string;
+    time?: string;
+    price?: string;
+    notes?: string;
+  }>;
+  inputMode?: 'describe' | 'fill' | 'compare';
+  nextQuestionKey?:
+    | 'title'
+    | 'time'
+    | 'location'
+    | 'price'
+    | 'capacity'
+    | 'details'
+    | 'visibility'
+    | 'registrationForm'
+    | 'requireApproval'
+    | 'enableWaitlist'
+    | 'requireCheckin'
+    | 'refundPolicy'
+    | 'riskNotice'
+    | null;
+  modeHint?: 'chat' | 'operate';
+  uiMode?: 'explain' | 'collect' | 'decision';
+  messageSource?: 'backend.ui' | 'backend.normalizer' | 'backend.interrupt' | 'backend.llm';
 }
 
 export interface EventAssistantProfileDefaults {
@@ -635,6 +963,108 @@ export interface AdminEventReviewItem {
     name: string;
     slug: string;
   } | null;
+}
+
+export interface AdminSettlementConfig {
+  timezone: string;
+  settlementEnabled: boolean;
+  settlementDelayDays: number;
+  settlementWindowDays: number;
+  settlementMinTransferAmount: number;
+  settlementItemRetryDelayMs: number;
+  settlementItemMaxAttempts: number;
+  settlementAutoRunEnabled: boolean;
+  settlementAutoRunHour: number;
+  settlementAutoRunMinute: number;
+  asOf: string;
+}
+
+export interface AdminSettlementBatchListItem {
+  batchId: string;
+  periodFrom: string;
+  periodTo: string;
+  currency: string;
+  status: string;
+  settlementEnabled: boolean;
+  createdAt: string;
+  runAt: string;
+  hosts: number;
+  counts: {
+    succeeded: number;
+    failed: number;
+    blocked: number;
+    pending: number;
+  };
+  triggerType: string | null;
+}
+
+export interface AdminSettlementBatchListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: AdminSettlementBatchListItem[];
+}
+
+export interface AdminSettlementBatchDetailItem {
+  itemId: string;
+  hostId: string;
+  communityName: string;
+  hostBalance: number;
+  settleAmount: number;
+  carryReceivable: number;
+  currency: string;
+  status: string;
+  stripeTransferId: string | null;
+  errorMessage: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+  counts: Record<string, any>;
+  blockedReasonCodes: string[];
+  disputedPayments: Array<{
+    paymentId: string;
+    stripeChargeId: string | null;
+    stripeDisputeId: string | null;
+    stripeDisputeStatus: string | null;
+  }>;
+  hostStripe: { stripeAccountId: string | null; stripeAccountOnboarded: boolean } | null;
+  ruleOverrides: {
+    settlementDelayDaysOverride: number | null;
+    settlementMinTransferAmountOverride: number | null;
+  } | null;
+}
+
+export interface AdminSettlementBatchDetailResponse {
+  batchId: string;
+  periodFrom: string;
+  periodTo: string;
+  currency: string;
+  status: string;
+  settlementEnabled: boolean;
+  triggerType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  runAt: string;
+  items: AdminSettlementBatchDetailItem[];
+}
+
+export interface AdminStatsSummary {
+  registeredUsers: number;
+  organizers: number;
+  communities: number;
+  subscriptions: number;
+  events: number;
+  gmv: number;
+  refunds: number;
+}
+
+export interface AdminStatsSummary {
+  registeredUsers: number;
+  organizers: number;
+  communities: number;
+  subscriptions: number;
+  events: number;
+  gmv: number;
+  refunds: number;
 }
 
 export interface AiAssistantSessionSummary {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsService } from '../auth/permissions.service';
@@ -17,6 +18,7 @@ export class AdminEventsListController {
   async list(
     @Req() req: any,
     @Query('status') status?: string,
+    @Query('q') q?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
@@ -26,6 +28,14 @@ export class AdminEventsListController {
     const where: any = {};
     if (status) {
       where.status = status;
+    }
+    if (q && q.trim()) {
+      const query = q.trim();
+      where.OR = [
+        { id: { contains: query } },
+        { community: { name: { contains: query, mode: 'insensitive' } } },
+        { community: { slug: { contains: query, mode: 'insensitive' } } },
+      ];
     }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.event.findMany({

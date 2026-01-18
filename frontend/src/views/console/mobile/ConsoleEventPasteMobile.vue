@@ -1,264 +1,346 @@
 <template>
-  <div class="paste-page">
-    <header class="paste-header">
-      <button class="nav-text-btn" type="button" @click="goBack">返回</button>
-      <h1 class="header-title">我已有活动方案</h1>
-      <div class="nav-text-btn placeholder" aria-hidden="true">返回</div>
-    </header>
+  <div class="paste-page" :class="{ 'is-liff': isLiffClientMode }">
+    <ConsoleTopBar v-if="!isLiffClientMode" title="文章からイベントを作成" @back="goBack" />
 
     <section class="intro-card">
-      <p class="intro-title">粘贴你的活动草案</p>
-      <p class="intro-desc">我们会自动提取标题 / 简介 / 注意事项，填入表单，省去重复输入。</p>
-      <ul class="intro-list">
-        <li>帮你先填好关键字段</li>
-        <li>给出下一步编辑建议</li>
-        <li>提示合规/风险要点</li>
-      </ul>
+      <p class="intro-title">{{ preview ? '受け取った内容を確認しよう' : 'まずは一言でOK' }}</p>
+      <p class="intro-desc">
+        {{
+          preview
+            ? 'ここから一緒に整えます。必要なら戻って書き足せます。'
+            : '文章の情報をそのまま入れてください。AIが下書きを組み立てます。'
+        }}
+      </p>
     </section>
 
-    <section class="input-card">
+    <section v-if="!preview" class="input-card">
       <textarea
         v-model="draft"
         class="draft-input"
-        placeholder="粘贴活动标题、简介、规则或宣传文案…"
+        placeholder="例）土曜午前のヨガ。初心者向け。場所は代々木公園。"
         rows="12"
       ></textarea>
+      <p class="input-hint" :class="{ 'input-hint--warn': validationBlocked }">
+        <span class="input-hint-main">
+          {{ validationMessage }}
+          <span class="input-hint-meta">（{{ charCount }}/{{ MAX_CHARS }}文字）</span>
+        </span>
+        <br />
+        <span class="input-hint-sub">{{ inputSubHint }}</span>
+      </p>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
+    <section v-else class="preview-card">
+      <div class="preview-item">
+        <p class="preview-label">タイトル</p>
+        <p class="preview-value">{{ preview.title || '未検出' }}</p>
+      </div>
+      <div class="preview-item">
+        <p class="preview-label">説明</p>
+        <p class="preview-value">{{ preview.description || '未検出' }}</p>
+      </div>
+      <div class="preview-item">
+        <p class="preview-label">注意事項 / ルール</p>
+        <p class="preview-value">{{ preview.rules || '未検出' }}</p>
+      </div>
+      <div v-if="extractSummary" class="preview-summary">
+        <p class="preview-label">検出サマリー</p>
+        <p class="preview-value">{{ extractSummary }}</p>
+      </div>
+      <p class="preview-hint">他の項目は次の画面で調整できます。</p>
+    </section>
+
     <div class="action-row">
-      <button class="secondary-btn" type="button" @click="goBack">返回</button>
-      <button class="primary-next" type="button" :disabled="!draft.trim() || loading" @click="confirmApply">
-        <span v-if="loading">请稍候…</span>
-        <span v-else>下一步</span>
+      <button v-if="!preview" class="ghost-link" type="button" @click="goBack">キャンセル</button>
+      <button v-else class="ghost-link" type="button" @click="editDraft">戻って修正</button>
+      <button
+        class="primary-next"
+        type="button"
+        :disabled="primaryDisabled"
+        @click="preview ? proceedToForm() : confirmApply()"
+      >
+        <span v-if="loading">少々お待ちください…</span>
+        <span v-else>{{ preview ? 'この内容で進む' : 'AIに見せてみる' }}</span>
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
 import { extractEventDraft } from '../../../api/client';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
+import { APP_TARGET } from '../../../config';
 
 const route = useRoute();
 const router = useRouter();
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const draft = ref('');
 const error = ref<string | null>(null);
+const preview = ref<{ title?: string; description?: string; rules?: string } | null>(null);
+const parsedResult = ref<any | null>(null);
 const toast = useToast();
 const loading = ref(false);
+
+const MIN_CHARS = 30;
+const RECOMMENDED_MAX = 1000;
+const MAX_CHARS = 2000;
+
+const normalizedDraft = computed(() => draft.value.trim());
+const charCount = computed(() => normalizedDraft.value.length);
+const validationState = computed(() => {
+  const count = charCount.value;
+  if (count < MIN_CHARS) return 'too_short';
+  if (count <= RECOMMENDED_MAX) return 'ok';
+  if (count <= MAX_CHARS) return 'long';
+  return 'too_long';
+});
+const validationBlocked = computed(
+  () => validationState.value === 'too_short' || validationState.value === 'too_long',
+);
+const validationMessage = computed(() => {
+  switch (validationState.value) {
+    case 'too_short':
+      return '内容が短すぎます（30文字以上）';
+    case 'ok':
+      return '入力内容を反映できます（30〜1,000文字）';
+    case 'long':
+      return '少し長めです。要点だけにまとめると反映しやすくなります。';
+    case 'too_long':
+      return '文字数が多すぎます（最大2,000文字）。不要な部分を削除してください。';
+    default:
+      return '入力内容を反映できます（30〜1,000文字）';
+  }
+});
+const inputSubHint = computed(() => '箇条書き・短文など何でもOK。あとから整えます。');
+const primaryDisabled = computed(() => {
+  if (loading.value) return true;
+  if (preview.value) return !parsedResult.value;
+  return validationBlocked.value;
+});
 
 const goBack = () => {
   router.back();
 };
 
 const confirmApply = async () => {
-  if (!draft.value.trim() || loading.value) return;
+  if (loading.value || validationBlocked.value) return;
   loading.value = true;
   error.value = null;
   try {
-    sessionStorage.setItem('CONSOLE_EVENT_ENTRY', 'paste');
-    sessionStorage.setItem('CONSOLE_EVENT_PASTE_DRAFT', draft.value);
     const communityId = route.params.communityId as string | undefined;
     if (communityId) {
-      const parsed = await extractEventDraft(communityId, { draft: draft.value });
-      sessionStorage.setItem('CONSOLE_EVENT_PASTE_RESULT', JSON.stringify(parsed));
+      const urlMatches = draft.value.match(/https?:\/\/[^\s]+/gi) || [];
+      const parsed = await extractEventDraft(communityId, {
+        draft: draft.value,
+        urls: urlMatches,
+      });
+      parsedResult.value = parsed;
+      preview.value = {
+        title: parsed?.title,
+        description: parsed?.description,
+        rules: parsed?.rules,
+      };
+      extractSummary.value = buildSummary(parsed);
+    } else {
+      error.value = 'コミュニティIDが必要です。';
     }
-    router.push({
-      name: 'ConsoleMobileEventForm',
-      params: route.params,
-      query: { entry: 'paste' },
-    });
   } catch (e) {
-    error.value = '提交失败，请稍后重试';
+    error.value = '送信に失敗しました。時間をおいて再試行してください。';
     toast.show(error.value);
   } finally {
     loading.value = false;
   }
+};
+
+const proceedToForm = () => {
+  if (!parsedResult.value) return;
+  sessionStorage.setItem('CONSOLE_EVENT_ENTRY', 'paste');
+  sessionStorage.setItem('CONSOLE_EVENT_PASTE_DRAFT', draft.value);
+  sessionStorage.setItem('CONSOLE_EVENT_PASTE_RESULT', JSON.stringify(parsedResult.value));
+  router.push({
+    name: 'ConsoleMobileEventForm',
+    params: route.params,
+    query: { entry: 'paste' },
+  });
+};
+
+const editDraft = () => {
+  preview.value = null;
+  parsedResult.value = null;
+  extractSummary.value = null;
+};
+
+const extractSummary = ref<string | null>(null);
+const buildSummary = (parsed: any) => {
+  const lines: string[] = [];
+  if (parsed?.startTime) lines.push(`日時: ${parsed.startTime}${parsed.endTime ? ` - ${parsed.endTime}` : ''}`);
+  if (parsed?.locationText) lines.push(`場所: ${parsed.locationText}`);
+  if (parsed?.ticketPrice) lines.push(`参加費: ${parsed.ticketPrice}円`);
+  if (parsed?.category) lines.push(`カテゴリ: ${parsed.category}`);
+  if (parsed?.refundPolicy) lines.push('返金ポリシー検出済み');
+  return lines.length ? lines.join(' / ') : null;
 };
 </script>
 
 <style scoped>
 .paste-page {
   min-height: 100vh;
-  background: #f5f7fb;
-  padding: 0.6rem 0.6rem calc(env(safe-area-inset-bottom, 0px) + 20px);
+  background: #f8fafc;
+  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  box-sizing: border-box;
 }
-.paste-header {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  padding: calc(0.75rem + env(safe-area-inset-top, 0px)) 0.6rem 0.6rem;
-  margin-left: -0.6rem;
-  margin-right: -0.6rem;
-  background: #ffffff;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-.nav-text-btn {
-  border: none;
-  background: transparent;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 14px;
-  padding: 8px 4px;
-}
-.nav-text-btn.placeholder {
-  opacity: 0;
-  pointer-events: none;
-}
-.header-title {
-  margin: 0;
-  text-align: center;
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
+.paste-page.is-liff {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
 }
 .intro-card,
 .input-card {
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  padding: 16px 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  padding: 14px 14px;
 }
 .intro-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 700;
   color: #0f172a;
 }
 .intro-desc {
-  margin: 6px 0 10px;
-  font-size: 14px;
+  margin: 6px 0 0;
+  font-size: 13px;
   color: #475569;
   line-height: 1.5;
-}
-.intro-list {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: #0f172a;
-  font-size: 14px;
 }
 .input-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
 }
 .preview-card {
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  padding: 16px 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
-.preview-title {
+.preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.preview-label {
   margin: 0;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.preview-value {
+  margin: 0;
+  font-size: 14px;
   color: #0f172a;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
-.preview-row {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.preview-row .label {
+
+.preview-hint {
   margin: 0;
   font-size: 12px;
   color: #94a3b8;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.preview-row .value {
-  margin: 0;
-  font-size: 14px;
-  color: #0f172a;
-  line-height: 1.5;
-}
-.preview-row ul {
-  margin: 0;
-  padding-left: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: #0f172a;
-  font-size: 14px;
-}
-.error {
-  margin: 4px 0 0;
-  color: #ef4444;
-  font-size: 12px;
 }
 .draft-input {
   width: 100%;
-  min-height: 360px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  min-height: 320px;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
   padding: 12px;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
   background: #f8fafc;
   box-sizing: border-box;
 }
-.hint {
+.draft-input:focus {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.35);
+}
+.input-hint {
   margin: 0;
-  color: #64748b;
   font-size: 12px;
+  color: #94a3b8;
 }
-.primary-next {
-  width: 100%;
-  border: none;
-  border-radius: 14px;
-  padding: 14px;
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 800;
-  box-shadow: 0 12px 26px rgba(14, 165, 233, 0.25);
+.input-hint--warn {
+  color: #f97316;
 }
-.primary-next:disabled {
-  opacity: 0.5;
+.input-hint-main {
+  font-weight: 600;
 }
-.secondary-btn {
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
+.input-hint-meta {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.input-hint-sub {
+  font-weight: 400;
+  opacity: 0.9;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.error {
+  margin: 0;
+  color: #ef4444;
+  font-size: 12px;
 }
 .action-row {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: 1fr;
   gap: 10px;
+  margin: 6px 0 0;
 }
-.spinner {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgba(15, 23, 42, 0.15);
-  border-top-color: #0ea5e9;
-  animation: spin 0.9s linear infinite;
+.ghost-link,
+.primary-next {
+  height: 46px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+  width: 100%;
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.ghost-link {
+  border: none;
+  background: transparent;
+  color: #475569;
+}
+.primary-next {
+  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(34, 187, 170, 0.35);
+}
+.primary-next:disabled {
+  opacity: 0.5;
 }
 </style>

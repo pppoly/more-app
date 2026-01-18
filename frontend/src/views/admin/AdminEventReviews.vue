@@ -16,7 +16,7 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">審査待ちのイベントはありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in items" :key="item.id" class="review-card">
+        <article v-for="item in visibleItems" :key="item.id" class="review-card">
           <div class="card-top">
             <div class="title-block">
               <p class="eyebrow">{{ item.community?.name || '—' }}</p>
@@ -30,7 +30,8 @@
           <p class="reason" v-if="item.reviewReason">{{ item.reviewReason }}</p>
           <p class="reason muted" v-else>理由未記入</p>
           <div class="actions">
-            <button class="primary ghost" type="button" :disabled="busyId === item.id" @click="approve(item.id)">
+            <button class="ghost" type="button" @click="openDetail(item)">詳細を見る</button>
+            <button class="primary ghost" type="button" :disabled="busyId === item.id" @click="openApprove(item)">
               承認
             </button>
             <button class="ghost danger" type="button" :disabled="busyId === item.id" @click="openReject(item.id)">
@@ -38,6 +39,9 @@
             </button>
           </div>
         </article>
+        <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
+          さらに読み込む
+        </button>
       </div>
     </section>
 
@@ -47,27 +51,84 @@
         <textarea v-model="rejectReason" rows="4" placeholder="例: 位置情報が不足しています。"></textarea>
         <div class="modal-actions">
           <button class="ghost" type="button" @click="closeReject">キャンセル</button>
-          <button class="primary danger" type="button" :disabled="busyId === rejectTarget" @click="submitReject">
+          <button class="primary danger" type="button" :disabled="busyId === rejectTarget" @click="confirmReject">
             送信
           </button>
         </div>
+      </div>
+    </div>
+
+    <AdminConfirmModal
+      :open="!!approveTarget"
+      title="承認しますか？"
+      :message="approveTarget ? `「${getText(approveTarget.title)}」を承認します。` : ''"
+      :loading="busyId === approveTarget?.id"
+      @close="closeApprove"
+      @confirm="approve"
+    />
+    <AdminConfirmModal
+      :open="confirmRejectOpen"
+      title="差し戻しますか？"
+      :message="rejectReason ? `理由: ${rejectReason}` : '理由を入力してください。'"
+      :loading="busyId === rejectTarget"
+      @close="confirmRejectOpen = false"
+      @confirm="submitReject"
+    />
+
+    <div v-if="detailTarget" class="modal" @click.self="closeDetail">
+      <div class="modal-body detail">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">{{ detailTarget.community?.name || '—' }}</p>
+            <h3>{{ getText(detailTarget.title) }}</h3>
+            <p class="meta">更新: {{ formatDate(detailTarget.updatedAt) }}</p>
+          </div>
+          <button class="icon-button" type="button" @click="closeDetail" aria-label="close">
+            <span class="i-lucide-x"></span>
+          </button>
+        </div>
+        <p class="reason">レビュー理由: {{ detailTarget.reviewReason || '—' }}</p>
+        <div class="chips">
+          <span class="pill" :class="statusClass(detailTarget.reviewStatus || detailTarget.status)">
+            {{ statusLabel(detailTarget.reviewStatus || detailTarget.status) }}
+          </span>
+        </div>
+        <RouterLink
+          class="ghost"
+          :to="{ name: 'event-detail', params: { eventId: detailTarget.id } }"
+          target="_blank"
+          rel="noopener"
+        >
+          ユーザー表示で開く
+        </RouterLink>
       </div>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type { AdminEventReviewItem } from '../../types/api';
 import { adminApproveEvent, adminRejectEvent, fetchAdminEventReviews } from '../../api/client';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { useToast } from '../../composables/useToast';
+import AdminConfirmModal from '../../components/admin/AdminConfirmModal.vue';
+import { RouterLink } from 'vue-router';
 
+const toast = useToast();
 const items = ref<AdminEventReviewItem[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const busyId = ref<string | null>(null);
 const rejectTarget = ref<string | null>(null);
 const rejectReason = ref('');
+const confirmRejectOpen = ref(false);
+const approveTarget = ref<AdminEventReviewItem | null>(null);
+const detailTarget = ref<AdminEventReviewItem | null>(null);
+const page = ref(1);
+const pageSize = 10;
+const visibleItems = computed(() => items.value.slice(0, page.value * pageSize));
+const canLoadMore = computed(() => visibleItems.value.length < items.value.length);
 
 const getText = (val: any) => getLocalizedText(val) || '無題';
 const formatDate = (val: string) =>
@@ -94,21 +155,31 @@ const load = async () => {
   error.value = null;
   try {
     items.value = await fetchAdminEventReviews();
+    page.value = 1;
   } catch (err) {
     error.value = 'ロードに失敗しました';
+    toast.show('読み込みに失敗しました', 'error');
   } finally {
     loading.value = false;
   }
 };
 
-const approve = async (id: string) => {
-  busyId.value = id;
+const loadMore = () => {
+  page.value += 1;
+};
+
+const approve = async () => {
+  if (!approveTarget.value) return;
+  busyId.value = approveTarget.value.id;
   try {
-    await adminApproveEvent(id);
+    await adminApproveEvent(approveTarget.value.id);
     await load();
+    toast.show('承認しました', 'success');
   } catch (err) {
     error.value = '承認に失敗しました';
+    toast.show('承認に失敗しました', 'error');
   } finally {
+    approveTarget.value = null;
     busyId.value = null;
   }
 };
@@ -121,18 +192,41 @@ const closeReject = () => {
   rejectTarget.value = null;
   rejectReason.value = '';
 };
+const confirmReject = () => {
+  if (!rejectReason.value.trim()) {
+    error.value = '理由を入力してください';
+    toast.show('理由を入力してください', 'error');
+    return;
+  }
+  confirmRejectOpen.value = true;
+};
 const submitReject = async () => {
   if (!rejectTarget.value) return;
   busyId.value = rejectTarget.value;
   try {
-    await adminRejectEvent(rejectTarget.value, rejectReason.value || undefined);
+    await adminRejectEvent(rejectTarget.value, rejectReason.value.trim());
     closeReject();
+    confirmRejectOpen.value = false;
     await load();
+    toast.show('差し戻しました', 'success');
   } catch (err) {
     error.value = '差し戻しに失敗しました';
+    toast.show('差し戻しに失敗しました', 'error');
   } finally {
     busyId.value = null;
   }
+};
+const openApprove = (item: AdminEventReviewItem) => {
+  approveTarget.value = item;
+};
+const closeApprove = () => {
+  approveTarget.value = null;
+};
+const openDetail = (item: AdminEventReviewItem) => {
+  detailTarget.value = item;
+};
+const closeDetail = () => {
+  detailTarget.value = null;
 };
 
 onMounted(load);
@@ -162,6 +256,11 @@ onMounted(load);
   background: #fff;
   border-radius: 10px;
   padding: 8px 12px;
+}
+.ghost.full {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
 }
 .card {
   background: #fff;
@@ -259,6 +358,9 @@ onMounted(load);
   flex-direction: column;
   gap: 12px;
 }
+.modal-body.detail {
+  gap: 8px;
+}
 .modal-body textarea {
   width: 100%;
   border-radius: 12px;
@@ -282,5 +384,17 @@ onMounted(load);
 }
 .primary.danger {
   background: linear-gradient(135deg, #ef4444, #f97316);
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.icon-button {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
 }
 </style>

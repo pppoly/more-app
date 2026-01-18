@@ -1,18 +1,27 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method */
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildAssetUrl } from '../common/storage/asset-path';
+import { NotificationService } from '../notifications/notification.service';
+import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 
 interface CreateRegistrationDto {
   ticketTypeId?: string;
   formAnswers?: Prisma.JsonValue;
 }
 
+type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
+
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(EventsService.name);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   async listPublicOpenEvents() {
+    const successRegistrationWhere = this.successfulRegistrationWhere();
     const events = await this.prisma.event.findMany({
       where: {
         visibility: 'public',
@@ -27,6 +36,9 @@ export class EventsService {
         status: true,
         startTime: true,
         endTime: true,
+        regStartTime: true,
+        regEndTime: true,
+        regDeadline: true,
         locationText: true,
         locationLat: true,
         locationLng: true,
@@ -51,11 +63,7 @@ export class EventsService {
           },
         },
         registrations: {
-          where: {
-            status: {
-              in: ['paid', 'approved'],
-            },
-          },
+          where: successRegistrationWhere,
           orderBy: { createdAt: 'desc' },
           take: 6,
           select: {
@@ -70,7 +78,7 @@ export class EventsService {
         },
         _count: {
           select: {
-            registrations: true,
+            registrations: { where: successRegistrationWhere },
           },
         },
         galleries: {
@@ -101,11 +109,15 @@ export class EventsService {
         status: event.status,
         startTime: event.startTime,
         endTime: event.endTime,
+        regStartTime: event.regStartTime,
+        regEndTime: event.regEndTime,
+        regDeadline: event.regDeadline,
         locationText: event.locationText,
         locationLat: event.locationLat,
         locationLng: event.locationLng,
         title: event.title,
         description: event.description,
+        category: event.category,
         community: {
           id: event.community.id,
           name: event.community.name,
@@ -127,6 +139,7 @@ export class EventsService {
   async getEventById(id: string) {
     const DEFAULT_AVATAR =
       'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+    const successRegistrationWhere = this.successfulRegistrationWhere();
     const event = await this.prisma.event.findUnique({
       where: { id },
       select: {
@@ -146,11 +159,12 @@ export class EventsService {
       descriptionHtml: true,
       registrationFormSchema: true,
       config: true,
-      category: true,
-      minParticipants: true,
-      maxParticipants: true,
-      registrations: {
-        where: { status: { in: ['paid', 'approved'] } },
+        category: true,
+        minParticipants: true,
+        maxParticipants: true,
+        requireApproval: true,
+        registrations: {
+        where: successRegistrationWhere,
         orderBy: { createdAt: 'desc' },
         take: 24,
         select: {
@@ -166,7 +180,7 @@ export class EventsService {
         },
       },
       _count: {
-        select: { registrations: { where: { status: { in: ['paid', 'approved'] } } } },
+        select: { registrations: { where: successRegistrationWhere } },
       },
       galleries: {
         orderBy: { order: 'asc' },
@@ -240,108 +254,155 @@ export class EventsService {
     };
   }
 
-  async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      include: { ticketTypes: true, community: true },
+  async getFollowStatus(eventId: string, userId: string) {
+    await this.assertEventExists(eventId);
+    const follow = await this.prisma.eventFollow.findUnique({
+      where: { eventId_userId: { eventId, userId } },
     });
+    return { following: Boolean(follow) };
+  }
 
-    if (!event) {
-      throw new NotFoundException('Event not found');
-    }
+  async followEvent(eventId: string, userId: string) {
+    await this.assertEventExists(eventId);
+    await this.prisma.eventFollow.upsert({
+      where: { eventId_userId: { eventId, userId } },
+      update: {},
+      create: { eventId, userId },
+    });
+    return { following: true };
+  }
 
-    if (event.status !== 'open') {
-      throw new BadRequestException('Event is not open for registration');
-    }
+  async unfollowEvent(eventId: string, userId: string) {
+    const follow = await this.prisma.eventFollow.findUnique({
+      where: { eventId_userId: { eventId, userId } },
+    });
+    if (!follow) return { following: false };
+    await this.prisma.eventFollow.delete({
+      where: { eventId_userId: { eventId, userId } },
+    });
+    return { following: false };
+  }
 
-    if (event.visibility !== 'public' && event.visibility !== 'community-only') {
-      throw new BadRequestException('Event is not available for registration');
-    }
+  async createRegistration(eventId: string, userId: string, dto: CreateRegistrationDto) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        include: { ticketTypes: true, community: true },
+      });
 
-    const now = new Date();
-    // 注册截止时间暂时不阻止用户报名，保持开放体验
+      if (!event) {
+        throw new NotFoundException('Event not found');
+      }
 
-    await this.ensureActiveMembership(event.communityId, userId);
+      if (event.status !== 'open') {
+        throw new BadRequestException('Event is not open for registration');
+      }
 
-    const existing = await this.prisma.eventRegistration.findFirst({
-      where: {
-        eventId,
-        userId,
-        NOT: { status: 'cancelled' },
-      },
-      include: {
-        event: {
-          select: {
-            id: true,
-            title: true,
-            startTime: true,
-            endTime: true,
-            locationText: true,
-            community: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
+      if (event.visibility !== 'public' && event.visibility !== 'community-only') {
+        throw new BadRequestException('Event is not available for registration');
+      }
+
+      const existing = await tx.eventRegistration.findFirst({
+        where: {
+          userId,
+          eventId,
+        },
+        include: {
+          event: {
+            select: {
+              id: true,
+              title: true,
+              startTime: true,
+              endTime: true,
+              locationText: true,
+              community: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
               },
             },
           },
         },
-      },
-    });
-
-    if (existing) {
-      return {
-        registrationId: existing.id,
-        status: existing.status,
-        paymentStatus: existing.paymentStatus ?? 'paid',
-        paymentRequired: existing.paymentStatus !== 'paid',
-        amount: existing.amount ?? 0,
-        eventId: existing.eventId,
-        ticketTypeId: existing.ticketTypeId ?? undefined,
-        event: existing.event,
-      };
-    }
-
-    let eventTicketTypes = event.ticketTypes;
-    if (!eventTicketTypes.length) {
-      const fallbackName = this.getLocalizedText(event.title) || '参加チケット';
-      const fallbackTicket = await this.prisma.eventTicketType.create({
-        data: {
-          eventId,
-          name: { original: fallbackName },
-          type: 'free',
-          price: 0,
-          quota: event.maxParticipants ?? 100,
-        },
       });
-      eventTicketTypes = [fallbackTicket];
-    }
 
-    let ticketType =
-      dto.ticketTypeId &&
-      eventTicketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
+      if (existing && !['cancelled', 'rejected', 'refunded'].includes(existing.status)) {
+        await this.ensureActiveMembership(event.communityId, userId, tx);
+        return {
+          registrationId: existing.id,
+          status: existing.status,
+          paymentStatus: existing.paymentStatus,
+          paymentRequired: (existing.amount ?? 0) > 0 && existing.paymentStatus !== 'paid',
+          amount: existing.amount ?? 0,
+          eventId: existing.event?.id ?? eventId,
+          ticketTypeId: existing.ticketTypeId ?? dto.ticketTypeId,
+          event: existing.event ?? {
+            id: eventId,
+            title: event.title,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            locationText: event.locationText,
+            community: {
+              id: event.communityId,
+              name: this.getLocalizedText(event.title) || '',
+              slug: '',
+            },
+          },
+        };
+      }
 
-    if (!ticketType) {
-      ticketType =
-        eventTicketTypes.find((ticket) => ticket.type === 'free') ||
-        eventTicketTypes[0];
-    }
+      const now = new Date();
+      if (event.regStartTime && now < event.regStartTime) {
+        throw new BadRequestException('Registration has not started');
+      }
+      const regEndTime = event.regEndTime ?? event.regDeadline ?? null;
+      if (regEndTime && now > regEndTime) {
+        throw new BadRequestException('Registration is closed');
+      }
 
-    if (!ticketType) {
-      throw new BadRequestException('No ticket types available for this event');
-    }
+      await this.ensureActiveMembership(event.communityId, userId, tx);
 
-    const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
-    const requireApproval = Boolean(event.requireApproval);
-    const initialStatus = requireApproval
-      ? 'pending'
-      : isFree
-        ? 'paid'
-        : 'approved';
-    const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
+      let eventTicketTypes = event.ticketTypes;
+      if (!eventTicketTypes.length) {
+        const fallbackName = this.getLocalizedText(event.title) || '参加チケット';
+        const fallbackTicket = await tx.eventTicketType.create({
+          data: {
+            eventId,
+            name: { original: fallbackName },
+            type: 'free',
+            price: 0,
+            quota: event.maxParticipants ?? 100,
+          },
+        });
+        eventTicketTypes = [fallbackTicket];
+      }
 
-    const registration = await this.prisma.eventRegistration.create({
-      data: {
+      let ticketType =
+        dto.ticketTypeId &&
+        eventTicketTypes.find((ticket) => ticket.id === dto.ticketTypeId);
+
+      if (!ticketType) {
+        ticketType =
+          eventTicketTypes.find((ticket) => ticket.type === 'free') ||
+          eventTicketTypes[0];
+      }
+
+      if (!ticketType) {
+        throw new BadRequestException('No ticket types available for this event');
+      }
+
+      const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
+      await this.assertRegistrationCapacity(tx, event, ticketType, isFree);
+      const requireApproval = Boolean(event.requireApproval);
+      const initialStatus = requireApproval
+        ? 'pending'
+        : isFree
+          ? 'paid'
+          : 'pending_payment';
+      const initialPaymentStatus = requireApproval ? 'unpaid' : isFree ? 'paid' : 'unpaid';
+
+      const baseData = {
         eventId,
         userId,
         ticketTypeId: ticketType.id,
@@ -350,46 +411,132 @@ export class EventsService {
         amount: ticketType.price ?? 0,
         paidAmount: initialPaymentStatus === 'paid' ? ticketType.price ?? 0 : 0,
         paymentStatus: initialPaymentStatus,
-      },
-      select: {
-        id: true,
-        status: true,
-        ticketTypeId: true,
-        amount: true,
-        paymentStatus: true,
-        event: {
-          select: {
-            id: true,
-            title: true,
-            startTime: true,
-            endTime: true,
-            locationText: true,
-            community: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
+        attended: false,
+        noShow: false,
+      };
+
+      const registration = existing
+        ? await tx.eventRegistration.update({
+            where: { id: existing.id },
+            data: baseData,
+            select: {
+              id: true,
+              status: true,
+              ticketTypeId: true,
+              amount: true,
+              paymentStatus: true,
+              event: {
+                select: {
+                  id: true,
+                  title: true,
+                  startTime: true,
+                  endTime: true,
+                  locationText: true,
+                  community: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
+                  },
+                },
               },
             },
+          })
+        : await tx.eventRegistration.create({
+            data: baseData,
+            select: {
+              id: true,
+              status: true,
+              ticketTypeId: true,
+              amount: true,
+              paymentStatus: true,
+              event: {
+                select: {
+                  id: true,
+                  title: true,
+                  startTime: true,
+                  endTime: true,
+                  locationText: true,
+                  community: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+      return {
+        registrationId: registration.id,
+        status: registration.status,
+        paymentStatus: registration.paymentStatus,
+        paymentRequired: !isFree,
+        amount: registration.amount,
+        eventId: registration.event?.id ?? eventId,
+        ticketTypeId: registration.ticketTypeId,
+        event: registration.event ?? {
+          id: eventId,
+          title: event.title,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          locationText: event.locationText,
+          community: {
+            id: event.communityId,
+            name: this.getLocalizedText(event.title) || '',
+            slug: '',
           },
         },
-      },
+      };
     });
 
+    if (result.status === 'paid' && (result.paymentStatus === 'paid' || result.amount === 0)) {
+      void this.notifications.notifyRegistrationSuccess(result.registrationId).catch((error) => {
+        // best-effort; do not block registration
+        this.logger.warn(`Failed to send registration notification: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+
+    return result;
+  }
+
+  private successfulRegistrationWhere(): Prisma.EventRegistrationWhereInput {
     return {
-      registrationId: registration.id,
-      status: registration.status,
-      paymentStatus: registration.paymentStatus,
-      paymentRequired: !isFree,
-      amount: registration.amount,
-      eventId: registration.event.id,
-      ticketTypeId: registration.ticketTypeId,
-      event: registration.event,
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
     };
   }
 
-  private async ensureActiveMembership(communityId: string, userId: string) {
-    const member = await this.prisma.communityMember.findUnique({
+  private async assertRegistrationCapacity(
+    db: PrismaClientOrTx,
+    event: { id: string; maxParticipants?: number | null },
+    ticketType: { id: string; quota?: number | null },
+    isFree: boolean,
+  ) {
+    const reservedStatuses = isFree ? ['paid', 'approved'] : ['paid', 'pending_payment', 'approved'];
+    if (event.maxParticipants !== null && event.maxParticipants !== undefined) {
+      const reservedTotal = await db.eventRegistration.count({
+        where: { eventId: event.id, status: { in: reservedStatuses } },
+      });
+      if (reservedTotal >= event.maxParticipants) {
+        throw new BadRequestException('Event is full');
+      }
+    }
+    if (ticketType.quota !== null && ticketType.quota !== undefined) {
+      const reservedByTicket = await db.eventRegistration.count({
+        where: { eventId: event.id, ticketTypeId: ticketType.id, status: { in: reservedStatuses } },
+      });
+      if (reservedByTicket >= ticketType.quota) {
+        throw new BadRequestException('Ticket quota reached');
+      }
+    }
+  }
+
+  private async ensureActiveMembership(communityId: string, userId: string, db: PrismaClientOrTx = this.prisma) {
+    const member = await db.communityMember.findUnique({
       where: { communityId_userId: { communityId, userId } },
     });
 
@@ -398,7 +545,7 @@ export class EventsService {
     }
 
     if (!member) {
-      await this.prisma.communityMember.create({
+      await db.communityMember.create({
         data: {
           communityId,
           userId,
@@ -407,6 +554,14 @@ export class EventsService {
         },
       });
     }
+  }
+
+  private async assertEventExists(eventId: string) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    return event;
   }
 
   async getEventGallery(eventId: string) {
@@ -423,10 +578,17 @@ export class EventsService {
         order: true,
       },
     });
-    return gallery.map((item) => ({
-      ...item,
-      imageUrl: buildAssetUrl(item.imageUrl),
-    }));
+    return gallery
+      .map((item) => {
+        const normalized = buildAssetUrl(item.imageUrl);
+        return normalized
+          ? {
+              ...item,
+              imageUrl: normalized,
+            }
+          : null;
+      })
+      .filter((item): item is { id: string; imageUrl: string; order: number } => Boolean(item));
   }
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
     if (!content) return '';

@@ -13,7 +13,8 @@
   --color-border-accent: #d1e8f7;
   --color-divider-soft: #f2f2f2;
 
-  --font-family-base: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Yu Gothic', 'Meiryo', system-ui, 'Segoe UI', sans-serif;
   --font-size-xs: 10px;
   --font-size-sm: 12px;
   --font-size-md: 14px;

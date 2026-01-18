@@ -2,9 +2,9 @@
   <section class="community-list">
     <header class="hero-card">
       <div class="hero-text">
-        <p class="hero-eyebrow">社群一覧</p>
+        <p class="hero-eyebrow">コミュニティ一覧</p>
         <h1>My Communities</h1>
-        <p class="hero-subtext">現在 {{ totalCommunities }} 件の社群を管理しています。</p>
+        <p class="hero-subtext">現在 {{ totalCommunities }} 件のコミュニティを管理しています。</p>
       </div>
       <RouterLink class="hero-btn" :to="{ name: 'console-community-create' }">
         <span class="i-lucide-plus"></span>
@@ -18,7 +18,7 @@
       </div>
 
       <article v-else-if="error" class="state-card state-card--error">
-        <p class="state-title">社群情報を読み込めませんでした</p>
+        <p class="state-title">コミュニティ情報を読み込めませんでした</p>
         <p class="state-message">{{ error }}</p>
         <button type="button" class="ghost-btn" @click="load">再読み込み</button>
       </article>
@@ -46,8 +46,8 @@
       </div>
 
       <article v-else class="state-card">
-        <p class="state-title">まだ社群がありません</p>
-        <p class="state-message">まずは新しい社群を登録してAIアシスタントをスタートしましょう。</p>
+        <p class="state-title">まだコミュニティがありません</p>
+        <p class="state-message">まずは新しいコミュニティを登録してAIアシスタントをスタートしましょう。</p>
         <RouterLink class="primary-btn" :to="{ name: 'console-community-create' }">新規作成</RouterLink>
       </article>
     </section>
@@ -85,7 +85,7 @@ const visibleLabel = (level?: string | null) => {
       return '公開';
     case 'semi-public':
     case 'members':
-      return '社群限定';
+      return 'コミュニティ限定';
     case 'private':
       return '非公開';
     default:

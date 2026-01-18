@@ -1,127 +1,262 @@
 <template>
   <div class="ticket-scanner-page">
-    <header class="scanner-hero">
-      <h1>验票扫码</h1>
-      <p>使用设备相机扫描票券二维码，实时完成验票。</p>
+    <ConsoleTopBar v-if="!isLiffClientMode" title="チケットスキャン" @back="goBack" />
+
+    <header class="page-head">
+      <div>
+        <h1>受付・チェックイン</h1>
+        <p>QR をかざすだけで受付できます。カメラ許可が必要です。</p>
+      </div>
     </header>
 
-    <section class="scanner-card">
-      <div class="scanner-video" :class="{ 'scanner-video--inactive': !scanning }">
+    <section class="scanner-box">
+      <div class="viewfinder" :class="{ 'viewfinder--active': isScanning }">
         <video ref="videoEl" playsinline muted />
-        <div v-if="!scanning" class="scanner-overlay">
-          <p>点击下方按钮启动相机</p>
+        <div class="frame">
+          <span class="corner tl"></span>
+          <span class="corner tr"></span>
+          <span class="corner bl"></span>
+          <span class="corner br"></span>
+        </div>
+        <div class="center-hint">
+          <p v-if="state === 'idle'">『スキャン開始』を押してください</p>
+          <p v-else-if="state === 'scanning'">枠内に QR を合わせてください</p>
+          <p v-else-if="state === 'submitting'">確認中…</p>
         </div>
       </div>
-      <div class="scanner-actions">
-        <button type="button" class="primary-btn" :disabled="scanning" @click="startScan">
-          {{ scanning ? '扫描中…' : '启动相机扫码' }}
-        </button>
-        <button v-if="scanning" type="button" class="ghost-btn" @click="stopScan">停止</button>
+
+      <div v-if="state === 'result'" class="result-card" :class="result?.kind === 'success' ? 'success' : 'error'">
+        <div class="result-icon">{{ result?.kind === 'success' ? '✅' : '❌' }}</div>
+        <div class="result-body">
+          <p class="result-title">
+            {{ result?.kind === 'success' ? 'チェックイン完了' : '検証に失敗しました' }}
+          </p>
+          <p class="result-desc">
+            {{ result?.kind === 'success' ? result?.message : result?.message || '無効なQRコードです' }}
+          </p>
+        </div>
       </div>
-      <div class="scanner-actions">
-        <button type="button" class="ghost-btn" @click="openCapture">
-          拍照扫码
+
+      <div v-if="state !== 'result'" class="hint-text" role="status">{{ hintText }}</div>
+
+      <div class="actions">
+        <button class="primary" type="button" :disabled="state === 'submitting'" @click="handlePrimary">
+          {{ primaryLabel }}
         </button>
+        <button v-if="allowImageScan" class="link" type="button" @click="openCapture">写真から読み取る</button>
       </div>
+
       <input
+        v-if="allowImageScan"
         ref="captureInput"
         type="file"
         accept="image/*"
         capture="environment"
-        class="capture-input"
+        class="hidden-input"
         @change="handleCapture"
       />
-      <p v-if="scanError" class="error-text">{{ scanError }}</p>
     </section>
 
-    <section v-if="resultMessage" class="result-card" :class="{ 'result-card--success': resultSuccess }">
-      <p class="result-title">{{ resultSuccess ? '验票成功' : '验票失败' }}</p>
-      <p class="result-message">{{ resultMessage }}</p>
-    </section>
+    <dialog v-if="showInfo" class="info-dialog">
+      <div class="info-card">
+        <p class="info-title">スキャンの流れ</p>
+        <ol>
+          <li>『スキャン開始』でカメラを起動</li>
+          <li>QR を枠内に合わせると自動で判定</li>
+          <li>結果を確認して次へ</li>
+        </ol>
+        <button type="button" class="primary ghost" @click="showInfo = false">閉じる</button>
+      </div>
+    </dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
 import { checkinRegistration } from '../../../api/client';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { useRouter, useRoute } from 'vue-router';
+import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
+import { APP_TARGET } from '../../../config';
 
+type ScanState = 'idle' | 'scanning' | 'submitting' | 'result';
+type Result =
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string };
+
+const router = useRouter();
+const route = useRoute();
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const videoEl = ref<HTMLVideoElement | null>(null);
 const captureInput = ref<HTMLInputElement | null>(null);
-const scanning = ref(false);
-const scanError = ref<string | null>(null);
-const resultMessage = ref<string | null>(null);
-const resultSuccess = ref(false);
+const state = ref<ScanState>('idle');
+const result = ref<Result | null>(null);
+const showInfo = ref(false);
+const allowImageScan = computed(() => route.query.photo === '1'); // feature flag（デフォルトOFF）
 
 let readerInstance: BrowserMultiFormatReader | null = null;
 let controls: IScannerControls | null = null;
+let lastPayload = '';
+let lastPayloadAt = 0;
 let stopping = false;
+let submitTimer: number | null = null;
+const SUBMIT_TIMEOUT_MS = 8000;
+
+const isScanning = computed(() => state.value === 'scanning');
+const primaryLabel = computed(() => {
+  if (state.value === 'scanning') return 'スキャン中…';
+  if (state.value === 'submitting') return '確認中…';
+  if (state.value === 'result') return result.value?.kind === 'success' ? '次をスキャン' : 'もう一度';
+  return 'スキャン開始';
+});
+
+const hintText = computed(() => {
+  if (state.value === 'submitting') return '読み取り内容を確認しています…';
+  if (state.value === 'scanning') return '枠内に QR を合わせると自動で判定します';
+  return 'QR をかざしてチェックインできます';
+});
+
+const goBack = () => {
+  router.back();
+};
+
+const resetResult = () => {
+  result.value = null;
+};
 
 const startScan = async () => {
-  if (scanning.value) return;
-  scanError.value = null;
-  resultMessage.value = null;
+  resetResult();
+  if (state.value === 'scanning' || state.value === 'submitting') return;
+  state.value = 'scanning';
   try {
     if (!readerInstance) {
       readerInstance = new BrowserMultiFormatReader();
     }
-    scanning.value = true;
     await nextTick();
     controls = await readerInstance.decodeFromVideoDevice(
       undefined,
       videoEl.value as HTMLVideoElement,
-      (result, err) => {
-        if (result) {
-          handlePayload(result.getText());
+      (scanResult, err) => {
+        if (state.value !== 'scanning') return;
+        if (scanResult) {
+          onPayload(scanResult.getText());
         } else if (err && !(err as any).message?.includes('No MultiFormat Readers')) {
-          scanError.value = err instanceof Error ? err.message : '识别失败';
+          // ignore noisy errors
         }
       },
     );
-  } catch (err) {
-    scanError.value = '无法直接打开相机，请拍照后上传二维码扫描（建议使用 HTTPS 网络）';
-    stopScan();
+  } catch {
+    state.value = 'result';
+    result.value = { kind: 'error', message: 'カメラを開けませんでした。権限を確認してください。' };
+    await stopScan();
   }
 };
 
 const stopScan = async () => {
   if (stopping) return;
   stopping = true;
-  scanning.value = false;
-  if (controls) {
-    await controls.stop();
-    controls = null;
-  }
-  if (readerInstance) {
-    readerInstance.reset();
-  }
-  stopping = false;
-};
-
-const handlePayload = async (raw: string) => {
   try {
-    const payload = JSON.parse(raw);
-    if (!payload.eventId || !payload.registrationId) {
-      throw new Error('二维码内容不完整');
+    if (controls) {
+      await Promise.resolve(controls.stop()).catch(() => {});
+      controls = null;
     }
-    await submitCheckin(payload.eventId, payload.registrationId);
-  } catch (err) {
-    resultSuccess.value = false;
-    resultMessage.value = err instanceof Error ? err.message : '无法解析二维码';
+    if (readerInstance) {
+      readerInstance.reset();
+    }
   } finally {
-    await stopScan();
+    stopping = false;
   }
 };
 
-const submitCheckin = async (eventId: string, registrationId: string) => {
-  try {
-    await checkinRegistration(eventId, registrationId);
-    resultSuccess.value = true;
-    resultMessage.value = `已登记：${registrationId.slice(0, 8).toUpperCase()}`;
-  } catch (err) {
-    resultSuccess.value = false;
-    resultMessage.value = err instanceof Error ? err.message : '验票失败，请稍后再试';
+const onPayload = async (raw: string) => {
+  const now = Date.now();
+  if (raw === lastPayload && now - lastPayloadAt < 2000) return; // debounce duplicate within 2s
+  lastPayload = raw;
+  lastPayloadAt = now;
+
+  state.value = 'submitting';
+  // Do not block on camera stop; LIFF sometimes stalls stop() and leaves UI in "確認中…".
+  void stopScan();
+
+  const parsed = parsePayload(raw);
+  if (!parsed) {
+    state.value = 'result';
+    result.value = { kind: 'error', message: '無効なQRコードです' };
+    return;
   }
+
+  const clearSubmitTimer = () => {
+    if (submitTimer) {
+      window.clearTimeout(submitTimer);
+      submitTimer = null;
+    }
+  };
+
+  submitTimer = window.setTimeout(() => {
+    if (state.value === 'submitting') {
+      state.value = 'result';
+      result.value = { kind: 'error', message: '確認に時間がかかっています。再スキャンしてください。' };
+    }
+  }, SUBMIT_TIMEOUT_MS);
+
+  try {
+    await checkinRegistration(parsed.eventId, parsed.registrationId);
+    state.value = 'result';
+    result.value = {
+      kind: 'success',
+      message: `${parsed.displayId} のチェックインが完了しました`,
+    };
+  } catch (err) {
+    state.value = 'result';
+    result.value = {
+      kind: 'error',
+      message: err instanceof Error ? err.message : '検証に失敗しました',
+    };
+  } finally {
+    clearSubmitTimer();
+  }
+};
+
+const parsePayload = (raw: string) => {
+  try {
+    // Prefer JSON payload
+    const payload = JSON.parse(raw);
+    if (payload?.eventId && payload?.registrationId) {
+      return {
+        eventId: String(payload.eventId),
+        registrationId: String(payload.registrationId),
+        displayId: String(payload.registrationId).slice(0, 8).toUpperCase(),
+      };
+    }
+  } catch {
+    // Not JSON, try URL with query params
+    try {
+      const url = new URL(raw);
+      const eventId = url.searchParams.get('eventId');
+      const registrationId = url.searchParams.get('registrationId');
+      if (eventId && registrationId) {
+        return {
+          eventId,
+          registrationId,
+          displayId: registrationId.slice(0, 8).toUpperCase(),
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+};
+
+const handlePrimary = async () => {
+  if (state.value === 'result') {
+    await startScan();
+    return;
+  }
+  if (state.value === 'scanning') return;
+  await startScan();
 };
 
 const openCapture = () => {
@@ -129,8 +264,6 @@ const openCapture = () => {
 };
 
 const handleCapture = async (event: Event) => {
-  resultMessage.value = null;
-  scanError.value = null;
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
@@ -138,14 +271,15 @@ const handleCapture = async (event: Event) => {
   readerFile.onload = async () => {
     const img = new Image();
     img.onload = async () => {
+      if (!readerInstance) {
+        readerInstance = new BrowserMultiFormatReader();
+      }
       try {
-        if (!readerInstance) {
-          readerInstance = new BrowserMultiFormatReader();
-        }
-        const result = await readerInstance.decodeFromImageElement(img);
-        await handlePayload(result.getText());
-      } catch (err) {
-        scanError.value = err instanceof Error ? err.message : '无法解析照片中的二维码';
+        const res = await readerInstance.decodeFromImageElement(img);
+        await onPayload(res.getText());
+      } catch {
+        state.value = 'result';
+        result.value = { kind: 'error', message: '写真からQRを判定できませんでした' };
       } finally {
         input.value = '';
       }
@@ -153,14 +287,15 @@ const handleCapture = async (event: Event) => {
     img.src = readerFile.result as string;
   };
   readerFile.onerror = () => {
-    scanError.value = '读取照片失败';
     input.value = '';
+    state.value = 'result';
+    result.value = { kind: 'error', message: '写真の読み込みに失敗しました' };
   };
   readerFile.readAsDataURL(file);
 };
 
 onMounted(() => {
-  resultMessage.value = null;
+  state.value = 'idle';
 });
 
 onUnmounted(() => {
@@ -171,128 +306,226 @@ onUnmounted(() => {
 <style scoped>
 .ticket-scanner-page {
   min-height: 100vh;
+  background: #f7f8fb;
   padding: 16px;
-  background: #f6f8fb;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.scanner-hero {
-  background: #fff;
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-}
-
-.scanner-hero h1 {
-  margin: 0 0 6px;
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.scanner-hero p {
-  margin: 0;
-  color: #475569;
-}
-
-.scanner-card {
-  background: #fff;
-  border-radius: 20px;
-  padding: 16px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.scanner-video {
-  position: relative;
-  min-height: 260px;
-  border-radius: 18px;
-  overflow: hidden;
-  border: 1px dashed rgba(148, 163, 184, 0.6);
-  background: #0f172a;
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.scanner-video video {
+.page-head h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.page-head p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.info-btn {
+  border: none;
+  background: #e2e8f0;
+  color: #0f172a;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.scanner-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.viewfinder {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0f172a;
+  min-height: 280px;
+}
+
+.viewfinder video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  filter: brightness(0.9);
 }
 
-.scanner-video--inactive video {
-  opacity: 0.25;
+.frame {
+  position: absolute;
+  inset: 12px;
+  pointer-events: none;
 }
 
-.scanner-overlay {
+.corner {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 3px solid #38bdf8;
+}
+
+.corner.tl {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+.corner.tr {
+  top: 0;
+  right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+
+.corner.bl {
+  bottom: 0;
+  left: 0;
+  border-right: none;
+  border-top: none;
+}
+
+.corner.br {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
+}
+
+.center-hint {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #e2e8f0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   font-weight: 600;
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.scanner-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.primary-btn,
-.ghost-btn {
-  flex: 1;
-  border: none;
-  border-radius: 14px;
-  padding: 12px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.primary-btn {
-  background: #0ea5e9;
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(14, 165, 233, 0.35);
-}
-
-.primary-btn:disabled {
-  opacity: 0.6;
-}
-
-.ghost-btn {
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
-}
-
-.error-text {
-  margin: 0;
-  color: #b91c1c;
-  font-size: 13px;
 }
 
 .result-card {
-  background: #fff;
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  border-left: 4px solid #f97316;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
-.result-card--success {
+.result-card.success {
   border-color: #22c55e;
 }
 
+.result-card.error {
+  border-color: #ef4444;
+}
+
+.result-icon {
+  font-size: 22px;
+}
+
 .result-title {
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.result-desc {
   margin: 0;
-  font-size: 18px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.hint-text {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.primary {
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  color: #fff;
+  padding: 14px;
+  font-size: 16px;
   font-weight: 700;
 }
 
-.result-message {
-  margin: 4px 0 0;
+.primary:disabled {
+  opacity: 0.6;
+}
+
+.primary.ghost {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.link {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
+  font-weight: 600;
+  padding: 0;
+  align-self: flex-start;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.info-dialog {
+  border: none;
+  background: transparent;
+  width: 100%;
+}
+
+.info-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.info-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.info-card ol {
+  margin: 0 0 12px 18px;
   color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
 }
 </style>

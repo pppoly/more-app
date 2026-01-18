@@ -1,55 +1,44 @@
 <template>
-  <div class="logs-screen">
-    <header class="logs-header">
-      <button type="button" class="hero-back" @click="goBack">
-        <span class="i-lucide-chevron-left text-lg"></span>
-        戻る
-      </button>
-      <div>
-        <p class="header-label">イベントAIアシスタント</p>
-        <h1>生成履歴</h1>
-      </div>
-    </header>
+  <div class="logs-shell">
+    <div class="assistant-topbar-wrap">
+      <ConsoleTopBar
+        v-if="!isLiffClientMode"
+        class="assistant-topbar"
+        titleKey="console.eventAssistant.logs"
+        :sticky="true"
+        @back="goBack"
+      >
+        <template #right>
+          <span class="topbar-right">
+            <button type="button" class="new-session-btn" @click="startNewConversation" aria-label="新しい相談">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 5v14" stroke-linecap="round" />
+                <path d="M5 12h14" stroke-linecap="round" />
+              </svg>
+            </button>
+          </span>
+        </template>
+      </ConsoleTopBar>
+    </div>
 
     <section class="logs-body" v-if="loading">
       <p class="text-muted">履歴を読み込んでいます...</p>
     </section>
 
     <section class="logs-body" v-else>
-      <p v-if="!logs.length" class="text-muted">まだAIアシスタントの履歴がありません。</p>
+      <p v-if="!displayLogs.length" class="text-muted">まだAIアシスタントの履歴がありません。</p>
       <article
-        v-for="log in logs"
+        v-for="log in displayLogs"
         :key="log.id"
         class="log-card"
-        @click="toggleExpand(log.id)"
+        @click="openDetail(log.id)"
       >
-        <div class="log-head">
-          <div>
-            <p class="log-time">{{ formatTime(log.createdAt) }}</p>
-            <p class="log-author">{{ log.user?.name ?? 'システム' }}</p>
+        <div class="log-row">
+          <div class="log-meta">
+            <p class="log-title">{{ extractTitle(log) || log.summary || 'AI提案' }}</p>
+            <p class="log-subtitle">{{ extractSubtitle(log) }}</p>
           </div>
-          <span class="stage-chip" :class="`stage-chip--${stageClass(log.stage)}`">
-            {{ stageLabel(log.stage) }}
-          </span>
-        </div>
-        <h3>{{ log.summary || extractTitle(log) || 'AI提案' }}</h3>
-        <p class="log-preview">{{ extractPreview(log) }}</p>
-        <div class="log-details" v-if="expandedId === log.id">
-          <div class="log-section">
-            <p class="log-section-title">対象・雰囲気</p>
-            <p class="log-section-text">
-              {{ log.qaState ? log.qaState.audience || '---' : '---' }} / {{ log.qaState ? log.qaState.style || '---' : '---' }}
-            </p>
-          </div>
-          <div class="log-section">
-            <p class="log-section-title">質問ログ</p>
-            <ul>
-              <li v-for="msg in log.messages" :key="msg.id" class="log-message" :class="msg.role">
-                <strong>{{ msg.role === 'user' ? '主催者' : 'AI' }}</strong>
-                <span>{{ msg.content }}</span>
-              </li>
-            </ul>
-          </div>
+          <span class="log-arrow" aria-hidden="true">›</span>
         </div>
       </article>
     </section>
@@ -61,27 +50,38 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchEventAssistantLogs } from '../../../api/client';
 import type { ConsoleEventAssistantLog } from '../../../types/api';
+import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
+import { isLiffClient } from '../../../utils/device';
+import { isLineInAppBrowser } from '../../../utils/liff';
+import { APP_TARGET } from '../../../config';
 
 const route = useRoute();
 const router = useRouter();
+const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 const communityId = computed(() => route.params.communityId as string | undefined);
 
 const logs = ref<ConsoleEventAssistantLog[]>([]);
 const loading = ref(false);
-const expandedId = ref<string | null>(null);
+const displayLogs = computed(() => {
+  const sorted = [...logs.value].sort(
+    (a, b) =>
+      new Date((b as any).updatedAt || b.createdAt).getTime() -
+      new Date((a as any).updatedAt || a.createdAt).getTime(),
+  );
+  const now = Date.now();
+  const inProgress = sorted.find((log) => {
+    const createdAt = new Date((log as any).updatedAt || log.createdAt).getTime();
+    const withinWindow = now - createdAt <= 24 * 60 * 60 * 1000;
+    return isInProgressStatus(log.status) && withinWindow;
+  });
+  const completed = sorted.filter((log) => !isInProgressStatus(log.status)).slice(0, 10);
+  return inProgress ? [inProgress, ...completed] : completed;
+});
 
-const stageMap: Record<string, string> = {
-  coach: 'Coachモード',
-  editor: 'Editorモード',
-  writer: 'チェックモード',
+const isInProgressStatus = (status?: string | null) => {
+  if (!status) return true;
+  return status !== 'completed' && status !== 'ready';
 };
-
-const stageClass = (stage: string) => {
-  if (stage === 'coach' || stage === 'editor' || stage === 'writer') return stage;
-  return 'coach';
-};
-
-const stageLabel = (stage: string) => stageMap[stage] ?? stage;
 
 const loadLogs = async () => {
   if (!communityId.value) return;
@@ -99,9 +99,6 @@ const goBack = () => {
   router.back();
 };
 
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
 const extractTitle = (log: ConsoleEventAssistantLog) => {
   const title = log.aiResult?.title;
   if (!title) return '';
@@ -112,22 +109,29 @@ const extractTitle = (log: ConsoleEventAssistantLog) => {
   return '';
 };
 
-const extractPreview = (log: ConsoleEventAssistantLog) => {
-  const description = log.aiResult?.description;
-  let text = '';
-  if (!description) {
-    text = log.summary ?? '';
-  } else if (typeof description === 'string') {
-    text = description;
-  } else if (typeof description === 'object' && 'original' in description) {
-    text = (description as any).original ?? '';
-  }
-  if (!text) return '---';
-  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+const extractSubtitle = (log: ConsoleEventAssistantLog) => {
+  if (log.qaState?.topic) return log.qaState.topic;
+  if (log.summary) return log.summary;
+  return '対話の要約がありません';
 };
 
-const toggleExpand = (id: string) => {
-  expandedId.value = expandedId.value === id ? null : id;
+const openDetail = (id: string) => {
+  const target = logs.value.find((l) => l.id === id);
+  if (!target || !communityId.value) return;
+  router.push({
+    name: 'ConsoleMobileEventCreate',
+    params: { communityId: communityId.value },
+    query: { logId: target.id, source: 'history' },
+  });
+};
+
+const startNewConversation = () => {
+  if (!communityId.value) return;
+  router.push({
+    name: 'ConsoleMobileEventCreate',
+    params: { communityId: communityId.value },
+    query: { newSession: '1' },
+  });
 };
 
 onMounted(() => {
@@ -136,46 +140,33 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.logs-screen {
+.logs-shell {
   min-height: 100vh;
-  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px calc(72px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, #f4fbff 0%, #eef5fb 60%, #f9f9fb 100%);
+  padding: calc(env(safe-area-inset-top, 0px)) 12px calc(72px + env(safe-area-inset-bottom, 0px));
+  background: #f7f7f8;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-sizing: border-box;
 }
 
-.logs-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.assistant-topbar {
+  position: relative;
+  z-index: 30;
 }
 
-.hero-back {
-  border: none;
-  background: rgba(15, 23, 42, 0.06);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
+.assistant-topbar-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  background: #f7f7f8;
+}
+
+.topbar-right {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: #0f172a;
-  font-weight: 600;
-}
-
-.header-label {
-  margin: 0;
-  font-size: 11px;
-  text-transform: uppercase;
-  color: #64748b;
-  letter-spacing: 0.08em;
-}
-
-.logs-header h1 {
-  margin: 0;
-  font-size: 20px;
-  color: #0f172a;
+  justify-content: flex-end;
+  min-width: 36px;
 }
 
 .logs-body {
@@ -184,113 +175,68 @@ onMounted(() => {
   gap: 12px;
 }
 
+.new-session-btn {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .text-muted {
   font-size: 13px;
-  color: #475569;
+  color: #6b7280;
 }
 
 .log-card {
-  background: #fff;
-  border-radius: 24px;
-  padding: 16px;
-  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 4px;
+  box-shadow: none;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.log-head {
+.log-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: 12px;
+  align-items: center;
 }
 
-.log-time {
-  margin: 0;
-  font-size: 12px;
-  color: #475569;
-}
-
-.log-author {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.stage-chip {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 999px;
-}
-.stage-chip--coach {
-  background: #f3e8ff;
-  color: #7e22ce;
-}
-.stage-chip--editor {
-  background: #dbf4ff;
-  color: #0369a1;
-}
-.stage-chip--writer {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.log-card h3 {
-  margin: 0;
-  font-size: 16px;
-  color: #0f172a;
-}
-
-.log-preview {
-  margin: 0;
-  font-size: 13px;
-  color: #475569;
-}
-
-.log-details {
-  margin-top: 8px;
-  border-top: 1px dashed #e2e8f0;
-  padding-top: 8px;
+.log-meta {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.log-section-title {
-  margin: 0 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.log-section-text {
-  margin: 0;
-  font-size: 12px;
-  color: #475569;
-}
-
-.log-message {
-  list-style: none;
-  margin: 0 0 4px;
-  padding: 6px 8px;
-  border-radius: 12px;
-  background: #f8fafc;
-  font-size: 12px;
-  display: flex;
   gap: 6px;
 }
 
-.log-message.assistant {
-  background: #e2f8ff;
-}
-.log-message.user {
-  background: #dff7ec;
+.log-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.log-message strong {
-  font-size: 11px;
-  color: #0f172a;
+.log-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.log-arrow {
+  color: #d1d5db;
+  font-size: 20px;
+  line-height: 1;
 }
 </style>

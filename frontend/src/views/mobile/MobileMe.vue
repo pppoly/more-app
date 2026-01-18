@@ -5,13 +5,14 @@
         <div class="me-hero__avatar-wrap">
           <button class="me-hero__avatar" type="button" @click="handleAvatarTap" :disabled="avatarUploading">
             <div v-if="avatarUploading" class="me-hero__avatar-spinner"></div>
-            <img v-if="user?.avatarUrl" :src="user.avatarUrl" alt="user" />
-            <span v-else>{{ userInitials }}</span>
+            <AppAvatar :src="user?.avatarUrl" :name="user?.name" :size="80" />
+            <span class="me-hero__avatar-badge" aria-hidden="true">
+              <span class="i-lucide-camera"></span>
+            </span>
           </button>
         </div>
         <div class="me-hero__info">
           <p class="me-hero__title">{{ user?.name || 'ゲスト' }}</p>
-          <p class="me-hero__subtitle">{{ isOrganizer ? '主催者' : '一般ユーザー' }}</p>
         </div>
       </div>
     </section>
@@ -33,7 +34,6 @@
             <p class="service-row__title">{{ entry.title }}</p>
             <p class="service-row__desc">{{ entry.description }}</p>
           </div>
-          <span class="service-row__cta">{{ entry.cta }}</span>
         </button>
       </div>
     </section>
@@ -73,6 +73,7 @@ import { validateAvatarFile } from '../../utils/validateAvatarFile';
 import { useI18n } from 'vue-i18n';
 import ImageCropperModal from '../../components/ImageCropperModal.vue';
 import { useToast } from '../../composables/useToast';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -81,21 +82,38 @@ const { t } = useI18n();
 const toast = useToast();
 
 const isLoggedIn = computed(() => Boolean(user.value));
-const isOrganizer = computed(() => Boolean(user.value?.isOrganizer));
 const userInitials = computed(() => user.value?.name?.charAt(0)?.toUpperCase() ?? 'A');
 
 const goMyEvents = () => router.push({ name: 'my-events' });
 const goMyCommunities = () => router.push({ name: 'MobileCommunities' });
 const goMyPayments = () => router.push({ name: 'my-payments' });
-const goFavorites = () => router.push({ name: 'favorites' });
 const goSettings = () => router.push({ name: 'MobileSettings' });
 
 const serviceEntries = computed(() => [
-  { title: '参加したイベント', description: '予約・チケット', cta: '見る', icon: new URL('../../assets/我的的活动.svg', import.meta.url).href, action: goMyEvents },
-  { title: 'マイコミュニティ', description: 'フォロー中のコミュニティ一覧', cta: '入る', icon: new URL('../../assets/我的社群.svg', import.meta.url).href, action: goMyCommunities },
-  { title: '支払い履歴', description: 'お支払い記録', cta: '見る', icon: new URL('../../assets/付款记录.svg', import.meta.url).href, action: goMyPayments },
-  { title: 'お気に入りイベント', description: 'お気に入り', cta: '見る', icon: new URL('../../assets/关注的活动.svg', import.meta.url).href, action: goFavorites },
-  { title: '設定', description: 'アプリ環境', cta: '開く', icon: new URL('../../assets/设置.svg', import.meta.url).href, action: goSettings },
+  {
+    title: t('mobile.me.cards.events.title'),
+    description: t('mobile.me.cards.events.description'),
+    icon: new URL('../../assets/我的的活动.svg', import.meta.url).href,
+    action: goMyEvents,
+  },
+  {
+    title: t('mobile.me.cards.communities.title'),
+    description: t('mobile.me.cards.communities.description'),
+    icon: new URL('../../assets/我的社群.svg', import.meta.url).href,
+    action: goMyCommunities,
+  },
+  {
+    title: t('mobile.me.cards.payments.title'),
+    description: t('mobile.me.cards.payments.description'),
+    icon: new URL('../../assets/付款记录.svg', import.meta.url).href,
+    action: goMyPayments,
+  },
+  {
+    title: t('mobile.me.cards.settings.title'),
+    description: t('mobile.me.cards.settings.description'),
+    icon: new URL('../../assets/设置.svg', import.meta.url).href,
+    action: goSettings,
+  },
 ]);
 
 const avatarInput = ref<HTMLInputElement | null>(null);
@@ -156,29 +174,49 @@ const handleCropConfirm = async (blob: Blob) => {
 
 <style scoped>
 .mobile-me {
+  width: 100%;
+  max-width: 100vw;
   padding: 0 0 4rem;
-  background: #f3f4f6;
+  background: #f5f6fa;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-x: hidden;
 }
 
 .me-hero {
   padding: 0;
+  position: relative;
+}
+
+.me-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(env(safe-area-inset-top, 0px) + 70px);
+  background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
+  z-index: 0;
 }
 
 .me-hero__card {
-  background: linear-gradient(135deg, #0fb4e2 10%, #1fc3b0 60%, #f5c75c);
+  background: linear-gradient(135deg, #22d2ff 0%, #37e36f 100%);
   margin: 0;
-  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 18px;
-  border-radius: 0 0 16px 16px;
+  padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 16px;
+  border-radius: 0 0 12px 12px;
   color: #fff;
-  box-shadow: none;
+  box-shadow: 0 10px 24px rgba(34, 210, 255, 0.1);
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-height: 128px;
+  position: relative;
+  z-index: 1;
 }
 
 .me-hero__avatar-wrap {
@@ -188,20 +226,21 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .me-hero__avatar {
   border: none;
-  width: 52px;
-  height: 52px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.5);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 20px;
   font-weight: 600;
   padding: 0;
   line-height: 0;
   overflow: hidden;
   cursor: pointer;
   position: relative;
+  box-shadow: none;
 }
 
 .me-hero__avatar img {
@@ -222,6 +261,21 @@ const handleCropConfirm = async (blob: Blob) => {
   backdrop-filter: blur(2px);
   animation: pulse 1s infinite ease-in-out;
   border-radius: 50%;
+}
+.me-hero__avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #0f172a;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
 }
 
 .me-hero__avatar:disabled {
@@ -281,6 +335,7 @@ const handleCropConfirm = async (blob: Blob) => {
 
 .section-block {
   padding: 12px 16px 0;
+  box-sizing: border-box;
 }
 
 .section-title {
@@ -293,31 +348,42 @@ const handleCropConfirm = async (blob: Blob) => {
 .service-sheet {
   margin: 0;
   background: #fff;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 6px 0;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
   border: 1px solid rgba(15, 23, 42, 0.04);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .service-row {
   width: 100%;
+  margin: 0;
   border: none;
   background: transparent;
   padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 14px;
+  box-sizing: border-box;
+  position: relative;
 }
 
-.service-row + .service-row {
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+.service-row + .service-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #e6eaef;
 }
 
 .service-row__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: #edf1f5;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #e9f5ff;
   color: #0f172a;
   display: inline-flex;
   align-items: center;
@@ -327,20 +393,14 @@ const handleCropConfirm = async (blob: Blob) => {
 }
 
 .service-row__icon img {
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
 }
 
 .service-row__info {
   flex: 1;
   text-align: left;
-}
-
-.service-row__trailing {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .service-row__title {
@@ -354,15 +414,6 @@ const handleCropConfirm = async (blob: Blob) => {
   margin: 2px 0 0;
   font-size: 12px;
   color: #94a3b8;
-}
-
-.service-row__cta {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2937;
-  background: #edf1f5;
-  padding: 6px 12px;
-  border-radius: 999px;
 }
 
 .service-row:active {

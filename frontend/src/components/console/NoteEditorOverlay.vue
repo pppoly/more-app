@@ -3,16 +3,16 @@
     <div class="note-overlay">
       <section class="note-editor">
         <header class="note-editor__nav note-editor__nav--sticky">
-          <button type="button" class="nav-btn ghost" @click="$emit('close')">取消</button>
-          <p>活动详情</p>
+          <button type="button" class="nav-btn ghost" @click="$emit('close')">キャンセル</button>
+          <p>イベント詳細</p>
           <button type="button" class="nav-btn primary" @click="handleSave">
-            {{ saving ? '保存中…' : '完成' }}
+            {{ saving ? '保存中…' : '完了' }}
           </button>
         </header>
 
         <div class="note-editor__meta">
           <span>{{ todayLabel }}</span>
-          <span>{{ charCount }} 字</span>
+          <span>{{ charCount }} 文字</span>
         </div>
 
         <section class="note-editor__blocks">
@@ -21,7 +21,7 @@
               v-if="block.type === 'text'"
               v-model="block.value"
               class="note-textarea"
-              :placeholder="index === 0 ? '像 iOS 备忘录一样，讲述你的活动故事…' : '继续输入...'"
+              :placeholder="index === 0 ? 'iOSメモのように、イベントのストーリーを入力してください…' : '続けて入力…'"
             ></textarea>
             <div v-else class="note-image">
               <img :src="block.src" alt="note image" />
@@ -33,14 +33,14 @@
                 class="insert-btn ghost"
                 @click="triggerImagePicker(block.id)"
               >
-                ＋ 添加图片
+                ＋ 画像を追加
               </button>
             </div>
           </div>
         </section>
 
         <p class="note-editor__hint">
-          尺寸 750×X，最多上传 9 张，默认第一张为详情页主图
+          サイズ 750×X、最大 9 枚、最初の1枚が詳細ページのメイン画像になります
         </p>
         <p v-if="statusMessage" class="note-editor__status">{{ statusMessage }}</p>
 
@@ -214,14 +214,14 @@ const downscaleImageFile = (file: File) =>
         canvas.height = Math.round(img.height * ratio);
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error('无法压缩图片'));
+          reject(new Error('画像を圧縮できませんでした'));
           return;
         }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject(new Error('图片处理失败，请换一张再试试'));
+              reject(new Error('画像の処理に失敗しました。別の画像でお試しください。'));
               return;
             }
             resolve(blob);
@@ -230,16 +230,16 @@ const downscaleImageFile = (file: File) =>
           0.85,
         );
       };
-      img.onerror = () => reject(new Error('无法读取图片'));
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
       img.src = reader.result as string;
     };
-    reader.onerror = () => reject(new Error('无法读取图片'));
+    reader.onerror = () => reject(new Error('画像を読み込めませんでした'));
     reader.readAsDataURL(file);
   });
 
 const ensureDataUrl = async (file: File) => {
   let candidate: File | Blob = file;
-  // 统一压缩以控制 payload，避免触发后端体积限制
+  // payload を統一圧縮してバックエンドのサイズ制限を回避
   candidate = await downscaleImageFile(file);
   return readFileAsDataUrl(candidate as File);
 };
@@ -249,18 +249,18 @@ const handleImagePick = async (event: Event) => {
   if (!input.files?.length) return;
   const existingImages = blocks.value.filter((block) => block.type === 'image').length;
   if (existingImages >= MAX_IMAGES) {
-    statusMessage.value = '最多上传 9 张图片';
+    statusMessage.value = '画像は最大9枚までです';
     input.value = '';
     return;
   }
   let added = 0;
   for (const file of Array.from(input.files)) {
     if (existingImages + added >= MAX_IMAGES) {
-      statusMessage.value = '已达到 9 张上限';
+      statusMessage.value = '9枚の上限に達しました';
       break;
     }
     if (!file.type?.startsWith('image/')) {
-      statusMessage.value = '仅支持图片文件';
+      statusMessage.value = '画像ファイルのみ対応';
       continue;
     }
     try {
@@ -269,7 +269,7 @@ const handleImagePick = async (event: Event) => {
       added += 1;
       statusMessage.value = '';
     } catch (err) {
-      statusMessage.value = err instanceof Error ? err.message : '图片处理失败，换一张再试试';
+      statusMessage.value = err instanceof Error ? err.message : '画像の処理に失敗しました。別の画像でお試しください。';
     }
   }
   input.value = '';
@@ -311,7 +311,7 @@ const buildHtml = () =>
           .join('');
       }
       if (block.src) {
-        return `<figure class="note-image"><img src="${block.src}" alt="活动详情图片" /></figure>`;
+        return `<figure class="note-image"><img src="${block.src}" alt="イベント詳細画像" /></figure>`;
       }
       return '';
     })

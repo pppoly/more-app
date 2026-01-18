@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents */
 import {
   BadRequestException,
   Body,
@@ -119,6 +120,33 @@ export class ConsoleEventsController {
     @Req() req: any,
   ) {
     return this.consoleEventsService.rejectRegistration(req.user.id, eventId, registrationId);
+  }
+
+  @Post(':eventId/registrations/:registrationId/cancel')
+  cancelRegistration(
+    @Param('eventId') eventId: string,
+    @Param('registrationId') registrationId: string,
+    @Body('reason') reason: string,
+    @Req() req: any,
+  ) {
+    return this.consoleEventsService.cancelRegistration(req.user.id, eventId, registrationId, { reason });
+  }
+
+  @Post('refund-requests/:requestId/decision')
+  decideRefund(
+    @Param('requestId') requestId: string,
+    @Body('decision') decision: 'approve_full' | 'approve_partial' | 'reject',
+    @Body('amount') amount: number | undefined,
+    @Body('reason') reason: string | undefined,
+    @Req() req: any,
+  ) {
+    if (!requestId) {
+      throw new BadRequestException('requestId is required');
+    }
+    if (!decision) {
+      throw new BadRequestException('decision is required');
+    }
+    return this.consoleEventsService.decideRefundRequest(req.user.id, requestId, { decision, amount, reason });
   }
 
   @Get(':eventId/registrations/export')

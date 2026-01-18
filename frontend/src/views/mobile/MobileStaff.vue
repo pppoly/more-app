@@ -2,57 +2,57 @@
   <div class="staff-page">
     <header class="staff-head">
       <div>
-        <p class="staff-label">AI 调试</p>
-        <h1>助手运行面板</h1>
-        <p class="staff-desc">仅供公司员工验证 Prompt & API 状态</p>
+        <p class="staff-label">AI デバッグ</p>
+        <h1>アシスタント運用パネル</h1>
+        <p class="staff-desc">社内スタッフの Prompt / API 検証用</p>
       </div>
       <button type="button" class="outline" @click="loadDashboard" :disabled="loading">
         <span class="i-lucide-refresh-cw mr-1"></span>
-        刷新
+        更新
       </button>
     </header>
 
     <section class="control-card">
       <label>
-        选定社区
+        コミュニティを選択
         <select v-model="selectedCommunityId" @change="handleCommunityChange">
-          <option value="" disabled>请选择</option>
+          <option value="" disabled>選択してください</option>
           <option v-for="community in communities" :key="community.id" :value="community.id">
             {{ community.name }}
           </option>
         </select>
       </label>
       <label>
-        或输入社区 ID
+        またはコミュニティIDを入力
         <div class="manual-entry">
-          <input v-model="manualCommunityId" type="text" placeholder="例如：cmty_xxx" />
+          <input v-model="manualCommunityId" type="text" placeholder="例: cmty_xxx" />
           <button type="button" class="outline" @click="applyManualId" :disabled="!manualCommunityId.trim()">
-            查看
+            表示
           </button>
         </div>
       </label>
-      <p class="helper">管理员可直接输入任意社区 ID 查看 AI 日志。</p>
+      <p class="helper">管理者は任意のコミュニティIDでAIログを確認できます。</p>
     </section>
 
     <section class="stats-grid" v-if="dashboard">
       <article class="stat-card">
-        <p>对话总数</p>
+        <p>総対話数</p>
         <strong>{{ dashboard.stats.totalSessions }}</strong>
       </article>
       <article class="stat-card">
-        <p>方案完成</p>
+        <p>完了率</p>
         <strong>{{ dashboard.stats.readySessions }}</strong>
         <span>{{ dashboard.stats.readyRate }}%</span>
       </article>
       <article class="stat-card">
-        <p>平均回合</p>
+        <p>平均ターン数</p>
         <strong>{{ dashboard.stats.averageTurns }}</strong>
       </article>
     </section>
 
     <section class="breakdown" v-if="dashboard">
       <div class="breakdown-card">
-        <h3>Prompt 版本</h3>
+        <h3>Prompt バージョン</h3>
         <ul>
           <li v-for="(count, version) in dashboard.stats.promptVersions" :key="version">
             <span>{{ version }}</span>
@@ -61,7 +61,7 @@
         </ul>
       </div>
       <div class="breakdown-card">
-        <h3>语言分布</h3>
+        <h3>言語分布</h3>
         <ul>
           <li v-for="(count, lang) in dashboard.stats.languages" :key="lang">
             <span>{{ lang }}</span>
@@ -73,18 +73,18 @@
 
     <section class="logs-section">
       <div class="logs-head">
-        <h2>最近调试对话</h2>
-        <span v-if="loading">读取中...</span>
+        <h2>最近のデバッグ対話</h2>
+        <span v-if="loading">読み込み中…</span>
       </div>
       <div v-if="error" class="error-banner">{{ error }}</div>
-      <div v-else-if="!dashboard" class="placeholder">请选择社区以加载数据</div>
+      <div v-else-if="!dashboard" class="placeholder">コミュニティを選択してください</div>
       <ul v-else class="log-list">
         <li v-for="log in dashboard.logs" :key="log.id" class="log-item">
           <div class="log-meta" @click="toggleLog(log.id)">
             <div>
-              <p class="log-title">{{ log.summary || '未命名草案' }}</p>
+              <p class="log-title">{{ log.summary || '未命名の下書き' }}</p>
               <p class="log-sub">
-                Prompt: {{ log.promptVersion || '未知' }} · 回合: {{ log.turnCount ?? 0 }} · 时间:
+                Prompt: {{ log.promptVersion || '不明' }} · ターン: {{ log.turnCount ?? 0 }} · 時間:
                 {{ new Date(log.createdAt).toLocaleString() }}
               </p>
             </div>
@@ -93,24 +93,24 @@
           <div v-if="expandedLogId === log.id" class="log-body">
             <div class="log-badge">Stage: {{ log.stage }}</div>
             <div class="conversation">
-              <p class="conversation-title">对话轨迹（Speak）</p>
+              <p class="conversation-title">会話ログ（Speak）</p>
               <ul>
                 <li
                   v-for="message in log.messages"
                   :key="message.id"
                   :class="['message', message.role === 'user' ? 'message-user' : 'message-assistant']"
                 >
-                  <span class="message-role">{{ message.role === 'user' ? '用户 Speak' : 'AI Guide' }}</span>
+                  <span class="message-role">{{ message.role === 'user' ? 'ユーザー Speak' : 'AI Guide' }}</span>
                   <p class="message-content" v-if="message.type === 'text'">{{ message.content }}</p>
                   <div v-else class="proposal-snippet">
-                    <p>标题: {{ message.payload?.title }}</p>
+                    <p>タイトル: {{ message.payload?.title }}</p>
                     <p>{{ message.payload?.description }}</p>
                   </div>
                 </li>
               </ul>
             </div>
             <div class="write-panel" v-if="log.aiResult">
-              <p class="conversation-title">结构化 Draft（Write）</p>
+              <p class="conversation-title">構造化 Draft（Write）</p>
               <pre class="draft-json">{{ formatResult(log.aiResult) }}</pre>
             </div>
           </div>
@@ -147,7 +147,7 @@ const loadDashboard = async () => {
   try {
     dashboard.value = await fetchAssistantDashboard(selectedCommunityId.value);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载仪表盘失败';
+    error.value = err instanceof Error ? err.message : 'ダッシュボードの読み込みに失敗しました';
   } finally {
     loading.value = false;
   }

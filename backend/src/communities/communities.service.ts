@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents */
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildAssetUrl } from '../common/storage/asset-path';
@@ -9,6 +10,11 @@ export class CommunitiesService {
   constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   async findBySlug(slug: string, userId?: string) {
+    const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
+      status: { in: ['paid', 'approved'] },
+      OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
+    };
+
     const community = await this.prisma.community.findUnique({
       where: { slug },
       select: {
@@ -54,9 +60,15 @@ export class CommunitiesService {
           select: {
             id: true,
             startTime: true,
+            endTime: true,
+            regStartTime: true,
+            regEndTime: true,
+            regDeadline: true,
             locationText: true,
             status: true,
             title: true,
+            maxParticipants: true,
+            config: true,
             galleries: {
               select: {
                 imageUrl: true,
@@ -64,6 +76,11 @@ export class CommunitiesService {
               },
               orderBy: { order: 'asc' },
               take: 1,
+            },
+            _count: {
+              select: {
+                registrations: { where: successRegistrationWhere },
+              },
             },
           },
         },
@@ -102,10 +119,21 @@ export class CommunitiesService {
     const coverImageUrl = buildAssetUrl(community.coverImageUrl);
 
     const events =
-      ((community as any).events || []).map((event: any) => ({
-        ...event,
-        coverImageUrl: buildAssetUrl(event.galleries?.[0]?.imageUrl),
-      })) ?? [];
+      ((community as any).events || []).map((event: any) => {
+        const { _count, ...rest } = event;
+        const currentParticipants = _count?.registrations ?? 0;
+        const baseConfig =
+          rest.config && typeof rest.config === 'object' ? { ...(rest.config as Record<string, any>) } : {};
+        const config = {
+          ...baseConfig,
+          currentParticipants,
+        };
+        return {
+          ...rest,
+          config,
+          coverImageUrl: buildAssetUrl(rest.galleries?.[0]?.imageUrl),
+        };
+      }) ?? [];
 
     const { _count, members, events: _discardEvents, ...rest } = community as any;
     const memberList: any[] = Array.isArray(members) ? members : [];
@@ -134,7 +162,7 @@ export class CommunitiesService {
   private extractPortalConfig(description: any) {
     const defaultConfig = { theme: 'clean', layout: ['hero', 'about', 'upcoming', 'past', 'moments'] };
     if (description && typeof description === 'object' && description._portalConfig) {
-      const cfg = description._portalConfig as any;
+      const cfg = description._portalConfig;
       const theme = typeof cfg.theme === 'string' ? cfg.theme : defaultConfig.theme;
       const layout = Array.isArray(cfg.layout) && cfg.layout.length ? cfg.layout : defaultConfig.layout;
       return { theme, layout };
@@ -155,47 +183,31 @@ export class CommunitiesService {
   }
 
   async getFollowStatus(communityId: string, userId: string) {
-    const membership = await this.prisma.communityMember.findUnique({
+    const follow = await this.prisma.communityFollow.findUnique({
       where: { communityId_userId: { communityId, userId } },
-      select: { status: true, role: true },
+      select: { id: true },
     });
-    const active = membership?.status === 'active';
-    const locked = active && membership && membership.role && membership.role !== 'follower';
-    return { following: active, locked };
+    return { following: Boolean(follow), locked: false };
   }
 
   async followCommunity(communityId: string, userId: string) {
     await this.ensureCommunityExists(communityId);
-    await this.prisma.communityMember.upsert({
+    await this.prisma.communityFollow.upsert({
       where: { communityId_userId: { communityId, userId } },
-      create: {
-        communityId,
-        userId,
-        role: 'follower',
-        status: 'active',
-      },
-      update: {
-        status: 'active',
-      },
+      create: { communityId, userId },
+      update: {},
     });
     return { following: true };
   }
 
   async unfollowCommunity(communityId: string, userId: string) {
     await this.ensureCommunityExists(communityId);
-    const membership = await this.prisma.communityMember.findUnique({
+    const follow = await this.prisma.communityFollow.findUnique({
       where: { communityId_userId: { communityId, userId } },
-      select: { role: true, status: true },
+      select: { id: true },
     });
-    if (!membership) {
-      return { following: false };
-    }
-    if (membership.role && membership.role !== 'follower') {
-      return { following: true, locked: true };
-    }
-    await this.prisma.communityMember.delete({
-      where: { communityId_userId: { communityId, userId } },
-    });
+    if (!follow) return { following: false };
+    await this.prisma.communityFollow.delete({ where: { communityId_userId: { communityId, userId } } });
     return { following: false };
   }
 

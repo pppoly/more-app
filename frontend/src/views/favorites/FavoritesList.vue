@@ -1,58 +1,93 @@
 <template>
   <div class="favorites-page">
-    <header class="favorites-hero">
-      <h1>お気に入り</h1>
-      <p>フォローしたイベントをここで一覧できます。</p>
-    </header>
+    <ConsoleTopBar class="topbar" title="お気に入り" @back="goBack" />
+    <div class="favorites-inner">
+      <header class="favorites-hero">
+        <h1>フォロー中のイベント</h1>
+        <p>気になったイベントをまとめて確認できます。</p>
+      </header>
 
-    <section class="favorites-list" v-if="favorites.length">
-      <article v-for="fav in favorites" :key="fav.id" class="favorite-card">
-        <div class="favorite-main">
-          <figure class="favorite-thumb">
-            <img :src="fav.coverUrl" alt="" />
-          </figure>
-          <div class="favorite-info">
-            <h2 class="favorite-name">{{ fav.title }}</h2>
-            <p class="favorite-time">{{ fav.timeText || '日時未定' }}</p>
+      <section class="favorites-list" v-if="favorites.length">
+        <article v-for="fav in favorites" :key="fav.id" class="favorite-card">
+          <div class="favorite-main">
+            <figure class="favorite-thumb">
+              <img :src="fav.coverUrl" alt="" />
+            </figure>
+            <div class="favorite-info">
+              <h2 class="favorite-name">{{ fav.title }}</h2>
+              <p class="favorite-time">{{ fav.timeText || '日時未定' }}</p>
+            </div>
           </div>
-        </div>
 
-        <div class="favorite-actions">
-          <button type="button" class="secondary-btn" @click="removeFavorite(fav.id)">
-            <svg class="favorite-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 3.99 4 6.5 4c1.54 0 3.04.99 3.57 2.36h.86C11.46 4.99 12.96 4 14.5 4 17.01 4 19 6 19 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                fill="currentColor"
-              />
-            </svg>
-            取消フォロー
-          </button>
-        </div>
-      </article>
-    </section>
+          <div class="favorite-actions">
+            <button type="button" class="secondary-btn" @click="handleRemove(fav.id)">
+              <svg class="favorite-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 3.99 4 6.5 4c1.54 0 3.04.99 3.57 2.36h.86C11.46 4.99 12.96 4 14.5 4 17.01 4 19 6 19 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                  fill="currentColor"
+                />
+              </svg>
+              フォロー解除
+            </button>
+          </div>
+        </article>
+      </section>
 
-    <section v-else class="favorites-empty">
-      <p class="empty-title">まだお気に入りがありません。</p>
-      <p class="empty-message">イベント詳細で「フォロー」をタップするとここに追加されます。</p>
-      <RouterLink class="primary-btn" to="/">イベントを探す</RouterLink>
-    </section>
+      <section v-else class="favorites-empty">
+        <p class="empty-title">まだお気に入りがありません。</p>
+        <p class="empty-message">イベント詳細で「フォロー」をタップするとここに追加されます。</p>
+        <RouterLink class="primary-btn" to="/">イベントを探す</RouterLink>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useFavorites } from '../../composables/useFavorites';
+import { useRouter } from 'vue-router';
+import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 const { favorites, removeFavorite } = useFavorites();
+const router = useRouter();
+
+const handleRemove = async (id: string) => {
+  try {
+    await removeFavorite(id);
+  } catch (error) {
+    console.warn('Failed to remove favorite', error);
+  }
+};
+
+const goBack = () => {
+  const back = typeof window !== 'undefined' ? window.history.state?.back : null;
+  if (back) {
+    router.back();
+    return;
+  }
+  router.replace({ name: 'MobileMe' });
+};
 </script>
 
 <style scoped>
 .favorites-page {
   min-height: 100vh;
-  padding: 20px 16px 60px;
-  background: #f6f8fb;
+  background: #f5f7fb;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 calc(64px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+.topbar {
+  margin: 0;
+  width: 100%;
+}
+.favorites-inner {
+  padding: 0 16px;
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-sizing: border-box;
 }
 
 .favorites-hero {

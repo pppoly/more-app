@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method */
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Prisma } from '@prisma/client';
@@ -25,6 +26,24 @@ export class EventsController {
   @Get(':eventId/gallery')
   getEventGallery(@Param('eventId') eventId: string) {
     return this.eventsService.getEventGallery(eventId);
+  }
+
+  @Get(':eventId/follow')
+  @UseGuards(JwtAuthGuard)
+  getFollowStatus(@Param('eventId') eventId: string, @Req() req: any) {
+    return this.eventsService.getFollowStatus(eventId, req.user.id);
+  }
+
+  @Post(':eventId/follow')
+  @UseGuards(JwtAuthGuard)
+  followEvent(@Param('eventId') eventId: string, @Req() req: any) {
+    return this.eventsService.followEvent(eventId, req.user.id);
+  }
+
+  @Delete(':eventId/follow')
+  @UseGuards(JwtAuthGuard)
+  unfollowEvent(@Param('eventId') eventId: string, @Req() req: any) {
+    return this.eventsService.unfollowEvent(eventId, req.user.id);
   }
 
   @Post(':eventId/registrations')

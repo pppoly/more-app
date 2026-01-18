@@ -13,9 +13,10 @@
           v-if="showConsoleBack"
           class="nav-back nav-back--overlay"
           type="button"
+          aria-label="戻る"
           @click="goBack"
         >
-          返回
+          <img :src="backIcon" class="nav-back__icon" alt="" aria-hidden="true" />
         </button>
         <div class="portal-hero__overlay"></div>
         <div class="portal-hero__content">
@@ -27,62 +28,122 @@
       </article>
 
       <article class="info-card">
-        <h1 class="community-name">{{ community.name }}</h1>
+        <div class="community-name-row">
+          <h1 class="community-name">{{ community.name }}</h1>
+          <button
+            class="follow-tag"
+            :class="{ 'is-following': following }"
+            type="button"
+            :disabled="followBusy"
+            @click="toggleFollow"
+          >
+            {{ following ? 'フォロー中' : 'フォロー' }}
+          </button>
+        </div>
         <div class="info-tags" v-if="heroLabels.length">
           <span v-for="label in heroLabels" :key="label">#{{ label }}</span>
-        </div>
-        <button class="follow-btn" type="button" :disabled="followBusy" @click="toggleFollow">
-          {{ following ? '已关注' : '关注社群' }}
-        </button>
-        <div class="member-row" v-if="memberAvatars.length">
-          <div class="member-track">
-            <div v-for="member in memberAvatars" :key="member.id" class="member-avatar">
-              <img v-if="member.avatarUrl" :src="member.avatarUrl" :alt="member.name || 'member'" />
-              <span v-else>{{ member.initial }}</span>
-            </div>
-          </div>
-          <span class="member-count">{{ memberCount }} 人</span>
         </div>
         <p class="desc" :class="{ truncated: !descriptionExpanded }">
           {{ descriptionText }}
         </p>
         <button v-if="shouldTruncate" class="toggle" type="button" @click="descriptionExpanded = !descriptionExpanded">
-          {{ descriptionExpanded ? '收起' : '展开' }}
+          {{ descriptionExpanded ? '閉じる' : 'もっと見る' }}
         </button>
       </article>
 
-      <article v-if="newsItemsLimited.length" class="news-card">
-        <div class="news-card__head">
-          <h2>社群动态</h2>
-        </div>
-        <div class="news-card__marquee">
-          <div class="news-card__track">
-            <div v-for="(item, idx) in newsItemsLoop" :key="`news-${idx}`" class="news-card__item">
-              {{ item }}
+      <article v-if="memberAvatars.length" class="member-card">
+        <div class="member-row">
+          <div class="member-track">
+            <div v-for="member in memberAvatars" :key="member.id" class="member-avatar">
+              <AppAvatar :src="member.avatarUrl" :name="member.name" :size="36" />
             </div>
           </div>
+          <span class="member-count">{{ memberCount }} 人</span>
         </div>
       </article>
 
-      <section v-if="showEvents" class="event-gallery">
-        <div class="event-gallery__head">
-          <h2>社群活动</h2>
-          <span class="count" v-if="formattedEvents.length">{{ formattedEvents.length }} 场</span>
+      <article v-if="showClassesEntry" class="portal-entry-card">
+        <button class="portal-action-btn portal-action-btn--solo" type="button" @click="goClasses">
+          <div class="portal-action__icon">
+            <img :src="classIcon" alt="" loading="lazy" class="portal-action__icon-image" />
+          </div>
+          <div class="portal-action__body">
+            <p class="portal-action__title">教室 / Classes</p>
+            <p class="portal-action__desc">毎週の教室・講座の一覧</p>
+          </div>
+          <span v-if="classesCount !== null" class="badge">{{ classesCount }} 教室</span>
+          <span class="i-lucide-chevron-right"></span>
+        </button>
+      </article>
+
+      <article class="news-card">
+        <div class="section-head">
+          <h2>ニュース</h2>
         </div>
-        <div class="event-gallery__track">
-          <article v-for="event in formattedEvents" :key="event.id" class="event-tile">
-            <div class="event-tile__cover" :style="eventCoverStyle(event)">
-              <div class="event-tile__shade">
-                <div class="event-tile__status" :class="event.statusClass">{{ event.statusLabel }}</div>
-                <div class="event-tile__title">{{ event.title }}</div>
-                <div class="event-tile__meta">{{ event.date }} · {{ event.locationText || '地点待定' }}</div>
-              </div>
+        <ul v-if="interestedItems.length" class="timeline">
+          <li
+            v-for="(item, idx) in interestedItems"
+            :key="`news-${idx}`"
+            class="timeline__item"
+            :class="{ 'is-clickable': Boolean(item.id) }"
+            :role="item.id ? 'button' : undefined"
+            :tabindex="item.id ? 0 : -1"
+            @click="goEventById(item.id)"
+            @keydown.enter.prevent="goEventById(item.id)"
+            @keydown.space.prevent="goEventById(item.id)"
+          >
+            <span class="timeline__dot"></span>
+            <div class="timeline__body">
+              <p class="timeline__title">
+                <span
+                  class="flag"
+                  :class="
+                    item.statusState === 'open'
+                      ? 'flag--open'
+                      : item.statusState === 'closed'
+                        ? 'flag--closed'
+                        : 'flag--interest'
+                  "
+                >
+                  {{ item.statusLabel }}
+                </span>
+                {{ item.title }}
+              </p>
+              <p class="timeline__meta">{{ item.meta }}</p>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="news-empty">気になるイベントをフォローすると、ここに表示されます。</p>
+      </article>
+
+      <section v-if="showEvents" class="event-gallery">
+        <div class="section-head">
+          <h2>イベント</h2>
+          <span class="count" v-if="formattedEvents.length">{{ formattedEvents.length }} 件</span>
+        </div>
+        <div class="event-list event-list--scroll" v-if="featuredEvents.length">
+          <article
+            v-for="event in featuredEvents"
+            :key="event.id"
+            class="event-card event-card--compact"
+            :class="{ 'is-clickable': Boolean(event.id) }"
+            :role="event.id ? 'button' : undefined"
+            :tabindex="event.id ? 0 : -1"
+            @click="goEvent(event)"
+            @keydown.enter.prevent="goEvent(event)"
+            @keydown.space.prevent="goEvent(event)"
+          >
+            <div class="event-card__cover" :style="eventCoverStyle(event)"></div>
+            <div class="event-card__body">
+              <span class="event-card__status" :class="event.statusClass">{{ event.statusLabel }}</span>
+              <p class="event-card__date">{{ event.date }}</p>
+              <p class="event-card__meta">{{ event.locationText || '場所未定' }}</p>
             </div>
           </article>
         </div>
-        <div v-if="!formattedEvents.length" class="empty-panel">
-          <p>还没有对外招募的活动。</p>
-          <span>关注社群，及时收到新活动。</span>
+        <div v-else class="empty-panel">
+          <p>公開中のイベントはまだありません。</p>
+          <span>フォローすると新しいイベントが届きます。</span>
         </div>
       </section>
     </div>
@@ -92,14 +153,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchCommunityBySlug, fetchCommunityFollowStatus, followCommunity, unfollowCommunity } from '../../api/client';
+import {
+  fetchCommunityBySlug,
+  fetchCommunityClasses,
+  fetchCommunityFollowStatus,
+  followCommunity,
+  unfollowCommunity,
+} from '../../api/client';
 import type { CommunityPortal } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventStatus } from '../../utils/eventStatus';
 import defaultCommunityImage from '../../assets/images/default-community.svg';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
+import { useFavorites } from '../../composables/useFavorites';
+import AppAvatar from '../../components/common/AppAvatar.vue';
+import backIcon from '../../assets/icons/arrow-back.svg';
+import classIcon from '../../assets/class.svg';
+import { isLineInAppBrowser } from '../../utils/liff';
 
 const route = useRoute();
 const router = useRouter();
@@ -108,9 +181,11 @@ const slug = computed(() => route.params.slug as string);
 const community = ref<CommunityPortal | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const classesCount = ref<number | null>(null);
 const resourceConfig = useResourceConfig();
 const { slotMap } = resourceConfig;
 const toast = useToast();
+const { favorites } = useFavorites();
 
 const heroFallbackImage = computed(
   () =>
@@ -120,12 +195,12 @@ const heroFallbackImage = computed(
 );
 const heroOverlay = computed(() => {
   if (themeName.value === 'clean') {
-    return 'linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.9))';
+    return 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.35))';
   }
   if (themeName.value === 'warm') {
-    return 'linear-gradient(180deg, rgba(255,247,237,0.55), rgba(254,215,170,0.9))';
+    return 'linear-gradient(180deg, rgba(255,247,237,0.18), rgba(254,215,170,0.45))';
   }
-  return 'linear-gradient(180deg, rgba(15, 23, 42, 0.35), rgba(3, 7, 18, 0.75))';
+  return 'linear-gradient(180deg, rgba(15, 23, 42, 0.12), rgba(3, 7, 18, 0.35))';
 });
 
 const composeHeroBackground = (source: string, fallback: string) => {
@@ -146,7 +221,7 @@ const composeHeroBackground = (source: string, fallback: string) => {
 
 const loadCommunity = async (value: string) => {
   if (!value) {
-    error.value = '社群不存在';
+    error.value = 'コミュニティが見つかりません';
     return;
   }
   loading.value = true;
@@ -155,8 +230,18 @@ const loadCommunity = async (value: string) => {
     const data = await fetchCommunityBySlug(value);
     community.value = data;
     following.value = Boolean(data.isFollowing);
+    classesCount.value = null;
+    if (data?.id) {
+      try {
+        const cls = await fetchCommunityClasses(data.id);
+        classesCount.value = cls.length;
+      } catch (err) {
+        classesCount.value = 0;
+        console.warn('load classes failed', err);
+      }
+    }
   } catch (err) {
-    error.value = '社群不存在或已下线';
+    error.value = 'コミュニティが存在しないか、非公開です';
   } finally {
     loading.value = false;
   }
@@ -177,7 +262,7 @@ const followBusy = ref(false);
 const hasFollowState = computed(() => Boolean(community.value?.id));
 
 const descriptionExpanded = ref(false);
-const descriptionText = computed(() => getLocalizedText(community.value?.description) || '简介准备中。');
+const descriptionText = computed(() => getLocalizedText(community.value?.description) || '紹介文は準備中です。');
 const shouldTruncate = computed(() => descriptionText.value.length > 80);
 const avatarFailed = ref(false);
 
@@ -223,7 +308,7 @@ const avatarStyle = computed(() => {
 const themeName = computed(() => {
   const configured = community.value?.portalConfig?.theme;
   const allowed = ['clean', 'immersive', 'warm', 'collage'];
-  // 默认保持 clean；如果配置是 immersive 但没有封面，会让背景过暗，这里只在有封面时才允许 immersive。
+  // デフォルトは clean を維持。immersive でもカバーが無いと背景が暗くなるため、カバーがある場合のみ許可する。
   if (configured === 'immersive' && !community.value?.coverImageUrl) {
     return 'clean';
   }
@@ -238,25 +323,34 @@ const layoutOrder = computed(() => {
 
 const showHero = computed(() => layoutOrder.value.includes('hero'));
 const showEvents = computed(() => layoutOrder.value.some((b) => ['upcoming', 'past'].includes(b)));
-const heroLabels = computed(() => community.value?.labels ?? []);
+// デザイン上は多すぎると散らかるため、最大 5 件まで表示
+const heroLabels = computed(() => (community.value?.labels ?? []).slice(0, 5));
 
 const formattedEvents = computed(() =>
-  (community.value?.events ?? []).map((event) => ({
-    ...event,
-    title: getLocalizedText(event.title) || '活动',
-    date: new Date(event.startTime).toLocaleString('zh-CN', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-    statusLabel: event.status === 'open' ? '报名中' : '已结束',
-    statusClass: event.status === 'open' ? 'open' : 'closed',
-  })),
+  (community.value?.events ?? []).map((event) => {
+    const { state, label } = getEventStatus(event);
+    return {
+      ...event,
+      title: getLocalizedText(event.title) || 'イベント',
+      date: new Date(event.startTime).toLocaleString('ja-JP', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      statusLabel: label,
+      statusState: state,
+      statusClass: state === 'open' ? 'open' : 'closed',
+    };
+  }),
 );
 
-const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.status === 'open'));
-const pastEvents = computed(() => formattedEvents.value.filter((event) => event.status !== 'open'));
+const upcomingEvents = computed(() => formattedEvents.value.filter((event) => event.statusState === 'open'));
+const pastEvents = computed(() => formattedEvents.value.filter((event) => event.statusState !== 'open'));
+const featuredEvents = computed(() => {
+  const combined = [...upcomingEvents.value, ...pastEvents.value];
+  return combined.slice(0, 3);
+});
 const memberAvatars = computed(() =>
   (community.value?.members ?? []).map((member) => ({
     id: member.id,
@@ -266,16 +360,20 @@ const memberAvatars = computed(() =>
   })),
 );
 const memberCount = computed(() => community.value?.memberCount ?? memberAvatars.value.length);
-const newsItems = computed(() => {
-  const events = formattedEvents.value;
-  if (!events.length) return [];
-  return events.slice(0, 6).map((event) => {
-    const flag = event.status === 'open' ? '招募中' : '回顾';
-    return `${flag} · ${event.title} · ${event.date}`;
+const interestedItems = computed(() => {
+  if (!favorites.value.length) return [];
+  const items = favorites.value.map((fav) => {
+    const matched = formattedEvents.value.find((event) => event.id === fav.id);
+    return {
+      id: fav.id,
+      title: fav.title,
+      meta: fav.timeText || matched?.date || '日時未定',
+      statusLabel: matched?.statusLabel ?? '気になる',
+      statusState: matched?.statusState ?? 'interest',
+    };
   });
+  return items.slice(0, 4);
 });
-const newsItemsLimited = computed(() => newsItems.value.slice(0, 3));
-const newsItemsLoop = computed(() => [...newsItemsLimited.value, ...newsItemsLimited.value]);
 const eventCoverStyle = (event: any) => {
   const cover = event.coverImageUrl ? resolveAssetUrl(event.coverImageUrl as string) : heroFallbackImage.value;
   return {
@@ -285,6 +383,7 @@ const eventCoverStyle = (event: any) => {
   };
 };
 const showConsoleBack = computed(() => {
+  if (isLineInAppBrowser()) return false;
   const q = route.query;
   if (
     q.from === 'console' ||
@@ -305,8 +404,18 @@ const goBack = () => {
   if (history.length > 1) {
     router.back();
   } else {
-    router.push('/console');
+    router.replace({ name: 'events' });
   }
+};
+
+const goEvent = (event: { id?: string | number }) => {
+  if (!event?.id) return;
+  router.push({ name: 'event-detail', params: { eventId: String(event.id) } });
+};
+
+const goEventById = (id?: string | null) => {
+  if (!id) return;
+  router.push({ name: 'event-detail', params: { eventId: String(id) } });
 };
 
 const loadFollow = async () => {
@@ -319,6 +428,12 @@ const loadFollow = async () => {
   }
 };
 
+const goClasses = () => {
+  router.push({ name: 'community-classes', params: { slug: route.params.slug } });
+};
+
+const showClassesEntry = computed(() => (classesCount.value ?? 0) > 0);
+
 watch(
   () => community.value?.id,
   (val) => {
@@ -328,27 +443,48 @@ watch(
 
 const ensureAuthed = async () => {
   if (accessToken.value) return true;
-  toast.show('请先登录再关注社群', { type: 'info' });
+  toast.show('フォローにはログインが必要です', { type: 'info' });
   router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
   return false;
+};
+
+const FOLLOW_CHANGE_KEY = 'more_my_communities_follow_change';
+
+const notifyFollowChange = () => {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(FOLLOW_CHANGE_KEY, String(Date.now()));
+    }
+  } catch (err) {
+    console.warn('follow change marker failed', err);
+  }
 };
 
 const toggleFollow = async () => {
   if (!community.value?.id) return;
   if (!(await ensureAuthed())) return;
   followBusy.value = true;
+  const prev = following.value;
   try {
-    if (following.value) {
+    if (prev) {
       const res = await unfollowCommunity(community.value.id);
-      following.value = res.following;
+      if (res.locked) {
+        following.value = true;
+        toast.show('コミュニティの設定によりフォロー解除ができません', { type: 'info' });
+      } else {
+        following.value = res.following;
+        notifyFollowChange();
+      }
     } else {
       const res = await followCommunity(community.value.id);
       following.value = res.following;
+      notifyFollowChange();
     }
     await fetchCurrentUser();
   } catch (err) {
+    following.value = prev;
     console.error(err);
-    toast.show('操作失败，请稍后重试', { type: 'error' });
+    toast.show('処理に失敗しました。しばらくしてからお試しください。', { type: 'error' });
   } finally {
     followBusy.value = false;
   }
@@ -362,8 +498,11 @@ const toggleFollow = async () => {
   --chip-border: rgba(255, 255, 255, 0.35);
   --hero-overlay-from: rgba(15, 23, 42, 0.22);
   --hero-overlay-to: rgba(15, 23, 42, 0.55);
-  background: linear-gradient(180deg, #f7f7fb 0%, #eef2f7 100%);
+  --portal-card-shadow: none;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 48%, #f8fafc 100%);
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   color: #0f172a;
   overflow-x: hidden;
   box-sizing: border-box;
@@ -376,7 +515,7 @@ const toggleFollow = async () => {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 0 12px 32px;
+  padding: 0 12px calc(32px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -403,7 +542,10 @@ const toggleFollow = async () => {
   color: #2563eb;
   font-weight: 700;
   font-size: 15px;
-  padding: 6px 4px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .nav-back--overlay {
   position: absolute;
@@ -411,10 +553,14 @@ const toggleFollow = async () => {
   left: 16px;
   z-index: 2;
   border-radius: 12px;
-  padding: 8px 10px;
-  background: rgba(15, 23, 42, 0.32);
+  padding: 6px;
+  background: rgba(15, 23, 42, 0.18);
   color: #fff;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+}
+.nav-back__icon {
+  width: 20px;
+  height: 20px;
 }
 .nav-title {
   position: absolute;
@@ -489,21 +635,20 @@ const toggleFollow = async () => {
 
 .portal-hero {
   position: relative;
-  min-height: 200px;
-  border-radius: 0;
+  min-height: 240px;
+  border-radius: 0 0 20px 20px;
   overflow: hidden;
   background-size: cover;
   background-position: center;
   box-shadow: none;
-  margin: 0;
-  width: 100vw;
-  left: 50%;
-  transform: translateX(-50%);
+  margin: 0 -12px;
+  width: calc(100% + 24px);
 }
 .portal-hero__overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--hero-overlay-from), var(--hero-overlay-to));
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.05), rgba(15, 23, 42, 0.18));
+  backdrop-filter: blur(2px);
   z-index: 0;
 }
 .portal-hero__content {
@@ -531,16 +676,16 @@ const toggleFollow = async () => {
   padding: 20px;
 }
 .portal-hero__avatar {
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
   overflow: hidden;
-  background: #fff;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: none;
+  border: none;
 }
 .portal-hero__avatar img,
 .portal-hero__avatar span {
@@ -550,26 +695,89 @@ const toggleFollow = async () => {
   height: 100%;
   object-fit: cover;
   display: block;
-  border-radius: 50%;
+  border-radius: inherit;
 }
 .portal-hero__avatar span {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.18), rgba(59, 130, 246, 0.28));
-  color: #0f172a;
+  background: #f1f5f9;
+  color: #334155;
   font-weight: 800;
 }
 
 .info-card {
-  margin-top: 16px;
+  margin-top: 14px;
   background: #fff;
-  border-radius: 16px;
-  padding: 22px 18px 18px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  padding: 20px 18px 18px;
+  box-shadow: var(--portal-card-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.portal-entry-card {
+  margin-top: 12px;
+}
+.portal-action-btn {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-radius: 14px;
+  padding: 8px 12px 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-weight: 700;
+}
+.portal-action-btn--solo {
+  background: #fff;
+  border-color: #e2e8f0;
+  box-shadow: var(--portal-card-shadow);
+}
+.portal-action__icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  background: #eef2ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4338ca;
+  font-size: 18px;
+}
+.portal-action__icon-image {
+  width: 72px;
+  height: 72px;
+  display: block;
+}
+.portal-action__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.portal-action__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 72px;
+  align-items: center;
+  text-align: center;
+}
+.portal-action__desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+.community-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: center;
 }
 .community-name {
   margin: 0;
@@ -578,6 +786,25 @@ const toggleFollow = async () => {
   text-align: center;
   letter-spacing: -0.01em;
 }
+.follow-tag {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.follow-tag.is-following {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+.follow-tag:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .info-tags {
   display: flex;
   gap: 8px;
@@ -585,21 +812,19 @@ const toggleFollow = async () => {
   flex-wrap: wrap;
 }
 .info-tags span {
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #0f172a;
-  font-weight: 700;
-  font-size: 13px;
+  background: #edf2f7;
+  color: #334155;
+  font-weight: 600;
+  font-size: 12px;
 }
-.follow-btn {
-  border: none;
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  color: #fff;
-  font-weight: 700;
-  border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+.member-card {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: var(--portal-card-shadow);
 }
 .member-row {
   display: flex;
@@ -644,12 +869,15 @@ const toggleFollow = async () => {
   color: #475569;
   line-height: 1.6;
   text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .desc.truncated {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: normal;
 }
 .toggle {
   border: none;
@@ -659,67 +887,103 @@ const toggleFollow = async () => {
   align-self: center;
 }
 
-.events-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .news-card {
   margin-top: 16px;
   background: #fff;
   border-radius: 16px;
   padding: 16px 16px 18px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--portal-card-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
   border: 1px solid #e2e8f0;
 }
-.news-card__head h2 {
-  margin: 4px 0 0;
-  font-size: 17px;
-  font-weight: 800;
-}
-.news-card__marquee {
-  overflow: hidden;
-  position: relative;
-  height: 120px;
-  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
-}
-.news-card__track {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: news-vertical 14s linear infinite;
-}
-.news-card__item {
-  font-size: 14px;
-  color: #0f172a;
-  background: #f8fafc;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+.section-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.news-card__item::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2563eb, #22c55e);
-  flex-shrink: 0;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+.section-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
 }
-@keyframes news-vertical {
-  0% {
-    transform: translateY(0);
-  }
-  100% {
-    transform: translateY(-50%);
-  }
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.timeline__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+.timeline__item.is-clickable {
+  cursor: pointer;
+}
+.timeline__item.is-clickable:active .timeline__body {
+  transform: translateY(1px);
+}
+.timeline__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #22c55e);
+  box-shadow: 0 0 0 6px rgba(79, 70, 229, 0.08);
+  margin-top: 6px;
+}
+.timeline__body {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.timeline__title {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+.timeline__meta {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+.news-empty {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+.flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.flag--open {
+  background: #ecfdf3;
+  color: #166534;
+}
+.flag--closed {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.flag--interest {
+  background: #eef2ff;
+  color: #3730a3;
 }
 .empty-panel {
   border: 1px dashed #cbd5f5;
@@ -736,22 +1000,9 @@ const toggleFollow = async () => {
 }
 .event-gallery {
   margin-top: 16px;
-}
-
-.event-gallery {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.event-gallery__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.event-gallery__head h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 800;
 }
 .count {
   padding: 4px 10px;
@@ -761,62 +1012,95 @@ const toggleFollow = async () => {
   font-weight: 700;
   font-size: 12px;
 }
-.event-gallery__track {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 1fr);
+.event-list {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+}
+.event-list--scroll {
+  flex-direction: row;
   overflow-x: auto;
-  padding-bottom: 6px;
+  padding: 2px 0 8px;
+  margin: 0;
+  scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
 }
-.event-tile {
-  border-radius: 14px;
-  overflow: hidden;
-  background: #0f172a;
-  min-height: 180px;
-  position: relative;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+.event-list--scroll::-webkit-scrollbar {
+  display: none;
 }
-.event-tile__cover {
-  position: relative;
-  inset: 0;
+.event-card {
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--portal-card-shadow);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+}
+.event-card--compact {
+  flex: 0 0 220px;
+  scroll-snap-align: start;
+}
+.event-card.is-clickable {
+  cursor: pointer;
+}
+.event-card.is-clickable:active {
+  transform: translateY(1px);
+}
+.event-card__cover {
   width: 100%;
-  height: 100%;
+  padding-top: 42%;
   background-size: cover;
   background-position: center;
 }
-.event-tile__shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 20%, rgba(0, 0, 0, 0.65) 90%);
-  color: #fff;
+.event-card--compact .event-card__cover {
+  padding-top: 0;
+  height: 120px;
+}
+.event-card__body {
+  padding: 14px 14px 16px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  gap: 8px;
+}
+.event-card--compact .event-card__body {
   gap: 6px;
-  padding: 16px;
 }
-.event-tile__title {
-  font-weight: 800;
-  font-size: 16px;
-}
-.event-tile__meta {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-}
-.event-tile__status {
+.event-card__status {
   align-self: flex-start;
-  padding: 4px 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #e2f3ff;
-  background: rgba(255, 255, 255, 0.12);
+  background: #ecfdf3;
+  color: #166534;
 }
-.event-tile__status.closed {
-  color: rgba(255, 255, 255, 0.82);
+.event-card__status.closed {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.event-card__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.event-card__date {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-card__meta {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (min-width: 960px) {
@@ -824,13 +1108,13 @@ const toggleFollow = async () => {
     padding: 0 28px 32px;
   }
   .portal-hero {
-    min-height: 260px;
+    min-height: 320px;
+    margin: 0 auto;
+    width: 100%;
+    border-radius: 0 0 24px 24px;
   }
   .community-name {
     font-size: 28px;
-  }
-  .slider-track {
-    grid-auto-columns: minmax(280px, 1fr);
   }
 }
 </style>

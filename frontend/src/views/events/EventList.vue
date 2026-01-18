@@ -39,7 +39,7 @@
           </div>
           <div class="event-card__body">
             <p class="event-card__title">{{ titleFor(event) }}</p>
-            <p class="event-card__meta">{{ formatDate(event.startTime) }}</p>
+            <p class="event-card__meta">{{ formatDateRange(event.startTime, event.endTime) }}</p>
             <p class="event-card__location">{{ event.locationText }}</p>
             <div class="event-card__footer">
               <span class="status-pill" :class="statusBadge(event).class">{{ statusBadge(event).text }}</span>
@@ -65,6 +65,8 @@ import { fetchEvents } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventStatus } from '../../utils/eventStatus';
+import { EVENT_CATEGORY_OPTIONS, normalizeEventCategory } from '../../utils/eventCategory';
 import brandLogoUrl from '../../assets/images/logo1.svg';
 
 const router = useRouter();
@@ -76,11 +78,7 @@ const error = ref<string | null>(null);
 const searchTerm = ref('');
 const categories = [
   { label: '全部', value: 'all' },
-  { label: '親子', value: 'kids' },
-  { label: 'スポーツ', value: 'sports' },
-  { label: '言語交換', value: 'language' },
-  { label: '新来日本', value: 'newlife' },
-  { label: '仕事・スキル', value: 'career' },
+  ...EVENT_CATEGORY_OPTIONS.map((cat) => ({ label: cat.label, value: cat.value })),
 ];
 const selectedCategory = ref('all');
 
@@ -90,7 +88,8 @@ const loadEvents = async () => {
   try {
     events.value = await fetchEvents();
   } catch (err) {
-    error.value = err instanceof Error ? '活动加载失败，请稍后重试' : '活动加载失败，请稍后重试';
+    error.value =
+      err instanceof Error ? 'イベントの読み込みに失敗しました。時間をおいて再試行してください。' : 'イベントの読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
@@ -99,8 +98,8 @@ const loadEvents = async () => {
 const filteredEvents = computed(() => {
   const keyword = searchTerm.value.toLowerCase();
   return events.value.filter((event) => {
-    const category = (event.category || 'other').toLowerCase();
-    const matchesCategory = selectedCategory.value === 'all' || category.includes(selectedCategory.value);
+    const category = normalizeEventCategory(event.category);
+    const matchesCategory = selectedCategory.value === 'all' || category === selectedCategory.value;
     const title = titleFor(event).toLowerCase();
     const matchesKeyword = !keyword || title.includes(keyword) || event.locationText.toLowerCase().includes(keyword);
     return matchesCategory && matchesKeyword;
@@ -109,20 +108,26 @@ const filteredEvents = computed(() => {
 
 const titleFor = (event: EventSummary) => getLocalizedText(event.title);
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
+const formatDate = (value?: string | null) => {
+  if (!value) return '--';
+  return new Date(value).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
-    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
   });
+};
+
+const formatDateRange = (start?: string | null, end?: string | null) => {
+  if (!start) return '--';
+  const startText = formatDate(start);
+  if (!end) return startText;
+  return `${startText} 〜 ${formatDate(end)}`;
+};
 
 const statusBadge = (event: EventSummary) => {
-  const now = new Date();
-  const start = new Date(event.startTime);
-  if (event.status === 'open' && start > now) {
-    return { text: '受付中', class: 'open' };
-  }
-  return { text: '終了', class: 'closed' };
+  const { state, label } = getEventStatus(event);
+  return { text: label, class: state === 'open' ? 'open' : 'closed' };
 };
 
 const coverInitial = (event: EventSummary) => (event.community.name?.charAt(0) ?? 'M').toUpperCase();

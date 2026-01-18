@@ -122,9 +122,9 @@ const t = (key: string) =>
     {
       'hero.eyebrow': 'SOCIALMORE CONSOLE',
       'hero.title': 'コミュニティとイベントのための運営ハブ',
-      'hero.subtitle': 'SocialMore の主理人コンソールで、企画から決済・振込までを安全に運用できます。',
+      'hero.subtitle': 'SocialMore の主催者コンソールで、企画から決済・振込までを安全に運用できます。',
       'hero.primaryCta': 'Console を開く',
-      'hero.secondaryCta': '主理人になる',
+      'hero.secondaryCta': '主催者になる',
       'hero.learnMore': 'サービス概要',
       'panel.eyebrow': 'Console でできること',
       'panel.title': '最初の 30 日を伴走します',

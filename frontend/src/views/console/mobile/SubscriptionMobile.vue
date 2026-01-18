@@ -1,103 +1,50 @@
 <template>
-  <div class="subscription-page" :class="{ 'subscription-page--payment': Boolean(paymentClientSecret) }">
+  <div class="subscription-page beta-mode">
     <template v-if="!paymentClientSecret">
-      <header class="app-bar">
-        <button class="ghost-btn" type="button" @click="router.back()">
-          <span class="i-lucide-arrow-left" />
-        </button>
-        <div class="app-bar__title">
-          <h1>{{ t('subscription.title') }}</h1>
+      <header class="beta-banner">
+        <span class="badge">β</span>
+        <div>
+          <p class="beta-title">現在は無料（βテスト中）</p>
+          <p class="beta-desc">安心してご利用ください。</p>
         </div>
-        <button class="ghost-btn" type="button" @click="reload" :disabled="loading || paying">
-          <span class="i-lucide-refresh-ccw" />
-        </button>
       </header>
 
-      <div class="page-body">
-        <section v-if="upgradeSuccessPlanId" class="success-card">
-          <p class="eyebrow">アップグレード完了</p>
-          <h2>{{ upgradeSuccessName }}</h2>
-          <ul>
-            <li>AI コンテンツ & 翻訳の上限が拡張されました</li>
-            <li>プラットフォーム手数料は {{ upgradeSuccessFee }} になりました</li>
-            <li>コンテンツ審査が有効です。安心して公開できます</li>
-          </ul>
-          <button class="primary" type="button" @click="goCommunitySettings">
-            プロフィールを最適化する
-          </button>
-        </section>
-
-        <section class="summary-card">
-          <div class="summary-row">
-            <p class="eyebrow">{{ t('subscription.currentCommunity') }}</p>
-            <span v-if="activeCommunity" class="pill">{{ activeCommunity.name }}</span>
-            <span v-else class="pill muted">{{ t('subscription.noCommunity') }}</span>
+      <main class="beta-body">
+        <section class="status-card">
+          <p class="eyebrow">現在の利用状況</p>
+          <div class="status-pill">Free（βテスト）</div>
+          <div class="plan-lines">
+            <p class="plan-line"><strong>プラン：</strong>Free（βテスト）</p>
+            <p class="plan-line"><strong>課金：</strong>なし</p>
+            <p class="plan-line"><strong>{{ t('subscription.platformFee') }}</strong>{{ platformFeeValue }}</p>
+            <p class="plan-line"><strong>{{ t('subscription.stripeFee') }}</strong>{{ stripeFeeDisplay }}</p>
           </div>
-          <div class="summary-row" v-if="activeCommunity">
-            <p class="eyebrow">{{ t('subscription.currentPlan') }}</p>
-            <span class="pill primary">{{ activePlanName }}</span>
+        </section>
+
+        <section class="assure-card">
+          <p class="assure-title">事前の通知なしに課金されることはありません</p>
+          <p class="assure-desc">β期間中は無料です。安心してお試しください。</p>
+        </section>
+
+        <section class="future-card">
+          <div class="future-head">
+            <p class="eyebrow">正式リリースについて</p>
           </div>
-          <p class="summary-fee" v-if="activeCommunity">{{ activePlanFee }}</p>
-          <button v-if="activeCommunity" class="summary-upgrade" type="button" @click="scrollToPlans">
-            {{ t('subscription.cta.upgrade') }}
-            <span class="i-lucide-chevron-down" />
-          </button>
-          <p class="fine-print">{{ t('subscription.feeNote') }}</p>
+          <p class="future-note">正式リリース時にご案内予定です。価格はまだ決まっていません。</p>
         </section>
 
-        <div v-if="loading" class="empty">{{ t('subscription.loading') }}</div>
-        <div v-else-if="!communityId" class="empty">
-          <p>{{ t('subscription.noCommunity') }}</p>
-        </div>
-
-        <section v-else ref="planStackRef" class="plan-stack">
-          <article
-            v-for="plan in displayPlans"
-            :key="plan.id"
-            class="plan-card"
-            :class="plan.cardClass"
-          >
-            <div class="plan-header">
-              <div>
-                <p class="eyebrow">{{ plan.guide.audience }}</p>
-                <h2>{{ plan.guide.name }}</h2>
-              </div>
-              <span v-if="plan.id === activePlanId" class="status-chip">{{ t('subscription.cta.current') }}</span>
-            </div>
-            <p class="price">{{ plan.guide.price }}</p>
-            <div class="fee-chips">
-              <span class="chip">{{ t('subscription.platformFee') }} {{ plan.guide.platformFee }}</span>
-              <span class="chip">{{ t('subscription.stripeFee') }} {{ plan.guide.stripeFee }}</span>
-            </div>
-            <ul class="feature-list">
-              <li v-for="feature in plan.guide.features" :key="feature">{{ feature }}</li>
-            </ul>
-            <button
-              v-if="plan.selectable"
-              class="plan-cta"
-              :class="{ active: plan.id === activePlanId }"
-              type="button"
-              :disabled="submittingId === plan.id || paying || !plan.available || plan.id === activePlanId"
-              @click="plan.available && plan.id !== activePlanId && startSubscribe(plan.id)"
-            >
-              <span v-if="!plan.available">{{ t('subscription.cta.comingSoon') }}</span>
-              <span v-else-if="submittingId === plan.id">{{ t('subscription.cta.processing') }}</span>
-              <span v-else-if="paymentPlanId === plan.id">{{ t('subscription.cta.pay') }}</span>
-              <span v-else-if="plan.id === activePlanId">{{ t('subscription.cta.current') }}</span>
-              <span v-else>{{ t('subscription.cta.upgrade') }}</span>
-            </button>
-            <a
-              v-else
-              class="plan-cta outline"
-              href="mailto:hi@socialmore.com?subject=Enterprise"
-            >
-              {{ t('subscription.cta.contact') }}
-            </a>
-          </article>
+        <section class="perk-card">
+          <div class="perk-icon">⭐</div>
+          <div>
+            <p class="perk-title">早期主催者向けのご案内</p>
+            <p class="perk-desc">βにご参加いただいた方向けの優遇を検討しています。</p>
+          </div>
         </section>
 
-        <p v-if="error" class="error">{{ error }}</p>
-      </div>
+        <button class="secondary cta-continue" type="button" @click="router.back()">
+          無料で続ける
+        </button>
+      </main>
     </template>
 
     <template v-else>
@@ -143,6 +90,7 @@ import type { ConsoleCommunityDetail, PricingPlan } from '../../../types/api';
 import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
 import { useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const { t, tm } = useI18n();
 const communityStore = useConsoleCommunityStore();
@@ -167,6 +115,26 @@ let paymentElement: StripePaymentElement | null = null;
 const communityId = computed(() => communityStore.activeCommunityId.value);
 const activeCommunity = computed(() => communityStore.getActiveCommunity());
 
+const formatYen = (value: number) =>
+  new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
+
+const stripeFeeRateText = computed(() => {
+  const percent = STRIPE_FEE_PERCENT;
+  if (!Number.isFinite(percent)) return '';
+  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+  }
+  return percentText;
+});
+
+const stripeFeeDisplay = computed(
+  () => stripeFeeRateText.value || t('subscription.plans.free.stripeFee'),
+);
+
+const resolvePlatformFee = (fallback: string) =>
+  PLATFORM_FEE_WAIVED ? t('subscription.betaPlatformFeeValue') : fallback;
+
 const resolvePlanKey = (planId?: string | null) => {
   const id = (planId || '').toLowerCase();
   if (id.includes('pro')) return 'pro';
@@ -181,8 +149,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.free.name'),
     price: t('subscription.plans.free.price'),
     audience: t('subscription.plans.free.audience'),
-    platformFee: '5%',
-    stripeFee: t('subscription.plans.free.stripeFee'),
+    platformFee: resolvePlatformFee('5%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.free.features') as string[]) || [],
     cardClass: 'plan-free',
   },
@@ -191,8 +159,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.starter.name'),
     price: t('subscription.plans.starter.price'),
     audience: t('subscription.plans.starter.audience'),
-    platformFee: '2%',
-    stripeFee: t('subscription.plans.starter.stripeFee'),
+    platformFee: resolvePlatformFee('2%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.starter.features') as string[]) || [],
     cardClass: 'plan-starter',
   },
@@ -201,8 +169,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.pro.name'),
     price: t('subscription.plans.pro.price'),
     audience: t('subscription.plans.pro.audience'),
-    platformFee: '0%',
-    stripeFee: t('subscription.plans.pro.stripeFee'),
+    platformFee: resolvePlatformFee('0%'),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.pro.features') as string[]) || [],
     cardClass: 'plan-pro',
   },
@@ -211,8 +179,8 @@ const planGuide = computed(() => ({
     name: t('subscription.plans.enterprise.name'),
     price: t('subscription.plans.enterprise.price'),
     audience: t('subscription.plans.enterprise.audience'),
-    platformFee: t('subscription.plans.enterprise.platformFee'),
-    stripeFee: t('subscription.plans.enterprise.stripeFee'),
+    platformFee: resolvePlatformFee(t('subscription.plans.enterprise.platformFee')),
+    stripeFee: stripeFeeDisplay.value,
     features: (tm('subscription.plans.enterprise.features') as string[]) || [],
     cardClass: 'plan-enterprise',
   },
@@ -235,20 +203,23 @@ const displayPlans = computed(() => {
   }, {});
 
   return Object.values(guides).map((guide) => {
-  const matchedPlan = planMap[guide.key];
-  const price =
-      matchedPlan && matchedPlan.monthlyFee > 0 ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}` : guide.price;
-    const platformFee =
-      matchedPlan && matchedPlan.transactionFeePercent != null
+    const matchedPlan = planMap[guide.key];
+    const price =
+      matchedPlan && matchedPlan.monthlyFee > 0
+        ? `¥${matchedPlan.monthlyFee} / ${t('subscription.perMonth')}`
+        : guide.price;
+    const platformFee = PLATFORM_FEE_WAIVED
+      ? t('subscription.betaPlatformFeeValue')
+      : matchedPlan && matchedPlan.transactionFeePercent != null
         ? `${matchedPlan.transactionFeePercent}%`
         : guide.platformFee;
-  return {
-    id: matchedPlan?.id ?? guide.key,
-    guide: {
-      ...guide,
-      price,
-      platformFee,
-    },
+    return {
+      id: matchedPlan?.id ?? guide.key,
+      guide: {
+        ...guide,
+        price,
+        platformFee,
+      },
       selectable: guide.key !== 'enterprise',
       cardClass: guide.cardClass,
       available: Boolean(matchedPlan || !hasApiPlans),
@@ -261,17 +232,20 @@ const activePlanName = computed(() => {
   const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
   return matched?.guide.name ?? t('subscription.plans.free.name');
 });
-const activePlanFee = computed(() => {
+const platformFeeValue = computed(() => {
+  if (PLATFORM_FEE_WAIVED) return t('subscription.betaPlatformFeeValue');
   const matched = displayPlans.value.find((plan) => plan.id === activePlanId.value);
-  const fee = matched?.guide.platformFee || '5%';
-  const stripe = matched?.guide.stripeFee || t('subscription.plans.free.stripeFee');
-  return `${t('subscription.platformFee')} ${fee} · ${t('subscription.stripeFee')} ${stripe}`;
+  return matched?.guide.platformFee || '5%';
+});
+const activePlanFee = computed(() => {
+  return `${t('subscription.platformFee')} ${platformFeeValue.value} · ${t('subscription.stripeFee')} ${stripeFeeDisplay.value}`;
 });
 const upgradeSuccessName = computed(() => {
   const key = resolvePlanKey(upgradeSuccessPlanId.value);
   return planGuide.value[key as keyof typeof planGuide.value]?.name ?? 'プラン';
 });
 const upgradeSuccessFee = computed(() => {
+  if (PLATFORM_FEE_WAIVED) return '0%';
   const key = resolvePlanKey(upgradeSuccessPlanId.value);
   if (key === 'pro') return '0%';
   if (key === 'starter') return '2%';
@@ -413,11 +387,16 @@ const confirmPayment = async () => {
       paying.value = false;
       return;
     }
+    const returnUrl =
+      window.location.origin +
+      (window.location.pathname.startsWith('/liff') ? '/liff/payments/return' : '/payments/return');
     const { error: stripeError, paymentIntent } = await stripeInstance.confirmPayment({
       elements: elementsInstance,
       clientSecret: paymentClientSecret.value,
       redirect: 'if_required',
-      confirmParams: {},
+      confirmParams: {
+        return_url: returnUrl,
+      },
     });
     if (stripeError) {
       error.value = stripeError.message || t('error.paymentFailed');
@@ -753,5 +732,166 @@ const confirmPayment = async () => {
   background: #cbd5e1;
   border-radius: 999px;
   margin: 0 auto 10px;
+}
+
+/* β モード専用レイアウト */
+.beta-mode {
+  padding: 16px;
+  background: #f8fafc;
+}
+.beta-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #e0f9f3, #e8f7ff);
+  border: 1px solid rgba(34, 197, 94, 0.12);
+  box-shadow: 0 10px 24px rgba(34, 197, 94, 0.15);
+}
+.beta-banner .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 800;
+}
+.beta-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+.beta-desc {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #0f172a;
+}
+.beta-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.status-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+.plan-lines {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.plan-line {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+}
+.status-pill {
+  display: inline-flex;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e0f2fe, #e0f9f3);
+  color: #0b2b1a;
+  font-weight: 800;
+  margin: 8px 0;
+}
+.status-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #0f172a;
+}
+.status-hint {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+.assure-card {
+  background: #0f172a;
+  color: #fff;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
+}
+.assure-title {
+  margin: 0 0 4px;
+  font-weight: 800;
+  font-size: 15px;
+}
+.assure-desc {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.86);
+}
+.future-card {
+  background: #f8fafc;
+  border: 1px dashed rgba(15, 23, 42, 0.15);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+.future-head .eyebrow {
+  margin: 0 0 4px;
+}
+.future-note {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+}
+.fine-print {
+  margin: 2px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+.perk-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff7e6, #fffaf3);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  box-shadow: 0 10px 24px rgba(234, 179, 8, 0.12);
+}
+.perk-icon {
+  font-size: 20px;
+}
+.perk-title {
+  margin: 0;
+  font-weight: 800;
+}
+.perk-desc {
+  margin: 2px 0 0;
+  color: #4b5563;
+  font-size: 13px;
+}
+.cta-continue {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 800;
+  box-shadow: none;
+}
+.beta-mode .plan-stack,
+.beta-mode .summary-card,
+.beta-mode .success-card,
+.beta-mode .summary-upgrade,
+.beta-mode .price,
+.beta-mode .fee-chips,
+.beta-mode .plan-cta {
+  display: none !important;
 }
 </style>

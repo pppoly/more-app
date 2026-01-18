@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { isIP } from 'net';
@@ -265,6 +266,34 @@ export class StripeOnboardingService {
         accountId,
         refresh_url: this.refreshUrl,
         return_url: this.returnUrl,
+        stripeError: {
+          statusCode: err?.statusCode,
+          type: err?.type,
+          code: err?.code,
+          message: err?.message,
+          param: err?.param,
+        },
+      });
+    }
+  }
+
+  async createLoginLink(accountId: string) {
+    this.assertEnabled();
+    const stripe = this.stripe!;
+    this.logger.log('[StripeDBG] creating login link', { accountId });
+    try {
+      const link = await stripe.accounts.createLoginLink(accountId);
+      return link.url;
+    } catch (err: any) {
+      this.logger.error('[StripeDBG] accounts.createLoginLink failed', {
+        statusCode: err?.statusCode,
+        message: err?.message,
+        raw: err?.raw,
+      });
+      throw new BadRequestException({
+        message: 'Stripe login link creation failed',
+        step: 'createLoginLink',
+        accountId,
         stripeError: {
           statusCode: err?.statusCode,
           type: err?.type,

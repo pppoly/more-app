@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Community, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -178,8 +179,39 @@ export class ConsoleCommunitiesService {
     if (!community) {
       throw new NotFoundException('Community not found');
     }
-    const updated = await this.syncStripeAccountStatus(community);
-    return { stripeAccountId: updated.stripeAccountId, stripeAccountOnboarded: updated.stripeAccountOnboarded };
+    if (!this.stripeService.enabled || !community.stripeAccountId) {
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
+        stripeAccountStatus: null,
+      };
+    }
+    try {
+      const account = await this.stripeService.client.accounts.retrieve(community.stripeAccountId);
+      const onboarded = account.details_submitted ?? false;
+      if (onboarded !== community.stripeAccountOnboarded) {
+        await this.prisma.community.update({
+          where: { id: communityId },
+          data: { stripeAccountOnboarded: onboarded },
+        });
+      }
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: onboarded,
+        stripeAccountStatus: {
+          payoutsEnabled: account.payouts_enabled ?? null,
+          chargesEnabled: account.charges_enabled ?? null,
+          disabledReason: account.requirements?.disabled_reason ?? null,
+        },
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to refresh Stripe account status for community ${communityId}: ${error}`);
+      return {
+        stripeAccountId: community.stripeAccountId,
+        stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
+        stripeAccountStatus: null,
+      };
+    }
   }
 
   private decorateCommunity(community: Community) {
@@ -376,13 +408,17 @@ export class ConsoleCommunitiesService {
     const totalEvents = await this.prisma.event.count({ where: { communityId } });
     const registrations = await this.prisma.eventRegistration.findMany({
       where: { event: { communityId } },
-      select: { attended: true, noShow: true },
+      select: { attended: true, noShow: true, status: true, paymentStatus: true, amount: true },
     });
-    const totalRegistrations = registrations.length;
-    const totalAttended = registrations.filter((reg) => reg.attended).length;
-    const totalNoShow = registrations.filter((reg) => reg.noShow).length;
-    const followerCount = await this.prisma.communityMember.count({
-      where: { communityId, status: 'active' },
+    const successfulRegistrations = registrations.filter((reg) => {
+      if (!['paid', 'approved'].includes(reg.status)) return false;
+      return reg.paymentStatus === 'paid' || (reg.amount ?? 0) === 0;
+    });
+    const totalRegistrations = successfulRegistrations.length;
+    const totalAttended = successfulRegistrations.filter((reg) => reg.attended).length;
+    const totalNoShow = successfulRegistrations.filter((reg) => reg.noShow).length;
+    const followerCount = await this.prisma.communityFollow.count({
+      where: { communityId },
     });
     return {
       communityId,
@@ -406,6 +442,7 @@ export class ConsoleCommunitiesService {
   async startStripeOnboarding(userId: string, communityId: string) {
     this.logger.log('[ConsoleCommunities] *** startStripeOnboarding HIT', { communityId, userId });
     await this.permissions.assertCommunityManager(userId, communityId);
+    await this.permissions.assertOrganizerPayoutPolicyAccepted(userId);
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
       include: { owner: { select: { email: true, name: true } } },
@@ -447,6 +484,20 @@ export class ConsoleCommunitiesService {
     }
 
     const url = await this.stripeOnboarding.createOnboardingLink(accountId);
+    return { url };
+  }
+
+  async createStripeLoginLink(userId: string, communityId: string) {
+    await this.permissions.assertCommunityManager(userId, communityId);
+    await this.permissions.assertOrganizerPayoutPolicyAccepted(userId);
+    const community = await this.prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      throw new NotFoundException('Community not found');
+    }
+    if (!community.stripeAccountId) {
+      throw new BadRequestException('Stripe account is not set up');
+    }
+    const url = await this.stripeOnboarding.createLoginLink(community.stripeAccountId);
     return { url };
   }
 

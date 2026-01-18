@@ -15,6 +15,9 @@
     "stripeLinkFailed": "开通链接生成失败，请稍后重试或联系支持。",
     "qrScanFailed": "扫码失败，请重试或上传二维码照片。"
   },
+  "payments": {
+    "title": "支付记录"
+  },
   "nav": {
     "back": "返回",
     "events": "活动",
@@ -41,6 +44,7 @@
     "currentCommunity": "当前社群",
     "currentPlan": "当前套餐",
     "platformFee": "平台费：",
+    "betaPlatformFeeValue": "0%（β测试中）",
     "stripeFee": "Stripe 费用：",
     "perMonth": "月",
     "loading": "加载中…",
@@ -126,17 +130,36 @@
         "label": "语言设置",
         "meta": "切换界面语言"
       },
-      "notifications": {
-        "label": "通知与应用",
-        "meta": "权限和偏好设置"
-      },
-      "localeSheet": {
-        "title": "选择界面语言",
-        "subtitle": "更换后会影响内容展示顺序",
-        "active": "使用中"
-      },
+  "notifications": {
+    "label": "通知与应用",
+    "meta": "权限和偏好设置"
+  },
+  "legal": {
+    "title": "法律与合规",
+    "terms": {
+      "label": "服务条款",
+      "meta": "MORE 的使用条款"
+    },
+    "privacy": {
+      "label": "隐私政策",
+      "meta": "个人信息处理方式"
+    }
+  },
+  "about": {
+    "title": "应用信息",
+    "version": {
+      "label": "版本号",
+      "meta": "构建编号"
+    }
+  },
+  "localeSheet": {
+    "title": "选择界面语言",
+    "subtitle": "更换后会影响内容展示顺序",
+    "active": "使用中"
+  },
       "toast": {
-        "notificationsPending": "通知设置开发中"
+        "notificationsPending": "通知设置开发中",
+        "languagePending": "语言设置即将开放"
       }
     },
     "me": {
@@ -169,6 +192,11 @@
       "zhTw": "繁體中文"
     }
   },
+  "me": {
+    "payments": {
+      "title": "支付记录"
+    }
+  },
   "console": {
     "access": {
       "logo": "MORE Console",
@@ -204,6 +232,9 @@
       "noManagedHint": "先创建一个社群开始吧。",
       "createNew": "创建新的社群"
     },
+    "eventForm": {
+      "title": "创建活动"
+    },
     "portal": {
       "title": "社群门户",
       "subtitle": "选择模板和展示模块",
@@ -232,5 +263,72 @@
         "collage": { "name": "拼贴", "desc": "纹理叠加 + 照片感" }
       }
     }
+  },
+  "organizerPayoutPolicy": {
+    "title": "资金结算与退款说明（主理人必读）",
+    "readTime": "约 3 分钟可读完",
+    "lede": "为避免误解与纠纷，请先阅读并确认。",
+    "sections": {
+      "flow": {
+        "title": "收款与出金的流程",
+        "items": [
+          "参与者通过信用卡支付（Stripe）",
+          "资金由 MORE 通过 Stripe 收款，并按结算周期向主理人出金",
+          "出金不是实时，可能因审核/结算周期而前后"
+        ]
+      },
+      "refund": {
+        "title": "关于退款",
+        "items": [
+          "全额退款时，参与者将获得全额退款",
+          "退款时信用卡手续费可能不返还（行业通行规则）",
+          "v1 阶段该手续费由 MORE 承担（不从主理人出金中扣除）"
+        ]
+      },
+      "negative": {
+        "title": "余额为负的情况",
+        "items": [
+          "若在结算前发生退款或争议",
+          "MORE 内的结算余额可能暂时为负",
+          "负余额将从后续收入中自动抵扣（Stripe 可用余额不会为负）"
+        ]
+      },
+      "responsibility": {
+        "title": "责任边界",
+        "items": [
+          "活动履约与退款条款的设定由主理人负责",
+          "MORE 负责收款、退款与结算（退款/争议可能导致出金延迟或调整）",
+          "该设计用于防止不正当行为，保护认真经营的主理人"
+        ]
+      },
+      "why": {
+        "title": "为什么需要这些规则",
+        "items": [
+          "防止跑路与滥用",
+          "保护平台与其他主理人的信任",
+          "确保平台长期稳定运营"
+        ]
+      }
+    },
+    "example": {
+      "title": "例",
+      "body": "例：¥1,000 的全额退款 → 参与者返还 ¥1,000；信用卡手续费可能不返还，v1 阶段由 MORE 承担（不从主理人出金中扣除）"
+    },
+    "accept": {
+      "title": "确认与同意",
+      "flow": "我已理解并同意上述资金与退款机制",
+      "fee": "我理解：退款时，信用卡手续费可能不返还"
+    },
+    "actions": {
+      "accept": "同意并继续",
+      "later": "稍后再读",
+      "loading": "确认中…"
+    },
+    "toast": {
+      "requireAccept": "需同意后才能继续开户",
+      "loadFailed": "内容获取失败，请稍后重试。",
+      "acceptFailed": "同意保存失败，请稍后重试。"
+    },
+    "help": "如有疑问，请联系平台支持"
   }
 }

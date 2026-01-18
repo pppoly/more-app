@@ -3,20 +3,20 @@
     <header class="detail-hero">
       <button type="button" class="back-button" @click="goBack">
         <span class="i-lucide-arrow-left"></span>
-        返回
+        戻る
       </button>
-      <p class="hero-chip">资源配置</p>
-      <h1>{{ groupMeta?.page || '未知分组' }}</h1>
+      <p class="hero-chip">リソース設定</p>
+      <h1>{{ groupMeta?.page || '不明なグループ' }}</h1>
       <p class="hero-desc">
-        该页面包含 {{ groupSlots.length }} 个资源位。更改内容仅保存至本机浏览器，可通过下方按钮导入 / 导出 JSON。
+        このページには {{ groupSlots.length }} 件のリソース枠があります。変更内容はこのブラウザ内にのみ保存され、下のボタンから JSON をインポート / エクスポートできます。
       </p>
       <div class="hero-actions">
         <button type="button" class="ghost-button" @click="handleExport">
-          导出 JSON
+          JSON をエクスポート
           <span class="i-lucide-download"></span>
         </button>
         <button type="button" class="primary-button" @click="handleImport">
-          导入 JSON
+          JSON をインポート
           <span class="i-lucide-upload"></span>
         </button>
       </div>
@@ -24,7 +24,7 @@
     </header>
 
     <section v-if="!groupSlots.length" class="empty-state">
-      <p>未找到该分组的配置项，请返回上一页。</p>
+      <p>このグループの設定項目が見つかりません。前のページに戻ってください。</p>
     </section>
 
     <section v-else class="slot-stack">
@@ -38,15 +38,15 @@
             <p class="resource-eyebrow">{{ slot.position }}</p>
             <h2>{{ slot.label }}</h2>
           </div>
-          <button type="button" class="reset-button" @click="reset(slot.id)">恢复默认</button>
+          <button type="button" class="reset-button" @click="reset(slot.id)">デフォルトに戻す</button>
         </div>
-        <p class="resource-desc">{{ slot.description || '用于该页面对应区域的占位素材。' }}</p>
+        <p class="resource-desc">{{ slot.description || 'このページの該当エリアで使用するプレースホルダー。' }}</p>
         <p v-if="slot.helper" class="resource-helper">{{ slot.helper }}</p>
 
         <div class="resource-preview">
           <template v-if="slot.type === 'image'">
-            <img v-if="stringValue(slot.id)" :src="stringValue(slot.id)" alt="资源预览" />
-            <div v-else class="preview-empty">未设置，将使用系统默认</div>
+            <img v-if="stringValue(slot.id)" :src="stringValue(slot.id)" alt="プレビュー" />
+            <div v-else class="preview-empty">未設定のためデフォルトを使用します</div>
           </template>
           <template v-else-if="slot.type === 'icon'">
             <span class="preview-icon" :class="stringValue(slot.id) || slot.defaultValue"></span>
@@ -58,19 +58,19 @@
                 v-for="url in listValue(slot.id).slice(0, 3)"
                 :key="url"
                 :src="url"
-                alt="封面示例"
+                alt="カバー例"
               />
               <span v-if="listValue(slot.id).length > 3" class="preview-more">
                 +{{ listValue(slot.id).length - 3 }}
               </span>
             </div>
-            <div v-else class="preview-empty">列表为空，卡片将无背景</div>
+            <div v-else class="preview-empty">一覧が空のため背景は表示されません</div>
           </template>
         </div>
 
         <div class="resource-control">
           <label v-if="slot.type === 'image'" class="control-label">
-            图片地址
+            画像URL
             <input
               type="text"
               :value="stringValue(slot.id)"
@@ -79,7 +79,7 @@
             />
           </label>
           <label v-else-if="slot.type === 'icon'" class="control-label">
-            图标类名
+            アイコンのクラス名
             <input
               type="text"
               :value="stringValue(slot.id)"
@@ -88,7 +88,7 @@
             />
           </label>
           <label v-else class="control-label">
-            图片列表（每行一个 URL）
+            画像リスト（1行に1件）
             <textarea
               rows="4"
               :value="listValue(slot.id).join('\n')"
@@ -107,14 +107,14 @@
             />
             <label class="upload-button" :for="`upload-${slot.id}`">
               <span class="i-lucide-image"></span>
-              上传图片文件
+              画像をアップロード
             </label>
-            <p class="upload-hint">文件会转为 base64 并保存到浏览器</p>
+            <p class="upload-hint">ファイルは base64 に変換されブラウザに保存されます</p>
           </div>
         </div>
 
         <footer class="resource-footer">
-          <span>页面：{{ slot.page }} · 位置：{{ slot.position }}</span>
+          <span>ページ：{{ slot.page }} ・ 位置：{{ slot.position }}</span>
           <span class="resource-id">ID: {{ slot.id }}</span>
         </footer>
       </article>
@@ -183,9 +183,9 @@ const handleExport = async () => {
   try {
     const payload = exportConfig();
     await navigator.clipboard.writeText(payload);
-    heroStatus.value = 'JSON 已复制';
+    heroStatus.value = 'JSON をコピーしました';
   } catch {
-    heroStatus.value = '复制失败，请手动选择';
+    heroStatus.value = 'コピーに失敗しました。手動で選択してください。';
   } finally {
     setTimeout(() => {
       heroStatus.value = '';
@@ -195,13 +195,13 @@ const handleExport = async () => {
 
 const handleImport = () => {
   const template = exportConfig();
-  const content = window.prompt('粘贴 JSON 配置（覆盖全部资源）', template);
+  const content = window.prompt('JSON 設定を貼り付け（全リソースを上書き）', template);
   if (!content) return;
   try {
     importConfig(content);
-    heroStatus.value = '导入成功';
+    heroStatus.value = 'インポートしました';
   } catch {
-    heroStatus.value = '导入失败：JSON 无效';
+    heroStatus.value = 'インポートに失敗しました：JSON が無効です';
   } finally {
     setTimeout(() => {
       heroStatus.value = '';

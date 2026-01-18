@@ -1,8 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import { UPLOAD_ROOT } from './common/storage/upload-root';
+import type { IncomingMessage } from 'http';
 
 const normalizePathSegment = (segment: string) => segment.replace(/^\/+|\/+$/g, '');
 const buildPrefixedPath = (...segments: string[]) => {
@@ -11,10 +14,50 @@ const buildPrefixedPath = (...segments: string[]) => {
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Disable Nest built-in body parser to allow custom raw handler for Stripe webhook
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const globalPrefix = 'api/v1';
+  // Register parsers manually: raw for Stripe webhook FIRST, then json/urlencoded for others.
+  const stripeWebhookPath = '/api/v1/payments/stripe/webhook';
+  const stripeWebhookDebug = process.env.STRIPE_WEBHOOK_DEBUG === '1';
+  const isStripeWebhook = (req: express.Request) => {
+    const path = (req.originalUrl || '').split('?')[0] || req.path;
+    return path === stripeWebhookPath;
+  };
+  const stripeRawType = (req: IncomingMessage) => {
+    const header = req.headers['content-type'];
+    const contentType = Array.isArray(header) ? header.join(';') : header || '';
+    return /^application\/json\b/i.test(contentType) || /\+json\b/i.test(contentType);
+  };
+  const stripeRawBodyParser = express.raw({ type: stripeRawType });
+  app.use(stripeWebhookPath, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.method !== 'POST') return next();
+    return stripeRawBodyParser(req, res, next);
+  });
+  app.use(stripeWebhookPath, (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    if (req.method !== 'POST') return next();
+    if (stripeWebhookDebug) {
+      const body = req.body as unknown;
+      const isBuffer = Buffer.isBuffer(body);
+      const length = isBuffer ? body.length : body ? Buffer.byteLength(String(body)) : 0;
+      const contentType = req.headers['content-type'] ?? '';
+      console.log(
+        `[stripe webhook debug] method=${req.method} content-type=${contentType} bodyType=${typeof body} isBuffer=${isBuffer} length=${length}`,
+      );
+    }
+    return next();
+  });
+  const jsonParser = bodyParser.json({ limit: '15mb' });
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isStripeWebhook(req)) return next();
+    return jsonParser(req, res, next);
+  });
+  const urlencodedParser = bodyParser.urlencoded({ limit: '15mb', extended: true });
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isStripeWebhook(req)) return next();
+    return urlencodedParser(req, res, next);
+  });
   app.setGlobalPrefix(globalPrefix);
-  app.use('/api/v1/payments/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
   const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';
   const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? defaultConfiguredOrigins)
     .split(',')
@@ -34,6 +77,54 @@ async function bootstrap() {
   app.useStaticAssets(UPLOAD_ROOT, { prefix: uploadsPrefix });
   const apiUploadsPrefix = buildPrefixedPath(globalPrefix, process.env.UPLOADS_HTTP_PREFIX || 'uploads');
   app.useStaticAssets(UPLOAD_ROOT, { prefix: apiUploadsPrefix });
+
+  // Desktop redirect to promo in test environment
+  const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+  const enableDesktopPromoEnv =
+    process.env.DESKTOP_PROMO === '1' || envLabel === 'test' || envLabel === 'testing' || envLabel === 'staging';
+  app.use((req: any, res: any, next: any) => {
+    if (req.method !== 'GET') return next();
+    const accept = (req.headers.accept as string | undefined) || '';
+    if (!accept.includes('text/html')) return next();
+
+    const host = (req.headers.host as string | undefined)?.toLowerCase() || '';
+    const shouldPromo = enableDesktopPromoEnv || host.includes('test.');
+    if (!shouldPromo) return next();
+
+    const path = req.path || req.originalUrl || '';
+    const allowPrefixes = [
+      '/api/',
+      '/assets/',
+      '/uploads/',
+      '/favicon',
+      '/manifest',
+      '/auth/',
+      '/liff',
+      '/callback',
+      '/oauth',
+      '/promo',
+      '/health',
+      '/metrics',
+    ];
+    if (
+      allowPrefixes.some((p) => path.startsWith(p)) ||
+      path.endsWith('.js') ||
+      path.endsWith('.css') ||
+      path.endsWith('.map')
+    ) {
+      return next();
+    }
+
+    const ua = (req.headers['user-agent'] as string | undefined) || '';
+    const isMobile = /Mobile|Android|iPhone|iPod|iPad/i.test(ua);
+    if (!ua) return next(); // no UA, allow
+    if (isMobile) return next();
+
+    if (path.startsWith('/promo')) return next();
+    const original = req.originalUrl || req.url || path;
+    const from = encodeURIComponent(original);
+    return res.redirect(302, `/promo?from=${from}`);
+  });
 
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || '0.0.0.0';

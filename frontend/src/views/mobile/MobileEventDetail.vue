@@ -18,9 +18,26 @@
     <template v-else-if="detail">
       <main class="m-event-content event-content--with-footer">
         <section class="event-hero">
-          <div class="event-hero__overlay"></div>
-          <div class="event-cover-wrapper" :style="heroBackgroundStyle">
-            <div class="event-carousel">
+          <div class="event-hero__overlay">
+            <button
+              v-if="showBackButton"
+              class="event-back-btn"
+              type="button"
+              aria-label="戻る"
+              @click="goBack"
+            >
+              <img :src="backIcon" class="event-back-icon" alt="" aria-hidden="true" />
+            </button>
+            <div class="overlay-spacer"></div>
+          </div>
+          <div class="event-cover-wrapper" :style="heroBackgroundStyle" @click="openActiveImage">
+            <div
+              class="event-carousel"
+              @touchstart.passive="handleTouchStart"
+              @touchmove.passive="handleTouchMove"
+              @touchend="handleTouchEnd"
+              @touchcancel="handleTouchEnd"
+            >
               <div
                 v-for="(slide, index) in heroSlides"
                 :key="slide.id || slide.imageUrl || index"
@@ -66,24 +83,14 @@
             <div class="event-hero-meta">
               <div class="event-hero-meta__left">
                 <span class="event-status-badge" :class="statusBadge.variant">{{ statusBadge.label }}</span>
-                <span class="view-count">{{ viewCountLabel }}</span>
               </div>
               <div v-if="showHeaderActions" class="event-hero-actions">
                 <button class="event-action-icon" type="button" @click="shareEvent">
-                  <span class="i-lucide-share-2"></span>
+                  <img :src="shareIcon" alt="share" class="event-action-icon__img" />
                 </button>
-                <button
-                  class="event-action-icon"
-                  :class="{ 'is-active': isFavoriteEvent }"
-                  type="button"
-                  @click="handleFavoriteToggle"
-                >
-                  <span class="i-lucide-bookmark"></span>
-                </button>
+                <!-- follow/favorite action temporarily hidden -->
               </div>
             </div>
-            <p v-if="ctaHint" class="event-hero-hint">{{ ctaHint }}</p>
-            <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
 
@@ -102,59 +109,42 @@
         <section class="m-event-card event-meta-card">
           <div class="event-schedule-block">
             <div class="event-meta-row event-meta-row--schedule">
-              <div class="event-meta-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <rect x="3" y="4" width="18" height="17" rx="3" stroke="currentColor" stroke-width="1.5" />
-                  <path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <div class="event-meta-icon event-meta-icon--date" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <rect x="2.5" y="3.5" width="15" height="13.5" rx="2.6" stroke="currentColor" stroke-width="2" />
+                  <path d="M2.5 7.5h15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  <path d="M6 2.5v3.5M14 2.5v3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                 </svg>
               </div>
-              <div class="event-schedule">
-                <p class="event-schedule__day">{{ selectedDateMeta?.label ?? detail.timeFullText }}</p>
-                <p class="event-schedule__time">{{ selectedDateMeta?.meta ?? detail.timeFullText }}</p>
+              <div
+                class="event-schedule"
+              >
+                <p class="event-schedule__line" :title="scheduleLine">
+                  {{ scheduleLine }}
+                </p>
               </div>
-              <span v-if="isMultiDay" class="event-schedule__badge">複数日程</span>
             </div>
-            <button v-if="calendarLink" class="event-schedule__cta" type="button" @click="openCalendar">
-              <span class="i-lucide-calendar-plus"></span>
-              カレンダーに追加
-            </button>
           </div>
           <div class="m-divider"></div>
-          <div class="event-meta-row event-meta-row--location">
-            <div class="event-meta-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                />
-                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-            </div>
+          <div
+            class="event-meta-row event-meta-row--location"
+            :class="{ 'is-clickable': Boolean(detail.mapUrl) }"
+            :role="detail.mapUrl ? 'button' : undefined"
+            :tabindex="detail.mapUrl ? 0 : -1"
+            @click="openMap"
+            @keydown.enter.prevent="openMap"
+            @keydown.space.prevent="openMap"
+          >
+            <div class="event-meta-icon event-meta-icon--address" aria-hidden="true">〒</div>
             <div class="event-meta-text">
               <div class="event-location-title">{{ detail.locationText }}</div>
             </div>
-            <button class="event-map-button" type="button" @click="openMap">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 21c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7 3.582 7 8 7z"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                />
-                <path d="M12 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M7 3h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-              ルートを見る
-            </button>
           </div>
         </section>
 
         <section class="event-section" v-if="shouldShowParticipants">
-          <h2 class="m-section-title">参加状況</h2>
-          <div class="m-event-card">
+          <div class="m-event-card event-card-balanced">
             <div class="event-progress-head">
-              <span>{{ detail.regSummary }}</span>
               <span>{{ detail.capacityText }}</span>
             </div>
             <div class="event-progress">
@@ -169,8 +159,7 @@
                   type="button"
                   @click="openAllParticipants"
                 >
-                  <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
-                  <span v-else>{{ participantInitial(participant.name) }}</span>
+                  <AppAvatar :src="participant.avatarUrl" :name="participant.name" :size="40" />
                   <span class="sr-only">{{ participant.name }}</span>
                 </button>
                 <button
@@ -182,14 +171,12 @@
                   +{{ remainingParticipants }}
                 </button>
               </div>
-              <p class="participants-hint">最近の参加者（{{ participantsTotalLabel }}）</p>
             </div>
-            <p v-else class="participants-empty">表示できる参加者がまだいません。</p>
+            <p v-else class="participants-empty">まだ参加者はいません。最初の参加者になりませんか？</p>
           </div>
         </section>
 
         <section class="event-section">
-          <h2 class="m-section-title">主催コミュニティ</h2>
           <div class="m-event-card event-group-card">
             <div class="group-main">
               <button class="group-info" type="button" @click="openCommunityPortal" :disabled="!detail.communitySlug">
@@ -199,33 +186,56 @@
                   <div class="m-text-meta">最新ニュースとイベント情報</div>
                 </div>
               </button>
-              <button class="group-follow" :class="{ 'is-active': isFollowingCommunity }" type="button" @click="toggleFollow">
-                <span v-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
-                <span v-else class="i-lucide-bell-plus"></span>
-                {{ isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+              <button
+                class="group-follow"
+                :class="{ 'is-active': isFollowingCommunity, 'is-locked': followLocked }"
+                type="button"
+                :disabled="followLocked"
+                @click="toggleFollow"
+              >
+                <span class="group-follow__icon">
+                  <span v-if="followLocked" class="i-lucide-lock"></span>
+                  <span v-else-if="isFollowingCommunity" class="i-lucide-bell-minus"></span>
+                  <span v-else class="i-lucide-bell-plus"></span>
+                </span>
+                <span class="group-follow__label">
+                  {{ followLocked ? 'メンバー' : isFollowingCommunity ? 'フォロー中' : 'フォロー' }}
+                </span>
               </button>
             </div>
-            <p class="group-hint">このコミュニティをフォローすると最新イベントやアナウンスを受け取れます。</p>
           </div>
         </section>
+
+        <div
+          v-if="showPaymentBanner"
+          class="event-cta-banner"
+          :class="paymentBannerTone"
+          :style="{ bottom: bannerOffset }"
+        >
+          <span class="event-cta-banner__icon i-lucide-clock-8" aria-hidden="true"></span>
+          <div class="event-cta-banner__text">
+            <p class="event-cta-banner__title">{{ paymentBannerTitle }}</p>
+            <p class="event-cta-banner__note">{{ paymentBannerNote }}</p>
+          </div>
+        </div>
 
         <section class="event-section">
-          <h2 class="m-section-title">About</h2>
-          <div class="m-event-card">
-            <div class="m-text-body prose prose-sm max-w-none" v-html="detail.descriptionHtml"></div>
+          <div class="m-event-card event-about event-card-balanced">
+            <div class="event-about__header">About</div>
+            <div class="event-about__divider" aria-hidden="true"></div>
+            <div
+              class="m-text-body prose prose-sm max-w-none event-about__content"
+              v-html="detail.descriptionHtml"
+              @click="handleAboutClick"
+            ></div>
           </div>
         </section>
 
-        <section class="event-section" v-if="detail.mapUrl || detail.locationText">
-          <h2 class="m-section-title">場所</h2>
-          <div class="m-event-card location-card">
-            <div class="location-text">
-              <span class="i-lucide-map-pin"></span>
-              <p class="location-copy">{{ detail.locationText || '場所未定' }}</p>
-            </div>
-            <div class="location-actions" v-if="detail.mapUrl">
-              <a class="location-btn" :href="detail.mapUrl" target="_blank" rel="noopener">地図で開く</a>
-            </div>
+        <section class="event-section" v-if="refundPolicyText">
+          <div class="m-event-card event-about event-card-balanced">
+            <div class="event-about__header">返金ルール</div>
+            <div class="event-about__divider" aria-hidden="true"></div>
+            <p class="m-text-body">{{ refundPolicyText }}</p>
           </div>
         </section>
 
@@ -239,15 +249,23 @@
         </section>
       </main>
 
-      <footer class="event-footer">
+      <footer class="event-footer" ref="eventFooterRef">
         <div class="price-block">
           <p class="price">{{ detail.priceText }}</p>
         </div>
         <button class="rails-cta" type="button" :disabled="isCtaDisabled" @click="handleCtaClick">
           <span>{{ ctaLabel }}</span>
         </button>
-        <p v-if="ctaHint" class="cta-hint">{{ ctaHint }}</p>
+        <p v-if="ctaHint && isCtaHintVisible" class="cta-hint">{{ ctaHint }}</p>
+        <pre v-if="showDebug" class="debug-state">{{ debugText }}</pre>
       </footer>
+
+      <Transition name="fade">
+        <div v-if="previewImage" class="image-preview" @click.self="previewImage = null">
+          <button class="preview-close" type="button" @click="previewImage = null"><span class="i-lucide-x"></span></button>
+          <img :src="previewImage" alt="preview" />
+        </div>
+      </Transition>
     </template>
 
     <div v-if="showAllParticipants" class="participant-backdrop" @click.self="closeAllParticipants">
@@ -267,8 +285,7 @@
               class="participant-list__item"
             >
               <div class="participant-list__avatar">
-                <img v-if="participant.avatarUrl" :src="participant.avatarUrl" :alt="participant.name" />
-                <span v-else>{{ participantInitial(participant.name) }}</span>
+                <AppAvatar :src="participant.avatarUrl" :name="participant.name" :size="40" />
               </div>
               <div class="participant-list__name">{{ participant.name || 'ゲスト' }}</div>
             </li>
@@ -280,7 +297,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   createMockPayment,
@@ -289,6 +306,9 @@ import {
   fetchEventById,
   fetchEventGallery,
   fetchMyEvents,
+  fetchCommunityFollowStatus,
+  followCommunity,
+  unfollowCommunity,
 } from '../../api/client';
 import type {
   EventDetail,
@@ -299,13 +319,21 @@ import type {
 } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { getEventCategoryLabel } from '../../utils/eventCategory';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
-import { loadLiff } from '../../utils/liff';
+import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { trackEvent } from '../../utils/analytics';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
+import backIcon from '../../assets/icons/arrow-back.svg';
+import shareIcon from '../../assets/share.svg';
+import followIcon from '../../assets/follow.svg';
+import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -345,14 +373,44 @@ const paymentMessage = ref<string | null>(null);
 const isPaying = ref(false);
 const isRedirecting = ref(false);
 const formValues = reactive<Record<string, any>>({});
+const previewImage = ref<string | null>(null);
 const selectedDateId = ref<string | null>(null);
 const activeSlide = ref(0);
 const registrationItem = ref<MyEventItem | null>(null);
 const checkingRegistration = ref(false);
-const registrationStatus = computed(() => registrationItem.value?.status ?? 'none');
+const registrationStatusRaw = computed(() => registrationItem.value?.status ?? 'none');
+const refundRequest = computed(() => registrationItem.value?.refundRequest ?? null);
+const showBackButton = computed(() => !isLineInAppBrowser());
 
 const eventId = computed(() => route.params.eventId as string);
 const isLoggedIn = computed(() => Boolean(user.value));
+
+const requiresApproval = computed(() => {
+  if (!event.value) return false;
+  const config = (event.value.config as Record<string, any>) ?? {};
+  return Boolean(event.value.requireApproval ?? config.requireApproval);
+});
+
+const capacityState = computed(() => {
+  if (!event.value) {
+    return { capacity: null, currentParticipants: 0, enableWaitlist: false, isFull: false };
+  }
+  const config = (event.value.config as Record<string, any>) ?? {};
+  const capacityRaw =
+    typeof event.value.maxParticipants === 'number'
+      ? event.value.maxParticipants
+      : typeof config.capacity === 'number'
+        ? config.capacity
+        : typeof config.maxParticipants === 'number'
+          ? config.maxParticipants
+          : null;
+  const capacity = typeof capacityRaw === 'number' && Number.isFinite(capacityRaw) ? capacityRaw : null;
+  const currentRaw = config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0;
+  const currentParticipants = Number.isFinite(Number(currentRaw)) ? Number(currentRaw) : 0;
+  const enableWaitlist = Boolean(config.enableWaitlist);
+  const isFull = capacity !== null && capacity > 0 ? currentParticipants >= capacity : false;
+  return { capacity, currentParticipants, enableWaitlist, isFull };
+});
 
 const formFields = computed<RegistrationFormField[]>(() => (event.value?.registrationFormSchema as RegistrationFormField[]) ?? []);
 const isFavoriteEvent = computed(() => {
@@ -361,27 +419,201 @@ const isFavoriteEvent = computed(() => {
   return favoritesStore.isFavorite(currentId);
 });
 const hasRegistration = computed(() => Boolean(registrationItem.value));
-const ctaLabel = computed(() => {
-  if (checkingRegistration.value && !hasRegistration.value) {
-    return '読み込み中…';
+const registrationStatus = computed(() => {
+  const raw = registrationStatusRaw.value;
+  switch (raw) {
+    case 'pending_payment':
+      return 'pending_payment';
+    case 'pending':
+      return 'pending';
+    case 'paid':
+    case 'approved':
+      return 'paid';
+    case 'pending_refund':
+      return 'cancel_requested';
+    case 'refunded':
+      return 'cancelled';
+    case 'cancel_requested':
+      return 'cancel_requested';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return raw || 'none';
   }
-  if (hasRegistration.value) {
-    return '申込済み・チケットを見る';
-  }
-  if (detail.value?.status === 'open') {
-    return 'イベントに申し込む';
-  }
-  return '受付終了';
 });
-const isCtaDisabled = computed(() => {
-  if (hasRegistration.value) {
-    return false;
+const legacyRefund = computed(() => !refundRequest.value && ['refunded', 'pending_refund'].includes(registrationStatusRaw.value));
+const refundState = computed(() => {
+  const req = refundRequest.value;
+  if (req?.status === 'requested') return 'requested';
+  if (req?.status === 'processing') return 'processing';
+  if (req?.status === 'completed') {
+    if (req.decision === 'approve_partial' || (req.approvedAmount ?? 0) > 0) return 'completed_partial';
+    return 'completed';
   }
+  if (req?.status === 'rejected') return 'rejected';
+  const raw = registrationStatusRaw.value;
+  if (raw === 'pending_refund') return 'processing';
+  if (raw === 'refunded') return 'completed';
+  return null;
+});
+const eventLifecycle = computed(() => {
+  const ev = event.value;
+  if (!ev) return 'scheduled';
+  if (ev.status === 'cancelled') return 'cancelled';
+  const now = new Date();
+  const start = new Date(ev.startTime);
+  const end = ev.endTime ? new Date(ev.endTime) : null;
+  if (now < start) return 'scheduled';
+  if (end && now > end) return 'ended';
+  return 'ongoing';
+});
+const resolveRegistrationWindow = (ev: EventDetail | null) => {
+  if (!ev) return { open: false, reason: null as string | null };
+  if (ev.status !== 'open') return { open: false, reason: '受付は終了しています。' };
+  const now = new Date();
+  const regStart = ev.regStartTime ? new Date(ev.regStartTime) : null;
+  const regEndRaw = ev.regEndTime ?? ev.regDeadline ?? null;
+  const regEnd = regEndRaw ? new Date(regEndRaw) : null;
+  if (regStart && now < regStart) return { open: false, reason: '申込開始前です。' };
+  if (regEnd && now > regEnd) return { open: false, reason: '申込受付は終了しました。' };
+  return { open: true, reason: null };
+};
+const registrationWindowState = computed(() => resolveRegistrationWindow(event.value));
+const registrationWindow = computed(() => (registrationWindowState.value.open ? 'open' : 'closed'));
+
+const refundHint = computed(() => {
+  if (eventLifecycle.value === 'cancelled') {
+    return 'イベントはキャンセルされました。必要に応じて返金が進行します。';
+  }
+  if (refundState.value === 'processing') return '返金処理中：完了までお待ちください。';
+  if (refundState.value === 'completed') return '返金済み：数日内に口座へ反映されます。';
+  if (refundState.value === 'completed_partial') return '部分返金が完了しました。';
+  if (refundState.value === 'rejected') return '返金は認められませんでした。';
+  if (legacyRefund.value) return '旧データによる返金状態です。';
+  return '';
+});
+
+const computeCtaState = () => {
   if (!detail.value) {
-    return true;
+    return { label: '読み込み中…', disabled: true, hint: '' };
   }
-  return detail.value.status !== 'open' || checkingRegistration.value;
+  if (eventLifecycle.value === 'cancelled') {
+    return { label: '中止しました', disabled: true, hint: 'イベントはキャンセルされました。' };
+  }
+  if (registrationStatus.value === 'pending_payment') {
+    return { label: '支払いへ進む', disabled: false, hint: 'お支払い待ちです。' };
+  }
+  if (registrationStatus.value === 'pending') {
+    return { label: '予約済み', disabled: true, hint: '主催者の承認をお待ちください。' };
+  }
+  if (registrationStatus.value === 'paid') {
+    return { label: '参加チケットを見る', disabled: false, hint: refundHint.value };
+  }
+  if (registrationStatus.value === 'cancel_requested') {
+    const hint =
+      eventLifecycle.value === 'ongoing'
+        ? '開催中のため返金なしの場合があります。主催者の確認をお待ちください。'
+        : '主催者の確認をお待ちください。';
+    return { label: 'キャンセル申請中', disabled: true, hint };
+  }
+  if (registrationStatus.value === 'cancelled') {
+    const canReapply = registrationWindow.value === 'open';
+    return {
+      label: canReapply ? 'もう一度参加する' : 'キャンセル済み',
+      disabled: !canReapply,
+      hint: canReapply ? '再申込できます。' : '受付は終了しています。',
+    };
+  }
+  if (legacyRefund.value) {
+    return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
+  }
+  if (!isLoggedIn.value) {
+    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false, hint: '' };
+  }
+  if (eventLifecycle.value === 'ended') {
+    return { label: '終了しました', disabled: true, hint: 'イベントは終了しました。' };
+  }
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付開始前' : '受付終了';
+    return { label, disabled: true, hint: registrationWindowState.value.reason ?? '' };
+  }
+  if (capacityState.value.isFull) {
+    if (capacityState.value.enableWaitlist) {
+      return {
+        label: 'キャンセル待ちで申し込む',
+        disabled: true,
+        hint: '満席のためキャンセル待ちのみ受付中です。',
+      };
+    }
+    return { label: '満席', disabled: true, hint: '定員に達しました。' };
+  }
+  const canApply = registrationWindow.value === 'open';
+  return {
+    label: canApply ? (requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む') : '受付終了',
+    disabled: !canApply,
+    hint: canApply ? '' : registrationWindowState.value.reason ?? '',
+  };
+};
+const ctaState = computed(computeCtaState);
+const ctaLabel = computed(() => ctaState.value.label);
+const isCtaDisabled = computed(() => ctaState.value.disabled || checkingRegistration.value);
+const paymentHoldStartedAt = computed(() => {
+  if (!registrationItem.value) return null;
+  const raw = registrationItem.value.paymentCreatedAt ?? registrationItem.value.createdAt ?? null;
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isNaN(ms) ? null : ms;
 });
+const paymentHoldDeadline = computed(() => {
+  if (!paymentHoldStartedAt.value) return null;
+  return paymentHoldStartedAt.value + 15 * 60 * 1000;
+});
+const paymentHoldRemainingMs = computed(() => {
+  if (!paymentHoldDeadline.value) return null;
+  return paymentHoldDeadline.value - nowTs.value;
+});
+const formatCountdown = (ms: number) => {
+  const clamped = Math.max(0, ms);
+  const totalSeconds = Math.floor(clamped / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+const showPaymentBanner = computed(() => registrationStatus.value === 'pending_payment');
+const paymentBannerTone = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value !== null && paymentHoldRemainingMs.value <= 0) {
+    return 'is-expired';
+  }
+  return 'is-pending';
+});
+const paymentBannerTitle = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value === null) return 'お支払い待ちです';
+  if (paymentHoldRemainingMs.value <= 0) return 'お支払い期限が過ぎました';
+  return `お支払い待ち（残り ${formatCountdown(paymentHoldRemainingMs.value)}）`;
+});
+const paymentBannerNote = computed(() => {
+  if (!showPaymentBanner.value) return '';
+  if (paymentHoldRemainingMs.value !== null && paymentHoldRemainingMs.value <= 0) {
+    return 'この申込は自動キャンセルされました。再度お申し込みください。';
+  }
+  return '15分以内に支払わないと自動キャンセルされます。';
+});
+const bannerOffset = computed(() => {
+  const base = footerHeight.value || 64;
+  return `calc(${base + 8}px + env(safe-area-inset-bottom, 0px))`;
+});
+const debugState = computed(() => ({
+  eventLifecycle: eventLifecycle.value,
+  registrationWindow: registrationWindow.value,
+  regStatus: registrationStatus.value,
+  refundState: refundState.value ?? 'none',
+  refundRequestStatus: refundRequest.value?.status ?? 'none',
+  eligibleRefundAmount: refundRequest.value?.approvedAmount ?? refundRequest.value?.requestedAmount ?? registrationItem.value?.amount ?? null,
+}));
+const showDebug = computed(() => route.query.debug === '1');
+const debugText = computed(() => JSON.stringify(debugState.value, null, 2));
 
 const detail = computed(() => {
   if (!event.value) return null;
@@ -393,10 +625,6 @@ const detail = computed(() => {
     Number(config.currentParticipants ?? config.currentAttendees ?? config.regCount ?? 0),
   );
   const capacity = typeof event.value.maxParticipants === 'number' ? event.value.maxParticipants : config.capacity ?? null;
-  const regSummary =
-    typeof config.regSummary === 'string' && config.regSummary.trim().length
-      ? config.regSummary
-      : `${currentParticipants}名が参加予定`;
   const regProgress =
     capacity && capacity > 0 ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : 0;
   const attendeeAvatars: string[] = Array.isArray(config.attendeeAvatars) ? config.attendeeAvatars : [];
@@ -434,15 +662,16 @@ const detail = computed(() => {
     id: event.value.id,
     status: event.value.status,
     registrationStatus: registrationStatus.value,
+    startTime: event.value.startTime,
+    endTime: event.value.endTime,
     title: getLocalizedText(event.value.title, preferredLangs.value),
-    categoryLabel: event.value.category ?? 'イベント',
+    categoryLabel: getEventCategoryLabel(event.value.category, 'イベント'),
     timeFullText: `${start} 〜 ${end}`,
     locationText: event.value.locationText,
     coverUrl:
       gallery.value[0]?.imageUrl ||
       (event.value.coverImageUrl ? resolveAssetUrl(event.value.coverImageUrl) : null) ||
       fallbackCover.value,
-    regSummary,
     capacityText: capacity ? `定員 ${capacity}名・現在 ${currentParticipants}名` : `現在 ${currentParticipants}名`,
     regProgress,
     priceText: event.value.config?.priceText ?? derivePriceText(),
@@ -470,6 +699,10 @@ const detail = computed(() => {
     participants: normalizedParticipants,
   };
 });
+
+const refundPolicyText = computed(() =>
+  resolveRefundPolicyText((event.value?.config as Record<string, any>) ?? null),
+);
 
 const slideKey = (slide: { id?: string; imageUrl?: string }, index: number) =>
   slide.id || slide.imageUrl || `slide-${index}`;
@@ -503,33 +736,28 @@ const heroBackgroundStyle = computed(() =>
     : {},
 );
 
-const calendarLink = computed(() => {
-  if (!detail.value || !event.value?.startTime) return '';
-  const start = formatCalendarDate(event.value.startTime);
-  const end = formatCalendarDate(event.value.endTime ?? event.value.startTime);
-  if (!start || !end) return '';
-  const title = encodeURIComponent(detail.value.title);
-  const location = encodeURIComponent(detail.value.locationText ?? '');
-  const description = encodeURIComponent(
-    getLocalizedText(event.value.description ?? event.value.title, preferredLangs.value) ?? detail.value.title,
-  );
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&location=${location}&details=${description}`;
-});
-
 const dateOptions = computed(() => {
   if (!event.value) return [];
   const baseOption = {
     id: event.value.id,
     label: formatLongDate(event.value.startTime),
     meta: formatTimeRange(event.value.startTime, event.value.endTime),
+    start: event.value.startTime,
+    end: event.value.endTime ?? undefined,
   };
   const occurrences = ((event.value as any).occurrences ?? event.value.config?.occurrences) || [];
   const extra = Array.isArray(occurrences)
-    ? occurrences.map((occ: any, index: number) => ({
-        id: `occ-${index}`,
-        label: formatLongDate(occ.start ?? occ.startTime ?? event.value?.startTime),
-        meta: formatTimeRange(occ.start ?? occ.startTime, occ.end ?? occ.endTime),
-      }))
+    ? occurrences.map((occ: any, index: number) => {
+        const start = occ.start ?? occ.startTime ?? event.value?.startTime;
+        const end = occ.end ?? occ.endTime ?? event.value?.endTime ?? undefined;
+        return {
+          id: `occ-${index}`,
+          label: formatLongDate(start),
+          meta: formatTimeRange(start, end),
+          start,
+          end,
+        };
+      })
     : [];
   return [baseOption, ...extra];
 });
@@ -544,7 +772,17 @@ watch(
   { immediate: true },
 ) ;
 
-const selectedDateMeta = computed(() => dateOptions.value.find((opt) => opt.id === selectedDateId.value) ?? dateOptions.value[0]);
+const selectedDateMeta = computed(
+  () => dateOptions.value.find((opt) => opt.id === selectedDateId.value) ?? dateOptions.value[0],
+);
+const scheduleLine = computed(() => {
+  const start = selectedDateMeta.value?.start ?? event.value?.startTime;
+  if (!start) {
+    return detail.value?.timeFullText ?? '';
+  }
+  const end = selectedDateMeta.value?.end ?? event.value?.endTime;
+  return formatScheduleLine(start, end);
+});
 const favoritePayload = computed(() => {
   if (!detail.value) return null;
   return {
@@ -564,23 +802,17 @@ const isMultiDay = computed(() => {
 });
 
 const statusBadge = computed(() => {
-  const status = event.value?.status ?? 'draft';
-  const map: Record<string, { label: string; variant: string }> = {
-    open: { label: '受付中', variant: 'is-live' },
-    pending: { label: '受付前', variant: 'is-pending' },
-    soldout: { label: '満席', variant: 'is-soldout' },
-    closed: { label: '受付終了', variant: 'is-closed' },
-    ended: { label: '終了', variant: 'is-closed' },
-    draft: { label: '準備中', variant: 'is-pending' },
-    cancelled: { label: 'キャンセル', variant: 'is-closed' },
-  };
-  return map[status] ?? { label: 'ステータス未設定', variant: 'is-closed' };
-});
-
-const viewCountLabel = computed(() => {
-  const raw = detail.value?.config?.viewCount ?? detail.value?.config?.views ?? 0;
-  const value = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
-  return `${value}人想去`;
+  if (!event.value) return { label: '読み込み中…', variant: 'is-closed' };
+  if (eventLifecycle.value === 'cancelled') return { label: '中止', variant: 'is-closed' };
+  if (eventLifecycle.value === 'ended') return { label: '終了', variant: 'is-closed' };
+  if (!registrationWindowState.value.open) {
+    const label = registrationWindowState.value.reason?.includes('開始前') ? '受付前' : '受付終了';
+    return { label, variant: 'is-closed' };
+  }
+  if (capacityState.value.isFull) {
+    return { label: '満席', variant: 'is-soldout' };
+  }
+  return { label: '受付中', variant: 'is-live' };
 });
 
 const shouldShowParticipants = computed(() => Boolean(detail.value?.showParticipants));
@@ -590,48 +822,22 @@ const participantPreview = computed(() => participantsList.value.slice(0, 20));
 const hasMoreParticipants = computed(() => participantsList.value.length > participantPreview.value.length);
 const remainingParticipants = computed(() => Math.max(participantsList.value.length - participantPreview.value.length, 0));
 
-const registrationStatusLabel = computed(() => {
-  const map: Record<string, string> = {
-    pending: '審査待ち',
-    approved: '承認済み',
-    rejected: '拒否',
-    paid: '支払済み',
-    refunded: '返金済み',
-    pending_refund: '返金待ち',
-    cancelled: 'キャンセル',
-  };
-  return map[detail.value?.registrationStatus ?? ''] ?? '';
-});
-const ctaHint = computed(() => {
-  if (!detail.value) return '';
-  if (detail.value.status === 'cancelled') {
-    return 'イベントはキャンセルされました。必要に応じて返金が進行します。';
+const ctaHint = computed(() => ctaState.value.hint ?? '');
+const isCtaHintVisible = ref(false);
+
+watch(ctaHint, (value, _prev, onInvalidate) => {
+  if (!value) {
+    isCtaHintVisible.value = false;
+    return;
   }
-  if (registrationItem.value) {
-    switch (registrationItem.value.status) {
-      case 'pending':
-        return '申込済み：主理人の承認をお待ちください。';
-      case 'approved':
-        return '承認済み：参加が確定しました。';
-      case 'rejected':
-        return '申込が拒否されました。内容を確認のうえ再申込してください。';
-      case 'paid':
-        return '支払済み：チケットからQRを提示できます。';
-      case 'refunded':
-        return '返金済み：数日内に口座へ反映されます。';
-      case 'pending_refund':
-        return '返金処理中：完了までお待ちください。';
-      case 'cancelled':
-        return '申込はキャンセルされています。';
-      default:
-        return '';
-    }
-  }
-  return '';
+
+  isCtaHintVisible.value = true;
+  const timer = window.setTimeout(() => {
+    isCtaHintVisible.value = false;
+  }, 3000);
+
+  onInvalidate(() => window.clearTimeout(timer));
 });
-const participantsTotalLabel = computed(() =>
-  participantsTotal.value ? `${participantsTotal.value}名` : `${participantPreview.value.length}名`,
-);
 const showAllParticipants = ref(false);
 
 const loadEvent = async () => {
@@ -642,12 +848,23 @@ const loadEvent = async () => {
     const [detailData, galleryData] = await Promise.all([fetchEventById(eventId.value), fetchEventGallery(eventId.value)]);
     event.value = detailData;
     gallery.value = galleryData;
+    await loadFollowState();
+    trackEvent('view_event_detail', { eventId: detailData.id });
   } catch (err) {
-    error.value = '活动加载失败，请稍后再试';
+    error.value = 'イベント情報の読み込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     loading.value = false;
   }
 };
+
+watch(
+  () => registrationStatus.value,
+  (val) => {
+    if (val !== 'pending_payment') {
+      sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+    }
+  },
+);
 
 const checkRegistrationStatus = async () => {
   if (!user.value || !eventId.value) {
@@ -672,12 +889,38 @@ watch(
   },
 );
 
+const fallbackRoute = computed(() =>
+  detail.value?.communitySlug
+    ? { name: 'community-portal', params: { slug: detail.value.communitySlug } }
+    : { name: 'events' },
+);
+
+const canGoBack = () => {
+  if (typeof window === 'undefined') return false;
+  const historyState = router.options?.history?.state as { back?: string } | undefined;
+  return Boolean((historyState && historyState.back) || window.history.length > 1);
+};
+
 const goBack = () => {
-  router.back();
+  if (canGoBack()) {
+    router.back();
+    return;
+  }
+  router.replace(fallbackRoute.value);
 };
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  const liffDeepLink = LIFF_ID
+    ? `https://liff.line.me/${LIFF_ID}?to=/events/${detail.value.id}`
+    : typeof window !== 'undefined'
+      ? `${window.location.origin}/events/${detail.value.id}`
+      : '';
+  const shareUrl = `${liffDeepLink}?from=line_share`;
+  const shareTitle =
+    getLocalizedText(detail.value.title, preferredLangs.value) ||
+    (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
+
   if (APP_TARGET === 'liff') {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
@@ -685,41 +928,44 @@ const shareEvent = async () => {
     }
     try {
       const liff = await loadLiff(LIFF_ID);
-      const url = typeof window !== 'undefined' ? window.location.href : '';
-      const title =
-        getLocalizedText(detail.value.title, preferredLangs.value) ||
-        (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
       if (liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${title}\n${url}` }]);
-      } else if (liff.sendMessages) {
-        await liff.sendMessages([{ type: 'text', text: `${title}\n${url}` }]);
+        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrl}` }]);
+        showUiMessage('LINE で共有しました');
+        return;
       }
-      showUiMessage('LINE で共有しました');
+      // fallback: copy link
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        showUiMessage('リンクをコピーしました');
+        return;
+      }
     } catch (err) {
       console.error('Failed to share via LIFF', err);
       showUiMessage('LINE 共有に失敗しました');
+      return;
     }
     return;
   }
-  const payload = { title: detail.value.title, url: window.location.href };
 
-  // 1) 原生分享（优先）
+  const payload = { title: shareTitle, url: shareUrl };
+
+  // 1) ネイティブ共有（優先）
   if (navigator.share) {
     try {
       await navigator.share(payload);
-      showUiMessage('已分享');
+      showUiMessage('共有しました');
       return;
     } catch {
       // ignore and fallback to LINE
     }
   }
 
-  // 2) LINE 分享页面（Web）
+  // 2) LINE 共有ページ（Web）
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   window.open(lineShareUrl, '_blank');
-  showUiMessage('已打开 LINE 分享');
+  showUiMessage('LINE で開きました');
 
-  // 3) 额外兜底复制
+  // 3) 追加のフォールバックとしてコピー
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(payload.url);
@@ -742,7 +988,7 @@ const showUiMessage = (text: string) => {
   }, 2000);
 };
 
-const handleFavoriteToggle = () => {
+const handleFavoriteToggle = async () => {
   if (!detail.value || !favoritePayload.value) return;
   if (!isLoggedIn.value) {
     if (typeof window !== 'undefined') {
@@ -752,8 +998,12 @@ const handleFavoriteToggle = () => {
     router.push({ name: 'organizer-apply', query: { redirect: route.fullPath } });
     return;
   }
-  favoritesStore.toggleFavorite(favoritePayload.value);
-  showUiMessage(isFavoriteEvent.value ? '已收藏' : '已取消收藏');
+  try {
+    const res = await favoritesStore.toggleFavorite(favoritePayload.value);
+    showUiMessage(res.following ? 'フォロー済みにしました' : 'フォローを解除しました');
+  } catch (err) {
+    showUiMessage(err instanceof Error ? err.message : '操作に失敗しました');
+  }
 };
 
 const setSlide = (index: number) => {
@@ -778,15 +1028,123 @@ const markCoverBroken = (slide: { id?: string; imageUrl?: string }, index: numbe
   };
 };
 
-const openCalendar = () => {
-  if (!calendarLink.value) return;
-  window.open(calendarLink.value, '_blank');
+const communityIdForFollow = computed(
+  () => event.value?.community?.id || detail.value?.community?.id || (detail.value as any)?.communityId || null,
+);
+const isFollowingCommunity = ref(false);
+const followLocked = ref(false);
+const loadFollowState = async () => {
+  if (!communityIdForFollow.value) return;
+  if (!user.value) {
+    isFollowingCommunity.value = false;
+    followLocked.value = false;
+    return;
+  }
+  try {
+    const status = await fetchCommunityFollowStatus(communityIdForFollow.value);
+    isFollowingCommunity.value = !!status.following;
+    followLocked.value = !!status.locked;
+  } catch {
+    isFollowingCommunity.value = false;
+    followLocked.value = false;
+  }
 };
 
-const isFollowingCommunity = ref(false);
-const toggleFollow = () => {
-  isFollowingCommunity.value = !isFollowingCommunity.value;
-  showUiMessage(isFollowingCommunity.value ? '已关注' : '已取消关注');
+watch(
+  () => [user.value?.id, communityIdForFollow.value],
+  () => {
+    loadFollowState();
+  },
+  { immediate: true },
+);
+
+const toggleFollow = async () => {
+  if (!communityIdForFollow.value) return;
+  if (followLocked.value) {
+    showUiMessage('フォロー解除はできません');
+    return;
+  }
+  if (!user.value) {
+    router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
+    return;
+  }
+  const notifyFollowChange = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('more_my_communities_follow_change', String(Date.now()));
+      }
+    } catch (err) {
+      console.warn('follow change marker failed', err);
+    }
+  };
+  try {
+    if (isFollowingCommunity.value) {
+      const res = await unfollowCommunity(communityIdForFollow.value);
+      if (res.locked) {
+        isFollowingCommunity.value = true;
+        followLocked.value = true;
+        showUiMessage('フォローを解除できませんでした');
+        return;
+      }
+      isFollowingCommunity.value = !!res.following;
+      followLocked.value = !!res.locked;
+      notifyFollowChange();
+      showUiMessage('フォローを解除しました');
+    } else {
+      const res = await followCommunity(communityIdForFollow.value);
+      isFollowingCommunity.value = !!res.following;
+      followLocked.value = !!res.locked;
+      notifyFollowChange();
+      showUiMessage('フォローしました');
+    }
+  } catch (err) {
+    showUiMessage(err instanceof Error ? err.message : '操作に失敗しました');
+  }
+};
+
+const followIfNeeded = async () => {
+  if (!communityIdForFollow.value || isFollowingCommunity.value || followLocked.value) return;
+  if (!user.value) return;
+  try {
+    await followCommunity(communityIdForFollow.value);
+    isFollowingCommunity.value = true;
+  } catch (err) {
+    console.warn('auto-follow failed', err);
+  }
+};
+
+// Swipe to change hero slide
+let touchStartX = 0;
+let touchStartY = 0;
+let touchDeltaX = 0;
+const SWIPE_THRESHOLD = 40;
+
+const handleTouchStart = (e: TouchEvent) => {
+  if (!e.touches.length) return;
+  const touch = e.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  touchDeltaX = 0;
+};
+
+const handleTouchMove = (e: TouchEvent) => {
+  if (!e.touches.length) return;
+  const touch = e.touches[0];
+  touchDeltaX = touch.clientX - touchStartX;
+};
+
+const handleTouchEnd = () => {
+  if (!heroSlides.value.length) return;
+  const horizontalSwipe = Math.abs(touchDeltaX) > SWIPE_THRESHOLD;
+  if (!horizontalSwipe) return;
+  if (touchDeltaX < 0) {
+    goNextSlide();
+  } else {
+    goPrevSlide();
+  }
+  touchStartX = 0;
+  touchStartY = 0;
+  touchDeltaX = 0;
 };
 
 const groupAvatarStyle = computed(() => {
@@ -822,6 +1180,23 @@ const openMap = () => {
   }
 };
 
+const openActiveImage = () => {
+  const url = activeSlideImage.value;
+  if (!url) return;
+  previewImage.value = url;
+};
+
+const handleAboutClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  const img = target.closest('img');
+  if (img) {
+    event.preventDefault();
+    event.stopPropagation();
+    previewImage.value = (img as HTMLImageElement).currentSrc || img.getAttribute('src') || '';
+  }
+};
+
 const openBookingSheet = () => {
   initializeFormValues();
   agree.value = false;
@@ -836,40 +1211,82 @@ const closeBookingSheet = () => {
 
 const handleCtaClick = () => {
   if (!detail.value) return;
+  if (legacyRefund.value || registrationStatus.value === 'cancel_requested') return;
+  if (registrationStatus.value === 'pending_payment') {
+    const registrationId = registrationItem.value?.registrationId;
+    if (registrationId) {
+      sessionStorage.setItem(
+        MOBILE_EVENT_PENDING_PAYMENT_KEY,
+        JSON.stringify({
+          registrationId,
+          amount: registrationItem.value?.amount ?? null,
+          eventId: detail.value.id,
+          source: 'mobile',
+        }),
+      );
+    }
+    router.push({
+      name: 'MobileEventCheckout',
+      params: { eventId: detail.value.id },
+      query: registrationId ? { registrationId } : undefined,
+    });
+    return;
+  }
   if (hasRegistration.value) {
+    if (registrationStatus.value === 'cancelled') {
+      if (registrationWindow.value !== 'open') return;
+      router.push({ name: 'MobileEventRegister', params: { eventId: detail.value.id } });
+      return;
+    }
     router.push({ name: 'my-events' });
     return;
   }
-  if (detail.value.status !== 'open') return;
+  if (registrationWindow.value !== 'open') return;
   router.push({ name: 'MobileEventRegister', params: { eventId: detail.value.id } });
 };
 
 const submitBooking = async () => {
   if (!eventId.value) return;
+  trackEvent('registration_start', { eventId: eventId.value });
   submitting.value = true;
   registrationError.value = null;
   try {
     const registration = await createRegistration(eventId.value, { formAnswers: { ...formValues } });
-    handleRegistrationResult(registration);
+    await handleRegistrationResult(registration);
     showBooking.value = false;
+    await followIfNeeded();
   } catch (err) {
-    registrationError.value = '报名失败，请稍后再试';
+    registrationError.value = 'お申し込みに失敗しました。時間をおいて再試行してください。';
   } finally {
     submitting.value = false;
   }
 };
 
-const handleRegistrationResult = (registration: EventRegistrationSummary) => {
+const handleRegistrationResult = async (registration: EventRegistrationSummary) => {
   if (registration.paymentRequired) {
     pendingPayment.value = {
       registrationId: registration.registrationId,
       amount: registration.amount,
     };
     paymentMessage.value = 'お支払いを完了すると参加が確定します。';
+    sessionStorage.setItem(
+      MOBILE_EVENT_PENDING_PAYMENT_KEY,
+      JSON.stringify({
+        registrationId: registration.registrationId,
+        amount: registration.amount,
+        eventId: detail.value?.id ?? eventId.value,
+        source: 'mobile',
+      }),
+    );
+    if (detail.value) {
+      router.push({ name: 'MobileEventCheckout', params: { eventId: detail.value.id } });
+    }
+    return;
   } else {
     pendingPayment.value = null;
     paymentMessage.value = 'お申込みありがとうございます！';
   }
+  await checkRegistrationStatus();
 };
 
 const handleMockPayment = async () => {
@@ -880,8 +1297,9 @@ const handleMockPayment = async () => {
     await createMockPayment(pendingPayment.value.registrationId);
     pendingPayment.value = null;
     paymentMessage.value = 'お支払いが完了しました。参加が確定です。';
+    await followIfNeeded();
   } catch (err) {
-    registrationError.value = '支付失败，请稍后再试';
+    registrationError.value = '決済に失敗しました。時間をおいて再試行してください。';
   } finally {
     isPaying.value = false;
   }
@@ -891,11 +1309,23 @@ const handleStripeCheckout = async () => {
   if (!pendingPayment.value) return;
   isRedirecting.value = true;
   registrationError.value = null;
-  try {
-    const { checkoutUrl } = await createStripeCheckout(pendingPayment.value.registrationId);
-    window.location.href = checkoutUrl;
-  } catch (err: any) {
-    const message =
+    try {
+      const { checkoutUrl, resume } = await createStripeCheckout(pendingPayment.value.registrationId);
+      if (resume) {
+        window.alert('未完了の決済があります。決済を再開してください。');
+      }
+      sessionStorage.setItem(
+        MOBILE_EVENT_PENDING_PAYMENT_KEY,
+        JSON.stringify({
+          registrationId: pendingPayment.value.registrationId,
+          amount: pendingPayment.value.amount,
+          eventId: detail.value?.id ?? eventId.value,
+          source: 'mobile',
+        }),
+      );
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      const message =
       err?.response?.data?.message ?? (err instanceof Error ? err.message : 'Stripe Checkoutの開始に失敗しました');
     registrationError.value = message;
     isRedirecting.value = false;
@@ -967,15 +1397,28 @@ const formatLongDate = (value?: string) => {
   });
 };
 
+const formatDayWithWeekday = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString('ja-JP', {
+    day: 'numeric',
+    weekday: 'short',
+  });
+};
+
+const formatTime = (value?: string) => {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+};
+
 const formatTimeRange = (start?: string, end?: string) => {
   if (!start) return '';
   const startDate = new Date(start);
-  const startTime = startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const startTime = formatTime(start);
   if (!end) {
     return `${formatLongDate(start)} ${startTime} 開始`;
   }
   const endDate = new Date(end);
-  const endTime = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const endTime = formatTime(end);
   const sameDay = startDate.toDateString() === endDate.toDateString();
   if (sameDay) {
     return `${startTime} - ${endTime}`;
@@ -983,7 +1426,41 @@ const formatTimeRange = (start?: string, end?: string) => {
   return `${formatLongDate(start)} ${startTime} 〜 ${formatLongDate(end)} ${endTime}`;
 };
 
+const formatScheduleLine = (start?: string, end?: string) => {
+  if (!start) return '';
+  const startDate = new Date(start);
+  const startText = `${formatLongDate(start)} ${formatTime(start)}`;
+  if (!end) {
+    return startText;
+  }
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  if (sameDay) {
+    return `${formatLongDate(start)} ${formatTime(start)}〜${formatTime(end)}`;
+  }
+  const sameMonth =
+    startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth();
+  const endDateText = sameMonth ? formatDayWithWeekday(end) : formatLongDate(end);
+  return `${formatLongDate(start)} ${formatTime(start)}〜${endDateText} ${formatTime(end)}`;
+};
+
 const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+const toastOffsetBackup = ref<string | null>(null);
+const TOAST_OFFSET_PX = '84px';
+const eventFooterRef = ref<HTMLElement | null>(null);
+const TOAST_OFFSET_GAP = 12;
+const footerHeight = ref(0);
+const nowTs = ref(Date.now());
+let countdownTimer: number | null = null;
+const resizeHandler = () => {
+  if (typeof document === 'undefined') return;
+  if (!eventFooterRef.value) return;
+  const height = eventFooterRef.value.offsetHeight;
+  if (height > 0) {
+    footerHeight.value = height;
+    document.documentElement.style.setProperty('--toast-offset', `${height + TOAST_OFFSET_GAP}px`);
+  }
+};
 
 const pad = (value: number) => value.toString().padStart(2, '0');
 
@@ -995,7 +1472,30 @@ const formatCalendarDate = (value?: string) => {
   )}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
 };
 
-onMounted(loadEvent);
+onMounted(async () => {
+  loadEvent();
+  if (typeof document !== 'undefined') {
+    toastOffsetBackup.value = document.documentElement.style.getPropertyValue('--toast-offset');
+    document.documentElement.style.setProperty('--toast-offset', TOAST_OFFSET_PX);
+    await nextTick();
+    resizeHandler();
+    window.addEventListener('resize', resizeHandler);
+  }
+});
+
+onUnmounted(() => {
+  if (typeof document === 'undefined') return;
+  if (countdownTimer) {
+    window.clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  window.removeEventListener('resize', resizeHandler);
+  if (toastOffsetBackup.value) {
+    document.documentElement.style.setProperty('--toast-offset', toastOffsetBackup.value);
+  } else {
+    document.documentElement.style.removeProperty('--toast-offset');
+  }
+});
 
 watch(
   () => [user.value?.id, eventId.value],
@@ -1004,6 +1504,26 @@ watch(
       checkRegistrationStatus();
     } else {
       registrationItem.value = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  showPaymentBanner,
+  (value) => {
+    if (!value) {
+      if (countdownTimer) {
+        window.clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      return;
+    }
+    nowTs.value = Date.now();
+    if (!countdownTimer) {
+      countdownTimer = window.setInterval(() => {
+        nowTs.value = Date.now();
+      }, 1000);
     }
   },
   { immediate: true },
@@ -1019,7 +1539,7 @@ watch(
         try {
           const pending = JSON.parse(pendingRaw);
           if (pending.id === detail.value.id && !favoritesStore.isFavorite(pending.id)) {
-            favoritesStore.addFavorite(pending);
+            void favoritesStore.addFavorite(pending);
           }
         } catch (error) {
           console.warn('Failed to process pending favorite', error);
@@ -1045,9 +1565,18 @@ watch(
 
 <style scoped>
 .event-detail-page {
-  background-color: var(--m-color-bg);
+  background-color: #f7f7fb;
   min-height: 100vh;
-  padding: 0 10px calc(60px + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+.event-detail-page .m-event-content {
+  background-color: inherit;
+  min-height: 100vh;
 }
 
 .event-state {
@@ -1132,16 +1661,34 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--m-color-text-secondary);
+  color: var(--m-color-primary);
+}
+.event-meta-icon--address {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+.event-meta-icon--date {
+  align-self: center;
+  line-height: 1;
+}
+.event-meta-icon--date svg {
+  display: block;
 }
 
 .event-meta-row--location {
   align-items: center;
   gap: 12px;
 }
+.event-meta-row--location.is-clickable {
+  cursor: pointer;
+}
+.event-meta-row--location.is-clickable:active .event-location-title {
+  opacity: 0.7;
+}
 
 .event-meta-row--schedule {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .event-schedule-block {
@@ -1180,28 +1727,75 @@ watch(
 .event-schedule {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
 }
 
-.event-schedule__day {
+.event-schedule__line {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
+  font-size: clamp(11px, 3.6vw, 16px);
+  font-weight: 500;
+  color: var(--m-color-text-secondary);
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: -0.01em;
 }
 
 .event-location-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--m-color-text-primary);
-}
-
-.event-schedule__time {
-  margin: 0;
-  font-size: 16px;
+  font-size: clamp(12px, 4vw, 18px);
   font-weight: 500;
   color: var(--m-color-text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
+
+.event-cta-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  z-index: 12;
+  border: 1px solid transparent;
+}
+.event-cta-banner.is-pending {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+.event-cta-banner.is-expired {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+.event-cta-banner__icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-top: 1px;
+}
+.event-cta-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.event-cta-banner__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.event-cta-banner__note {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 
 .event-schedule__badge {
   margin-left: auto;
@@ -1212,23 +1806,11 @@ watch(
   font-weight: 600;
   color: #055160;
   background: #cffafe;
-}
-
-.event-schedule__cta {
-  width: 100%;
-  border: none;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: #fff;
-  background: linear-gradient(135deg, #0090d9, #22bbaa, #e4c250);
-  box-shadow: 0 8px 20px rgba(0, 144, 217, 0.25);
 }
+
 
 .event-hero__overlay {
   position: absolute;
@@ -1240,6 +1822,30 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px;
+}
+.event-back-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+}
+.event-back-btn:active {
+  opacity: 0.8;
+}
+.overlay-spacer {
+  width: 40px;
+  height: 40px;
+}
+.event-back-icon {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
 }
 
 .event-cover-wrapper {
@@ -1367,14 +1973,17 @@ watch(
 }
 
 .event-hero-info {
-  padding: 12px 16px 6px;
+  padding: 12px 16px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .event-hero-info .m-text-event-title-main {
   margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(17, 17, 17, 0.9);
   line-height: 1.2;
 }
 
@@ -1411,19 +2020,22 @@ watch(
   align-items: center;
   justify-content: center;
   color: var(--m-color-text-primary);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 
-.event-action-icon .i-lucide-share-2,
-.event-action-icon .i-lucide-bookmark {
-  font-size: 1rem;
+.event-action-icon__img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .event-action-icon.is-active {
   background: linear-gradient(135deg, #2563eb, #60a5fa);
   color: #fff;
   border-color: #1d4ed8;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
+}
+
+.event-action-icon.is-active .event-action-icon__img {
+  filter: brightness(0) invert(1);
 }
 
 .view-count {
@@ -1502,6 +2114,7 @@ watch(
   background: transparent;
   padding: 0;
   text-align: left;
+  flex: 1;
 }
 
 .group-avatar {
@@ -1513,7 +2126,99 @@ watch(
   background-position: center;
   background-repeat: no-repeat;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.m-text-body img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.event-about {
+  overflow: visible;
+}
+.event-card-balanced {
+  padding: 14px 16px;
+}
+.event-card-balanced .event-about__divider {
+  margin: 8px 0 10px;
+}
+.event-card-balanced .event-progress {
+  margin-top: 10px;
+}
+.event-about__header {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--m-color-text-primary);
+}
+.event-about__divider {
+  height: 1px;
+  margin: 10px 0 12px;
+  background: rgba(15, 23, 42, 0.08);
+}
+.event-about__content {
+  width: 100%;
+}
+:deep(.event-about__content figure) {
+  margin: 12px -16px;
+  padding: 0;
+  background: transparent;
+  border-radius: 16px;
+  overflow: hidden;
+}
+:deep(.event-about__content figure img),
+:deep(.event-about__content img) {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  object-fit: cover !important;
+  border-radius: 16px !important;
+  padding: 0 !important;
+  background: #f4f5f7 !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+:deep(.event-about__content a img) {
+  border: none !important;
+  background: transparent !important;
+  object-fit: cover !important;
+}
+.m-text-body a img {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.image-preview {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  padding: 24px;
+}
+.image-preview img {
+  max-width: 100%;
+  max-height: 90vh;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.preview-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
 }
 
 .group-name {
@@ -1530,9 +2235,37 @@ watch(
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   background: rgba(15, 23, 42, 0.05);
   color: var(--m-color-text-primary);
+  flex-shrink: 0;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  line-height: 1.2;
+  min-height: 32px;
+}
+.group-follow__icon {
+  position: absolute;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+.group-follow__icon .i-lucide-lock,
+.group-follow__icon .i-lucide-bell-minus,
+.group-follow__icon .i-lucide-bell-plus {
+  display: inline-flex;
+  align-items: center;
+}
+.group-follow__label {
+  width: 100%;
+  text-align: center;
+  line-height: 1.2;
+}
+.group-follow.is-locked {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .group-follow.is-active {
@@ -1606,7 +2339,7 @@ watch(
 }
 
 .event-content--with-footer {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 30px);
 }
 
 .participant-wall {
@@ -1650,7 +2383,6 @@ watch(
   background: rgba(15, 23, 42, 0.08);
 }
 
-.participants-hint,
 .participants-empty {
   margin-top: 6px;
   font-size: 12px;
@@ -1773,7 +2505,7 @@ watch(
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--m-color-surface);
   display: grid;
   grid-template-columns: 1fr 1.2fr;
@@ -1789,11 +2521,13 @@ watch(
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  padding-left: 16px;
+  box-sizing: border-box;
 }
 .price-block .price {
   font-size: 18px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--color-primary);
   letter-spacing: -0.01em;
 }
 
@@ -1806,7 +2540,7 @@ watch(
   letter-spacing: 0.01em;
   background: #0090d9;
   color: #fff;
-  box-shadow: 0 15px 30px rgba(0, 144, 217, 0.35);
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1825,7 +2559,7 @@ watch(
 
 .rails-cta:active:not(:disabled) {
   transform: scale(0.98);
-  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12), 0 6px 12px rgba(45, 55, 72, 0.25);
+  box-shadow: none;
 }
 
 .rails-cta:disabled {
@@ -1838,7 +2572,7 @@ watch(
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   font-size: 12px;
   color: rgba(15, 23, 42, 0.75);
   background: rgba(255, 255, 255, 0.96);
@@ -1849,6 +2583,15 @@ watch(
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(8px);
   z-index: 9;
+}
+
+.debug-state {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #0f172a;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 8px;
+  padding: 8px;
 }
 
 </style>

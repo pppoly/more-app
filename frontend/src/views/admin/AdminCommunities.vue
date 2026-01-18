@@ -14,6 +14,15 @@
     <section class="filters card">
       <div class="filter-row">
         <label>
+          キーワード
+          <input
+            v-model="filters.q"
+            type="search"
+            placeholder="name / slug / id"
+            @keyup.enter="load"
+          />
+        </label>
+        <label>
           Status
           <select v-model="filters.status">
             <option value="">すべて</option>
@@ -56,13 +65,22 @@
             </button>
           </div>
         </article>
+        <button
+          v-if="hasMore"
+          class="ghost full"
+          type="button"
+          :disabled="loading || loadingMore"
+          @click="loadMore"
+        >
+          さらに読み込む
+        </button>
       </div>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { adminListCommunities, adminUpdateCommunityStatus } from '../../api/client';
 
 interface AdminCommunityItem {
@@ -78,9 +96,14 @@ interface AdminCommunityItem {
 
 const items = ref<AdminCommunityItem[]>([]);
 const loading = ref(false);
+const loadingMore = ref(false);
 const error = ref<string | null>(null);
-const filters = ref<{ status?: string }>({});
+const filters = ref<{ status?: string; q?: string }>({});
 const busyId = ref<string | null>(null);
+const page = ref(1);
+const pageSize = 20;
+const total = ref(0);
+const hasMore = computed(() => items.value.length < total.value);
 
 const formatDate = (val: string) =>
   new Date(val).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -92,16 +115,41 @@ const planLabel = (planId?: string | null) => {
   return planId || 'Free';
 };
 
-const load = async () => {
-  loading.value = true;
+const load = async (reset = true) => {
+  if (reset) {
+    loading.value = true;
+    page.value = 1;
+    items.value = [];
+    total.value = 0;
+  } else {
+    loadingMore.value = true;
+  }
   error.value = null;
   try {
-    items.value = await adminListCommunities({ status: filters.value.status });
+    const res = await adminListCommunities({
+      status: filters.value.status,
+      q: filters.value.q?.trim() || undefined,
+      page: page.value,
+      pageSize,
+    });
+    const list = res.items ?? [];
+    total.value = res.total ?? list.length;
+    items.value = reset ? list : [...items.value, ...list];
+    const fetched = list.length;
+    if (items.value.length < total.value && fetched > 0) {
+      page.value += 1;
+    }
   } catch (err) {
     error.value = 'ロードに失敗しました';
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
+};
+
+const loadMore = () => {
+  if (loading.value || loadingMore.value || !hasMore.value) return;
+  void load(false);
 };
 
 const toggleStatus = async (item: AdminCommunityItem) => {
@@ -142,6 +190,10 @@ onMounted(load);
   border-radius: 10px;
   padding: 8px 12px;
 }
+.ghost.full {
+  width: 100%;
+  text-align: center;
+}
 .card {
   background: #fff;
   border-radius: 14px;
@@ -149,9 +201,9 @@ onMounted(load);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 .card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
 }
 .community-card {
   border: 1px solid #e2e8f0;
@@ -160,13 +212,17 @@ onMounted(load);
   background: #fff;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .card-top {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
+}
+.card-top h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
 }
 .chips {
   display: flex;
@@ -184,13 +240,15 @@ onMounted(load);
 }
 .filter-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
+.filters input,
 .filters select {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 8px;
+  width: 100%;
 }
 .primary {
   border: none;
@@ -231,6 +289,10 @@ onMounted(load);
 }
 .actions button {
   margin-left: 6px;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
 }
 .danger {
   border-color: rgba(185, 28, 28, 0.4);

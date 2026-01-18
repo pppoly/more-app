@@ -2,20 +2,41 @@
   <main class="admin-home">
     <header class="page-head">
       <div>
-        <p class="eyebrow">SOCIALMORE · 管理台</p>
+        <p class="eyebrow">SOCIALMORE · 管理コンソール</p>
         <h1>コントロールセンター</h1>
-        <p class="subhead">审核・运营・财务，一站式入口</p>
+        <p class="subhead">審査・運用・財務をまとめて管理</p>
       </div>
       <div class="meta">
         <div class="meta-item">
-          <p>宪法版本</p>
-          <strong>{{ constitutionMeta.version }}</strong>
+          <p>登録ユーザー</p>
+          <strong>{{ statValue(stats.registeredUsers) }}</strong>
         </div>
         <div class="meta-item">
-          <p>更新</p>
-          <strong>{{ constitutionMeta.lastUpdated }}</strong>
+          <p>主催者</p>
+          <strong>{{ statValue(stats.organizers) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>コミュニティ</p>
+          <strong>{{ statValue(stats.communities) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>サブスクリプション</p>
+          <strong>{{ statValue(stats.subscriptions) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>イベント数</p>
+          <strong>{{ statValue(stats.events) }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>総取引額</p>
+          <strong>{{ statValue(stats.gmv, 'yen') }}</strong>
+        </div>
+        <div class="meta-item">
+          <p>総返金額</p>
+          <strong>{{ statValue(stats.refunds, 'yen') }}</strong>
         </div>
       </div>
+      <p v-if="statsError" class="meta-error">{{ statsError }}</p>
     </header>
 
     <section v-for="section in sections" :key="section.id" class="card section-card">
@@ -41,83 +62,45 @@
         </button>
       </div>
     </section>
-
-    <section class="card section-card">
-      <header class="section-head">
-        <div>
-          <p class="section-eyebrow">ルール</p>
-          <h2>AI 宪法</h2>
-        </div>
-      </header>
-      <div class="entry-list">
-        <button class="entry" type="button" @click="openConstitutionSheet">
-          <div>
-            <p class="entry-title">AI 宪法全文</p>
-            <p class="entry-desc">{{ constitutionSummary }}</p>
-          </div>
-          <span class="i-lucide-chevron-right"></span>
-        </button>
-      </div>
-    </section>
-
-    <div v-if="showConstitutionSheet" class="sheet" @click.self="closeConstitutionSheet">
-      <div class="sheet-body">
-        <header class="sheet-head">
-          <div>
-            <p class="section-eyebrow">SOCIALMORE AI 宪法</p>
-            <h2>全文</h2>
-          </div>
-          <button type="button" class="icon-button" @click="closeConstitutionSheet">
-            <span class="i-lucide-x"></span>
-          </button>
-        </header>
-        <pre class="sheet-content">{{ constitutionText }}</pre>
-      </div>
-    </div>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { SOCIALMORE_AI_CONSTITUTION_V1 } from '../../ai/constitution';
+import { fetchAdminStats } from '../../api/client';
 
 const router = useRouter();
-const showConstitutionSheet = ref(false);
+const statsError = ref('');
 
-const constitutionMeta = {
-  version: '1.0',
-  lastUpdated: new Date().toLocaleString(),
-};
-
-const constitutionText = SOCIALMORE_AI_CONSTITUTION_V1.trim();
-const constitutionSummary = computed(() => {
-  const lines = constitutionText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^SOCIALMORE/.test(line) && !/^Version/.test(line) && !/^Author/.test(line));
-  return lines.slice(0, 2).join(' · ');
+const stats = reactive({
+  registeredUsers: 0,
+  organizers: 0,
+  communities: 0,
+  subscriptions: 0,
+  events: 0,
+  gmv: 0,
+  refunds: 0,
 });
 
 const sections = [
   {
     id: 'review',
-    eyebrow: '审核',
-    title: '内容与事件',
+    eyebrow: '審査',
+    title: 'コンテンツとイベント',
     items: [
-      { id: 'event-reviews', title: '事件審査', desc: 'pending / rejected 审核', route: { name: 'admin-event-reviews' } },
-      { id: 'events', title: '事件列表', desc: '状态筛选 · 关闭/取消', route: { name: 'admin-events' } },
+      { id: 'event-reviews', title: 'イベント審査', desc: 'pending / rejected の審査', route: { name: 'admin-event-reviews' } },
+      { id: 'events', title: 'イベント一覧', desc: 'ステータス絞り込み · 終了/キャンセル', route: { name: 'admin-events' } },
     ],
   },
   {
     id: 'ops',
-    eyebrow: '运营',
-    title: '用户 · 主理人 · 社群 · 活动',
+    eyebrow: '運用',
+    title: 'ユーザー・主催者・コミュニティ・イベント',
     items: [
-      { id: 'users', title: '用户管理', desc: '封禁 / 启用 / 角色', route: { name: 'admin-users' } },
-      { id: 'communities', title: '社群管理', desc: '状态 / 定价 / 禁用', route: { name: 'admin-communities' } },
-      { id: 'events', title: '活动管理', desc: '生命周期控制', route: { name: 'admin-events' } },
+      { id: 'users', title: 'ユーザー管理', desc: '停止 / 有効化 / 役割', route: { name: 'admin-users' } },
+      { id: 'communities', title: 'コミュニティ管理', desc: 'ステータス / 価格 / 無効化', route: { name: 'admin-communities' } },
+      { id: 'events', title: 'イベント管理', desc: 'ライフサイクル管理', route: { name: 'admin-events' } },
     ],
   },
   {
@@ -125,16 +108,19 @@ const sections = [
     eyebrow: 'AI',
     title: 'AI 管理',
     items: [
-      { id: 'ai-console', title: 'AI 控制台', desc: '渲染 / 翻译 / 评测', route: { name: 'admin-ai-console' } },
-      { id: 'ai-prompts', title: 'Prompt 管理', desc: '查看 / 发布 Prompt', route: { name: 'admin-ai-prompts' } },
-      { id: 'ai-usage', title: 'AI 使用概览', desc: '调用数据与日志', route: { name: 'admin-ai-overview' } },
+      { id: 'ai-console', title: 'AI コンソール', desc: 'レンダリング / 翻訳 / 評価', route: { name: 'admin-ai-console' } },
+      { id: 'ai-prompts', title: 'Prompt 管理', desc: '閲覧 / 公開', route: { name: 'admin-ai-prompts' } },
+      { id: 'ai-usage', title: 'AI 利用概要', desc: '利用データとログ', route: { name: 'admin-ai-overview' } },
     ],
   },
   {
     id: 'finance',
-    eyebrow: '财务',
-    title: '支付与收入',
-    items: [{ id: 'payments', title: '決済モニター', desc: '平台费率 / 状态 / 退款', route: { name: 'admin-payments' } }],
+    eyebrow: '財務',
+    title: '決済と収益',
+    items: [
+      { id: 'payments', title: '決済モニター', desc: 'プラットフォーム手数料 / ステータス / 返金', route: { name: 'admin-payments' } },
+      { id: 'settlements', title: '結算モニター', desc: 'Settlement Run / バッチ / 失敗理由 / retry', route: { name: 'admin-settlements' } },
+    ],
   },
 ];
 
@@ -144,8 +130,29 @@ const navigate = (item: (typeof sections)[number]['items'][number]) => {
   }
 };
 
-const openConstitutionSheet = () => (showConstitutionSheet.value = true);
-const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
+const formatNumber = (val: number) => new Intl.NumberFormat('ja-JP').format(val || 0);
+const statValue = (val: number, currency?: 'yen') => {
+  if (statsError.value) return '—';
+  return currency === 'yen' ? `¥${formatNumber(val)}` : formatNumber(val);
+};
+
+const loadStats = async () => {
+  statsError.value = '';
+  try {
+    const res = await fetchAdminStats();
+    stats.registeredUsers = res.registeredUsers ?? 0;
+    stats.organizers = res.organizers ?? 0;
+    stats.communities = res.communities ?? 0;
+    stats.subscriptions = res.subscriptions ?? 0;
+    stats.events = res.events ?? 0;
+    stats.gmv = res.gmv ?? 0;
+    stats.refunds = res.refunds ?? 0;
+  } catch {
+    statsError.value = '統計を取得できませんでした';
+  }
+};
+
+onMounted(loadStats);
 </script>
 
 <style scoped>
@@ -185,7 +192,7 @@ const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
 }
 .meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 .meta-item {
@@ -258,31 +265,15 @@ const closeConstitutionSheet = () => (showConstitutionSheet.value = false);
 }
 .sheet-body {
   background: #fff;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 16px;
-  width: min(520px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.sheet-content {
-  margin: 0;
-  font-size: 13px;
-  color: #0f172a;
-  max-height: 60vh;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-.sheet-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  width: min(640px, 100%);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
 }
 .icon-button {
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  border-radius: 10px;
-  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  padding: 6px;
+  cursor: pointer;
 }
 </style>

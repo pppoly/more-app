@@ -1,0 +1,23 @@
+# env
+.env
+.env.*
+backend/.env*
+frontend/.env*
+
+# build artifacts
+frontend/dist/
+frontend/dist-liff/
+backend/dist/
+
+# pm2 / runtime
+ecosystem.config.js
+pm2.log
+logs/
+
+# prisma junk
+_migration_trash/
+
+# OS / editor
+.DS_Store
+
+frontend/node_modules/

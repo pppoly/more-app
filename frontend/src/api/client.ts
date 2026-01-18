@@ -8,6 +8,8 @@ import type {
   AiCommunityUsage,
   CommunityAnalytics,
   CommunityPortal,
+  ClassSummary,
+  ClassDetail,
   ConsoleEventAssistantLog,
   EventAssistantDashboard,
   ConsoleCommunityDetail,
@@ -20,6 +22,7 @@ import type {
   EventAssistantProfileDefaults,
   EventDetail,
   EventGalleryItem,
+  FavoriteEventItem,
   EventRegistrationSummary,
   EventRegistrationsSummary,
   EventSummary,
@@ -29,11 +32,17 @@ import type {
   MockPaymentResponse,
   MyEventItem,
   OrganizerApplicationStatus,
+  OrganizerPayoutPolicyStatus,
   PricingPlan,
   PromptDefinition,
   ConsolePaymentList,
   ConsoleCommunityBalance,
+  CommunityStripeStatusResponse,
+  AdminStatsSummary,
   AdminEventReviewItem,
+  AdminSettlementBatchDetailResponse,
+  AdminSettlementBatchListResponse,
+  AdminSettlementConfig,
   ConsolePaymentItem,
   SupportedLanguagesResponse,
   RenderPromptRequest,
@@ -44,8 +53,19 @@ import type {
   UserProfile,
   ResourceGroup,
   CommunityTagCategory,
+  AnalyticsEventResponse,
 } from '../types/api';
 import type { StripeOnboardResponse } from '../types/console';
+export interface AnalyticsEventInput {
+  eventName: string;
+  timestamp?: string | Date;
+  sessionId: string;
+  userId?: string | null;
+  path?: string | null;
+  isLiff?: boolean;
+  userAgent?: string | null;
+  payload?: Record<string, any> | null;
+}
 
 export interface CommunityPortalConfig {
   theme?: string;
@@ -80,6 +100,16 @@ function normalizeError(error: any) {
   reportError('http:request_failed', { url, status, message });
   if (status === 401 && unauthorizedHandler) {
     unauthorizedHandler({ status, url });
+  }
+  if (status === 403) {
+    try {
+      const { useAuthSheets } = require('../composables/useAuthSheets');
+      const sheets = useAuthSheets();
+      const reason = error?.response?.data?.error || 'FORBIDDEN';
+      sheets.showForbiddenSheet({ reason, returnTo: undefined });
+    } catch {
+      // ignore sheet errors in non-UI contexts
+    }
   }
   const wrapped = new Error(message);
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -165,12 +195,27 @@ export async function fetchEventById(eventId: string): Promise<EventDetail> {
   return data;
 }
 
+export async function fetchEventFollowStatus(eventId: string) {
+  const { data } = await apiClient.get<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
+}
+
 export async function fetchEventGallery(eventId: string): Promise<EventGalleryItem[]> {
   const { data } = await apiClient.get<EventGalleryItem[]>(`/events/${eventId}/gallery`);
   return data.map((item) => ({
     ...item,
     imageUrl: resolveAssetUrl(item.imageUrl),
   }));
+}
+
+export async function followEvent(eventId: string) {
+  const { data } = await apiClient.post<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
+}
+
+export async function unfollowEvent(eventId: string) {
+  const { data } = await apiClient.delete<{ following: boolean }>(`/events/${eventId}/follow`);
+  return data;
 }
 
 export async function fetchCommunityBySlug(slug: string): Promise<CommunityPortal> {
@@ -183,13 +228,31 @@ export async function fetchCommunityFollowStatus(communityId: string) {
   return data;
 }
 
+export async function fetchCommunityClasses(communityId: string): Promise<ClassSummary[]> {
+  const { data } = await apiClient.get<ClassSummary[]>(`/communities/${communityId}/classes`);
+  return data;
+}
+
+export async function fetchClassDetail(classId: string): Promise<ClassDetail> {
+  const { data } = await apiClient.get<ClassDetail>(`/classes/${classId}`);
+  return data;
+}
+
+export async function createClassRegistration(classId: string, lessonId: string) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string; paymentStatus: string; paymentRequired: boolean; amount: number }>(
+    `/classes/${classId}/registrations`,
+    { lessonId },
+  );
+  return data;
+}
+
 export async function followCommunity(communityId: string) {
-  const { data } = await apiClient.post<{ following: boolean }>(`/communities/${communityId}/follow`);
+  const { data } = await apiClient.post<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
   return data;
 }
 
 export async function unfollowCommunity(communityId: string) {
-  const { data } = await apiClient.delete<{ following: boolean }>(`/communities/${communityId}/follow`);
+  const { data } = await apiClient.delete<{ following: boolean; locked?: boolean }>(`/communities/${communityId}/follow`);
   return data;
 }
 
@@ -202,6 +265,11 @@ export async function fetchCommunityPortalConfig(communityId: string) {
 
 export async function fetchCommunityTags(): Promise<CommunityTagCategory[]> {
   const { data } = await apiClient.get<CommunityTagCategory[]>(`/console/community-tags`);
+  return data;
+}
+
+export async function fetchMyFavoriteEvents(): Promise<FavoriteEventItem[]> {
+  const { data } = await apiClient.get<FavoriteEventItem[]>(`/me/favorites`);
   return data;
 }
 
@@ -234,6 +302,11 @@ export async function startCommunityStripeOnboarding(communityId: string): Promi
   return data;
 }
 
+export async function createCommunityStripeLoginLink(communityId: string): Promise<StripeOnboardResponse> {
+  const { data } = await apiClient.post<StripeOnboardResponse>(`/console/communities/${communityId}/stripe/login`, {});
+  return data;
+}
+
 export async function devLogin(name: string, language?: string): Promise<DevLoginResponse> {
   const payload: { name: string; language?: string; secret?: string } = { name };
   if (language) {
@@ -252,6 +325,33 @@ export async function lineLiffLogin(payload: {
   pictureUrl?: string | null;
 }): Promise<DevLoginResponse> {
   const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff-login', payload);
+  return data;
+}
+
+export async function lineLiffTokenLogin(payload: {
+  idToken?: string;
+  accessToken?: string;
+  displayName?: string | null;
+  pictureUrl?: string | null;
+}): Promise<DevLoginResponse> {
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff', payload);
+  return data;
+}
+
+export async function lineLiffProfileLogin(payload: {
+  lineUserId: string;
+  displayName?: string | null;
+  pictureUrl?: string | null;
+}): Promise<DevLoginResponse> {
+  const { data } = await apiClient.post<DevLoginResponse>('/auth/line/liff-profile', payload, {
+    headers: { 'X-LIFF-ENTRY': '1' },
+  });
+  return data;
+}
+
+export async function sendAnalyticsEvents(events: AnalyticsEventInput[]) {
+  if (!events.length) return { success: true, stored: 0 };
+  const { data } = await apiClient.post<AnalyticsEventResponse>('/analytics/events', { events });
   return data;
 }
 
@@ -284,6 +384,23 @@ export async function checkinRegistration(
 
 export async function fetchMyEvents(): Promise<MyEventItem[]> {
   const { data } = await apiClient.get<MyEventItem[]>('/me/events');
+  return data;
+}
+
+export interface MyCommunityItem {
+  id: string;
+  name: string;
+  slug: string;
+  role?: string | null;
+  lastActiveAt?: string | null;
+  avatarUrl?: string | null;
+  lastEventAt?: string | null;
+  coverImage?: string | null;
+  coverImageUrl?: string | null;
+}
+
+export async function fetchMyCommunities(): Promise<MyCommunityItem[]> {
+  const { data } = await apiClient.get<MyCommunityItem[]>('/me/communities');
   return data;
 }
 
@@ -353,6 +470,13 @@ export async function fetchCommunityBalance(
   return data;
 }
 
+export async function refreshCommunityStripeStatus(communityId: string): Promise<CommunityStripeStatusResponse> {
+  const { data } = await apiClient.post<CommunityStripeStatusResponse>(
+    `/console/communities/${communityId}/stripe/sync`,
+  );
+  return data;
+}
+
 export async function refundPayment(
   paymentId: string,
   payload?: { amount?: number; reason?: string },
@@ -360,6 +484,17 @@ export async function refundPayment(
   const { data } = await apiClient.post<{ refundId: string; status: string }>(
     `/console/payments/${paymentId}/refund`,
     payload ?? {},
+  );
+  return data;
+}
+
+export async function decideRefundRequest(
+  requestId: string,
+  payload: { decision: 'approve_full' | 'approve_partial' | 'reject'; amount?: number; reason?: string },
+): Promise<{ requestId: string; status: string; approvedAmount?: number; refundId?: string }> {
+  const { data } = await apiClient.post<{ requestId: string; status: string; approvedAmount?: number; refundId?: string }>(
+    `/console/refund-requests/${requestId}/decision`,
+    payload,
   );
   return data;
 }
@@ -381,7 +516,7 @@ export async function subscribeCommunityPlan(
 
 export async function extractEventDraft(
   communityId: string,
-  payload: { draft: string; language?: string },
+  payload: { draft: string; language?: string; urls?: string[]; imageUrls?: string[] },
 ): Promise<any> {
   const { data } = await apiClient.post<any>(`/console/communities/${communityId}/event-draft/extract`, payload, {
     timeout: 45000,
@@ -396,6 +531,76 @@ export async function fetchManagedCommunities(): Promise<ManagedCommunity[]> {
 
 export async function fetchCommunityAnalytics(communityId: string): Promise<CommunityAnalytics> {
   const { data } = await apiClient.get<CommunityAnalytics>(`/console/communities/${communityId}/analytics`);
+  return data;
+}
+
+export async function fetchConsoleClasses(): Promise<ClassSummary[]> {
+  const { data } = await apiClient.get<ClassSummary[]>('/console/classes');
+  return data;
+}
+
+export async function createConsoleClass(payload: {
+  title: string;
+  description?: string;
+  locationName?: string;
+  priceYenPerLesson: number;
+  defaultCapacity?: number | null;
+}): Promise<ClassSummary> {
+  const { data } = await apiClient.post<ClassSummary>('/console/classes', payload);
+  return data;
+}
+
+export async function updateConsoleClass(classId: string, payload: Partial<{
+  title: string;
+  description?: string | null;
+  locationName?: string | null;
+  priceYenPerLesson?: number;
+  defaultCapacity?: number | null;
+  status?: string;
+}>): Promise<ClassSummary> {
+  const { data } = await apiClient.patch<ClassSummary>(`/console/classes/${classId}`, payload);
+  return data;
+}
+
+export async function uploadClassCover(classId: string, file: File): Promise<{ imageUrl: string }> {
+  if (!classId) {
+    throw new Error('classId is required to upload cover');
+  }
+  const data = await uploadFiles<{ imageUrl: string }>(`/console/classes/${classId}/cover`, [file], {
+    fieldName: 'file',
+    allowedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytes: 5 * 1024 * 1024,
+  });
+  return data;
+}
+
+export async function deleteConsoleClass(classId: string) {
+  const { data } = await apiClient.delete(`/console/classes/${classId}`);
+  return data;
+}
+
+export async function batchCreateLessons(classId: string, lessons: Array<{ startAt: string; endAt?: string; capacity?: number | null; }>) {
+  const { data } = await apiClient.post(`/console/classes/${classId}/lessons/batch`, { lessons });
+  return data;
+}
+
+export async function cancelLesson(lessonId: string) {
+  const { data } = await apiClient.patch(`/console/lessons/${lessonId}/cancel`, {});
+  return data;
+}
+
+export async function deleteLesson(lessonId: string) {
+  const { data } = await apiClient.delete(`/console/lessons/${lessonId}`);
+  return data;
+}
+
+export async function fetchLessonRegistrations(lessonId: string) {
+  const { data } = await apiClient.get(`/console/lessons/${lessonId}/registrations`);
+  return data;
+}
+
+export async function fetchLessonPaymentSummary(lessonId: string) {
+  const { data } = await apiClient.get(`/console/lessons/${lessonId}/payments/summary`);
   return data;
 }
 
@@ -433,6 +638,16 @@ export async function fetchEventAssistantLogs(
   return data;
 }
 
+export async function fetchEventAssistantLog(
+  communityId: string,
+  logId: string,
+): Promise<ConsoleEventAssistantLog> {
+  const { data } = await apiClient.get<ConsoleEventAssistantLog>(
+    `/console/communities/${communityId}/event-assistant/logs/${logId}`,
+  );
+  return data;
+}
+
 export async function saveEventAssistantLog(
   communityId: string,
   payload: {
@@ -441,6 +656,12 @@ export async function saveEventAssistantLog(
     qaState?: Record<string, unknown>;
     messages: unknown;
     aiResult?: unknown;
+    status?: string;
+    promptVersion?: string | null;
+    turnCount?: number | null;
+    language?: string | null;
+    meta?: Record<string, unknown> | null;
+    logId?: string | null;
   },
 ): Promise<ConsoleEventAssistantLog> {
   const { data } = await apiClient.post<ConsoleEventAssistantLog>(
@@ -504,7 +725,11 @@ export async function verifyEmailLoginCode(email: string, code: string): Promise
   return data;
 }
 
-export async function updateProfile(payload: { name?: string; preferredLocale?: string }): Promise<UserProfile> {
+export async function updateProfile(payload: {
+  name?: string;
+  preferredLocale?: string;
+  email?: string;
+}): Promise<UserProfile> {
   const { data } = await apiClient.post<UserProfile>('/me/profile', payload);
   return data;
 }
@@ -563,6 +788,18 @@ export async function rejectEventRegistration(eventId: string, registrationId: s
   return data;
 }
 
+export async function cancelEventRegistration(
+  eventId: string,
+  registrationId: string,
+  payload: { reason?: string } = {},
+) {
+  const { data } = await apiClient.post<{ registrationId: string; status: string }>(
+    `/console/events/${eventId}/registrations/${registrationId}/cancel`,
+    payload,
+  );
+  return data;
+}
+
 export async function cancelConsoleEvent(eventId: string, payload: { reason?: string; notify?: boolean } = {}) {
   const { data } = await apiClient.post<{ eventId: string; status: string; refunds?: any }>(
     `/console/events/${eventId}/cancel`,
@@ -576,8 +813,18 @@ export async function fetchMyOrganizerApplication(): Promise<OrganizerApplicatio
   return data;
 }
 
-export async function submitOrganizerApplication(payload: { reason: string; experience?: string }) {
+export async function submitOrganizerApplication(payload: { reason: string; contact: string; experience?: string }) {
   const { data } = await apiClient.post('/organizers/apply', payload);
+  return data;
+}
+
+export async function fetchOrganizerPayoutPolicyStatus(): Promise<OrganizerPayoutPolicyStatus> {
+  const { data } = await apiClient.get<OrganizerPayoutPolicyStatus>('/organizer/payout-policy');
+  return data;
+}
+
+export async function acceptOrganizerPayoutPolicy(): Promise<OrganizerPayoutPolicyStatus> {
+  const { data } = await apiClient.post<OrganizerPayoutPolicyStatus>('/organizer/payout-policy/accept');
   return data;
 }
 
@@ -598,6 +845,11 @@ export async function fetchCommunityAiUsage(communityId: string): Promise<AiComm
 
 export async function fetchAdminEventReviews(): Promise<AdminEventReviewItem[]> {
   const { data } = await apiClient.get<AdminEventReviewItem[]>('/admin/events/reviews');
+  return data;
+}
+
+export async function fetchAdminStats(): Promise<AdminStatsSummary> {
+  const { data } = await apiClient.get<AdminStatsSummary>('/admin/stats');
   return data;
 }
 
@@ -631,9 +883,10 @@ export async function adminCancelEvent(eventId: string, reason?: string): Promis
 
 export async function fetchAdminEvents(params?: {
   status?: string;
+  q?: string;
   page?: number;
   pageSize?: number;
-}): Promise<{ items: any[] }> {
+}): Promise<{ items: any[]; total?: number; page?: number; pageSize?: number }> {
   const { data } = await apiClient.get('/admin/events', { params });
   return data;
 }
@@ -664,6 +917,49 @@ export async function adminDiagnosePayment(paymentId: string): Promise<{ payment
     `/admin/payments/ops/${paymentId}/diagnose`,
   );
   return data;
+}
+
+export async function fetchAdminSettlementConfig(): Promise<AdminSettlementConfig> {
+  const { data } = await apiClient.get<AdminSettlementConfig>('/admin/settlements/config');
+  return data;
+}
+
+export async function fetchAdminSettlementBatches(params?: {
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<AdminSettlementBatchListResponse> {
+  const { data } = await apiClient.get<AdminSettlementBatchListResponse>('/admin/settlements/batches', { params });
+  return data;
+}
+
+export async function fetchAdminSettlementBatch(batchId: string): Promise<AdminSettlementBatchDetailResponse> {
+  const { data } = await apiClient.get<AdminSettlementBatchDetailResponse>(`/admin/settlements/batches/${batchId}`);
+  return data;
+}
+
+export async function adminRunSettlement(payload?: {
+  periodFrom?: string;
+  periodTo?: string;
+}): Promise<{ batchId: string; status: string }> {
+  const { data } = await apiClient.post<{ batchId: string; status: string }>(`/admin/settlements/run`, payload ?? {});
+  return data;
+}
+
+export async function adminRetrySettlementBatch(batchId: string): Promise<{ batchId: string; status: string }> {
+  const { data } = await apiClient.post<{ batchId: string; status: string }>(`/admin/settlements/batches/${batchId}/retry`);
+  return data;
+}
+
+export async function fetchAdminSettlementBatchCsv(batchId: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await apiClient.get(`/admin/settlements/batches/${batchId}/export`, {
+    params: { format: 'csv' },
+    responseType: 'blob',
+  });
+  const disposition = res.headers?.['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename="([^"]+)"/);
+  const filename = match?.[1] || `settlement.${batchId}.csv`;
+  return { blob: res.data as Blob, filename };
 }
 
 export async function fetchAiPrompts() {
@@ -700,8 +996,13 @@ export async function evalPrompt(payload: EvalPromptRequest) {
   const { data } = await apiClient.post('/ai/eval', payload);
   return data;
 }
-export async function adminListUsers(params?: { status?: string }): Promise<
-  Array<{
+export async function adminListUsers(params?: {
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  items: Array<{
     id: string;
     name?: string | null;
     email?: string | null;
@@ -709,9 +1010,15 @@ export async function adminListUsers(params?: { status?: string }): Promise<
     isOrganizer?: boolean;
     status?: string;
     createdAt: string;
-  }>
-> {
+  }>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+}> {
   const { data } = await apiClient.get('/admin/users', { params });
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: params?.page, pageSize: params?.pageSize };
+  }
   return data;
 }
 
@@ -720,8 +1027,23 @@ export async function adminUpdateUserStatus(userId: string, status: string): Pro
   return data;
 }
 
-export async function adminListCommunities(params?: { status?: string }): Promise<
-  Array<{
+export async function adminUpdateUserOrganizer(
+  userId: string,
+  isOrganizer: boolean,
+): Promise<{ id: string; isOrganizer: boolean }> {
+  const { data } = await apiClient.patch<{ id: string; isOrganizer: boolean }>(`/admin/users/${userId}/organizer`, {
+    isOrganizer,
+  });
+  return data;
+}
+
+export async function adminListCommunities(params?: {
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  items: Array<{
     id: string;
     name: string;
     slug: string;
@@ -730,9 +1052,15 @@ export async function adminListCommunities(params?: { status?: string }): Promis
     stripeAccountId?: string | null;
     stripeAccountOnboarded?: boolean | null;
     createdAt: string;
-  }>
-> {
+  }>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+}> {
   const { data } = await apiClient.get('/admin/communities', { params });
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: params?.page, pageSize: params?.pageSize };
+  }
   return data;
 }
 

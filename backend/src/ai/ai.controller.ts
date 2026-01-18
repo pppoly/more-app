@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import {
   AiAssistantReply,
@@ -57,37 +58,47 @@ export class AiController {
   @Post('events/assistant')
   async generateAssistantReply(
     @Body() body: Partial<GenerateAssistantReplyDto>,
+    @Req() req: any,
   ): Promise<AiAssistantReply> {
-    const requiredFields: Array<keyof GenerateEventContentDto> = [
-      'baseLanguage',
-      'topic',
-      'audience',
-      'style',
-      'details',
-    ];
+    try {
+      this.assertRateLimit(req);
+      const requiredFields: Array<keyof GenerateEventContentDto> = [
+        'baseLanguage',
+        'topic',
+        'audience',
+        'style',
+        'details',
+      ];
 
-    for (const field of requiredFields) {
-      if (!body || typeof body[field] !== 'string' || !body[field]) {
-        throw new HttpException(`${String(field)} is required`, HttpStatus.BAD_REQUEST);
+      for (const field of requiredFields) {
+        if (!body || typeof body[field] !== 'string' || !body[field]) {
+          throw new HttpException(`${String(field)} is required`, HttpStatus.BAD_REQUEST);
+        }
       }
+
+      const conversation = Array.isArray(body?.conversation) ? body.conversation : [];
+      const normalizedConversation: AssistantConversationMessage[] = conversation
+        .filter(
+          (item): item is AssistantConversationMessage =>
+            Boolean(item) &&
+            typeof item.role === 'string' &&
+            (item.role === 'user' || item.role === 'assistant') &&
+            typeof item.content === 'string' &&
+            item.content.length > 0,
+        )
+        .slice(-12);
+
+      return await this.aiService.generateAssistantReply({
+        ...(body as GenerateEventContentDto),
+        conversation: normalizedConversation,
+        action:
+          body?.action === 'confirm_draft' || body?.action === 'continue_edit' ? body.action : undefined,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[ai/events/assistant] error', err);
+      throw err;
     }
-
-    const conversation = Array.isArray(body?.conversation) ? body.conversation : [];
-    const normalizedConversation: AssistantConversationMessage[] = conversation
-      .filter(
-        (item): item is AssistantConversationMessage =>
-          Boolean(item) &&
-          typeof item.role === 'string' &&
-          (item.role === 'user' || item.role === 'assistant') &&
-          typeof item.content === 'string' &&
-          item.content.length > 0,
-      )
-      .slice(-12);
-
-    return this.aiService.generateAssistantReply({
-      ...(body as GenerateEventContentDto),
-      conversation: normalizedConversation,
-    });
   }
 
   @Get('events/profile-defaults')

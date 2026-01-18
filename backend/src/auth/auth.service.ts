@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { JwtService } from '@nestjs/jwt';
@@ -83,13 +84,19 @@ export class AuthService {
       select: {
         id: true,
         name: true,
-      language: true,
+        email: true,
+        phone: true,
+        language: true,
         preferredLocale: true,
-      prefecture: true,
-      avatarUrl: true,
-      isOrganizer: true,
-      isAdmin: true,
-    },
+        prefecture: true,
+        avatarUrl: true,
+        authProviders: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        lastLoginAt: true,
+        isOrganizer: true,
+        isAdmin: true,
+      },
     });
   }
 
@@ -147,6 +154,15 @@ export class AuthService {
 
   async exchangeLineToken(code: string) {
     const { channelId, channelSecret, redirectUri } = this.lineConfig;
+    if (!channelId) {
+      throw new BadRequestException('LINE_CHANNEL_ID is missing');
+    }
+    if (!channelSecret) {
+      throw new BadRequestException('LINE_CHANNEL_SECRET is missing');
+    }
+    if (!redirectUri) {
+      throw new BadRequestException('LINE_REDIRECT_URI is missing');
+    }
     const url = 'https://api.line.me/oauth2/v2.1/token';
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -247,21 +263,32 @@ export class AuthService {
   }
 
   async verifyLineIdToken(idToken: string) {
-    if (!this.lineConfig.channelId) {
+    if (!this.lineConfig.channelId || !this.lineConfig.channelSecret) {
       throw new BadRequestException('LINE channel is not configured');
     }
-    const { channelId } = this.lineConfig;
+    const { channelId, channelSecret } = this.lineConfig;
     const url = 'https://api.line.me/oauth2/v2.1/verify';
     const params = new URLSearchParams({
       id_token: idToken,
       client_id: channelId,
+      client_secret: channelSecret,
     });
-    const { data } = await firstValueFrom(
-      this.httpService.post(url, params.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }),
-    );
-    return data as { sub?: string; name?: string; picture?: string };
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(url, params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }),
+      );
+      return data as { sub?: string; name?: string; picture?: string };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const body = error?.response?.data;
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        // eslint-disable-next-line no-console
+        console.error('[LINE][verifyIdToken] failed', { status, body });
+      }
+      throw new BadRequestException('Failed to verify LIFF token');
+    }
   }
 
   async lineLiffLogin(
@@ -277,9 +304,68 @@ export class AuthService {
       verified?.name?.trim() || profileHint?.displayName?.trim() || 'LINEユーザー';
     const pictureUrl = verified?.picture || profileHint?.pictureUrl || null;
 
+    const user = await this.upsertLineUser(lineUserId, displayName, pictureUrl);
+
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken, user };
+  }
+
+  async lineLiffTokenLogin(
+    idToken?: string,
+    accessToken?: string,
+    profileHint?: { displayName?: string | null; pictureUrl?: string | null },
+  ) {
+    let lineUserId: string | null | undefined;
+    let displayName = profileHint?.displayName?.trim();
+    let pictureUrl = profileHint?.pictureUrl || null;
+
+    if (idToken) {
+      const verified = await this.verifyLineIdToken(idToken).catch(() => null);
+      if (verified?.sub) {
+        lineUserId = verified.sub;
+        displayName = verified.name?.trim() || displayName;
+        pictureUrl = verified.picture || pictureUrl;
+      }
+    }
+
+    if (!lineUserId && accessToken) {
+      const profile = await this.fetchLineProfile(accessToken).catch(() => null);
+      if (profile?.userId) {
+        lineUserId = profile.userId;
+        displayName = profile.displayName?.trim() || displayName;
+        pictureUrl = profile.pictureUrl || pictureUrl;
+      }
+    }
+
+    if (!lineUserId) {
+      throw new BadRequestException('LINE認証に失敗しました');
+    }
+
+    const name = displayName || 'LINEユーザー';
+    const user = await this.upsertLineUser(lineUserId, name, pictureUrl);
+
+    const signed = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken: signed, user };
+  }
+
+  async lineLiffProfile(lineUserId: string, displayName?: string | null, pictureUrl?: string | null) {
+    const name = displayName?.trim() || 'LINEユーザー';
+    const user = await this.upsertLineUser(lineUserId, name, pictureUrl, { preserveExistingProfile: true });
+    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
+    return { accessToken, user };
+  }
+
+  private async upsertLineUser(
+    lineUserId: string,
+    displayName: string,
+    pictureUrl?: string | null,
+    options?: { preserveExistingProfile?: boolean },
+  ) {
     let user = await this.prisma.user.findFirst({
       where: { lineUserId },
     });
+
+    const preserve = options?.preserveExistingProfile ?? false;
 
     if (!user) {
       user = await this.prisma.user.create({
@@ -292,22 +378,27 @@ export class AuthService {
       });
     }
 
-    const storedAvatar = await this.saveLineAvatar(user.id, pictureUrl);
-    const updateData: Record<string, any> = {
-      name: displayName,
-      language: 'ja',
-      preferredLocale: 'ja',
-    };
-    if (storedAvatar) {
+    const shouldStoreAvatar = !preserve || !user.avatarUrl;
+    const storedAvatar = shouldStoreAvatar ? await this.saveLineAvatar(user.id, pictureUrl) : null;
+    const updateData: Record<string, any> = {};
+
+    if (!preserve || !user.name) {
+      updateData.name = displayName;
+    }
+    updateData.language = 'ja';
+    updateData.preferredLocale = 'ja';
+    if (storedAvatar && (!preserve || !user.avatarUrl)) {
       updateData.avatarUrl = storedAvatar;
     }
-    user = await this.prisma.user.update({
-      where: { id: user.id },
-      data: updateData,
-    });
 
-    const accessToken = await this.jwtService.signAsync({ sub: user.id, userId: user.id });
-    return { accessToken, user };
+    if (Object.keys(updateData).length > 0) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
+    }
+
+    return user;
   }
 
   private normalizeEmail(email: string | undefined | null) {
