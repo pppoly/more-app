@@ -2,6 +2,7 @@ import axios from 'axios';
 import { API_BASE_URL, DEV_LOGIN_SECRET } from '../config';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { reportError } from '../utils/reporting';
+import { setMaintenanceMode } from '../composables/useAppState';
 import type {
   AiUsageDetailResponse,
   AiUsageSummaryResponse,
@@ -93,29 +94,59 @@ function buildErrorMessage(error: any) {
   return message;
 }
 
+export function isNetworkError(error: unknown): boolean {
+  return axios.isAxiosError(error) && !error.response;
+}
+
+export function isServerError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  return typeof status === 'number' && status >= 500;
+}
+
+export function isBusinessError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  return typeof status === 'number' && status < 500;
+}
+
 function normalizeError(error: any) {
-  const status = error?.response?.status;
-  const url = error?.config?.url;
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const url = error.config?.url;
+    const message = buildErrorMessage(error);
+    reportError('http:request_failed', { url, status, message });
+    if (isNetworkError(error) || isServerError(error)) {
+      setMaintenanceMode(true, error);
+    }
+    if (status === 401 && unauthorizedHandler) {
+      unauthorizedHandler({ status, url });
+    }
+    if (status === 403) {
+      try {
+        const { useAuthSheets } = require('../composables/useAuthSheets');
+        const sheets = useAuthSheets();
+        const reason = error.response?.data?.error || 'FORBIDDEN';
+        sheets.showForbiddenSheet({ reason, returnTo: undefined });
+      } catch {
+        // ignore sheet errors in non-UI contexts
+      }
+    }
+    if (message && error.message !== message) {
+      error.message = message;
+    }
+    (error as any).status = status;
+    return error;
+  }
+  const status = (error as any)?.response?.status;
+  const url = (error as any)?.config?.url;
   const message = buildErrorMessage(error);
   reportError('http:request_failed', { url, status, message });
-  if (status === 401 && unauthorizedHandler) {
-    unauthorizedHandler({ status, url });
-  }
-  if (status === 403) {
-    try {
-      const { useAuthSheets } = require('../composables/useAuthSheets');
-      const sheets = useAuthSheets();
-      const reason = error?.response?.data?.error || 'FORBIDDEN';
-      sheets.showForbiddenSheet({ reason, returnTo: undefined });
-    } catch {
-      // ignore sheet errors in non-UI contexts
-    }
-  }
   const wrapped = new Error(message);
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   (wrapped as any).cause = error;
   (wrapped as any).status = status;
-  (wrapped as any).response = error?.response;
+  (wrapped as any).response = (error as any)?.response;
   return wrapped;
 }
 

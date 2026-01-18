@@ -32,7 +32,9 @@ export function useAppShellMode() {
       const fromEntrySource = params.get('entrySource');
       const from = params.get('from');
       const src = params.get('src');
-      const refLiff = document.referrer && document.referrer.includes('liff.line.me');
+      const refLiff =
+        document.referrer &&
+        (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'));
       isLiffEntry.value =
         hasLiffState ||
         hasLiffReferrer ||

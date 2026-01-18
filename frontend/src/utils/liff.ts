@@ -1,8 +1,7 @@
 import liff from '@line/liff';
 import { ref } from 'vue';
 import { trackEvent } from './analytics';
-
-const LIFF_ID = '2008600730-qxlPrj5Q';
+import { LIFF_ID, requireLiffId } from '../config';
 const LIFF_INIT_TIMEOUT_MS = 10_000;
 
 const isLiffReady = ref(false);
@@ -31,15 +30,33 @@ function finalize(ready: boolean, context?: string) {
   }
 }
 
-export function bootstrapLiff(): void {
+const resolveLiffId = (liffId?: string, require = false) => {
+  if (liffId && liffId.trim()) return liffId.trim();
+  if (LIFF_ID) return LIFF_ID;
+  if (!require) return '';
+  return requireLiffId();
+};
+
+export function bootstrapLiff(liffId?: string): void {
   if (initStarted || !hasWindow()) return;
   initStarted = true;
+
+  let resolvedId = '';
+  try {
+    resolvedId = resolveLiffId(liffId, true);
+  } catch (error) {
+    console.error('LIFF_ID is required to initialize LIFF.', error);
+  }
+  if (!resolvedId) {
+    finalize(false, 'missing-id');
+    return;
+  }
 
   const timeoutId = window.setTimeout(() => finalize(false, 'timeout'), LIFF_INIT_TIMEOUT_MS);
 
   // Fire-and-forget: do not await, do not block rendering.
   void liff
-    .init({ liffId: LIFF_ID })
+    .init({ liffId: resolvedId })
     .then(() => finalize(true))
     .catch((error) => {
       console.warn('LIFF init failed; continuing without LIFF.', error);
@@ -49,14 +66,15 @@ export function bootstrapLiff(): void {
 }
 
 export async function loadLiff(liffId?: string): Promise<typeof liff> {
-  if (liffId && liffId !== LIFF_ID) {
-    console.warn(`[liff] Ignoring provided LIFF ID ${liffId}; using configured ${LIFF_ID}.`);
+  const resolvedId = resolveLiffId(liffId, true);
+  if (!resolvedId) {
+    throw new Error('LIFF_ID is not configured');
   }
   if (!hasWindow()) {
     throw new Error('LIFF is only available in browser');
   }
   if (!initStarted) {
-    bootstrapLiff();
+    bootstrapLiff(resolvedId);
   }
   await readyPromise;
   try {
@@ -69,6 +87,15 @@ export async function loadLiff(liffId?: string): Promise<typeof liff> {
 
 export const liffInstance = liff;
 export { isLiffReady, isLiffClientCapable };
+
+export const buildLiffUrl = (toPath?: string, liffId?: string) => {
+  const resolvedId = resolveLiffId(liffId);
+  if (!resolvedId) return null;
+  const base = `https://miniapp.line.me/${resolvedId}`;
+  if (!toPath) return base;
+  const normalized = toPath.startsWith('/') ? toPath : `/${toPath}`;
+  return `${base}?to=${encodeURIComponent(normalized)}`;
+};
 
 export async function getLiffProfile(): Promise<{
   userId: string;

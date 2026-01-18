@@ -48,12 +48,12 @@ import App from './App.vue';
 import router from './router/liff';
 import './assets/main.css';
 import { i18n } from './i18n';
-import { APP_TARGET } from './config';
+import { isProductionLiff } from './config';
 import { bootstrapLiff, isLiffReady } from './utils/liff';
 import { trackEvent } from './utils/analytics';
 
 // Kick off LIFF init in the background; never await so first paint is not blocked.
-if (APP_TARGET === 'liff') {
+if (isProductionLiff()) {
   bootstrapLiff();
   trackEvent('liff_open');
 }

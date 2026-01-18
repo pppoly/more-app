@@ -25,6 +25,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { LIFF_ID } from '../../config';
 
 const props = defineProps<{ visible: boolean }>();
 
@@ -37,7 +38,7 @@ const data = ref({
   userAgent: '',
   hasWindowLiff: false,
   importedLiffModule: false,
-  liffIdUsed: '2008600730-qxlPrj5Q',
+  liffIdUsed: LIFF_ID || 'missing',
   initAttempted: false,
   initResult: 'pending' as InitResult,
   initError: '',
@@ -86,6 +87,13 @@ onMounted(async () => {
   }
 
   data.value.initAttempted = true;
+  if (!LIFF_ID) {
+    data.value.initResult = 'failed';
+    data.value.initError = 'LIFF_ID is not configured';
+    data.value.liffClientStatus = 'init-failed';
+    data.value.suggestion = 'set VITE_LIFF_ID for LIFF diagnostics';
+    return;
+  }
   try {
     await liffModule.init({ liffId: data.value.liffIdUsed });
     data.value.initResult = 'success';

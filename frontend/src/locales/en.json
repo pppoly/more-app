@@ -15,6 +15,11 @@
     "stripeLinkFailed": "Could not create the link. Please try again later or contact support.",
     "qrScanFailed": "Scan failed. Try again or upload a photo of the code."
   },
+  "maintenance": {
+    "title": "Maintenance in progress",
+    "description": "The service is temporarily unavailable. Please try again later.",
+    "retry": "Reload"
+  },
   "payments": {
     "title": "Payment history"
   },

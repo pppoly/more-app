@@ -16,6 +16,24 @@ export const LINE_CHANNEL_ID = import.meta.env.VITE_LINE_CHANNEL_ID || '';
 export const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
 export const DEV_LOGIN_SECRET = import.meta.env.VITE_DEV_LOGIN_SECRET || '';
 
+export const isProduction = () => {
+  const appEnv =
+    (import.meta.env.APP_ENV || import.meta.env.VITE_APP_ENV || import.meta.env.NODE_ENV || '').toLowerCase();
+  return import.meta.env.PROD || import.meta.env.MODE === 'production' || appEnv === 'production';
+};
+
+export const isProductionLiff = () => isProduction() && APP_TARGET === 'liff';
+
+export const requireLiffId = () => {
+  if (LIFF_ID) return LIFF_ID;
+  const message = 'VITE_LIFF_ID must be set for LIFF.';
+  if (import.meta.env.PROD) {
+    throw new Error(message);
+  }
+  console.warn(message);
+  return '';
+};
+
 const parseNumber = (value: string | undefined, fallback: number) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;

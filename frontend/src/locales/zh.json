@@ -15,6 +15,11 @@
     "stripeLinkFailed": "开通链接生成失败，请稍后重试或联系支持。",
     "qrScanFailed": "扫码失败，请重试或上传二维码照片。"
   },
+  "maintenance": {
+    "title": "系统维护中",
+    "description": "服务暂时不可用，请稍后再试。",
+    "retry": "重新载入"
+  },
   "payments": {
     "title": "支付记录"
   },

@@ -21,6 +21,10 @@
         <span class="liff-badge__label">API_BASE_URL</span>
         <span class="liff-badge__value">{{ apiBaseUrl }}</span>
       </div>
+      <div class="liff-badge__row">
+        <span class="liff-badge__label">LIFF_ID</span>
+        <span class="liff-badge__value">{{ liffId }}</span>
+      </div>
       <button type="button" class="liff-badge__copy" @click="copyDiagnostics">コピー</button>
     </div>
   </Teleport>
@@ -29,7 +33,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, LIFF_ID } from '../../config';
 import { isLineBrowser, isLiffClient } from '../../utils/device';
 import { isLiffReady } from '../../utils/liff';
 import { useAuth } from '../../composables/useAuth';
@@ -41,6 +45,7 @@ const lineBrowser = computed(() => isLineBrowser());
 const liffClient = computed(() => isLiffClient());
 const liffReady = computed(() => isLiffReady.value);
 const apiBaseUrl = API_BASE_URL;
+const liffId = LIFF_ID || 'missing';
 
 const debugParam = computed(() => {
   const val = route.query.debug;
@@ -60,6 +65,7 @@ async function copyDiagnostics() {
     `isLiffReady: ${liffReady.value}`,
     `route: ${route.fullPath}`,
     `API_BASE_URL: ${apiBaseUrl}`,
+    `LIFF_ID: ${liffId}`,
   ].join('\n');
   try {
     if (navigator.clipboard?.writeText) {

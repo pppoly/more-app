@@ -2,6 +2,9 @@ import { computed, reactive, ref } from 'vue';
 import {
   devLogin as apiDevLogin,
   fetchMe,
+  isBusinessError,
+  isNetworkError,
+  isServerError,
   lineLiffProfileLogin,
   onUnauthorized,
   setAccessToken as applyClientToken,
@@ -11,7 +14,7 @@ import {
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
-import { API_BASE_URL, APP_TARGET, LIFF_ID } from '../config';
+import { API_BASE_URL, APP_TARGET, isProductionLiff, requireLiffId } from '../config';
 import { isLiffReady, loadLiff } from '../utils/liff';
 import { reportError } from '../utils/reporting';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
@@ -52,6 +55,17 @@ const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
 const authSheets = useAuthSheets();
 const liffAuthHardStopped = ref(false);
+const backendUnavailable = ref(false);
+const fatalError = ref<Error | null>(null);
+
+const resolveLiffId = () => {
+  try {
+    return requireLiffId();
+  } catch (error) {
+    console.error('LIFF_ID is required for LIFF login.', error);
+    return '';
+  }
+};
 
 function sanitizeLiffState(raw: string | null): string {
   if (!raw) return '/events';
@@ -181,7 +195,9 @@ function redirectToLineOauth() {
 async function bootstrapLiffAuth(force = false) {
   if (APP_TARGET !== 'liff' || !hasWindow()) return;
   if (state.accessToken && !force) return;
-  if (!LIFF_ID) {
+  if (!isProductionLiff() && !force) return;
+  const resolvedLiffId = resolveLiffId();
+  if (!resolvedLiffId) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
     liffAuthHardStopped.value = true;
     needsLiffOpen.value = true;
@@ -204,7 +220,7 @@ async function bootstrapLiffAuth(force = false) {
       if (isCallback) {
         emitLiffDebug('callback_enter');
         markLiffLoginInflight();
-        const liff = await loadLiff(LIFF_ID);
+        const liff = await loadLiff(resolvedLiffId);
         // ready を待機（最大 8 秒）。タイムアウトは失敗扱いだが login は再実行しない
         try {
           emitLiffDebug('callback_wait_ready');
@@ -269,7 +285,7 @@ async function bootstrapLiffAuth(force = false) {
         return;
       }
 
-      const liff = await loadLiff(LIFF_ID);
+      const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
         return;
@@ -287,7 +303,13 @@ async function bootstrapLiffAuth(force = false) {
           return;
         }
         markLiffLoginInflight();
-        const cleanRedirect = `${window.location.origin}${window.location.pathname}`;
+        const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
+        const toPath = window.location.pathname.startsWith('/liff')
+          ? window.location.pathname.replace(/^\/liff/, '') || '/'
+          : window.location.pathname;
+        const toQuery = window.location.search || '';
+        const toValue = `${toPath}${toQuery}`;
+        const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
         logDevAuth('calling liff.login', { reason: 'NOT_LOGGED_IN', redirect: cleanRedirect });
         liff.login({ redirectUri: cleanRedirect });
         return;
@@ -335,11 +357,12 @@ async function bootstrapLiffAuth(force = false) {
 
 async function loginWithLiffProfile(isLiffEntry: boolean) {
   if (!isLiffEntry || state.accessToken) return;
-  if (!LIFF_ID) return;
+  const resolvedLiffId = resolveLiffId();
+  if (!resolvedLiffId) return;
   if (liffProfilePromise) return liffProfilePromise;
   liffProfilePromise = (async () => {
     try {
-      const liff = await loadLiff(LIFF_ID);
+      const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
         needsLiffOpen.value = true;
         return;
@@ -423,14 +446,27 @@ async function restoreSession() {
   setToken(stored);
   try {
     state.initializing = true;
+    backendUnavailable.value = false;
+    fatalError.value = null;
     state.user = await fetchMe();
     applyUserLocale(state.user);
   } catch (error) {
     console.error('Failed to restore session', error);
-    setToken(null);
-    state.user = null;
-    if (APP_TARGET === 'liff') {
-      await bootstrapLiffAuth(true);
+    if (isNetworkError(error)) {
+      backendUnavailable.value = true;
+      fatalError.value = error instanceof Error ? error : new Error('Network unavailable');
+      return;
+    }
+    if (isBusinessError(error)) {
+      setToken(null);
+      state.user = null;
+      if (APP_TARGET === 'liff') {
+        await bootstrapLiffAuth(true);
+      }
+      return;
+    }
+    if (isServerError(error)) {
+      return;
     }
   } finally {
     state.initializing = false;
@@ -486,6 +522,8 @@ export function useAuth() {
     loginWithLiff,
     loginWithLiffProfile,
     needsLiffOpen: computed(() => needsLiffOpen.value),
+    backendUnavailable: computed(() => backendUnavailable.value),
+    fatalError: computed(() => fatalError.value),
   };
 }
 

@@ -242,7 +242,11 @@ const isLiffEntry = computed(() => {
   if (params.has('liff.state') || params.has('liff.referrer')) return true;
   const from = params.get('from') || params.get('src') || params.get('entrySource');
   if (from && from.toLowerCase() === 'liff') return true;
-  if (typeof document !== 'undefined' && document.referrer.includes('liff.line.me')) return true;
+  if (
+    typeof document !== 'undefined' &&
+    (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'))
+  )
+    return true;
   return false;
 });
 const showTopBar = computed(() => !isLiffClientMode.value && !isLiffEntry.value);

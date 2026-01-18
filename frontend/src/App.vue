@@ -1,5 +1,7 @@
 <template>
+  <MaintenanceView v-if="maintenanceMode" :error="maintenanceError" />
   <div
+    v-else
     class="app-shell"
     :class="{ 'app-shell--mobile': isMobile }"
     :data-liff-ready="liffReady"
@@ -31,7 +33,10 @@
     >
       LINEで開く
     </button>
-    <template v-if="isMobile && showLineModal && !allowWebContinue">
+    <template v-if="showLiffGuide">
+      <LineRedirectOverlay :allow-web-continue="false" />
+    </template>
+    <template v-else-if="isMobile && showLineModal && !allowWebContinue">
       <LineRedirectOverlay @continue-web="continueWeb" />
     </template>
 
@@ -125,6 +130,8 @@ import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
 import { isLineBrowser } from './utils/device';
+import { buildLiffUrl } from './utils/liff';
+import { isProductionLiff } from './config';
 import { BUILD_VERSION } from './version';
 import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
@@ -133,6 +140,8 @@ import LiffDebugPanel from './components/common/LiffDebugPanel.vue';
 import LoginRequiredSheet from './components/auth/LoginRequiredSheet.vue';
 import ForbiddenSheet from './components/auth/ForbiddenSheet.vue';
 import { useAuthSheets, injectAuthSheetsContext } from './composables/useAuthSheets';
+import { useAppState } from './composables/useAppState';
+import MaintenanceView from './views/MaintenanceView.vue';
 
 const { user, initializing, logout, loginWithLiffProfile, needsLiffOpen } = useAuth();
 const isMobile = ref(false);
@@ -149,6 +158,9 @@ const {
 const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
+const showLiffGuide = computed(
+  () => isProductionLiff() && isMobile.value && !isLiffClientMode.value,
+);
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
 const brandBarForRoute = computed(() => showBrandBar.value && currentRoute.path === '/events');
@@ -162,6 +174,7 @@ injectAuthSheetsContext(router, currentRoute);
 const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const authSheets = useAuthSheets();
+const { maintenanceMode, maintenanceError } = useAppState();
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;
@@ -173,7 +186,11 @@ const currentPageName = computed(() => {
 
 const allowWebKey = 'allowWebInLine';
 const showLiffOpenButton = computed(
-  () => isLiffEntry.value && needsLiffOpen.value && !isLiffClientMode.value,
+  () =>
+    !isProductionLiff() &&
+    isLiffEntry.value &&
+    needsLiffOpen.value &&
+    !isLiffClientMode.value,
 );
 
 const isFromLiffEntry = () => {
@@ -183,7 +200,11 @@ const isFromLiffEntry = () => {
   const from = params.get('from');
   const src = params.get('src');
   if ((from && from.toLowerCase() === 'liff') || (src && src.toLowerCase() === 'liff')) return true;
-  if (document.referrer && document.referrer.includes('liff.line.me')) return true;
+  if (
+    document.referrer &&
+    (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'))
+  )
+    return true;
   return false;
 };
 
@@ -289,7 +310,12 @@ const onForbiddenPrimary = () => {
 const openInLine = () => {
   if (typeof window === 'undefined') return;
   const current = currentRoute.fullPath || window.location.pathname + window.location.search;
-  window.location.href = `https://liff.line.me/2008600730-qxlPrj5Q?to=${encodeURIComponent(current)}`;
+  const url = buildLiffUrl(current);
+  if (!url) {
+    console.error('LIFF_ID is not configured; cannot open in LINE.');
+    return;
+  }
+  window.location.href = url;
 };
 
 </script>

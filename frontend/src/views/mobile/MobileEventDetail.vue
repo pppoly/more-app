@@ -327,7 +327,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { buildLiffUrl, isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
@@ -929,12 +929,11 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const liffDeepLink = LIFF_ID
-    ? `https://liff.line.me/${LIFF_ID}?to=/events/${detail.value.id}`
-    : typeof window !== 'undefined'
-      ? `${window.location.origin}/events/${detail.value.id}`
-      : '';
-  const shareUrl = `${liffDeepLink}?from=line_share`;
+  const liffDeepLink = buildLiffUrl(`/events/${detail.value.id}`);
+  const shareUrl =
+    liffDeepLink ||
+    (typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '');
+  const shareUrlWithSource = liffDeepLink ? `${liffDeepLink}&from=line_share` : shareUrl;
   const shareTitle =
     getLocalizedText(detail.value.title, preferredLangs.value) ||
     (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
@@ -947,13 +946,13 @@ const shareEvent = async () => {
     try {
       const liff = await loadLiff(LIFF_ID);
       if (liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrl}` }]);
+        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
         showUiMessage('LINE で共有しました');
         return;
       }
       // fallback: copy link
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
+        await navigator.clipboard.writeText(shareUrlWithSource);
         showUiMessage('リンクをコピーしました');
         return;
       }
@@ -965,7 +964,7 @@ const shareEvent = async () => {
     return;
   }
 
-  const payload = { title: shareTitle, url: shareUrl };
+  const payload = { title: shareTitle, url: shareUrlWithSource };
 
   // 1) ネイティブ共有（優先）
   if (navigator.share) {

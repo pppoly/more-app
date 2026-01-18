@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
-import Home from '../views/Home.vue';
 import CommunityPortal from '../views/community/CommunityPortal.vue';
 import MyEvents from '../views/me/MyEvents.vue';
 import MyPayments from '../views/me/MyPayments.vue';
@@ -19,7 +18,6 @@ import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
 import PaymentReturn from '../views/payments/PaymentReturn.vue';
 import StripeReturn from '../views/console/StripeReturn.vue';
-import DesktopLanding from '../views/desktop/DesktopLanding.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
@@ -84,14 +82,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    component: DesktopLanding,
-    meta: { desktopOnly: true, devPageName: 'デスクトップホーム' },
+    redirect: (to) => ({ path: '/promo', query: { from: to.fullPath } }),
+    meta: { devPageName: 'デスクトップホーム' },
   },
   {
     path: '/desktop-home',
     name: 'legacy-home',
-    component: Home,
-    meta: { desktopOnly: true, devPageName: '旧デスクトップ' },
+    redirect: (to) => ({ path: '/promo', query: { from: to.fullPath } }),
+    meta: { devPageName: '旧デスクトップ' },
   },
   {
     path: '/experience',
