@@ -17,9 +17,12 @@ export const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
 export const DEV_LOGIN_SECRET = import.meta.env.VITE_DEV_LOGIN_SECRET || '';
 
 export const isProduction = () => {
+  const mode = (import.meta.env.MODE || '').toLowerCase();
   const appEnv =
     (import.meta.env.APP_ENV || import.meta.env.VITE_APP_ENV || import.meta.env.NODE_ENV || '').toLowerCase();
-  return import.meta.env.PROD || import.meta.env.MODE === 'production' || appEnv === 'production';
+  if (mode && mode !== 'production') return false;
+  if (appEnv && appEnv !== 'production') return false;
+  return import.meta.env.PROD || mode === 'production' || appEnv === 'production';
 };
 
 export const isProductionLiff = () => isProduction() && APP_TARGET === 'liff';
