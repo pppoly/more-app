@@ -10,7 +10,8 @@ if (!secretKey) {
   process.exit(1);
 }
 
-const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' });
+const apiVersion = process.env.STRIPE_API_VERSION || '2025-12-15.preview';
+const stripe = new Stripe(secretKey, { apiVersion });
 
 (async () => {
   try {

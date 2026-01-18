@@ -15,6 +15,11 @@ export type PaymentsConfig = {
   settlementAutoRunHour: number;
   settlementAutoRunMinute: number;
   settlementTimeZone: string;
+  settlementPayoutMode: 'BATCH' | 'REALTIME';
+  settlementR3Enabled: boolean;
+  settlementR3WhitelistCommunityIds: string[];
+  settlementR3WhitelistEventIds: string[];
+  settlementR3WhitelistEventCategories: string[];
 };
 
 let cachedConfig: PaymentsConfig | null = null;
@@ -31,6 +36,20 @@ const parseChargeModel = (value: string | undefined): PaymentsChargeModel => {
   const normalized = (value ?? '').trim().toLowerCase();
   if (normalized === 'destination_charge') return 'destination_charge';
   return 'platform_charge';
+};
+
+const parsePayoutMode = (value: string | undefined): 'BATCH' | 'REALTIME' => {
+  const normalized = (value ?? '').trim().toUpperCase();
+  if (normalized === 'REALTIME') return 'REALTIME';
+  return 'BATCH';
+};
+
+const parseCsv = (value: string | undefined) => {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 };
 
 const parseInteger = (
@@ -72,6 +91,11 @@ export const getPaymentsConfig = (): PaymentsConfig => {
     settlementAutoRunHour: parseInteger(process.env.SETTLEMENT_AUTORUN_HOUR, 3, { min: 0, max: 23 }),
     settlementAutoRunMinute: parseInteger(process.env.SETTLEMENT_AUTORUN_MINUTE, 0, { min: 0, max: 59 }),
     settlementTimeZone: (process.env.APP_TIMEZONE || 'Asia/Tokyo').trim() || 'Asia/Tokyo',
+    settlementPayoutMode: parsePayoutMode(process.env.SETTLEMENT_PAYOUT_MODE),
+    settlementR3Enabled: parseBoolean(process.env.SETTLEMENT_R3_ENABLED, false),
+    settlementR3WhitelistCommunityIds: parseCsv(process.env.SETTLEMENT_R3_WHITELIST_COMMUNITY_IDS),
+    settlementR3WhitelistEventIds: parseCsv(process.env.SETTLEMENT_R3_WHITELIST_EVENT_IDS),
+    settlementR3WhitelistEventCategories: parseCsv(process.env.SETTLEMENT_R3_WHITELIST_EVENT_CATEGORIES),
   };
   return cachedConfig;
 };

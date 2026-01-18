@@ -37,7 +37,8 @@ const main = async () => {
 
   await ensureLogDir();
 
-  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2025-02-24.acacia' });
+  const apiVersion = process.env.STRIPE_API_VERSION || '2025-12-15.preview';
+  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: apiVersion as unknown as Stripe.LatestApiVersion });
   const baseUrl = BASE_URL.replace(/\/$/, '');
   const amount = 1000;
 
@@ -192,4 +193,3 @@ main().catch((err) => {
   console.error('[stripe_testmode_smoke] FAIL', err);
   process.exitCode = 1;
 });
-

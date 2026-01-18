@@ -17,6 +17,8 @@ import { buildIdempotencyKey } from './idempotency.util';
 import { computeMerchantNet, computeProportionalAmount } from './settlement.utils';
 import { getPaymentsConfig } from './payments.config';
 import { createHash } from 'node:crypto';
+import { resolveStripeEnv } from '../stripe/stripe-config';
+import { SettlementService } from './settlement.service';
 
 const MAX_PAYMENT_AMOUNT_JPY = Number(process.env.MAX_PAYMENT_AMOUNT_JPY ?? 100000);
 const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15);
@@ -40,7 +42,152 @@ export class PaymentsService {
     private readonly stripeService: StripeService,
     private readonly permissions: PermissionsService,
     private readonly notifications: NotificationService,
+    private readonly settlementService: SettlementService,
   ) {}
+
+  private async getActiveRuleVersionId(tx: Prisma.TransactionClient = this.prisma) {
+    const existing = await tx.settlementRuleVersion.findFirst({
+      where: { status: 'active' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (existing?.id) return existing.id;
+    const created = await tx.settlementRuleVersion.create({
+      data: { name: 'default', status: 'active' },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
+  private async buildSettlementFields(params: {
+    event?: { refundDeadlineAt?: Date | null; endTime?: Date | null; eventEndAt?: Date | null; category?: string | null } | null;
+    lesson?: { refundDeadlineAt?: Date | null; endAt?: Date | null; eventEndAt?: Date | null } | null;
+    eventId?: string | null;
+    communityId?: string | null;
+    tx?: Prisma.TransactionClient;
+  }) {
+    const tx = params.tx ?? this.prisma;
+    const ruleVersionId = await this.getActiveRuleVersionId(tx);
+    const now = new Date();
+    const config = getPaymentsConfig();
+    const refundDeadlineAt = params.event?.refundDeadlineAt ?? params.lesson?.refundDeadlineAt ?? null;
+    const eventEndAt =
+      params.event?.eventEndAt ??
+      params.event?.endTime ??
+      params.lesson?.eventEndAt ??
+      params.lesson?.endAt ??
+      null;
+    const payoutMode = config.settlementPayoutMode;
+
+    if (!refundDeadlineAt && !eventEndAt) {
+      return {
+        eligibleAt: null,
+        payoutMode,
+        eligibilityStatus: 'EXCEPTION',
+        payoutStatus: 'NOT_SCHEDULED',
+        reasonCode: 'missing_event_end',
+        ruleVersionId,
+      };
+    }
+
+    if (refundDeadlineAt) {
+      const eligibilityStatus = refundDeadlineAt <= now ? 'ELIGIBLE' : 'PENDING';
+      const reasonCode = refundDeadlineAt <= now ? 'refund_deadline_reached' : 'pending_refund_window';
+      return {
+        eligibleAt: refundDeadlineAt,
+        payoutMode,
+        eligibilityStatus,
+        payoutStatus: 'NOT_SCHEDULED',
+        reasonCode,
+        ruleVersionId,
+      };
+    }
+
+    const isR3Allowed =
+      config.settlementR3Enabled &&
+      ((params.communityId && config.settlementR3WhitelistCommunityIds.includes(params.communityId)) ||
+        (params.eventId && config.settlementR3WhitelistEventIds.includes(params.eventId)) ||
+        (params.event?.category && config.settlementR3WhitelistEventCategories.includes(params.event.category)));
+
+    if (isR3Allowed && eventEndAt) {
+      const eligibilityStatus = eventEndAt <= now ? 'ELIGIBLE' : 'PENDING';
+      const reasonCode = eventEndAt <= now ? 'event_end_reached' : 'pending_refund_window';
+      return {
+        eligibleAt: eventEndAt,
+        payoutMode,
+        eligibilityStatus,
+        payoutStatus: 'NOT_SCHEDULED',
+        reasonCode,
+        ruleVersionId,
+      };
+    }
+
+    const delayDays = Math.max(0, config.settlementDelayDays ?? 0);
+    const eligibleAt = new Date((eventEndAt as Date).getTime() + delayDays * 24 * 60 * 60 * 1000);
+    const eligibilityStatus = eligibleAt <= now ? 'ELIGIBLE' : 'PENDING';
+    const reasonCode = eligibleAt <= now ? 'fallback_end_plus_n' : 'pending_refund_window';
+    return {
+      eligibleAt,
+      payoutMode,
+      eligibilityStatus,
+      payoutStatus: 'NOT_SCHEDULED',
+      reasonCode,
+      ruleVersionId,
+    };
+  }
+
+  private async maybeTriggerRealtimePayout(paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: {
+        id: true,
+        payoutMode: true,
+        payoutStatus: true,
+        eligibilityStatus: true,
+        eligibleAt: true,
+      },
+    });
+    if (!payment) return;
+    if (payment.payoutMode !== 'REALTIME') return;
+    if (payment.payoutStatus === 'PAID_OUT') return;
+    if (!payment.eligibleAt || payment.eligibleAt > new Date()) return;
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { eligibilityStatus: 'ELIGIBLE' },
+    });
+    await this.settlementService.runSettlementBatch({
+      periodFrom: new Date(payment.eligibleAt.getTime() - 24 * 60 * 60 * 1000),
+      periodTo: new Date(),
+      trigger: { type: 'realtime' },
+      payoutMode: 'REALTIME',
+    });
+  }
+
+  private async recordSettlementAudit(params: {
+    tx?: Prisma.TransactionClient;
+    entityType: string;
+    entityId: string;
+    operator: string;
+    reasonCode?: string | null;
+    note?: string | null;
+    before?: Prisma.InputJsonValue;
+    after?: Prisma.InputJsonValue;
+    ruleVersionId?: string | null;
+  }) {
+    const tx = params.tx ?? this.prisma;
+    await tx.settlementAuditEvent.create({
+      data: {
+        entityType: params.entityType,
+        entityId: params.entityId,
+        operator: params.operator,
+        reasonCode: params.reasonCode ?? null,
+        note: params.note ?? null,
+        before: params.before,
+        after: params.after,
+        ruleVersionId: params.ruleVersionId ?? null,
+      },
+    });
+  }
 
   private resolvePlanFee(planId?: string | null) {
     if (PLATFORM_FEE_WAIVED) return { percent: 0, fixed: 0, planId };
@@ -196,6 +343,12 @@ export class PaymentsService {
         status: item.status,
         method: item.method,
         createdAt: item.createdAt,
+        eligibleAt: item.eligibleAt ?? null,
+        payoutMode: item.payoutMode ?? null,
+        eligibilityStatus: item.eligibilityStatus ?? null,
+        payoutStatus: item.payoutStatus ?? null,
+        reasonCode: item.reasonCode ?? null,
+        ruleVersionId: item.ruleVersionId ?? null,
         stripePaymentIntentId: item.stripePaymentIntentId ?? null,
         stripeRefundId: item.stripeRefundId ?? null,
         refundRequest: item.registration?.refundRequest
@@ -264,6 +417,12 @@ export class PaymentsService {
         status: item.status,
         method: item.method,
         createdAt: item.createdAt,
+        eligibleAt: item.eligibleAt ?? null,
+        payoutMode: item.payoutMode ?? null,
+        eligibilityStatus: item.eligibilityStatus ?? null,
+        payoutStatus: item.payoutStatus ?? null,
+        reasonCode: item.reasonCode ?? null,
+        ruleVersionId: item.ruleVersionId ?? null,
         stripePaymentIntentId: item.stripePaymentIntentId ?? null,
         stripeChargeId: item.stripeChargeId ?? null,
         stripeRefundId: item.stripeRefundId ?? null,
@@ -537,13 +696,20 @@ export class PaymentsService {
           lessonId: true,
           amount: true,
           paymentStatus: true,
-          event: {
-            select: {
-              communityId: true,
-            },
-          },
+              event: {
+                select: {
+                  communityId: true,
+                  endTime: true,
+                  eventEndAt: true,
+                  refundDeadlineAt: true,
+                  category: true,
+                },
+              },
           lesson: {
             select: {
+              endAt: true,
+              eventEndAt: true,
+              refundDeadlineAt: true,
               class: { select: { communityId: true } },
             },
           },
@@ -564,6 +730,13 @@ export class PaymentsService {
 
       const amount = registration.amount ?? 0;
       this.assertAmount(amount, 'jpy');
+      const settlementFields = await this.buildSettlementFields({
+        event: registration.event ?? null,
+        lesson: registration.lesson ?? null,
+        eventId: registration.eventId ?? null,
+        communityId: registration.event?.communityId ?? registration.lesson?.class.communityId ?? null,
+        tx,
+      });
 
       const payment = await tx.payment.create({
         data: {
@@ -579,6 +752,12 @@ export class PaymentsService {
           method: 'mock',
           chargeModel: 'platform_charge',
           idempotencyKey: buildIdempotencyKey('mock', 'charge', 'registration', registrationId, amount, 'jpy'),
+          eligibleAt: settlementFields.eligibleAt,
+          payoutMode: settlementFields.payoutMode,
+          eligibilityStatus: settlementFields.eligibilityStatus,
+          payoutStatus: settlementFields.payoutStatus,
+          reasonCode: settlementFields.reasonCode,
+          ruleVersionId: settlementFields.ruleVersionId,
         },
         select: {
           id: true,
@@ -588,6 +767,22 @@ export class PaymentsService {
           lessonId: true,
           communityId: true,
         },
+      });
+      await this.recordSettlementAudit({
+        tx,
+        entityType: 'payment',
+        entityId: payment.id,
+        operator: 'system',
+        reasonCode: settlementFields.reasonCode,
+        note: 'settlement_fields_initialized',
+        after: {
+          eligibleAt: settlementFields.eligibleAt?.toISOString() ?? null,
+          payoutMode: settlementFields.payoutMode,
+          eligibilityStatus: settlementFields.eligibilityStatus,
+          payoutStatus: settlementFields.payoutStatus,
+          reasonCode: settlementFields.reasonCode,
+        },
+        ruleVersionId: settlementFields.ruleVersionId,
       });
 
       await tx.eventRegistration.update({
@@ -641,6 +836,8 @@ export class PaymentsService {
     void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
       this.logger.warn(`Failed to notify mock payment registration: ${error instanceof Error ? error.message : String(error)}`);
     });
+
+    await this.maybeTriggerRealtimePayout(result.payment.id);
 
     return {
       paymentId: result.payment.id,
@@ -761,6 +958,7 @@ export class PaymentsService {
               );
             });
           }
+          await this.maybeTriggerRealtimePayout(activePending.id);
           return { checkoutUrl: this.stripeService.successUrlBase, resume: false };
         }
       } catch (error) {
@@ -785,6 +983,12 @@ export class PaymentsService {
     const expiresAt = Math.floor(Date.now() / 1000) + Math.max(expiresInMinutes, 30) * 60;
     // Prepare local payment first to bind metadata
     const idempotencyKey = buildIdempotencyKey('stripe', 'charge', 'registration', registrationId, amount, 'jpy');
+    const settlementFields = await this.buildSettlementFields({
+      event,
+      lesson,
+      eventId: event?.id ?? null,
+      communityId: community.id,
+    });
     const payment = await this.prisma.payment.upsert({
       where: { registrationId },
       update: {
@@ -801,6 +1005,7 @@ export class PaymentsService {
         chargeModel,
         idempotencyKey,
         providerAccountId: community.stripeAccountId ?? undefined,
+        ...settlementFields,
       },
       create: {
         userId,
@@ -817,8 +1022,27 @@ export class PaymentsService {
         chargeModel,
         idempotencyKey,
         providerAccountId: community.stripeAccountId ?? undefined,
+        ...settlementFields,
       },
     });
+    await this.recordSettlementAudit({
+      entityType: 'payment',
+      entityId: payment.id,
+      operator: 'system',
+      reasonCode: settlementFields.reasonCode,
+      note: 'settlement_fields_initialized',
+      after: {
+        eligibleAt: settlementFields.eligibleAt?.toISOString() ?? null,
+        payoutMode: settlementFields.payoutMode,
+        eligibilityStatus: settlementFields.eligibilityStatus,
+        payoutStatus: settlementFields.payoutStatus,
+        reasonCode: settlementFields.reasonCode,
+      },
+      ruleVersionId: settlementFields.ruleVersionId,
+    });
+    if (settlementFields.payoutMode === 'REALTIME' && settlementFields.eligibleAt && settlementFields.eligibleAt <= new Date()) {
+      await this.maybeTriggerRealtimePayout(payment.id);
+    }
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
@@ -952,12 +1176,7 @@ export class PaymentsService {
       this.logger.warn('Stripe webhook received but Stripe is not enabled');
       return { received: true };
     }
-    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
-    const webhookSecret =
-      process.env.STRIPE_WEBHOOK_SECRET ??
-      (['production', 'prod', 'live'].includes(envLabel)
-        ? process.env.STRIPE_WEBHOOK_SECRET_LIVE
-        : process.env.STRIPE_WEBHOOK_SECRET_TEST);
+    const webhookSecret = resolveStripeEnv().webhookSecret;
     if (!webhookSecret) {
       this.logger.error('STRIPE_WEBHOOK_SECRET is not configured');
       throw new InternalServerErrorException('Stripe webhook secret is not configured');
@@ -988,6 +1207,21 @@ export class PaymentsService {
         message: errorMessage,
       });
       throw new BadRequestException('Invalid Stripe signature');
+    }
+
+    if (typeof event.livemode === 'boolean' && event.livemode !== this.stripeService.isLive) {
+      const mode = this.stripeService.isLive ? 'live' : 'test';
+      this.logger.warn(
+        `Stripe webhook livemode mismatch: expected=${mode} event.livemode=${event.livemode} event=${event.type} id=${event.id}`,
+      );
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: event.type,
+        status: 'ignored',
+        message: `livemode_mismatch expected=${mode} event.livemode=${event.livemode}`,
+        payload: { eventId: event.id },
+      });
+      return { received: true, ignored: true };
     }
 
     const gatewayEvent = await this.upsertGatewayEvent(event);
@@ -1099,6 +1333,9 @@ export class PaymentsService {
         postProcessTasks.push(...handlerResult.postProcessTasks);
         break;
       }
+      case 'checkout.session.async_payment_failed':
+        await this.handleCheckoutSessionAsyncPaymentFailed(stripeEvent.data.object, tx);
+        break;
       case 'payment_intent.succeeded': {
         const intent = stripeEvent.data.object as Stripe.PaymentIntent;
         const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
@@ -1128,6 +1365,7 @@ export class PaymentsService {
           },
         });
         postProcessTasks.push(() => this.reconcilePaymentSettlement(payment.id, intent.id));
+        postProcessTasks.push(() => this.maybeTriggerRealtimePayout(payment.id));
         if (payment.registrationId) {
           await tx.eventRegistration.update({
             where: { id: payment.registrationId },
@@ -1558,6 +1796,89 @@ export class PaymentsService {
       typeof session.payment_intent === 'string'
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
+    const paymentStatus = session.payment_status;
+    if (
+      session.mode === 'payment' &&
+      paymentStatus &&
+      !['paid', 'no_payment_required'].includes(paymentStatus)
+    ) {
+      let intentStatus: Stripe.PaymentIntent.Status | null = null;
+      if (paymentIntentId) {
+        try {
+          const intent = await this.withStripeRetry(() =>
+            this.stripeService.client.paymentIntents.retrieve(paymentIntentId),
+          );
+          intentStatus = intent.status ?? null;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to retrieve payment intent ${paymentIntentId} for session ${session.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+
+      if (intentStatus === 'succeeded') {
+        this.logger.log(
+          `Checkout session completed with unpaid status but intent succeeded: session=${session.id} intent=${paymentIntentId}`,
+        );
+      } else if (intentStatus === 'canceled' || intentStatus === 'requires_payment_method') {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'failed', stripePaymentIntentId: paymentIntentId ?? payment.stripePaymentIntentId },
+        });
+        if (payment.registrationId) {
+          await tx.eventRegistration.update({
+            where: { id: payment.registrationId },
+            data: { paymentStatus: 'failed', status: 'pending' },
+          });
+        }
+        const message = `Checkout session unpaid and intent failed: session=${session.id} intent=${paymentIntentId ?? 'n/a'} intent_status=${intentStatus ?? 'unknown'}`;
+        this.logger.warn(message);
+        await this.logGatewayEvent({
+          gateway: 'stripe',
+          eventType: 'checkout.session.completed',
+          status: 'failure',
+          paymentId: payment.id,
+          registrationId: payment.registrationId ?? undefined,
+          communityId: payment.communityId ?? undefined,
+          userId: payment.userId ?? undefined,
+          message,
+          payload: { sessionId: session.id, paymentStatus, intentStatus },
+        });
+        return { postProcessTasks: [] };
+      } else if (intentStatus) {
+        const message = `Checkout session not paid: session=${session.id} payment_status=${paymentStatus} intent_status=${intentStatus}`;
+        this.logger.warn(message);
+        await this.logGatewayEvent({
+          gateway: 'stripe',
+          eventType: 'checkout.session.completed',
+          status: 'ignored',
+          paymentId: payment.id,
+          registrationId: payment.registrationId ?? undefined,
+          communityId: payment.communityId ?? undefined,
+          userId: payment.userId ?? undefined,
+          message,
+          payload: { sessionId: session.id, paymentStatus, intentStatus },
+        });
+        return { postProcessTasks: [] };
+      } else if (!intentStatus) {
+        const message = `Checkout session not paid: session=${session.id} payment_status=${paymentStatus} intent_status=unknown`;
+        this.logger.warn(message);
+        await this.logGatewayEvent({
+          gateway: 'stripe',
+          eventType: 'checkout.session.completed',
+          status: 'ignored',
+          paymentId: payment.id,
+          registrationId: payment.registrationId ?? undefined,
+          communityId: payment.communityId ?? undefined,
+          userId: payment.userId ?? undefined,
+          message,
+          payload: { sessionId: session.id, paymentStatus },
+        });
+        return { postProcessTasks: [] };
+      }
+    }
 
     if (['refunded', 'partial_refunded', 'disputed'].includes(payment.status)) {
       this.logger.warn(
@@ -1646,7 +1967,65 @@ export class PaymentsService {
       payload: { sessionId: session.id, paymentIntentId },
     });
 
+    postProcessTasks.push(() => this.maybeTriggerRealtimePayout(payment.id));
+
     return { postProcessTasks };
+  }
+
+  private async handleCheckoutSessionAsyncPaymentFailed(
+    session: Stripe.Checkout.Session,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const registrationId = session.metadata?.registrationId;
+    const paymentId = session.metadata?.paymentId;
+    const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
+    if (paymentId) {
+      whereClauses.push({ id: paymentId });
+    }
+    if (registrationId) {
+      whereClauses.push({ registrationId });
+    }
+    const payment = await tx.payment.findFirst({
+      where: { OR: whereClauses },
+    });
+    if (!payment) {
+      const message = `No payment found for async payment failed session ${session.id}`;
+      this.logger.warn(message);
+      await this.logGatewayEvent({
+        gateway: 'stripe',
+        eventType: 'checkout.session.async_payment_failed',
+        status: 'ignored',
+        registrationId,
+        communityId: session.metadata?.communityId,
+        message,
+        payload: { sessionId: session.id },
+      });
+      return;
+    }
+
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: 'failed', stripeCheckoutSessionId: session.id },
+    });
+    if (payment.registrationId) {
+      await tx.eventRegistration.update({
+        where: { id: payment.registrationId },
+        data: { paymentStatus: 'failed', status: 'pending' },
+      });
+    }
+    this.logger.warn(`Checkout session async payment failed: ${session.id}, payment=${payment.id}`);
+    await this.logGatewayEvent({
+      gateway: 'stripe',
+      eventType: 'checkout.session.async_payment_failed',
+      status: 'failure',
+      paymentId: payment.id,
+      registrationId: payment.registrationId ?? undefined,
+      eventId: payment.eventId ?? undefined,
+      lessonId: payment.lessonId ?? undefined,
+      communityId: payment.communityId ?? undefined,
+      userId: payment.userId,
+      payload: { sessionId: session.id },
+    });
   }
 
   private async reconcilePaymentSettlement(
@@ -2237,7 +2616,23 @@ export class PaymentsService {
         reversedMerchantTotal: nextReversedMerchant,
         status,
         stripeRefundId: params.refundId ?? payment.stripeRefundId,
+        reasonCode: payment.payoutStatus === 'PAID_OUT' ? 'post_payout_refund' : payment.reasonCode,
       },
+    });
+    await this.recordSettlementAudit({
+      entityType: 'payment',
+      entityId: paymentId,
+      operator: 'system',
+      reasonCode: payment.payoutStatus === 'PAID_OUT' ? 'post_payout_refund' : payment.reasonCode ?? undefined,
+      note: 'payment_refund_recorded',
+      after: {
+        status,
+        refundedGrossTotal: nextRefundedGross,
+        refundedPlatformFeeTotal: nextRefundedPlatformFee,
+        reversedMerchantTotal: nextReversedMerchant,
+        reasonCode: payment.payoutStatus === 'PAID_OUT' ? 'post_payout_refund' : payment.reasonCode ?? null,
+      },
+      ruleVersionId: payment.ruleVersionId ?? null,
     });
 
     if (payment.registrationId) {
@@ -2535,7 +2930,8 @@ export class PaymentsService {
       return;
     }
 
-    await this.prisma.payment.create({
+    const settlementFields = await this.buildSettlementFields({ event: null, lesson: null, communityId });
+    const payment = await this.prisma.payment.create({
       data: {
         userId: ownerId,
         communityId,
@@ -2547,7 +2943,28 @@ export class PaymentsService {
         chargeModel: 'platform_charge',
         stripeChargeId: chargeId,
         metadata: { planId, invoiceId: invoice.id },
+        eligibleAt: settlementFields.eligibleAt,
+        payoutMode: settlementFields.payoutMode,
+        eligibilityStatus: settlementFields.eligibilityStatus,
+        payoutStatus: settlementFields.payoutStatus,
+        reasonCode: settlementFields.reasonCode,
+        ruleVersionId: settlementFields.ruleVersionId,
       } as any,
+    });
+    await this.recordSettlementAudit({
+      entityType: 'payment',
+      entityId: payment.id,
+      operator: 'system',
+      reasonCode: settlementFields.reasonCode,
+      note: 'settlement_fields_initialized',
+      after: {
+        eligibleAt: settlementFields.eligibleAt?.toISOString() ?? null,
+        payoutMode: settlementFields.payoutMode,
+        eligibilityStatus: settlementFields.eligibilityStatus,
+        payoutStatus: settlementFields.payoutStatus,
+        reasonCode: settlementFields.reasonCode,
+      },
+      ruleVersionId: settlementFields.ruleVersionId,
     });
   }
 
@@ -2605,6 +3022,7 @@ export class PaymentsService {
           data: { status: 'paid', paymentStatus: 'paid', paidAmount: payment.amount },
         });
       }
+      await this.maybeTriggerRealtimePayout(payment.id);
     }
     return { paymentId, intentId, intentStatus: status, localStatus: payment.status };
   }

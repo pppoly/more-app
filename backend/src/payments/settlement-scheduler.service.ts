@@ -120,6 +120,18 @@ export class SettlementSchedulerService implements OnModuleInit, OnModuleDestroy
     this.logger.log(
       `[settlement] auto-run completed: batch=${result.batchId} status=${result.status} periodTo=${periodTo.toISOString()}`,
     );
+
+    const hasRealtime = await this.settlementService.hasRealtimeEligiblePayments(periodTo);
+    if (hasRealtime) {
+      const realtime = await this.settlementService.runSettlementBatch({
+        periodFrom,
+        periodTo,
+        trigger: { type: 'realtime' },
+        payoutMode: 'REALTIME',
+      });
+      this.logger.log(
+        `[settlement] realtime sweep completed: batch=${realtime.batchId} status=${realtime.status} periodTo=${periodTo.toISOString()}`,
+      );
+    }
   }
 }
-

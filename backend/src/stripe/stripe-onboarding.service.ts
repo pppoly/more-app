@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { isIP } from 'net';
+import { resolveStripeEnv } from './stripe-config';
 
 type OnboardingAccountParams = {
   // Inputs used to create or reuse an account
@@ -22,20 +23,29 @@ export class StripeOnboardingService {
   private readonly refreshUrl: string | null;
   private readonly returnUrl: string | null;
   private readonly enabled: boolean;
+  private readonly apiVersion: string | null;
 
   constructor() {
-    const secretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
-    if (!secretKey) {
-      this.logger.warn('[StripeOnboardingService] STRIPE_SECRET_KEY missing; onboarding disabled');
+    const stripeEnv = resolveStripeEnv();
+    const secretKey = (stripeEnv.secretKey || '').trim();
+    if (!secretKey || !stripeEnv.apiVersion) {
+      if (!secretKey) {
+        this.logger.warn('[StripeOnboardingService] STRIPE_SECRET_KEY missing; onboarding disabled');
+      }
+      if (!stripeEnv.apiVersion) {
+        this.logger.error('[StripeOnboardingService] STRIPE_API_VERSION missing; onboarding disabled');
+      }
       this.stripe = null;
       this.enabled = false;
       this.refreshUrl = null;
       this.returnUrl = null;
+      this.apiVersion = stripeEnv.apiVersion;
       return;
     }
 
+    this.apiVersion = stripeEnv.apiVersion;
     this.stripe = new Stripe(secretKey, {
-      apiVersion: '2025-02-24.acacia',
+      apiVersion: this.apiVersion as unknown as Stripe.LatestApiVersion,
     });
     this.enabled = true;
 
