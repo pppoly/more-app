@@ -23,7 +23,7 @@ const props = defineProps({
   size: { type: [Number, String], default: 32 },
   radius: { type: [Number, String], default: 8 },
   shape: { type: String as () => Shape, default: 'rounded' },
-  loading: { type: String, default: 'lazy' },
+  loading: { type: String as () => 'lazy' | 'eager', default: 'lazy' },
   fallbackSrc: { type: String, default: '' },
   fit: { type: String as () => 'cover' | 'contain', default: 'cover' },
 });

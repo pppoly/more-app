@@ -18,7 +18,7 @@ export interface ResourceSlot {
   description?: string;
   helper?: string;
   type: ResourceValueType;
-  defaultValue: string | string[];
+  defaultValue: ResourceValue;
 }
 
 export const RESOURCE_SLOTS = [
@@ -40,6 +40,7 @@ export const RESOURCE_SLOTS = [
     pageId: 'mobile-tabbar',
     position: 'イベントタブのアイコン',
     description: '任意のアイコンクラス名に対応（例: i-lucide 系）。',
+    helper: '',
     type: 'icon',
     defaultValue: 'i-lucide-calendar-days',
   },
@@ -50,6 +51,7 @@ export const RESOURCE_SLOTS = [
     pageId: 'mobile-tabbar',
     position: 'Consoleタブのアイコン',
     description: '主催者/管理者向けのConsoleタブに使用。',
+    helper: '',
     type: 'icon',
     defaultValue: 'i-lucide-layout-dashboard',
   },
@@ -59,6 +61,8 @@ export const RESOURCE_SLOTS = [
     page: 'モバイル下部ナビ',
     pageId: 'mobile-tabbar',
     position: 'マイページタブのアイコン',
+    description: '',
+    helper: '',
     type: 'icon',
     defaultValue: 'i-lucide-user-round',
   },
@@ -68,6 +72,8 @@ export const RESOURCE_SLOTS = [
     page: 'モバイル下部ナビ',
     pageId: 'mobile-tabbar',
     position: '管理者タブのアイコン',
+    description: '',
+    helper: '',
     type: 'icon',
     defaultValue: 'i-lucide-shield',
   },
@@ -119,6 +125,7 @@ export const RESOURCE_SLOTS = [
     pageId: 'mobile-console',
     position: 'イベント管理の参加者プレースホルダー',
     description: 'Consoleでメンバー一覧を表示する際のデフォルト画像。',
+    helper: '',
     type: 'image',
     defaultValue: 'https://placehold.co/64x64?text=Member',
   },
@@ -140,6 +147,7 @@ export const RESOURCE_SLOTS = [
     pageId: 'mobile-community-portal',
     position: 'ハイライトのプレースホルダー',
     description: '「ハイライト」表示時、画像がない場合のデフォルト。',
+    helper: '',
     type: 'image',
     defaultValue: 'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=800&q=80',
   },
@@ -148,7 +156,7 @@ export const RESOURCE_SLOTS = [
 export type ResourceSlotDefinition = (typeof RESOURCE_SLOTS)[number];
 export type ResourceKey = ResourceSlotDefinition['id'];
 
-export type ResourceValue = string | string[];
+export type ResourceValue = string | ReadonlyArray<string>;
 
 export const RESOURCE_SLOT_MAP = RESOURCE_SLOTS.reduce(
   (acc, slot) => {

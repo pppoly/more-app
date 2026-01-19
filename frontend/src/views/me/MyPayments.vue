@@ -107,15 +107,15 @@ type FilterId = 'all' | 'paid' | 'pending' | 'refunded';
 interface PaymentRecord {
   registrationId: string;
   eventTitle: string;
-  eventDate?: string | null;
+  eventDate: string | null;
   amount: number;
   status: string;
-  paymentStatus?: string;
-  refundStatus?: string | null;
-  refundedAmount?: number | null;
-  refundReason?: string | null;
+  paymentStatus: string | undefined;
+  refundStatus: string | null;
+  refundedAmount: number | null;
+  refundReason: string | null;
   method: string;
-  paidAt?: string | null;
+  paidAt: string | null;
   phase: string;
 }
 
@@ -229,7 +229,9 @@ const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
         const sourceTitle = item.event
           ? getLocalizedText(item.event.title)
           : item.lesson?.class?.title
-            ? getLocalizedText(item.lesson.class.title)
+            ? typeof item.lesson.class.title === 'string'
+              ? item.lesson.class.title
+              : getLocalizedText(item.lesson.class.title)
             : '—';
         const eventDate = item.event?.startTime ?? item.lesson?.startAt ?? null;
         return {
@@ -251,7 +253,7 @@ const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
         return null;
       }
     })
-    .filter((item): item is PaymentRecord => Boolean(item));
+    .filter((item): item is PaymentRecord => item !== null);
 
 const loadPayments = async () => {
   loading.value = true;

@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+declare const __BUILD_TIME__: string;
+
 interface ImportMetaEnv {
   readonly VITE_APP_TARGET?: string;
   readonly VITE_LINE_CHANNEL_ID?: string;

@@ -2,83 +2,142 @@
   <div class="payout-page">
     <ConsoleTopBar v-if="!isLiffClientMode" :title="pageTitle" @back="goBack" />
 
-    <section class="summary" :class="`banner--${status.type}`">
+    <section v-if="showOnboardingGuide" class="summary banner--pending">
       <div class="summary-head">
-        <div class="banner-icon">{{ status.icon }}</div>
+        <div class="banner-icon">🟠</div>
         <div>
-          <p class="banner-title">{{ status.title }}</p>
-          <p class="banner-text">受け取り設定は Stripe のセキュア画面で管理します。</p>
+          <p class="banner-title">
+            {{ showNoAccountGuide ? 'Stripe 受け取りを開始しましょう' : '受け取り設定が未完了です' }}
+          </p>
+          <p class="banner-text">
+            {{
+              showNoAccountGuide
+                ? 'Stripe のアカウントを作成すると、受け取り設定を進められます。'
+                : '以下の項目を完了すると、受け取りが有効になります。'
+            }}
+          </p>
         </div>
       </div>
-      <div class="hero">
-        <p class="hero-label">未受取（MORE内）</p>
-        <p class="hero-value">{{ formatYen(displaySettleAmount) }}</p>
-        <p class="hero-sub">
-          Stripe残高 {{ formatYen(stripeAvailable) }}・保留中 {{ formatYen(stripePending) }}
-          <span v-if="isPlatformCharge" class="hero-note">（プラットフォーム口座管理中）</span>
-        </p>
-        <p v-if="carryReceivable > 0 && showSettlement" class="hero-sub">繰越（返金調整） {{ formatYen(carryReceivable) }}</p>
+      <div v-if="showIncompleteGuide" class="guide-list">
+        <div v-for="step in missingSteps" :key="step" class="guide-item">
+          {{ step }}
+        </div>
       </div>
-      <div class="kpi-grid">
-        <article class="kpi">
-          <p class="kpi-label">取引総額（未確定含む）</p>
-          <p class="kpi-value">{{ formatYen(transactionTotal) }}</p>
-          <p class="kpi-hint">支払い待ちも含まれます</p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">確定収入（支払い済み）</p>
-          <p class="kpi-value">{{ formatYen(balanceGross) }}</p>
-          <p class="kpi-hint">支払い待ちは含まれません</p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">Stripe手数料<span v-if="stripeFeeRateText">（{{ stripeFeeRateText }}）</span></p>
-          <p class="kpi-value kpi-value--fee">
-            {{ formatYen(stripeFee) }}
-            <span v-if="chargeModel === 'destination_charge'" class="kpi-hint-inline">（Stripe側で控除済み表示）</span>
-          </p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">プラットフォーム手数料</p>
-          <p class="kpi-value kpi-value--fee">{{ formatYen(balanceFee) }}</p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">返金済み</p>
-          <p class="kpi-value kpi-value--refund">{{ formatYen(balanceRefunded) }}</p>
-        </article>
-      </div>
-      <p class="note muted">※ 支払い待ちの取引は、確定収入・未受取に含まれません。</p>
-    </section>
-
-    <section class="actions">
-      <button class="btn primary" type="button" :disabled="!communityId" @click="goPayments">
-        取引履歴を見る
-      </button>
-      <button class="btn outline" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
-        {{ payoutLoading ? '移動中…' : withdrawLabel }}
-      </button>
-      <button class="btn ghost" type="button" :disabled="onboarding" @click="handleOnboarding">
+      <button class="btn primary" type="button" :disabled="onboarding" @click="handleOnboarding">
         {{ onboarding ? '移動中…' : stripeActionLabel }}
       </button>
       <p class="actions-hint">Stripe セキュア画面で口座・入金設定を行います。</p>
     </section>
 
-    <section v-if="isEmpty" class="empty-onboarding">
-      <p class="empty-title">まだ取引はありません。</p>
-      <p class="empty-text">最初の有料イベントを作成して、テスト決済を行いましょう。</p>
-      <button class="btn outline" type="button" :disabled="!communityId" @click="goCreatePaidEvent">
-        有料イベントを作成
-      </button>
+    <section v-else class="summary summary--flat" :class="`banner--${status.type}`">
+      <div class="hero">
+        <span class="hero-status-tag">
+          {{ status.type === 'enabled' ? '受取有効' : status.title }}
+        </span>
+        <div class="hero-title-row">
+          <p class="hero-label">受け取り可能（Stripe 残高）</p>
+          <button class="hero-info" type="button" @click="openInfoSheet">？</button>
+        </div>
+        <p class="hero-value">{{ formatYenOrDash(stripeAvailableRaw) }}</p>
+        <p class="hero-sub">プラットフォーム結算日 {{ formatDateOrDash(platformSettlementDate) }}</p>
+        <p class="hero-sub">Stripe 自動振込日 {{ stripePayoutRule || '—' }}</p>
+      </div>
+      <div class="kpi-grid">
+        <article class="kpi">
+          <p class="kpi-label">
+            取引総額
+          </p>
+          <p class="kpi-value">{{ formatYenOrDash(balanceGrossRaw) }}</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">
+            支払い待ち
+          </p>
+          <p class="kpi-value">{{ formatYenOrDash(pendingAmountRaw) }}</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">
+            主催者 見込み収入
+          </p>
+          <p class="kpi-value">{{ formatYenOrDash(netExpectedRaw) }}</p>
+        </article>
+        <article class="kpi">
+          <p class="kpi-label">
+            返金済み
+          </p>
+          <p class="kpi-value kpi-value--refund">{{ formatYenOrDash(balanceRefundedRaw) }}</p>
+        </article>
+      </div>
+      <article class="kpi kpi--fee-card">
+        <p class="kpi-label">手数料（返金時も発生）</p>
+        <p class="kpi-hint">収入算出に使用されます</p>
+        <div class="fee-row">
+          <span>Stripe（3.6%・推定）</span>
+          <strong>{{ formatYenOrDashNegative(stripeFeeRaw) }}</strong>
+        </div>
+        <div class="fee-row">
+          <span>プラットフォーム</span>
+          <strong>{{ formatYenOrDashNegative(platformFeeRaw) }}</strong>
+        </div>
+      </article>
+      <article class="kpi breakdown-card">
+        <p class="kpi-label">お金の状態（受け取り前の内訳）</p>
+        <div class="breakdown-list">
+          <div class="breakdown-row">
+            <span>活動終了待ち</span>
+            <strong>{{ formatYenOrDash(breakdownActivityWait) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>審査・申請中</span>
+            <strong>{{ formatYenOrDash(breakdownReviewing) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>振込日待ち</span>
+            <strong>{{ formatYenOrDash(breakdownPayoutWait) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>次回振込予定</span>
+            <strong>{{ formatYenOrDash(breakdownNextPayout) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>振込完了</span>
+            <strong>{{ formatYenOrDash(breakdownPaidOut) }}</strong>
+          </div>
+        </div>
+        <p class="note muted">※ 上記合計 = 見込み収入</p>
+      </article>
     </section>
 
-    <details class="account-detail" v-if="community?.stripeAccountId">
-      <summary>アカウントID</summary>
-      <div class="account-row">
-        <code>{{ community?.stripeAccountId }}</code>
-        <button class="copy-btn" type="button" @click="copyAccountId">コピー</button>
+    <details v-if="stripeReady" class="action-detail">
+      <summary>受け取り設定とアカウント情報</summary>
+      <div class="action-detail__body">
+        <button class="btn primary" type="button" :disabled="!communityId" @click="goPayments">
+          取引履歴を見る
+        </button>
+        <button class="btn outline" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
+          {{ payoutLoading ? '移動中…' : withdrawLabel }}
+        </button>
+        <button class="btn ghost" type="button" :disabled="onboarding" @click="handleOnboarding">
+          {{ onboarding ? '移動中…' : stripeActionLabel }}
+        </button>
+        <div class="account-row">
+          <code>{{ community?.stripeAccountId || '—' }}</code>
+          <button class="copy-btn" type="button" :disabled="!community?.stripeAccountId" @click="copyAccountId">
+            コピー
+          </button>
+        </div>
       </div>
     </details>
 
     <p v-if="error" class="error">{{ error }}</p>
+    <div v-if="showInfoSheet" class="sheet-mask" @click.self="closeInfoSheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <p class="sheet-title">{{ infoSheetTitle }}</p>
+        <p class="sheet-desc">{{ infoSheetBody }}</p>
+        <button class="sheet-close" type="button" @click="closeInfoSheet">閉じる</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -94,11 +153,17 @@ import {
   refreshCommunityStripeStatus,
   startCommunityStripeOnboarding,
 } from '../../../api/client';
-import type { ConsoleCommunityBalance, ConsoleCommunityDetail, StripeAccountStatus } from '../../../types/api';
+import type {
+  ConsoleCommunityBalance,
+  ConsoleCommunityDetail,
+  PlatformSettlementSchedule,
+  StripeAccountStatus,
+  StripePayoutSchedule,
+} from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
+import { APP_TARGET } from '../../../config';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -109,6 +174,8 @@ const payoutLoading = ref(false);
 const error = ref<string | null>(null);
 const balance = ref<ConsoleCommunityBalance | null>(null);
 const stripeStatus = ref<StripeAccountStatus | null>(null);
+const platformSettlement = ref<PlatformSettlementSchedule | null>(null);
+const stripePayoutSchedule = ref<StripePayoutSchedule | null>(null);
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
 
 const hasStripeAccount = computed(() => Boolean(community.value?.stripeAccountId));
@@ -125,12 +192,32 @@ const stripeActionLabel = computed(() => {
   if (!stripeReady.value) return '連携を完了する';
   return '受け取り情報を更新';
 });
+const showOnboardingGuide = computed(() => !stripeReady.value);
+const showNoAccountGuide = computed(() => !hasStripeAccount.value);
+const showIncompleteGuide = computed(() => hasStripeAccount.value && !stripeReady.value);
+const missingSteps = computed(() => {
+  if (!showIncompleteGuide.value) return [];
+  const steps: string[] = [];
+  if (stripeStatus.value?.chargesEnabled === false) {
+    steps.push('カード決済の有効化');
+  }
+  if (stripeStatus.value?.payoutsEnabled === false) {
+    steps.push('出金の有効化');
+  }
+  if (stripeStatus.value?.disabledReason) {
+    steps.push('追加情報の提出');
+  }
+  if (!steps.length) {
+    steps.push('口座情報の提出');
+  }
+  return steps;
+});
 const canWithdraw = computed(() => hasStripeAccount.value && stripeReady.value && !stripeRestricted.value);
 const withdrawLabel = computed(() => {
   if (!hasStripeAccount.value) return '出金する';
-  if (!stripeReady.value) return '出金する（連携未完了）';
-  if (stripeRestricted.value) return '出金する（制限中）';
-  return '出金する';
+  if (!stripeReady.value) return '出金設定（連携未完了）';
+  if (stripeRestricted.value) return '出金設定（制限中）';
+  return '出金設定';
 });
 const pageTitle = computed(() => 'コミュニティ財務');
 
@@ -147,35 +234,91 @@ const status = computed(() => {
   return { type: 'pending', icon: '🟠', title: 'Stripe口座が未開設です' };
 });
 
-const balanceGross = computed(() => balance.value?.grossPaid ?? 0);
-const balanceRefunded = computed(() => balance.value?.refunded ?? 0);
-const balanceFee = computed(() => balance.value?.platformFee ?? 0);
-const stripeFee = computed(() => balance.value?.stripeFee ?? 0);
-const chargeModel = computed(() => balance.value?.chargeModel ?? 'platform_charge');
-const isPlatformCharge = computed(() => chargeModel.value === 'platform_charge');
-const stripeAvailable = computed(() => balance.value?.stripeBalance?.available ?? 0);
-const stripePending = computed(() => balance.value?.stripeBalance?.pending ?? 0);
-const transactionTotal = computed(() => balance.value?.transactionTotal ?? balanceGross.value);
-const showSettlement = computed(() => Boolean(balance.value?.settlement?.enabled && chargeModel.value === 'destination_charge'));
-const settleAmount = computed(() => (showSettlement.value ? balance.value?.settlement?.settleAmount ?? 0 : 0));
-const displaySettleAmount = computed(() => settleAmount.value);
-const carryReceivable = computed(() => (showSettlement.value ? balance.value?.settlement?.carryReceivable ?? 0 : 0));
+const stripeAvailableRaw = computed(() => balance.value?.stripeBalance?.available ?? null);
+const stripePendingRaw = computed(() => balance.value?.stripeBalance?.pending ?? null);
+const stripeTotalRaw = computed(() =>
+  stripeAvailableRaw.value == null || stripePendingRaw.value == null
+    ? null
+    : stripeAvailableRaw.value + stripePendingRaw.value,
+);
+const stripeAvailable = computed(() => stripeAvailableRaw.value ?? 0);
+const stripePending = computed(() => stripePendingRaw.value ?? 0);
+const balanceGrossRaw = computed(() => balance.value?.grossPaid ?? null);
+const balanceRefundedRaw = computed(() => balance.value?.refunded ?? null);
+const platformFeeRaw = computed(() => balance.value?.platformFee ?? null);
+const stripeFeeRaw = computed(() => balance.value?.stripeFee ?? null);
+const netExpectedRaw = computed(() => balance.value?.net ?? null);
+const transactionTotalRaw = computed(() => {
+  if (balance.value?.transactionTotal != null) return balance.value.transactionTotal;
+  if (balance.value?.grossPaid != null) return balance.value.grossPaid;
+  return null;
+});
+const pendingAmountRaw = computed(() => {
+  if (transactionTotalRaw.value == null || balance.value?.grossPaid == null) return null;
+  return Math.max(0, transactionTotalRaw.value - balance.value.grossPaid);
+});
+const breakdownActivityWait = computed(() => balance.value?.settlement?.accruedNetPeriod ?? null);
+const breakdownReviewing = computed(() => balance.value?.settlement?.carryReceivable ?? null);
+const breakdownPayoutWait = computed(() => balance.value?.settlement?.hostBalance ?? null);
+const breakdownNextPayout = computed(() => balance.value?.settlement?.settleAmount ?? null);
+const breakdownPaidOut = computed(() => balance.value?.settlement?.paidOutAll ?? null);
+const nextPayoutDate = computed(() => balance.value?.settlement?.asOf ?? null);
+const nextPayoutAmount = computed(() => balance.value?.settlement?.settleAmount ?? null);
+const platformSettlementDate = computed(() => platformSettlement.value?.nextRunAt ?? null);
+const stripePayoutRule = computed(() => {
+  const schedule = stripePayoutSchedule.value;
+  if (!schedule || !schedule.interval) return null;
+  const interval = schedule.interval;
+  if (interval === 'daily') return '毎日';
+  if (interval === 'weekly') {
+    const anchor = schedule.weeklyAnchor || '';
+    const map: Record<string, string> = {
+      sunday: '毎週日曜',
+      monday: '毎週月曜',
+      tuesday: '毎週火曜',
+      wednesday: '毎週水曜',
+      thursday: '毎週木曜',
+      friday: '毎週金曜',
+      saturday: '毎週土曜',
+    };
+    return map[anchor] || '毎週';
+  }
+  if (interval === 'monthly') {
+    const anchor = schedule.monthlyAnchor;
+    return anchor ? `毎月${anchor}日` : '毎月';
+  }
+  if (interval === 'manual') return '手動';
+  return interval;
+});
+const showInfoSheet = ref(false);
+const infoSheetKey = ref<string | null>(null);
+const infoSheetTitle = computed(() => {
+  switch (infoSheetKey.value) {
+    case 'rules':
+      return '清算ルール';
+    default:
+      return '清算ルール';
+  }
+});
+const infoSheetBody = computed(() => {
+  if (infoSheetKey.value !== 'rules') return '';
+  return 'カード手数料は返金時に戻らず、プラットフォーム手数料は実際の受取金額に比例します。';
+});
 
 const communityId = computed(() => store.activeCommunityId.value);
 const hasStripeBalance = computed(() => stripeAvailable.value > 0 || stripePending.value > 0);
-const isEmpty = computed(() => transactionTotal.value === 0 && !hasStripeBalance.value);
+const isEmpty = computed(() => (transactionTotalRaw.value ?? 0) === 0 && !hasStripeBalance.value);
 
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
-const stripeFeeRateText = computed(() => {
-  const percent = STRIPE_FEE_PERCENT;
-  if (!Number.isFinite(percent)) return '';
-  const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
-  if (STRIPE_FEE_FIXED_JPY > 0) {
-    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
-  }
-  return percentText;
-});
+const formatYenOrDash = (value?: number | null) => (value == null ? '—' : formatYen(value));
+const formatYenOrDashNegative = (value?: number | null) => (value == null ? '—' : `-${formatYen(value)}`);
+const formatDateOrDash = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('ja-JP');
+};
 
 const ensurePayoutPolicyAccepted = async () => {
   try {
@@ -211,13 +354,17 @@ const loadCommunity = async () => {
 };
 
 const loadStripeStatus = async () => {
-  if (!community.value?.id || !community.value?.stripeAccountId) {
-    stripeStatus.value = null;
-    return;
-  }
+    if (!community.value?.id || !community.value?.stripeAccountId) {
+      stripeStatus.value = null;
+      platformSettlement.value = null;
+      stripePayoutSchedule.value = null;
+      return;
+    }
   try {
     const status = await refreshCommunityStripeStatus(community.value.id);
     stripeStatus.value = status.stripeAccountStatus ?? null;
+    platformSettlement.value = status.platformSettlement ?? null;
+    stripePayoutSchedule.value = status.stripePayoutSchedule ?? null;
     if (community.value) {
       community.value.stripeAccountId = status.stripeAccountId ?? community.value.stripeAccountId;
       if (status.stripeAccountOnboarded !== undefined) {
@@ -226,6 +373,8 @@ const loadStripeStatus = async () => {
     }
   } catch {
     stripeStatus.value = null;
+    platformSettlement.value = null;
+    stripePayoutSchedule.value = null;
   }
 };
 
@@ -282,9 +431,14 @@ const goPayments = () => {
   router.push({ name: 'ConsoleMobilePayments', params: { communityId: id } });
 };
 
-const goCreatePaidEvent = () => {
-  if (!communityId.value) return;
-  router.push({ name: 'ConsoleMobileEventForm', params: { communityId: communityId.value }, query: { entry: 'basic' } });
+const openInfoSheet = () => {
+  infoSheetKey.value = 'rules';
+  showInfoSheet.value = true;
+};
+
+const closeInfoSheet = () => {
+  showInfoSheet.value = false;
+  infoSheetKey.value = null;
 };
 
 const copyAccountId = async () => {
@@ -327,19 +481,25 @@ onMounted(async () => {
   flex-direction: column;
   gap: 12px;
 }
+.summary--flat {
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
 .summary-head {
   display: flex;
   gap: 10px;
   align-items: center;
 }
 .banner--pending {
-  background: #fff7ed;
+  background: transparent;
 }
 .banner--enabled {
-  background: #e0fbe2;
+  background: transparent;
 }
 .banner--error {
-  background: #fef2f2;
+  background: transparent;
 }
 .banner-icon {
   font-size: 20px;
@@ -354,6 +514,7 @@ onMounted(async () => {
   color: #475569;
 }
 .hero {
+  position: relative;
   background: linear-gradient(135deg, #2563eb, #22c55e);
   color: #fff;
   border-radius: 16px;
@@ -365,16 +526,95 @@ onMounted(async () => {
   font-size: 13px;
   opacity: 0.9;
 }
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-info {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.hero-status-tag {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.2);
+  color: #fff;
+}
 .hero-value {
   margin: 6px 0 4px;
   font-size: 32px;
   font-weight: 800;
   letter-spacing: 0.5px;
+  line-height: 1.2;
+  min-height: 38px;
+  white-space: nowrap;
 }
 .hero-sub {
   margin: 0;
   font-size: 13px;
   opacity: 0.9;
+}
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 1600;
+}
+.sheet {
+  background: #fff;
+  border-radius: 18px 18px 0 0;
+  padding: 12px 16px 18px;
+  width: 100%;
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.16);
+}
+.sheet-handle {
+  width: 48px;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  margin: 0 auto 12px;
+}
+.sheet-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.sheet-desc {
+  font-size: 13px;
+  color: #475569;
+  margin: 4px 0 0;
+  text-align: center;
+}
+.sheet-close {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  background: #0f172a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  margin-top: 12px;
 }
 .kpi-grid {
   display: grid;
@@ -388,6 +628,9 @@ onMounted(async () => {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(15, 23, 42, 0.04);
 }
+.kpi-grid .kpi {
+  min-height: 86px;
+}
 .kpi-label {
   margin: 0;
   font-size: 12px;
@@ -398,12 +641,16 @@ onMounted(async () => {
   font-size: 18px;
   font-weight: 700;
   color: #0f172a;
+  white-space: nowrap;
 }
 .kpi-value--refund {
   color: #b91c1c;
 }
 .kpi-value--fee {
   color: #ea580c;
+}
+.kpi--fee-card {
+  background: #e0fbe2;
 }
 .kpi-hint-inline {
   display: block;
@@ -414,6 +661,53 @@ onMounted(async () => {
   margin: 4px 0 0;
   font-size: 12px;
   color: #94a3b8;
+}
+.kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  background: #e2e8f0;
+}
+.fee-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: #0f172a;
+}
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+.guide-item {
+  font-size: 13px;
+  color: #0f172a;
+}
+.breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: #0f172a;
 }
 .note {
   margin: 4px 0 0;
@@ -462,35 +756,22 @@ onMounted(async () => {
   opacity: 0.6;
   cursor: not-allowed;
 }
-.empty-onboarding {
-  background: #fff;
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
-  text-align: center;
-  border: 1px solid rgba(15, 23, 42, 0.04);
-}
-.empty-title {
-  margin: 0 0 6px;
-  font-weight: 700;
-  color: #0f172a;
-}
-.empty-text {
-  margin: 0 0 10px;
-  color: #475569;
-  font-size: 13px;
-}
-.account-detail {
+.action-detail {
   background: #f1f5f9;
   border-radius: 12px;
   padding: 12px;
   border: 1px solid #e2e8f0;
 }
-.account-detail summary {
+.action-detail summary {
   cursor: pointer;
   font-weight: 700;
   color: #0f172a;
   margin-bottom: 6px;
+}
+.action-detail__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .account-row {
   display: flex;

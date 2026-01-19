@@ -135,7 +135,8 @@ const { slotMap } = resourceConfig;
 const fallbackCoverImages = computed(() => {
   const list = resourceConfig.getListValue('mobile.eventList.cardFallbacks');
   if (list.length) return list;
-  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+  const fallback = slotMap['mobile.eventList.cardFallbacks'].defaultValue;
+  return typeof fallback === 'string' ? [] : [...fallback];
 });
 
 
@@ -177,9 +178,7 @@ const hashToIndex = (value: string, length: number) => {
 };
 
 const coverUrlForEvent = (event: EventSummary) => {
-  const fallbacks = fallbackCoverImages.value.length
-    ? fallbackCoverImages.value
-    : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
+  const fallbacks = fallbackCoverImages.value;
   if (event.coverImageUrl) return resolveAssetUrl(event.coverImageUrl);
   if (!fallbacks.length) return '';
   const index = hashToIndex(event.id || event.title?.toString() || 'fallback', fallbacks.length || 1);

@@ -327,7 +327,7 @@ const buildText = () =>
 
 const buildImages = () =>
   blocks.value
-    .filter((block): block is Extract<NoteBlock, { type: 'image' }> => block.type === 'image')
+    .filter((block): block is NoteBlock & { type: 'image' } => block.type === 'image')
     .map((block) => ({
       id: block.id,
       src: block.src ?? '',

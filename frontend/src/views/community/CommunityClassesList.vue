@@ -49,7 +49,8 @@ import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 
 const route = useRoute();
 const router = useRouter();
-const classes = ref<ClassSummary[]>([]);
+type ClassSummaryWithRegistration = ClassSummary & { myRegistered: boolean };
+const classes = ref<ClassSummaryWithRegistration[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const communityName = ref('');

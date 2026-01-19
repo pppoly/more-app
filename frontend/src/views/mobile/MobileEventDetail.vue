@@ -892,7 +892,7 @@ const checkRegistrationStatus = async () => {
   checkingRegistration.value = true;
   try {
     const myEvents = await fetchMyEvents();
-    registrationItem.value = myEvents.find((item) => item.event.id === eventId.value) ?? null;
+    registrationItem.value = myEvents.find((item) => item.event?.id === eventId.value) ?? null;
   } catch {
     registrationItem.value = null;
   } finally {
@@ -934,9 +934,7 @@ const shareEvent = async () => {
     liffDeepLink ||
     (typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '');
   const shareUrlWithSource = liffDeepLink ? `${liffDeepLink}&from=line_share` : shareUrl;
-  const shareTitle =
-    getLocalizedText(detail.value.title, preferredLangs.value) ||
-    (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
+  const shareTitle = detail.value.title || 'イベント';
 
   if (APP_TARGET === 'liff') {
     if (!LIFF_ID) {
@@ -1046,7 +1044,7 @@ const markCoverBroken = (slide: { id?: string; imageUrl?: string }, index: numbe
 };
 
 const communityIdForFollow = computed(
-  () => event.value?.community?.id || detail.value?.community?.id || (detail.value as any)?.communityId || null,
+  () => event.value?.community?.id || null,
 );
 const isFollowingCommunity = ref(false);
 const followLocked = ref(false);

@@ -693,6 +693,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'console-home',
+        component: () => import('../views/console/ConsoleHome.vue'),
         beforeEnter: async (to, from, next) => {
           const store = useConsoleCommunityStore();
           await store.loadCommunities();
@@ -1053,16 +1054,16 @@ const applyPageTitle = async (to: any) => {
   const disableLiffTitle = import.meta.env.DISABLE_LIFF_TITLE !== 'false'; // デフォルトは無効。明示的に false のときのみ有効。
   document.title = isLineInAppBrowser() ? pageTitle : `${pageTitle} | ${APP_NAME}`;
   if (disableLiffTitle) return;
-  if (isLineInAppBrowser()) {
-    try {
-      const { loadLiff } = await import('../utils/liff');
-      const liffInstance = await loadLiff();
-      liffInstance?.setTitle?.(pageTitle);
-    } catch (error) {
-      console.warn('Failed to set LIFF title; continuing with document.title only.', error);
-    }
-  }
-};
+      if (isLineInAppBrowser()) {
+        try {
+          const { loadLiff } = await import('../utils/liff');
+          const liffInstance = await loadLiff();
+          (liffInstance as any)?.setTitle?.(pageTitle);
+        } catch (error) {
+          console.warn('Failed to set LIFF title; continuing with document.title only.', error);
+        }
+      }
+    };
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

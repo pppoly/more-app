@@ -122,6 +122,7 @@ export interface EventDetail {
   locationText: string;
   locationLat?: number | null;
   locationLng?: number | null;
+  coverImageUrl?: string | null;
   category?: string | null;
   minParticipants?: number | null;
   maxParticipants?: number | null;
@@ -289,10 +290,20 @@ export interface ConsolePaymentItem {
     id: string;
     name: string;
     avatarUrl?: string | null;
+    email?: string | null;
   };
+  community?: { id: string; name: string | null } | null;
   event: {
     id: string;
     title: string;
+  } | null;
+  lesson?: {
+    id: string;
+    class?: {
+      id: string;
+      title: LocalizedContent;
+      locationName?: string | null;
+    } | null;
   } | null;
   registrationId?: string | null;
   amount: number;
@@ -301,6 +312,12 @@ export interface ConsolePaymentItem {
   status: string;
   method: string;
   createdAt: string;
+  eligibleAt?: string | null;
+  payoutMode?: string | null;
+  eligibilityStatus?: string | null;
+  payoutStatus?: string | null;
+  reasonCode?: string | null;
+  ruleVersionId?: string | null;
   stripePaymentIntentId?: string | null;
   stripeRefundId?: string | null;
   refundRequest?: ConsolePaymentRefundRequest | null;
@@ -395,10 +412,30 @@ export interface StripeAccountStatus {
   disabledReason?: string | null;
 }
 
+export interface StripePayoutSchedule {
+  interval?: string | null;
+  weeklyAnchor?: string | null;
+  monthlyAnchor?: number | null;
+  delayDays?: number | null;
+}
+
+export interface PlatformSettlementSchedule {
+  enabled: boolean;
+  nextRunAt?: string | null;
+  timeZone?: string | null;
+  hour?: number | null;
+  minute?: number | null;
+  windowDays?: number | null;
+  delayDays?: number | null;
+  minTransferAmount?: number | null;
+}
+
 export interface CommunityStripeStatusResponse {
   stripeAccountId?: string | null;
   stripeAccountOnboarded?: boolean;
   stripeAccountStatus?: StripeAccountStatus | null;
+  stripePayoutSchedule?: StripePayoutSchedule | null;
+  platformSettlement?: PlatformSettlementSchedule | null;
 }
 
 export interface ConsoleEventSummary {
@@ -485,6 +522,7 @@ export interface ConsoleEventRegistrationItem {
   } | null;
   status: string;
   paymentStatus: string;
+  paymentRequired?: boolean;
   paymentId?: string | null;
   refundRequest?: {
     id: string;
@@ -602,6 +640,9 @@ export interface GeneratedEventContent {
   notes: LocalizedContent;
   riskNotice: LocalizedContent;
   expertComment?: string;
+  maxParticipants?: number | null;
+  capacity?: number | string | null;
+  price?: number | string | null;
   snsCaptions: {
     line: Record<string, string>;
     instagram: Record<string, string>;
@@ -645,7 +686,7 @@ export interface EventAssistantMessage {
 export interface EventAssistantRequest extends GenerateEventCopyInput {
   conversation: EventAssistantMessage[];
   action?: 'confirm_draft' | 'continue_edit' | 'resume_collecting';
-  uiAction?: 'confirm_draft' | 'continue_edit' | 'open_preview' | 'go_form' | null;
+  uiAction?: 'confirm_draft' | 'continue_edit' | 'resume_collecting' | 'open_preview' | 'go_form' | null;
   uiMode?: 'explain' | 'collecting';
   requestId?: string;
   conversationId?: string;
@@ -988,6 +1029,14 @@ export interface AdminSettlementBatchListItem {
   settlementEnabled: boolean;
   createdAt: string;
   runAt: string;
+  triggerType: string | null;
+  cutoffAt?: string | null;
+  scheduledAt?: string | null;
+  totalAmount?: number | null;
+  successCount?: number | null;
+  failedCount?: number | null;
+  blockedCount?: number | null;
+  reasonCodeSummary?: Record<string, any> | null;
   hosts: number;
   counts: {
     succeeded: number;
@@ -995,7 +1044,6 @@ export interface AdminSettlementBatchListItem {
     blocked: number;
     pending: number;
   };
-  triggerType: string | null;
 }
 
 export interface AdminSettlementBatchListResponse {
@@ -1041,6 +1089,13 @@ export interface AdminSettlementBatchDetailResponse {
   status: string;
   settlementEnabled: boolean;
   triggerType: string | null;
+  cutoffAt?: string | null;
+  scheduledAt?: string | null;
+  totalAmount?: number | null;
+  successCount?: number | null;
+  failedCount?: number | null;
+  blockedCount?: number | null;
+  reasonCodeSummary?: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
   runAt: string;

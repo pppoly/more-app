@@ -33,15 +33,15 @@ export function useAppShellMode() {
       const from = params.get('from');
       const src = params.get('src');
       const refLiff =
-        document.referrer &&
+        Boolean(document.referrer) &&
         (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'));
       isLiffEntry.value =
         hasLiffState ||
         hasLiffReferrer ||
         refLiff ||
-        (fromEntrySource && fromEntrySource.toLowerCase() === 'liff') ||
-        (from && from.toLowerCase() === 'liff') ||
-        (src && src.toLowerCase() === 'liff');
+        fromEntrySource?.toLowerCase() === 'liff' ||
+        from?.toLowerCase() === 'liff' ||
+        src?.toLowerCase() === 'liff';
     }
   };
 

@@ -35,33 +35,46 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchResourceGroups } from '../../api/client';
-import type { ResourceGroup } from '../../types/api';
+import { RESOURCE_SLOTS, type ResourceGroupId, type ResourceSlotDefinition } from '../../constants/resourceSlots';
 
 const router = useRouter();
 const loading = ref(false);
 const error = ref<string | null>(null);
-const groups = ref<ResourceGroup[]>([]);
 
-const load = async () => {
-  loading.value = true;
+type ResourceGroupListItem = {
+  id: ResourceGroupId;
+  name: string;
+  description?: string;
+  items: ResourceSlotDefinition[];
+};
+
+const groups = computed<ResourceGroupListItem[]>(() => {
+  const grouped = new Map<ResourceGroupId, ResourceGroupListItem>();
+  RESOURCE_SLOTS.forEach((slot) => {
+    const existing = grouped.get(slot.pageId);
+    if (existing) {
+      existing.items.push(slot);
+      return;
+    }
+    grouped.set(slot.pageId, {
+      id: slot.pageId,
+      name: slot.page,
+      items: [slot],
+    });
+  });
+  return Array.from(grouped.values());
+});
+
+const load = () => {
+  loading.value = false;
   error.value = null;
-  try {
-    groups.value = await fetchResourceGroups();
-  } catch (err) {
-    error.value = 'ロードに失敗しました';
-  } finally {
-    loading.value = false;
-  }
 };
 
 const openGroup = (id: string) => {
   router.push({ name: 'admin-resource-group', params: { groupId: id } });
 };
-
-onMounted(load);
 </script>
 
 <style scoped>

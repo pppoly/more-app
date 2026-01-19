@@ -55,6 +55,8 @@ Thumbs.db
 frontend/public/legal/
 frontend/dist*
 frontend/.vite/
+frontend/src/**/*.js
+frontend/src/**/*.js.map
 
 ############################
 # Legal & Compliance Docs

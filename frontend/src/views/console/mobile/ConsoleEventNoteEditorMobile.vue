@@ -208,7 +208,8 @@ const ensureTextBlockExists = () => {
     blocks.value.push(createTextBlock());
     return;
   }
-  if (blocks.value.every((block) => block.type === 'image')) {
+  const hasTextBlock = blocks.value.some((block) => block.type === 'text');
+  if (!hasTextBlock) {
     blocks.value.unshift(createTextBlock());
   }
 };
@@ -281,13 +282,11 @@ const initBlocks = () => {
   if (!initial.length) {
     initial = [createTextBlock()];
   }
-  const shouldInjectImages =
-    context.images &&
-    context.images.length &&
-    !initial.some((block) => block.type === 'image');
+  const contextImages = context.images ?? [];
+  const shouldInjectImages = contextImages.length > 0 && !initial.some((block) => block.type === 'image');
   if (shouldInjectImages) {
     allowOriginalHtml.value = false;
-    context.images.forEach((img) => {
+    contextImages.forEach((img) => {
       initial.push({ id: `image-${createId()}`, type: 'image', src: img.src });
     });
   }
@@ -497,23 +496,23 @@ onUnmounted(() => {
 
 const findClosestBlockId = () => {
   if (typeof document === 'undefined') return null;
-  const blocks = Array.from(document.querySelectorAll<HTMLElement>('[data-block-id]'));
-  if (!blocks.length) return null;
+  const blockEls = Array.from(document.querySelectorAll<HTMLElement>('[data-block-id]'));
+  if (!blockEls.length) return null;
   const anchorEl = document.querySelector<HTMLElement>('.floating-add');
   const anchorY = anchorEl ? anchorEl.getBoundingClientRect().top : window.innerHeight * 0.5;
   let closest: { id: string; distance: number } | null = null;
-  blocks.forEach((el) => {
+  for (const el of blockEls) {
     const rect = el.getBoundingClientRect();
-    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+    if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
     const center = (rect.top + rect.bottom) / 2;
     const distance = Math.abs(center - anchorY);
     const id = el.dataset.blockId;
-    if (!id) return;
+    if (!id) continue;
     if (!closest || distance < closest.distance) {
       closest = { id, distance };
     }
-  });
-  return closest?.id ?? null;
+  }
+  return closest ? closest.id : null;
 };
 
 const resolveInsertTargetId = () => {

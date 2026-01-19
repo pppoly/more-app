@@ -27,16 +27,16 @@
           <p class="meta">{{ mod.description }}</p>
           <div class="metrics">
             <div class="metric">
-              <p class="metric-label">呼び出し</p>
-              <strong>{{ mod.metrics?.totalCalls ?? 0 }}</strong>
+              <p class="metric-label">累計</p>
+              <strong>{{ mod.metrics?.totalLogs ?? 0 }}</strong>
             </div>
             <div class="metric">
-              <p class="metric-label">失敗</p>
-              <strong>{{ mod.metrics?.failedCalls ?? 0 }}</strong>
+              <p class="metric-label">24h</p>
+              <strong>{{ mod.metrics?.last24h ?? 0 }}</strong>
             </div>
             <div class="metric">
-              <p class="metric-label">時間</p>
-              <strong>{{ mod.metrics?.avgDurationMs ?? 0 }} ms</strong>
+              <p class="metric-label">7d</p>
+              <strong>{{ mod.metrics?.last7d ?? 0 }}</strong>
             </div>
           </div>
           <div class="actions">

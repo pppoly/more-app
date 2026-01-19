@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 import { API_BASE_URL, DEV_LOGIN_SECRET } from '../config';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { reportError } from '../utils/reporting';
@@ -52,7 +52,6 @@ import type {
   StripeCheckoutResponse,
   SubscriptionResponse,
   UserProfile,
-  ResourceGroup,
   CommunityTagCategory,
   AnalyticsEventResponse,
 } from '../types/api';
@@ -200,14 +199,17 @@ export function onUnauthorized(handler: (context: { status?: number; url?: strin
 }
 
 apiClient.interceptors.request.use((config) => {
+  const headers = AxiosHeaders.from(config.headers ?? {});
   if (authToken) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${authToken}`;
+    headers.set('Authorization', `Bearer ${authToken}`);
   }
   if (headerProvider) {
     const extra = headerProvider();
-    config.headers = { ...(config.headers ?? {}), ...extra };
+    Object.entries(extra).forEach(([key, value]) => {
+      headers.set(key, value);
+    });
   }
+  config.headers = headers;
   return config;
 });
 
@@ -463,12 +465,6 @@ export async function createStripeCheckout(registrationId: string): Promise<Stri
   return data;
 }
 
-// Admin: resource groups
-export async function fetchResourceGroups(): Promise<ResourceGroup[]> {
-  const { data } = await apiClient.get<ResourceGroup[]>('/admin/resources');
-  return data;
-}
-
 // Admin: AI usage summary
 export async function fetchAdminAiUsageSummary(): Promise<AiUsageSummaryResponse> {
   const { data } = await apiClient.get<AiUsageSummaryResponse>('/admin/ai/usage-summary');
@@ -477,7 +473,7 @@ export async function fetchAdminAiUsageSummary(): Promise<AiUsageSummaryResponse
 
 // Admin: Prompts
 export async function fetchAdminPrompts(): Promise<PromptDefinition[]> {
-  const { data } = await apiClient.get<PromptDefinition[]>('/admin/ai/prompts');
+  const { data } = await apiClient.get<PromptDefinition[]>('/ai/prompts');
   return data;
 }
 
@@ -1029,6 +1025,7 @@ export async function evalPrompt(payload: EvalPromptRequest) {
 }
 export async function adminListUsers(params?: {
   status?: string;
+  isOrganizer?: string;
   q?: string;
   page?: number;
   pageSize?: number;

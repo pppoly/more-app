@@ -208,7 +208,7 @@
                 <div class="picker-avatar">
                   <img
                     v-if="item.logoImageUrl"
-                    :src="normalizeLogoUrl(item.logoImageUrl)"
+                    :src="normalizeLogoUrl(item.logoImageUrl) ?? undefined"
                     alt="logo"
                     loading="lazy"
                   />

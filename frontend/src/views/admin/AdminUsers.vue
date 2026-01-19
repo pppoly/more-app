@@ -6,7 +6,7 @@
         <h1>Users</h1>
         <p class="subhead">封禁/活性化・ロール確認</p>
       </div>
-      <button class="ghost" type="button" :disabled="loading" @click="load">
+      <button class="ghost" type="button" :disabled="loading" @click="load(true)">
         <span class="i-lucide-refresh-cw"></span> 更新
       </button>
     </header>
@@ -19,7 +19,7 @@
             v-model="filters.q"
             type="search"
             placeholder="name / email"
-            @keyup.enter="load"
+            @keyup.enter="load(true)"
           />
         </label>
         <label>
@@ -39,7 +39,7 @@
           </select>
         </label>
       </div>
-      <button class="primary full" type="button" :disabled="loading" @click="load">適用</button>
+      <button class="primary full" type="button" :disabled="loading" @click="load(true)">適用</button>
     </section>
 
     <section class="card">

@@ -1,6 +1,7 @@
 type DraftVisibilityState = {
   hasDraftInMessages: boolean;
   hasLastReadyDraft: boolean;
+  hasMvpDraft?: boolean;
   draftReadyForUi: boolean;
 };
 

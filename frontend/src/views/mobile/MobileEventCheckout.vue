@@ -137,7 +137,7 @@ const ticketNameText = computed(() => {
   const ticketTypes = event.value?.ticketTypes ?? [];
   if (!ticketTypes.length) return '通常';
   const draft = loadDraftPayload();
-  const targetId = pendingPayment.value?.ticketTypeId ?? draft?.ticketTypeId ?? ticketTypes[0].id;
+  const targetId = draft?.ticketTypeId ?? ticketTypes[0].id;
   const ticket = ticketTypes.find((entry) => entry.id === targetId) ?? ticketTypes[0];
   return ticket.name ? getLocalizedText(ticket.name, preferredLangs.value) : '通常';
 });

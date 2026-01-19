@@ -51,6 +51,11 @@
             プラットフォーム手数料: ¥{{ formatNumber(item.platformFee) }}
             <span v-if="item.feePercent !== null" class="muted">({{ item.feePercent }}%)</span>
           </p>
+          <p class="meta">
+            結算: {{ item.eligibilityStatus || '—' }} / {{ item.payoutStatus || '—' }} / {{
+              item.reasonCode || '—'
+            }}
+          </p>
           <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
           <div class="actions">
             <button class="ghost" type="button" :disabled="busyId === item.id" @click="diagnose(item.id)">診断</button>

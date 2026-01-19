@@ -163,7 +163,7 @@ const stopScan = async () => {
       controls = null;
     }
     if (readerInstance) {
-      readerInstance.reset();
+      (readerInstance as unknown as { reset?: () => void }).reset?.();
     }
   } finally {
     stopping = false;

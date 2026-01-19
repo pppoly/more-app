@@ -109,7 +109,9 @@
         <article class="ticket-qr-modal">
           <button type="button" class="qr-close" @click="closeTicketQr">X</button>
           <p class="qr-title">QRコードを表示</p>
-          <p class="qr-subtitle">{{ getLocalizedText(qrTicket.event.title) }}</p>
+          <p class="qr-subtitle">
+            {{ qrTicket.event ? getLocalizedText(qrTicket.event.title) : '' }}
+          </p>
           <canvas ref="qrCanvas" class="qr-canvas"></canvas>
           <p class="qr-code">#{{ qrTicket.registrationId.slice(0, 8).toUpperCase() }}</p>
           <p class="qr-hint">スタッフにスキャンしてもらってください</p>
@@ -142,7 +144,7 @@ const router = useRouter();
 const events = ref<MyEventItem[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const banner = ref<{ type: 'success' | 'error'; message: string } | null>(null);
+const banner = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 const cancelingId = ref<string | null>(null);
 const activeTab = ref<FilterTabId>('upcoming');
 const qrVisible = ref(false);
@@ -156,7 +158,8 @@ const { slotMap } = resourceConfigStore;
 const fallbackCoverImages = computed(() => {
   const list = resourceConfigStore.getListValue('mobile.eventList.cardFallbacks');
   if (list.length) return list;
-  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+  const fallback = slotMap['mobile.eventList.cardFallbacks'].defaultValue;
+  return typeof fallback === 'string' ? [] : [...fallback];
 });
 
 const loadEvents = async () => {
@@ -276,14 +279,14 @@ const isRefundOrCancel = (item: MyEventItem) =>
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
   { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) && !item.attended },
-  { id: 'past', label: '参加済み', matcher: (item) => item.attended && !isRefundOrCancel(item) },
+  { id: 'past', label: '参加済み', matcher: (item) => Boolean(item.attended) && !isRefundOrCancel(item) },
   { id: 'refund', label: 'キャンセル', matcher: (item) => isRefundOrCancel(item) },
   { id: 'all', label: 'すべて', matcher: () => true },
 ];
 
 const filterCounts = computed(() => ({
   upcoming: eligibleEvents.value.filter((item) => isUpcoming(item) && !item.attended).length,
-  past: eligibleEvents.value.filter((item) => item.attended && !isRefundOrCancel(item)).length,
+  past: eligibleEvents.value.filter((item) => Boolean(item.attended) && !isRefundOrCancel(item)).length,
   refund: eligibleEvents.value.filter((item) => isRefundOrCancel(item)).length,
   all: eligibleEvents.value.length,
 }));
@@ -371,12 +374,15 @@ const displayCommunity = (item: MyEventItem) =>
 const displayLocation = (item: MyEventItem) =>
   item.lesson?.class?.locationName || item.event?.locationText || '';
 const displayTitle = (item: MyEventItem) => {
-  if (item.lesson?.class?.title) return getLocalizedText(item.lesson.class.title);
+  if (item.lesson?.class?.title) {
+    const title = item.lesson.class.title;
+    return typeof title === 'string' ? title : getLocalizedText(title);
+  }
   if (item.event) return getLocalizedText(item.event.title);
   return 'クラス';
 };
 
-const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
+const titleFor = (event: MyEventItem['event']) => (event ? getLocalizedText(event.title) : '');
 const statusLabel = (item: MyEventItem) => {
   const map: Record<string, string> = {
     pending: '審査待ち',
@@ -539,9 +545,14 @@ const closeTicketQr = () => {
 const generateQr = async () => {
   if (!qrVisible.value || !qrTicket.value || !qrCanvas.value) return;
   qrError.value = null;
+  const eventId = qrTicket.value.event?.id;
+  if (!eventId) {
+    qrError.value = 'イベント情報が見つかりません';
+    return;
+  }
   const payload = JSON.stringify({
     registrationId: qrTicket.value.registrationId,
-    eventId: qrTicket.value.event.id,
+    eventId,
   });
   try {
     await QRCode.toCanvas(qrCanvas.value, payload, {
@@ -637,9 +648,7 @@ const hashToIndex = (value: string, length: number) => {
 
 const coverUrlFor = (item: MyEventItem) => {
   if (item.event?.coverImageUrl) return item.event.coverImageUrl;
-  const fallbacks = fallbackCoverImages.value.length
-    ? fallbackCoverImages.value
-    : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
+  const fallbacks = fallbackCoverImages.value;
   const hashId = item.event?.id || item.lesson?.id || 'fallback';
   const index = hashToIndex(hashId, fallbacks.length || 1);
   return fallbacks[index];

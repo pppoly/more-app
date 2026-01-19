@@ -127,8 +127,9 @@ const summary = ref<{ totalAmount: number; count: number } | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const showTopBar = computed(() => !isLineInAppBrowser());
-const activeFilter = ref<'all' | 'paid' | 'unpaid' | 'refund'>('all');
-const filterOptions = [
+type FilterValue = 'all' | 'paid' | 'unpaid' | 'refund';
+const activeFilter = ref<FilterValue>('all');
+const filterOptions: Array<{ value: FilterValue; label: string }> = [
   { value: 'all', label: 'すべて' },
   { value: 'paid', label: '支払い済み' },
   { value: 'unpaid', label: '支払い待ち' },

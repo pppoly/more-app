@@ -36,6 +36,16 @@
     <template v-if="showLiffGuide">
       <LineRedirectOverlay :allow-web-continue="false" />
     </template>
+    <template v-else-if="showLiffLoginRecovery">
+      <div class="liff-recovery">
+        <div class="liff-recovery__backdrop"></div>
+        <div class="liff-recovery__card">
+          <p class="liff-recovery__title">LINEログインが完了していません</p>
+          <p class="liff-recovery__text">LINEアプリを再起動して、もう一度開き直してください。</p>
+          <button type="button" class="liff-recovery__button" @click="reloadPage">再読み込み</button>
+        </div>
+      </div>
+    </template>
     <template v-else-if="isMobile && showLineModal && !allowWebContinue">
       <LineRedirectOverlay @continue-web="continueWeb" />
     </template>
@@ -160,6 +170,9 @@ const allowWebContinue = ref(false);
 const showLineModal = ref(false);
 const showLiffGuide = computed(
   () => isProductionLiff() && !isLiffClientMode.value,
+);
+const showLiffLoginRecovery = computed(
+  () => isProductionLiff() && isLiffClientMode.value && needsLiffOpen.value,
 );
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
@@ -318,6 +331,11 @@ const openInLine = () => {
   window.location.href = url;
 };
 
+const reloadPage = () => {
+  if (typeof window === 'undefined') return;
+  window.location.reload();
+};
+
 </script>
 
 <style scoped>
@@ -369,6 +387,61 @@ const openInLine = () => {
   padding: 10px 14px;
   font-weight: 700;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.liff-recovery {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1600;
+  padding: 20px;
+}
+
+.liff-recovery__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.liff-recovery__card {
+  position: relative;
+  width: min(460px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.liff-recovery__title {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.liff-recovery__text {
+  margin: 0;
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.liff-recovery__button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #0f172a;
+  color: #fff;
 }
 
 .app-header {

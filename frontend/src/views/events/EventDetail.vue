@@ -159,7 +159,7 @@
                   type="checkbox"
                   :value="option"
                   :checked="Array.isArray(formAnswers[fieldKey(field, index)]) && formAnswers[fieldKey(field, index)].includes(option)"
-                  @change="toggleMulti(field, index, option, $event.target.checked)"
+                  @change="toggleMulti(field, index, option, Boolean(($event.target as HTMLInputElement | null)?.checked))"
                 />
                 {{ option }}
               </label>
@@ -168,7 +168,7 @@
               <input
                 type="checkbox"
                 :checked="Boolean(formAnswers[fieldKey(field, index)])"
-                @change="formAnswers[fieldKey(field, index)] = $event.target.checked"
+                @change="formAnswers[fieldKey(field, index)] = Boolean(($event.target as HTMLInputElement | null)?.checked)"
               />
               {{ field.label }}
             </label>
