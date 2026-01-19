@@ -12,6 +12,10 @@ interface StripeCheckoutDto {
   registrationId: string;
 }
 
+interface StripeConfirmDto {
+  sessionId: string;
+}
+
 interface StripeRefundDto {
   reason?: string;
 }
@@ -67,6 +71,12 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   createStripeCheckout(@Req() req: any, @Body() body: StripeCheckoutDto) {
     return this.paymentsService.createStripeCheckout(req.user.id, body.registrationId);
+  }
+
+  @Post('stripe/confirm')
+  @UseGuards(JwtAuthGuard)
+  confirmStripeCheckout(@Req() req: any, @Body() body: StripeConfirmDto) {
+    return this.paymentsService.confirmStripeCheckoutSession(req.user.id, body.sessionId);
   }
 
   @Post(':paymentId/refund')

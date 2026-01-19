@@ -79,7 +79,7 @@
         <p class="kpi-label">手数料（返金時も発生）</p>
         <p class="kpi-hint">収入算出に使用されます</p>
         <div class="fee-row">
-          <span>Stripe（3.6%・推定）</span>
+          <span>{{ stripeFeeLabel }}</span>
           <strong>{{ formatYenOrDashNegative(stripeFeeRaw) }}</strong>
         </div>
         <div class="fee-row">
@@ -169,8 +169,8 @@ import type {
 } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
-import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
+	import { isLineInAppBrowser } from '../../../utils/liff';
+	import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -317,7 +317,23 @@ const infoSheetTitle = computed(() => {
 });
 const infoSheetBody = computed(() => {
   if (infoSheetKey.value !== 'rules') return '';
-  return 'カード手数料は返金時に戻らず、プラットフォーム手数料は実際の受取金額に比例します。';
+  const percentText = Number.isFinite(STRIPE_FEE_PERCENT) ? `${STRIPE_FEE_PERCENT}%` : '—';
+  const fixedText = STRIPE_FEE_FIXED_JPY > 0 ? ` + ${formatYen(STRIPE_FEE_FIXED_JPY)}` : '';
+  const minText = STRIPE_FEE_MIN_JPY > 0 ? `（最低${formatYen(STRIPE_FEE_MIN_JPY)}）` : '';
+  return `カード手数料は返金時に戻らず、Stripe手数料は ${percentText}${fixedText}${minText} です。プラットフォーム手数料は実際の受取金額に比例します。`;
+});
+
+const stripeFeeLabel = computed(() => {
+  const percentText = Number.isFinite(STRIPE_FEE_PERCENT) ? `${STRIPE_FEE_PERCENT}%` : '—';
+  const parts: string[] = [percentText];
+  if (STRIPE_FEE_FIXED_JPY > 0) {
+    parts.push(`+${formatYen(STRIPE_FEE_FIXED_JPY)}`);
+  }
+  if (STRIPE_FEE_MIN_JPY > 0) {
+    parts.push(`最低${formatYen(STRIPE_FEE_MIN_JPY)}`);
+  }
+  parts.push('推定');
+  return `Stripe（${parts.join('・')}）`;
 });
 
 const communityId = computed(() => store.activeCommunityId.value);

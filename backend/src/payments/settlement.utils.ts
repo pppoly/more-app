@@ -16,8 +16,10 @@ export const computeRefundBreakdown = (params: {
   merchantNet: number;
   refundAmount: number;
 }) => {
+  const refundPlatformFee = computeProportionalAmount(params.platformFee, params.refundAmount, params.gross);
+  const reverseMerchant = Math.max(0, (params.refundAmount ?? 0) - refundPlatformFee);
   return {
-    refundPlatformFee: computeProportionalAmount(params.platformFee, params.refundAmount, params.gross),
-    reverseMerchant: computeProportionalAmount(params.merchantNet, params.refundAmount, params.gross),
+    refundPlatformFee,
+    reverseMerchant,
   };
 };

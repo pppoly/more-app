@@ -505,7 +505,7 @@ export class PaymentsService {
         where: refundedWhere,
         _sum: { refundedGrossTotal: true },
       }),
-      this.prisma.payment.aggregate({ where: allWhere, _sum: { amount: true } }),
+      this.prisma.payment.aggregate({ where: allWhere, _sum: { amount: true, stripeFeeAmountActual: true } }),
     ]);
 
     let stripeBalance: { available: number; pending: number } | null = null;
@@ -600,20 +600,15 @@ export class PaymentsService {
         }),
       ]);
 
-    const accruedNetAll =
-      (hostPayableAllAgg._sum.amount ?? 0) - (hostPayableReversalAllAgg._sum.amount ?? 0);
-    const paidOutAll = paidOutAllAgg._sum.settleAmount ?? 0;
-    const hostBalance = accruedNetAll - paidOutAll;
-    const settleAmount =
-      paymentsConfig.settlementEnabled && this.stripeService.enabled && chargeModel === 'destination_charge'
-        ? (hostBalance > 0 ? hostBalance : 0)
-        : 0;
-    const carryReceivable =
-      paymentsConfig.settlementEnabled && this.stripeService.enabled && chargeModel === 'destination_charge'
-        ? hostBalance < 0
-          ? Math.abs(hostBalance)
-          : 0
-        : 0;
+	    const accruedNetAll =
+	      (hostPayableAllAgg._sum.amount ?? 0) - (hostPayableReversalAllAgg._sum.amount ?? 0);
+	    const paidOutAll = paidOutAllAgg._sum.settleAmount ?? 0;
+	    const hostBalance = accruedNetAll - paidOutAll;
+	    const settlementActive = chargeModel === 'platform_charge';
+	    const settleAmount =
+	      settlementActive ? (hostBalance > 0 ? hostBalance : 0) : 0;
+	    const carryReceivable =
+	      settlementActive ? (hostBalance < 0 ? Math.abs(hostBalance) : 0) : 0;
     const accruedNetPeriod = monthStart
       ? (hostPayablePeriodAgg._sum.amount ?? 0) - (hostPayableReversalPeriodAgg._sum.amount ?? 0)
       : undefined;
@@ -622,7 +617,9 @@ export class PaymentsService {
     const grossPaid = paidAgg._sum.amount ?? 0;
     const platformFee = paidAgg._sum.platformFee ?? 0;
     const refunded = refundedAgg._sum.refundedGrossTotal ?? 0;
-    const stripeFee = stripeFeeAgg._sum.amount ?? 0;
+    const stripeFeeFromLedger = stripeFeeAgg._sum.amount ?? 0;
+    const stripeFeeFromPayments = allAgg._sum.stripeFeeAmountActual ?? 0;
+    const stripeFee = stripeFeeFromLedger > 0 ? stripeFeeFromLedger : stripeFeeFromPayments;
     const net = monthStart ? accruedNetPeriod ?? 0 : accruedNetAll;
 
     return {
@@ -648,6 +645,111 @@ export class PaymentsService {
       },
       period: period === 'month' ? 'month' : 'all',
     };
+  }
+
+  async confirmStripeCheckoutSession(userId: string, sessionId: string) {
+    const trimmed = (sessionId ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('sessionId is required');
+    }
+    if (!this.stripeService.enabled) {
+      throw new BadRequestException('Stripe決済が現在利用できません');
+    }
+
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await this.withStripeRetry(() => this.stripeService.client.checkout.sessions.retrieve(trimmed));
+    } catch (error) {
+      this.logger.warn(
+        `Failed to retrieve checkout session ${trimmed}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new NotFoundException('Checkout session not found');
+    }
+
+    const sessionUserId = session.metadata?.userId;
+    if (sessionUserId && sessionUserId !== userId) {
+      throw new ForbiddenException('You cannot access this checkout session');
+    }
+
+    const registrationId = session.metadata?.registrationId;
+    const paymentId = session.metadata?.paymentId;
+    const whereClauses: Prisma.PaymentWhereInput[] = [{ stripeCheckoutSessionId: session.id }];
+    if (paymentId) {
+      whereClauses.push({ id: paymentId });
+    }
+    if (registrationId) {
+      whereClauses.push({ registrationId });
+    }
+    const payment = await this.prisma.payment.findFirst({ where: { OR: whereClauses } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    if (payment.userId !== userId) {
+      throw new ForbiddenException('You cannot access this payment');
+    }
+
+    const result = await this.handleCheckoutSessionCompleted(session, this.prisma, `manual_confirm:${session.id}`);
+    for (const task of result.postProcessTasks) {
+      try {
+        await task();
+      } catch (error) {
+        this.logger.warn(
+          `Confirm checkout session task failed: session=${session.id} payment=${payment.id} error=${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.payment.findUnique({ where: { id: payment.id } });
+    return {
+      paymentId: payment.id,
+      registrationId: updated?.registrationId ?? payment.registrationId ?? registrationId ?? null,
+      status: updated?.status ?? payment.status,
+    };
+  }
+
+  private async syncStripePaymentPaidIfNeeded(payment: Payment): Promise<Payment> {
+    if (!this.stripeService.enabled) return payment;
+    if (payment.method !== 'stripe') return payment;
+    if (['paid', 'partial_refunded', 'refunded'].includes(payment.status)) return payment;
+
+    const paymentIntentId = await this.resolvePaymentIntentId(payment);
+    if (!paymentIntentId) return payment;
+
+    try {
+      const intent = await this.withStripeRetry(() => this.stripeService.client.paymentIntents.retrieve(paymentIntentId));
+      if (intent.status !== 'succeeded') return payment;
+      const updated = await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'paid',
+          stripePaymentIntentId: paymentIntentId,
+          stripeChargeId:
+            typeof intent.latest_charge === 'string'
+              ? intent.latest_charge
+              : intent.latest_charge?.id ?? payment.stripeChargeId ?? null,
+          provider: 'stripe',
+          providerObjectType: 'payment_intent',
+          providerObjectId: intent.id,
+        },
+      });
+      if (updated.registrationId) {
+        await this.prisma.eventRegistration.update({
+          where: { id: updated.registrationId },
+          data: { status: 'paid', paymentStatus: 'paid', paidAmount: updated.amount },
+        });
+      }
+      await this.maybeTriggerRealtimePayout(updated.id);
+      return updated;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to sync Stripe payment intent ${paymentIntentId} for payment ${payment.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return payment;
+    }
   }
 
   private async getCommunityStripeFeeFromPlatform(communityId: string, monthStart?: Date) {
@@ -1514,7 +1616,7 @@ export class PaymentsService {
     if (!this.stripeService.enabled) {
       throw new BadRequestException('Stripe決済が現在利用できません');
     }
-    const payment = await this.prisma.payment.findUnique({
+    let payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
     });
     if (!payment) {
@@ -1531,6 +1633,9 @@ export class PaymentsService {
       await this.permissions.assertCommunityManager(userId, lesson.class.communityId);
     } else {
       throw new BadRequestException('決済の紐付け情報が不足しています');
+    }
+    if (!['paid', 'partial_refunded'].includes(payment.status)) {
+      payment = await this.syncStripePaymentPaidIfNeeded(payment);
     }
     if (!['paid', 'partial_refunded'].includes(payment.status)) {
       throw new BadRequestException('この支払いは返金できません');
@@ -1564,13 +1669,16 @@ export class PaymentsService {
     if (!payment) {
       throw new BadRequestException('Payment not found');
     }
-    if (!['paid', 'partial_refunded'].includes(payment.status)) {
+    const synced = !['paid', 'partial_refunded'].includes(payment.status)
+      ? await this.syncStripePaymentPaidIfNeeded(payment)
+      : payment;
+    if (!['paid', 'partial_refunded'].includes(synced.status)) {
       throw new BadRequestException('この支払いは返金できません');
     }
-    if (amount !== undefined && amount > payment.amount) {
+    if (amount !== undefined && amount > synced.amount) {
       throw new BadRequestException('返金額が支払い額を超えています');
     }
-    return this.refundStripePaymentWithMerchantFee(userId, payment, amount, reason);
+    return this.refundStripePaymentWithMerchantFee(userId, synced, amount, reason);
   }
 
   private async refundStripePaymentWithMerchantFee(
@@ -1614,17 +1722,21 @@ export class PaymentsService {
       throw new NotFoundException('Payment not found');
     }
 
-    const platformFee = refreshed.platformFee ?? 0;
-    const stripeFee = refreshed.stripeFeeAmountActual ?? 0;
-    const merchantNet =
-      refreshed.merchantTransferAmount ?? computeMerchantNet(gross, platformFee, stripeFee);
-    const remainingPlatformFee = Math.max(0, platformFee - (refreshed.refundedPlatformFeeTotal ?? 0));
-    const remainingMerchant = Math.max(0, merchantNet - (refreshed.reversedMerchantTotal ?? 0));
+	    const platformFee = refreshed.platformFee ?? 0;
+	    const stripeFee = refreshed.stripeFeeAmountActual ?? 0;
+	    const merchantNet =
+	      refreshed.merchantTransferAmount ?? computeMerchantNet(gross, platformFee, stripeFee);
+	    const remainingPlatformFee = Math.max(0, platformFee - (refreshed.refundedPlatformFeeTotal ?? 0));
+	    const maxReverseMerchant = Math.max(0, gross - platformFee);
+	    const remainingMerchant = Math.max(0, maxReverseMerchant - (refreshed.reversedMerchantTotal ?? 0));
 
-    let refundPlatformFee = computeProportionalAmount(platformFee, refundAmount, gross);
-    let reverseMerchant = computeProportionalAmount(merchantNet, refundAmount, gross);
-    refundPlatformFee = Math.min(refundPlatformFee, remainingPlatformFee);
-    reverseMerchant = Math.min(reverseMerchant, remainingMerchant);
+	    let refundPlatformFee = computeProportionalAmount(platformFee, refundAmount, gross);
+	    refundPlatformFee = Math.min(refundPlatformFee, remainingPlatformFee);
+	    let reverseMerchant =
+	      refreshed.chargeModel === 'platform_charge'
+	        ? Math.max(0, refundAmount - refundPlatformFee)
+	        : computeProportionalAmount(merchantNet, refundAmount, gross);
+	    reverseMerchant = Math.min(reverseMerchant, remainingMerchant);
 
     const refundParams: Stripe.RefundCreateParams = {
       payment_intent: paymentIntentId,
@@ -1679,9 +1791,9 @@ export class PaymentsService {
       metadata: { reason, refundPlatformFee, reverseMerchant },
     });
 
-    // v1 baseline: platform charge refunds do not touch connected account balance.
-    // Record internal journal entries for reconciliation and settlement reporting.
-    if (refreshed.chargeModel === 'platform_charge') {
+	    // v1 baseline: platform charge refunds do not touch connected account balance.
+	    // Record internal journal entries for reconciliation and settlement reporting.
+	    if (refreshed.chargeModel === 'platform_charge') {
       if (refundPlatformFee > 0) {
         await this.createLedgerEntryIfMissing({
           tx: this.prisma,
@@ -1702,47 +1814,26 @@ export class PaymentsService {
         });
       }
 
-      if (reverseMerchant > 0) {
-        await this.createLedgerEntryIfMissing({
-          tx: this.prisma,
-          businessPaymentId: payment.id,
-          businessRegistrationId: payment.registrationId ?? undefined,
-          businessLessonId: payment.lessonId ?? undefined,
-          businessCommunityId: payment.communityId ?? undefined,
-          entryType: 'host_payable_reversal',
-          direction: 'in',
-          amount: reverseMerchant,
-          currency: payment.currency ?? 'jpy',
-          provider: 'internal',
-          providerObjectType: 'refund',
-          providerObjectId: refund.id,
-          idempotencyKey: `ledger:host_payable_reversal:${refund.id}`,
-          occurredAt: new Date(),
-          metadata: { paymentId: payment.id, refundId: refund.id },
-        });
-      }
-
-      const refundFeeLoss = computeProportionalAmount(stripeFee, refundAmount, gross);
-      if (refundFeeLoss > 0) {
-        await this.createLedgerEntryIfMissing({
-          tx: this.prisma,
-          businessPaymentId: payment.id,
-          businessRegistrationId: payment.registrationId ?? undefined,
-          businessLessonId: payment.lessonId ?? undefined,
-          businessCommunityId: payment.communityId ?? undefined,
-          entryType: 'refund_fee_loss_platform',
-          direction: 'out',
-          amount: refundFeeLoss,
-          currency: payment.currency ?? 'jpy',
-          provider: 'internal',
-          providerObjectType: 'refund',
-          providerObjectId: refund.id,
-          idempotencyKey: `ledger:refund_fee_loss_platform:${refund.id}`,
-          occurredAt: new Date(),
-          metadata: { paymentId: payment.id, refundId: refund.id, stripeFee, refundAmount, gross },
-        });
-      }
-    }
+	      if (reverseMerchant > 0) {
+	        await this.createLedgerEntryIfMissing({
+	          tx: this.prisma,
+	          businessPaymentId: payment.id,
+	          businessRegistrationId: payment.registrationId ?? undefined,
+	          businessLessonId: payment.lessonId ?? undefined,
+	          businessCommunityId: payment.communityId ?? undefined,
+	          entryType: 'host_payable_reversal',
+	          direction: 'in',
+	          amount: reverseMerchant,
+	          currency: payment.currency ?? 'jpy',
+	          provider: 'internal',
+	          providerObjectType: 'refund',
+	          providerObjectId: refund.id,
+	          idempotencyKey: `ledger:host_payable_reversal:${refund.id}`,
+	          occurredAt: new Date(),
+	          metadata: { paymentId: payment.id, refundId: refund.id },
+	        });
+	      }
+	    }
 
     await this.logGatewayEvent({
       gateway: 'stripe',
@@ -2612,27 +2703,25 @@ export class PaymentsService {
     });
   }
 
-  private async recordRefundTotals(
-    paymentId: string,
-    params: { refundAmount: number; refundPlatformFee: number; reverseMerchant: number; refundId: string | null },
-  ): Promise<string> {
+	  private async recordRefundTotals(
+	    paymentId: string,
+	    params: { refundAmount: number; refundPlatformFee: number; reverseMerchant: number; refundId: string | null },
+	  ): Promise<string> {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
     const gross = payment.amount ?? 0;
     const nextRefundedGross = Math.min(gross, (payment.refundedGrossTotal ?? 0) + params.refundAmount);
-    const nextRefundedPlatformFee = Math.min(
-      payment.platformFee ?? 0,
-      (payment.refundedPlatformFeeTotal ?? 0) + params.refundPlatformFee,
-    );
-    const merchantNet =
-      payment.merchantTransferAmount ??
-      computeMerchantNet(gross, payment.platformFee ?? 0, payment.stripeFeeAmountActual ?? 0);
-    const nextReversedMerchant = Math.min(
-      merchantNet,
-      (payment.reversedMerchantTotal ?? 0) + params.reverseMerchant,
-    );
+	    const nextRefundedPlatformFee = Math.min(
+	      payment.platformFee ?? 0,
+	      (payment.refundedPlatformFeeTotal ?? 0) + params.refundPlatformFee,
+	    );
+	    const maxReverseMerchant = Math.max(0, gross - (payment.platformFee ?? 0));
+	    const nextReversedMerchant = Math.min(
+	      maxReverseMerchant,
+	      (payment.reversedMerchantTotal ?? 0) + params.reverseMerchant,
+	    );
     const status = nextRefundedGross >= gross ? 'refunded' : 'partial_refunded';
 
     await this.prisma.payment.update({

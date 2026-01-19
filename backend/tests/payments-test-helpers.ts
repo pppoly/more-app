@@ -122,6 +122,7 @@ export class InMemoryPrisma {
   communities: any[] = [];
   settlementBatches: any[] = [];
   settlementItems: any[] = [];
+  settlementAuditEvents: any[] = [];
 
   private nextId(prefix: string) {
     this.seq += 1;
@@ -535,6 +536,14 @@ export class InMemoryPrisma {
       return Array.from(groups.values());
     },
   };
+
+  settlementAuditEvent = {
+    create: async (args: any) => {
+      const created: any = { id: this.nextId('sua'), createdAt: new Date(), ...args.data };
+      this.settlementAuditEvents.push(created);
+      return created;
+    },
+  };
 }
 
 export class StripeClientStub {
@@ -618,4 +627,8 @@ export class NotificationServiceStub {
   notifyRegistrationSuccess = async () => {};
   notifyRefundByStripeCharge = async () => {};
   notifyRefundByPayment = async () => {};
+}
+
+export class SettlementServiceStub {
+  runSettlementBatch = async () => ({ batchId: 'stub', status: 'skipped' });
 }

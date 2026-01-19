@@ -25,7 +25,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchMyEvents } from '../../api/client';
+import { confirmStripeCheckoutSession, fetchMyEvents } from '../../api/client';
 import { MOBILE_CLASS_SUCCESS_KEY, MOBILE_EVENT_PENDING_PAYMENT_KEY, MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
 import { trackEvent } from '../../utils/analytics';
 
@@ -173,6 +173,11 @@ const loadPendingPayment = () => {
 
 onMounted(() => {
   trackEvent('payment_success');
+  const sessionId =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search || '').get('session_id') : null;
+  if (sessionId) {
+    confirmStripeCheckoutSession(sessionId).catch(() => undefined);
+  }
   pending.value = loadPendingPayment();
   if (!pending.value) {
     status.value = 'success';

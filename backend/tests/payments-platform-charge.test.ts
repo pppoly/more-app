@@ -9,6 +9,7 @@ import {
   buildStripeServiceStub,
   PermissionsServiceStub,
   NotificationServiceStub,
+  SettlementServiceStub,
 } from './payments-test-helpers';
 
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_test';
@@ -38,6 +39,7 @@ test('P1/P4: platform charge paid + webhook replay is idempotent', async () => {
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   prisma.registrations.push({
@@ -118,6 +120,7 @@ test('Webhook durable ACK: returns error when event cannot be persisted', async 
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const event = {
@@ -140,6 +143,7 @@ test('Webhook crash fallback: marks gateway event failed and schedules retry whe
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   // Simulate an unexpected crash after durable upsert.
@@ -174,6 +178,7 @@ test('Webhook upsert update: unprocessed event nextAttemptAt is pulled forward f
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const future = new Date(Date.now() + 60 * 60 * 1000);
@@ -219,6 +224,7 @@ test('Community balance: settlement snapshot is derived from ledger + settlement
     { enabled: false, client: {} } as any,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const now = new Date();
@@ -329,6 +335,7 @@ test('Community balance: stripe fee is backfilled from payment fields into ledge
     { enabled: false, client: {} } as any,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const createdAt = new Date('2026-01-10T10:00:00.000Z');
@@ -396,6 +403,7 @@ test('Community balance: stripe fee is backfilled from Stripe balance transactio
     { enabled: false, client: {} } as any,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const createdAt = new Date('2026-01-10T10:00:00.000Z');
@@ -491,6 +499,7 @@ test('Community balance: Plan B can resolve balanceTx via checkout session when 
     { enabled: false, client: {} } as any,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const createdAt = new Date('2026-01-10T10:00:00.000Z');
@@ -583,6 +592,7 @@ test('P2: payment_intent.payment_failed marks payment failed', async () => {
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   prisma.registrations.push({
@@ -639,6 +649,7 @@ test('P3: checkout.session.expired cancels pending payment', async () => {
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   prisma.registrations.push({
@@ -693,6 +704,7 @@ test('R1-R3: platform refund is from platform, no reverse_transfer/refund_applic
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   prisma.registrations.push({
@@ -767,6 +779,7 @@ test('R4/R5: out-of-order refund webhook is retried and idempotent', async () =>
     stripeService,
     new PermissionsServiceStub() as any,
     new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
   );
 
   const refundEvent = {

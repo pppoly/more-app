@@ -465,6 +465,19 @@ export async function createStripeCheckout(registrationId: string): Promise<Stri
   return data;
 }
 
+export async function confirmStripeCheckoutSession(sessionId: string): Promise<{
+  paymentId: string;
+  registrationId: string | null;
+  status: string;
+}> {
+  const { data } = await apiClient.post<{
+    paymentId: string;
+    registrationId: string | null;
+    status: string;
+  }>('/payments/stripe/confirm', { sessionId });
+  return data;
+}
+
 // Admin: AI usage summary
 export async function fetchAdminAiUsageSummary(): Promise<AiUsageSummaryResponse> {
   const { data } = await apiClient.get<AiUsageSummaryResponse>('/admin/ai/usage-summary');

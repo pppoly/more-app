@@ -44,6 +44,7 @@ const parseNumber = (value: string | undefined, fallback: number) => {
 
 export const STRIPE_FEE_PERCENT = parseNumber(import.meta.env.VITE_STRIPE_FEE_PERCENT, 3.6);
 export const STRIPE_FEE_FIXED_JPY = parseNumber(import.meta.env.VITE_STRIPE_FEE_FIXED_JPY, 0);
+export const STRIPE_FEE_MIN_JPY = parseNumber(import.meta.env.VITE_STRIPE_FEE_MIN_JPY, 30);
 export const PLATFORM_FEE_WAIVED = !['0', 'false', 'off'].includes(
   (import.meta.env.VITE_PLATFORM_FEE_WAIVED ?? '1').toLowerCase(),
 );
