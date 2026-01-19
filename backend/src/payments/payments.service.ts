@@ -295,6 +295,18 @@ export class PaymentsService {
         include: {
           user: { select: { id: true, name: true, avatarUrl: true } },
           event: { select: { id: true, title: true } },
+          lesson: {
+            select: {
+              id: true,
+              class: {
+                select: {
+                  id: true,
+                  title: true,
+                  locationName: true,
+                },
+              },
+            },
+          },
           registration: {
             select: {
               id: true,
@@ -334,6 +346,21 @@ export class PaymentsService {
           ? {
               id: item.event.id,
               title: this.getLocalizedText(item.event.title),
+            }
+          : null,
+        lesson: item.lesson
+          ? {
+              id: item.lesson.id,
+              class: item.lesson.class
+                ? {
+                    id: item.lesson.class.id,
+                    title:
+                      typeof item.lesson.class.title === 'string'
+                        ? { original: item.lesson.class.title }
+                        : item.lesson.class.title,
+                    locationName: item.lesson.class.locationName ?? null,
+                  }
+                : null,
             }
           : null,
         registrationId: item.registrationId ?? null,

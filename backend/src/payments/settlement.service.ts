@@ -269,15 +269,14 @@ export class SettlementService {
       'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility'
     >();
 
-    for (const payment of payments) {
-      const hostId = payment.communityId;
-      if (!hostId) continue;
-      const delayDays = getEffectiveDelayDays(hostId);
-      const eligibleAt = payment.eligibleAt ?? null;
-      if (!eligibleAt) {
-        blockedMissingEligibilityPaymentIds.push(payment.id);
-        categoryByPaymentId.set(payment.id, 'missing_eligibility');
-        continue;
+	    for (const payment of payments) {
+	      const hostId = payment.communityId;
+	      if (!hostId) continue;
+	      const eligibleAt = payment.eligibleAt ?? null;
+	      if (!eligibleAt) {
+	        blockedMissingEligibilityPaymentIds.push(payment.id);
+	        categoryByPaymentId.set(payment.id, 'missing_eligibility');
+	        continue;
       }
 
       if (payment.settlementFrozen) {
@@ -914,16 +913,16 @@ export class SettlementService {
         const succeeded = items.filter((i) => ['completed', 'transferred'].includes(i.status)).length;
         const failed = items.filter((i) => i.status === 'failed').length;
         const blocked = items.filter((i) => i.status === 'blocked').length;
-        const pending = items.filter((i) => ['pending', 'processing'].includes(i.status)).length;
-        const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
-        const settlementEnabled = Boolean(meta?.settlementEnabled);
-        const triggerType =
-          batch.triggerType ?? (typeof meta?.triggerType === 'string' ? (meta.triggerType as string) : null);
-        return {
-          batchId: batch.id,
-          periodFrom: batch.periodFrom.toISOString(),
-          periodTo: batch.periodTo.toISOString(),
-          currency: batch.currency ?? 'jpy',
+	        const pending = items.filter((i) => ['pending', 'processing'].includes(i.status)).length;
+	        const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+	        const settlementEnabled = Boolean(meta?.settlementEnabled);
+	        const triggerType =
+	          batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
+	        return {
+	          batchId: batch.id,
+	          periodFrom: batch.periodFrom.toISOString(),
+	          periodTo: batch.periodTo.toISOString(),
+	          currency: batch.currency ?? 'jpy',
           status: batch.status,
           settlementEnabled,
           createdAt: batch.createdAt.toISOString(),
@@ -1009,16 +1008,16 @@ export class SettlementService {
         stripeDisputeStatus: payment.stripeDisputeStatus ?? null,
       });
       disputedByHost.set(payment.communityId, current);
-    }
+	    }
 
-    const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
-    const triggerType =
-      batch.triggerType ?? (typeof meta?.triggerType === 'string' ? (meta.triggerType as string) : null);
+	    const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+	    const triggerType =
+	      batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
 
-    const parseRules = (counts: unknown) => {
-      if (!counts || typeof counts !== 'object') return {};
-      const record = counts as Record<string, unknown>;
-      const rules = record.rules;
+	    const parseRules = (counts: unknown) => {
+	      if (!counts || typeof counts !== 'object') return {};
+	      const record = counts as Record<string, unknown>;
+	      const rules = record.rules;
       return rules && typeof rules === 'object' ? (rules as Record<string, unknown>) : {};
     };
 

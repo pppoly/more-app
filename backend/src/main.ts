@@ -2,6 +2,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import { UPLOAD_ROOT } from './common/storage/upload-root';
@@ -17,6 +18,12 @@ async function bootstrap() {
   // Disable Nest built-in body parser to allow custom raw handler for Stripe webhook
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const globalPrefix = 'api/v1';
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+    }),
+  );
   // Register parsers manually: raw for Stripe webhook FIRST, then json/urlencoded for others.
   const stripeWebhookPath = '/api/v1/payments/stripe/webhook';
   const stripeWebhookDebug = process.env.STRIPE_WEBHOOK_DEBUG === '1';
