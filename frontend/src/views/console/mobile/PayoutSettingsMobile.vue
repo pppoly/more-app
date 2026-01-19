@@ -42,6 +42,13 @@
         <p class="hero-sub">プラットフォーム結算日 {{ formatDateOrDash(platformSettlementDate) }}</p>
         <p class="hero-sub">Stripe 自動振込日 {{ stripePayoutRule || '—' }}</p>
       </div>
+      <article class="kpi kpi--month">
+        <p class="kpi-label">
+          今月の収入
+          <span class="kpi-badge">ホームと同じ</span>
+        </p>
+        <p class="kpi-value">{{ formatYenOrDash(monthNetRaw) }}</p>
+      </article>
       <div class="kpi-grid">
         <article class="kpi">
           <p class="kpi-label">
@@ -57,7 +64,7 @@
         </article>
         <article class="kpi">
           <p class="kpi-label">
-            主催者 見込み収入
+            累計 見込み収入
           </p>
           <p class="kpi-value">{{ formatYenOrDash(netExpectedRaw) }}</p>
         </article>
@@ -173,6 +180,7 @@ const onboarding = ref(false);
 const payoutLoading = ref(false);
 const error = ref<string | null>(null);
 const balance = ref<ConsoleCommunityBalance | null>(null);
+const monthBalance = ref<ConsoleCommunityBalance | null>(null);
 const stripeStatus = ref<StripeAccountStatus | null>(null);
 const platformSettlement = ref<PlatformSettlementSchedule | null>(null);
 const stripePayoutSchedule = ref<StripePayoutSchedule | null>(null);
@@ -234,8 +242,12 @@ const status = computed(() => {
   return { type: 'pending', icon: '🟠', title: 'Stripe口座が未開設です' };
 });
 
-const stripeAvailableRaw = computed(() => balance.value?.stripeBalance?.available ?? null);
-const stripePendingRaw = computed(() => balance.value?.stripeBalance?.pending ?? null);
+const stripeAvailableRaw = computed(
+  () => balance.value?.stripeBalance?.available ?? monthBalance.value?.stripeBalance?.available ?? null,
+);
+const stripePendingRaw = computed(
+  () => balance.value?.stripeBalance?.pending ?? monthBalance.value?.stripeBalance?.pending ?? null,
+);
 const stripeTotalRaw = computed(() =>
   stripeAvailableRaw.value == null || stripePendingRaw.value == null
     ? null
@@ -248,6 +260,9 @@ const balanceRefundedRaw = computed(() => balance.value?.refunded ?? null);
 const platformFeeRaw = computed(() => balance.value?.platformFee ?? null);
 const stripeFeeRaw = computed(() => balance.value?.stripeFee ?? null);
 const netExpectedRaw = computed(() => balance.value?.net ?? null);
+const monthNetRaw = computed(
+  () => monthBalance.value?.settlement?.accruedNetPeriod ?? monthBalance.value?.net ?? null,
+);
 const transactionTotalRaw = computed(() => {
   if (balance.value?.transactionTotal != null) return balance.value.transactionTotal;
   if (balance.value?.grossPaid != null) return balance.value.grossPaid;
@@ -257,7 +272,7 @@ const pendingAmountRaw = computed(() => {
   if (transactionTotalRaw.value == null || balance.value?.grossPaid == null) return null;
   return Math.max(0, transactionTotalRaw.value - balance.value.grossPaid);
 });
-const breakdownActivityWait = computed(() => balance.value?.settlement?.accruedNetPeriod ?? null);
+const breakdownActivityWait = computed(() => monthNetRaw.value);
 const breakdownReviewing = computed(() => balance.value?.settlement?.carryReceivable ?? null);
 const breakdownPayoutWait = computed(() => balance.value?.settlement?.hostBalance ?? null);
 const breakdownNextPayout = computed(() => balance.value?.settlement?.settleAmount ?? null);
@@ -354,12 +369,12 @@ const loadCommunity = async () => {
 };
 
 const loadStripeStatus = async () => {
-    if (!community.value?.id || !community.value?.stripeAccountId) {
-      stripeStatus.value = null;
-      platformSettlement.value = null;
-      stripePayoutSchedule.value = null;
-      return;
-    }
+  if (!community.value?.id || !community.value?.stripeAccountId) {
+    stripeStatus.value = null;
+    platformSettlement.value = null;
+    stripePayoutSchedule.value = null;
+    return;
+  }
   try {
     const status = await refreshCommunityStripeStatus(community.value.id);
     stripeStatus.value = status.stripeAccountStatus ?? null;
@@ -381,9 +396,15 @@ const loadStripeStatus = async () => {
 const loadBalance = async () => {
   if (!community.value?.id) return;
   try {
-    balance.value = await fetchCommunityBalance(community.value.id, { period: 'all' });
+    const [allResult, monthResult] = await Promise.allSettled([
+      fetchCommunityBalance(community.value.id, { period: 'all' }),
+      fetchCommunityBalance(community.value.id, { period: 'month' }),
+    ]);
+    balance.value = allResult.status === 'fulfilled' ? allResult.value : null;
+    monthBalance.value = monthResult.status === 'fulfilled' ? monthResult.value : null;
   } catch (err) {
     balance.value = null;
+    monthBalance.value = null;
   }
 };
 

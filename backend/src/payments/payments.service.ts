@@ -623,7 +623,7 @@ export class PaymentsService {
     const platformFee = paidAgg._sum.platformFee ?? 0;
     const refunded = refundedAgg._sum.refundedGrossTotal ?? 0;
     const stripeFee = stripeFeeAgg._sum.amount ?? 0;
-    const net = Math.max(0, grossPaid - platformFee - refunded - stripeFee);
+    const net = monthStart ? accruedNetPeriod ?? 0 : accruedNetAll;
 
     return {
       communityId,

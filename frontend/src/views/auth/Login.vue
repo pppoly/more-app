@@ -8,7 +8,7 @@
     </button>
   </section>
 
-  <section v-if="APP_TARGET !== 'liff'" class="login-card">
+  <section v-if="showQuickLogin" class="login-card">
     <h2>テスト環境クイックログイン</h2>
     <p>任意の表示名を入力するとフローを体験できます。</p>
     <label>
@@ -37,6 +37,14 @@ const router = useRouter();
 const devName = ref('');
 const loading = ref(false);
 const error = ref('');
+
+const showQuickLogin = computed(() => {
+  if (import.meta.env.DEV) return true;
+  if ((import.meta.env.MODE || '').toLowerCase() === 'test') return true;
+  if (API_BASE_URL.includes('test.socialmore.jp')) return true;
+  if (typeof window === 'undefined') return false;
+  return window.location.hostname.includes('test.socialmore.jp');
+});
 
 const redirectTarget = computed(() => {
   const redirect = route.query.redirect as string | undefined;
