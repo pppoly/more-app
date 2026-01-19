@@ -110,6 +110,75 @@ test('P1/P4: platform charge paid + webhook replay is idempotent', async () => {
   assert.equal(prisma.ledgerEntries.length, ledgerCountAfter);
 });
 
+test('Webhook payment_intent.succeeded: does not overwrite partial_refunded', async () => {
+  const prisma = new InMemoryPrisma();
+  const stripeClient = new StripeClientStub();
+  stripeClient.paymentIntents['pi_1'] = buildPaidIntent({ id: 'pi_1', chargeId: 'ch_1', fee: 108 });
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_1',
+    userId: 'user_1',
+    status: 'refunded',
+    paymentStatus: 'refunded',
+    amount: 3000,
+    paidAmount: 1500,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_1',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_1',
+    amount: 3000,
+    platformFee: 0,
+    currency: 'jpy',
+    status: 'partial_refunded',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripePaymentIntentId: 'pi_1',
+    stripeChargeId: null,
+    refundedGrossTotal: 1500,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const event = {
+    id: 'evt_pi_succeeded_1',
+    type: 'payment_intent.succeeded',
+    data: {
+      object: {
+        id: 'pi_1',
+        latest_charge: 'ch_1',
+        metadata: { paymentId: 'pay_1', registrationId: 'reg_1', communityId: 'com_1' },
+      },
+    },
+  } as any;
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+  await waitTick();
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_1')!;
+  assert.equal(payment.status, 'partial_refunded');
+  assert.equal(payment.refundedGrossTotal, 1500);
+  assert.equal(payment.stripeChargeId, 'ch_1');
+
+  const reg = prisma.registrations.find((r) => r.id === 'reg_1')!;
+  assert.equal(reg.paymentStatus, 'refunded');
+  assert.equal(reg.status, 'refunded');
+  assert.equal(reg.paidAmount, 1500);
+});
+
 test('Webhook durable ACK: returns error when event cannot be persisted', async () => {
   const prisma = new InMemoryPrisma();
   prisma.shouldFailPaymentGatewayEventUpsert = true;

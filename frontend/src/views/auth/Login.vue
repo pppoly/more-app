@@ -29,7 +29,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
-import { API_BASE_URL, APP_TARGET } from '../../config';
+import { API_BASE_URL, APP_TARGET, isProduction } from '../../config';
 
 const auth = useAuth();
 const route = useRoute();
@@ -38,12 +38,49 @@ const devName = ref('');
 const loading = ref(false);
 const error = ref('');
 
+const looksLikeNonProdHost = (value: string) => {
+  const input = (value || '').toLowerCase();
+  let host = input;
+  try {
+    host = new URL(input).hostname.toLowerCase();
+  } catch {
+    // ignore
+  }
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === 'test.socialmore.jp' ||
+    host.endsWith('.test.socialmore.jp') ||
+    host.startsWith('test.') ||
+    host.includes('.test.') ||
+    host.includes('-test.') ||
+    host === 'stg.socialmore.jp' ||
+    host.endsWith('.stg.socialmore.jp') ||
+    host.startsWith('stg.') ||
+    host.includes('.stg.') ||
+    host.includes('-stg.') ||
+    host === 'staging.socialmore.jp' ||
+    host.endsWith('.staging.socialmore.jp') ||
+    host.startsWith('staging.') ||
+    host.includes('.staging.') ||
+    host.includes('-staging.') ||
+    host === 'dev.socialmore.jp' ||
+    host.endsWith('.dev.socialmore.jp') ||
+    host.startsWith('dev.') ||
+    host.includes('.dev.') ||
+    host.includes('-dev.') ||
+    host.includes('staging') ||
+    host.endsWith('.vercel.app')
+  );
+};
+
 const showQuickLogin = computed(() => {
   if (import.meta.env.DEV) return true;
   if ((import.meta.env.MODE || '').toLowerCase() === 'test') return true;
-  if (API_BASE_URL.includes('test.socialmore.jp')) return true;
+  if (!isProduction()) return true;
+  if (looksLikeNonProdHost(API_BASE_URL)) return true;
   if (typeof window === 'undefined') return false;
-  return window.location.hostname.includes('test.socialmore.jp');
+  return looksLikeNonProdHost(window.location.hostname);
 });
 
 const redirectTarget = computed(() => {

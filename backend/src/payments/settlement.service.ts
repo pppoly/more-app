@@ -28,6 +28,8 @@ type SettlementHostStats = {
       disputedNet: number;
       missingEligibilityPayments: number;
       missingEligibilityNet: number;
+      frozenPayments: number;
+      frozenNet: number;
     };
     rules?: {
       settlementDelayDays: number;
@@ -266,21 +268,22 @@ export class SettlementService {
 
     const categoryByPaymentId = new Map<
       string,
-      'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility'
+      'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility' | 'frozen'
     >();
 
-	    for (const payment of payments) {
-	      const hostId = payment.communityId;
-	      if (!hostId) continue;
-	      const eligibleAt = payment.eligibleAt ?? null;
-	      if (!eligibleAt) {
-	        blockedMissingEligibilityPaymentIds.push(payment.id);
-	        categoryByPaymentId.set(payment.id, 'missing_eligibility');
-	        continue;
+    for (const payment of payments) {
+      const hostId = payment.communityId;
+      if (!hostId) continue;
+      const eligibleAt = payment.eligibleAt ?? null;
+      if (!eligibleAt) {
+        blockedMissingEligibilityPaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'missing_eligibility');
+        continue;
       }
 
       if (payment.settlementFrozen) {
         blockedFrozenPaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'frozen');
         continue;
       }
       if (payment.status === 'disputed') {
@@ -425,7 +428,7 @@ export class SettlementService {
       const onboarded = communityById.get(hostId)?.stripeAccountOnboarded ?? false;
       if (candidate > 0 && !onboarded) blockedReasons.push('account_not_onboarded');
       if (candidate > 0 && minTransfer > 0 && candidate < minTransfer) blockedReasons.push('below_min_transfer_amount');
-      if (candidate > 0 && blockedFrozenNet > 0) blockedReasons.push('frozen_by_ops');
+      if (blockedFrozenNet > 0) blockedReasons.push('frozen_by_ops');
       if (candidate <= 0 && blockedNotMaturedNet > 0) blockedReasons.push('not_matured');
       if (candidate <= 0 && blockedDisputeNet > 0) blockedReasons.push('dispute_open');
       if (candidate <= 0 && blockedMissingEligibilityNet > 0) blockedReasons.push('missing_eligibility_source');
@@ -463,6 +466,8 @@ export class SettlementService {
             disputedNet: blockedDisputeNet,
             missingEligibilityPayments: 0,
             missingEligibilityNet: blockedMissingEligibilityNet,
+            frozenPayments: 0,
+            frozenNet: blockedFrozenNet,
           },
           rules: {
             settlementDelayDays: delayDays,
@@ -493,6 +498,7 @@ export class SettlementService {
       if (category === 'not_matured') entry.counts.blocked.notMaturedPayments += 1;
       if (category === 'disputed') entry.counts.blocked.disputedPayments += 1;
       if (category === 'missing_eligibility') entry.counts.blocked.missingEligibilityPayments += 1;
+      if (category === 'frozen') entry.counts.blocked.frozenPayments += 1;
     }
 
     const stats = Array.from(statsByHost.values());
@@ -1008,16 +1014,16 @@ export class SettlementService {
         stripeDisputeStatus: payment.stripeDisputeStatus ?? null,
       });
       disputedByHost.set(payment.communityId, current);
-	    }
+    }
 
-	    const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
-	    const triggerType =
-	      batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
+    const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+    const triggerType =
+      batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
 
-	    const parseRules = (counts: unknown) => {
-	      if (!counts || typeof counts !== 'object') return {};
-	      const record = counts as Record<string, unknown>;
-	      const rules = record.rules;
+    const parseRules = (counts: unknown) => {
+      if (!counts || typeof counts !== 'object') return {};
+      const record = counts as Record<string, unknown>;
+      const rules = record.rules;
       return rules && typeof rules === 'object' ? (rules as Record<string, unknown>) : {};
     };
 
@@ -1048,13 +1054,17 @@ export class SettlementService {
           if (minTransfer !== null && minTransfer > 0 && (item.hostBalance ?? 0) < minTransfer) {
             blockedReasonCodes.push('below_min_transfer_amount');
           }
+          const frozenNet = pickNumber(blocked, 'frozenNet');
+          if (frozenNet !== null && frozenNet > 0) blockedReasonCodes.push('frozen_by_ops');
         } else {
           const notMaturedNet = pickNumber(blocked, 'notMaturedNet');
           const disputedNet = pickNumber(blocked, 'disputedNet');
           const missingEligibilityNet = pickNumber(blocked, 'missingEligibilityNet');
+          const frozenNet = pickNumber(blocked, 'frozenNet');
           if (notMaturedNet !== null && notMaturedNet > 0) blockedReasonCodes.push('not_matured');
           if (disputedNet !== null && disputedNet > 0) blockedReasonCodes.push('dispute_open');
           if (missingEligibilityNet !== null && missingEligibilityNet > 0) blockedReasonCodes.push('missing_eligibility_source');
+          if (frozenNet !== null && frozenNet > 0) blockedReasonCodes.push('frozen_by_ops');
         }
         if (!blockedReasonCodes.length) blockedReasonCodes.push('blocked');
       }

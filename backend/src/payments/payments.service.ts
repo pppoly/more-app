@@ -1479,23 +1479,26 @@ export class PaymentsService {
           }
           throw new Error(message);
         }
+        const isTerminal = ['refunded', 'partial_refunded', 'disputed'].includes(payment.status);
+        const stripeChargeId =
+          typeof intent.latest_charge === 'string'
+            ? intent.latest_charge
+            : intent.latest_charge?.id ?? payment.stripeChargeId ?? null;
+        const updateData: Prisma.PaymentUpdateInput = {
+          stripePaymentIntentId: intent.id,
+          stripeChargeId,
+          provider: 'stripe',
+          providerObjectType: 'payment_intent',
+          providerObjectId: intent.id,
+          ...(!isTerminal && payment.status !== 'paid' ? { status: 'paid' } : {}),
+        };
         await tx.payment.update({
           where: { id: payment.id },
-          data: {
-            status: 'paid',
-            stripePaymentIntentId: intent.id,
-            stripeChargeId:
-              typeof intent.latest_charge === 'string'
-                ? intent.latest_charge
-                : intent.latest_charge?.id ?? payment.stripeChargeId ?? null,
-            provider: 'stripe',
-            providerObjectType: 'payment_intent',
-            providerObjectId: intent.id,
-          },
+          data: updateData,
         });
         postProcessTasks.push(() => this.reconcilePaymentSettlement(payment.id, intent.id));
         postProcessTasks.push(() => this.maybeTriggerRealtimePayout(payment.id));
-        if (payment.registrationId) {
+        if (!isTerminal && payment.registrationId) {
           await tx.eventRegistration.update({
             where: { id: payment.registrationId },
             data: {
@@ -3124,23 +3127,96 @@ export class PaymentsService {
     if (!intentId) {
       throw new NotFoundException('Stripe payment intent not found');
     }
-    const intent = await this.stripeService.client.paymentIntents.retrieve(intentId);
-    const status = intent.status;
-    // Sync status if succeeded
-    if (status === 'succeeded' && payment.status !== 'paid') {
+    const intent = await this.stripeService.client.paymentIntents.retrieve(intentId, { expand: ['latest_charge'] });
+    const intentStatus = intent.status;
+    const gross = payment.amount ?? 0;
+
+    const latestCharge =
+      typeof intent.latest_charge === 'string' ? null : intent.latest_charge ?? null;
+    const chargeId =
+      typeof intent.latest_charge === 'string'
+        ? intent.latest_charge
+        : intent.latest_charge?.id ?? null;
+
+    let refundedAmountFromStripe = 0;
+    if (latestCharge) {
+      refundedAmountFromStripe = latestCharge.amount_refunded ?? 0;
+    } else if (chargeId) {
+      try {
+        const charge = await this.stripeService.client.charges.retrieve(chargeId);
+        refundedAmountFromStripe = charge.amount_refunded ?? 0;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to retrieve charge ${chargeId} for diagnose payment ${payment.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    const nextRefundedGross = Math.min(gross, Math.max(payment.refundedGrossTotal ?? 0, refundedAmountFromStripe));
+
+    let nextStatus = payment.status;
+    if (payment.status !== 'disputed' && intentStatus === 'succeeded') {
+      if (nextRefundedGross >= gross && gross > 0) {
+        nextStatus = 'refunded';
+      } else if (nextRefundedGross > 0) {
+        nextStatus = 'partial_refunded';
+      } else {
+        nextStatus = 'paid';
+      }
+    }
+
+    const updateData: Prisma.PaymentUpdateInput = {};
+    if (payment.stripePaymentIntentId !== intentId) {
+      updateData.stripePaymentIntentId = intentId;
+    }
+    if (chargeId && payment.stripeChargeId !== chargeId) {
+      updateData.stripeChargeId = chargeId;
+    }
+    if (nextRefundedGross > (payment.refundedGrossTotal ?? 0)) {
+      updateData.refundedGrossTotal = nextRefundedGross;
+    }
+    if (nextStatus && nextStatus !== payment.status) {
+      updateData.status = nextStatus;
+    }
+
+    const shouldTriggerRealtime = payment.payoutMode === 'REALTIME' && updateData.status === 'paid';
+
+    if (Object.keys(updateData).length) {
       await this.prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'paid', stripePaymentIntentId: intentId },
+        data: updateData,
       });
+
       if (payment.registrationId) {
+        const mapped = this.mapRegistrationStatus(nextStatus);
+        const paidAmount =
+          mapped.paymentStatus === 'paid' ? gross : mapped.paymentStatus === 'refunded' ? Math.max(gross - nextRefundedGross, 0) : undefined;
         await this.prisma.eventRegistration.update({
           where: { id: payment.registrationId },
-          data: { status: 'paid', paymentStatus: 'paid', paidAmount: payment.amount },
+          data: {
+            paymentStatus: mapped.paymentStatus,
+            status: mapped.status,
+            ...(paidAmount !== undefined ? { paidAmount } : {}),
+          },
         });
       }
+    }
+
+    if (shouldTriggerRealtime) {
       await this.maybeTriggerRealtimePayout(payment.id);
     }
-    return { paymentId, intentId, intentStatus: status, localStatus: payment.status };
+
+    return {
+      paymentId,
+      intentId,
+      intentStatus,
+      localStatusBefore: payment.status,
+      localStatusAfter: updateData.status ?? payment.status,
+      refundedAmountFromStripe,
+      refundedGrossTotal: updateData.refundedGrossTotal ?? payment.refundedGrossTotal ?? 0,
+    };
   }
 
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
