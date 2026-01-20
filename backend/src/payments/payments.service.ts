@@ -284,7 +284,11 @@ export class PaymentsService {
       where.eventId = opts.eventId;
     }
     if (opts?.status) {
-      where.status = opts.status;
+      if (opts.status === 'refunded') {
+        where.status = { in: ['refunded', 'partial_refunded'] };
+      } else {
+        where.status = opts.status;
+      }
     }
     const [items, total] = await this.prisma.$transaction([
       this.prisma.payment.findMany({
@@ -483,7 +487,7 @@ export class PaymentsService {
 
     const paidWhere: Prisma.PaymentWhereInput = {
       communityId,
-      status: { in: ['paid', 'partial_refunded'] },
+      status: { in: ['paid', 'partial_refunded', 'refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
     const pendingWhere: Prisma.PaymentWhereInput = {
@@ -501,7 +505,7 @@ export class PaymentsService {
       status: { in: ['paid', 'partial_refunded', 'refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
-    const [paidAgg, pendingAgg, refundedAgg, feeAgg] = await Promise.all([
+    const [paidAgg, pendingAgg, refundedAgg, refundedFallbackAgg, feeAgg] = await Promise.all([
       this.prisma.payment.aggregate({
         where: paidWhere,
         _sum: { amount: true, platformFee: true },
@@ -513,6 +517,15 @@ export class PaymentsService {
       this.prisma.payment.aggregate({
         where: refundedWhere,
         _sum: { refundedGrossTotal: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          communityId,
+          status: 'refunded',
+          refundedGrossTotal: { lte: 0 },
+          ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+        },
+        _sum: { amount: true },
       }),
       this.prisma.payment.aggregate({ where: feeWhere, _sum: { stripeFeeAmountActual: true } }),
     ]);
@@ -626,10 +639,11 @@ export class PaymentsService {
     const pendingTotal = pendingAgg._sum.amount ?? 0;
     const transactionTotal = grossPaid + pendingTotal;
     const platformFee = paidAgg._sum.platformFee ?? 0;
-    const refunded = refundedAgg._sum.refundedGrossTotal ?? 0;
+    const refunded =
+      (refundedAgg._sum.refundedGrossTotal ?? 0) + (refundedFallbackAgg._sum.amount ?? 0);
     const stripeFeeFromLedger = stripeFeeAgg._sum.amount ?? 0;
     const stripeFeeFromPayments = feeAgg._sum.stripeFeeAmountActual ?? 0;
-    const stripeFee = stripeFeeFromLedger > 0 ? stripeFeeFromLedger : stripeFeeFromPayments;
+    const stripeFee = stripeFeeFromPayments > 0 ? stripeFeeFromPayments : stripeFeeFromLedger;
     const net = monthStart ? accruedNetPeriod ?? 0 : accruedNetAll;
 
     return {
@@ -3672,6 +3686,10 @@ export class PaymentsService {
   private computeStripeFeeFromBalanceTx(balanceTx: Stripe.BalanceTransaction) {
     const feeDetails = balanceTx.fee_details ?? [];
     if (feeDetails.length) {
+      const stripeFeeOnly = feeDetails
+        .filter((detail) => detail.type === 'stripe_fee')
+        .reduce((sum, detail) => sum + (detail.amount ?? 0), 0);
+      if (stripeFeeOnly > 0) return stripeFeeOnly;
       return feeDetails.reduce((sum, detail) => sum + (detail.amount ?? 0), 0);
     }
     return balanceTx.fee ?? 0;

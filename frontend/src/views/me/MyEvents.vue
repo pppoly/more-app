@@ -256,12 +256,15 @@ const buildCancelPrompt = (item: MyEventItem) => {
   }
   if (percent <= 0) {
     return policyText
-      ? `${base}\n\n返金ルール: ${policyText}\nこのキャンセルは返金対象外です。`
-      : `${base}\n\nこのキャンセルは返金対象外です。`;
+      ? `${base}\n\n【重要】このキャンセルは返金対象外です。\n返金ルール: ${policyText}\n返金は行われません。`
+      : `${base}\n\n【重要】このキャンセルは返金対象外です。\n返金は行われません。`;
   }
   const refundAmount = calculateRefundAmount(amount, percent);
   const refundLine = `返金額の目安: ¥${formatYen(refundAmount)}（${percent}%）`;
-  return policyText ? `${base}\n\n返金ルール: ${policyText}\n${refundLine}` : `${base}\n\n${refundLine}`;
+  const warningLine = percent < 100 ? '【重要】全額返金ではありません。' : '';
+  return policyText
+    ? `${base}\n\n${warningLine}\n返金ルール: ${policyText}\n${refundLine}`
+    : `${base}\n\n${warningLine}\n${refundLine}`;
 };
 
 const sortedEvents = computed(() =>
@@ -392,7 +395,20 @@ const displayTitle = (item: MyEventItem) => {
 };
 
 const titleFor = (event: MyEventItem['event']) => (event ? getLocalizedText(event.title) : '');
+const refundOutcomeLabel = (item: MyEventItem) => {
+  const total = item.amount ?? 0;
+  if (total <= 0) return null;
+  const refunded = item.refundRequest?.refundedAmount ?? null;
+  if (refunded != null && refunded > 0) {
+    return refunded < total ? '一部返金（ルール）' : '返金済み';
+  }
+  if (item.status === 'refunded') return '返金済み';
+  if (item.status === 'cancelled') return '返金なし（ルール）';
+  return null;
+};
 const statusLabel = (item: MyEventItem) => {
+  const refundLabel = refundOutcomeLabel(item);
+  if (refundLabel && (item.status === 'refunded' || item.status === 'cancelled')) return refundLabel;
   const map: Record<string, string> = {
     pending: '審査待ち',
     pending_payment: '支払い待ち',
@@ -427,6 +443,8 @@ const formatDate = (value: string) =>
     : '';
 
 const paymentLabel = (item: MyEventItem) => {
+  const refundLabel = refundOutcomeLabel(item);
+  if (refundLabel && (item.status === 'refunded' || item.status === 'cancelled')) return refundLabel;
   if (isRefundedStatus(item)) return '返金済み';
   if (isRefundingStatus(item)) return '返金処理中';
   if (isPendingPaymentStatus(item)) return '支払い待ち';
@@ -466,8 +484,12 @@ const phaseLabel = (item: MyEventItem) => {
 const stateSentence = (item: MyEventItem) => {
   if (item.status === 'cancel_requested') return 'キャンセル申請中です。主催者の確認をお待ちください。';
   if (item.status === 'pending_refund') return '返金処理中です';
-  if (item.status === 'refunded') return '返金が完了しています';
-  if (item.status === 'cancelled') return '参加はキャンセルされました';
+  if (item.status === 'refunded') {
+    return refundOutcomeLabel(item) === '一部返金（ルール）'
+      ? '返金が完了しています（返金ルールによる一部返金）'
+      : '返金が完了しています';
+  }
+  if (item.status === 'cancelled') return '参加はキャンセルされました（返金ルールによる返金なし）';
   if (item.status === 'rejected') return '申込が却下されました';
   if (item.status === 'pending_payment') return '支払い待ちです';
   if (item.status === 'pending') return '申込を審査中です';
@@ -481,8 +503,12 @@ const stateSentence = (item: MyEventItem) => {
 const refundNotice = (item: MyEventItem) => {
   if (item.status === 'cancel_requested') return 'キャンセル申請を受け付けました。主催者の確認中です。';
   if (item.status === 'pending_refund') return '返金リクエストを処理しています';
-  if (item.status === 'refunded') return '返金が完了しました';
-  if (item.status === 'cancelled') return 'キャンセル済みです。返金が必要な場合はご確認ください。';
+  if (item.status === 'refunded') {
+    return refundOutcomeLabel(item) === '一部返金（ルール）'
+      ? '返金が完了しました（返金ルールによる一部返金）'
+      : '返金が完了しました';
+  }
+  if (item.status === 'cancelled') return 'キャンセル済みです（返金ルールにより返金なし）。';
   return '';
 };
 

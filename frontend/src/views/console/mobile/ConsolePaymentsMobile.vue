@@ -148,6 +148,8 @@ const statusLabel = (s: string) => {
       return '返金申請中';
     case 'refunded':
       return '返金済み';
+    case 'partial_refunded':
+      return '返金済み（一部）';
     default:
       return s;
   }
@@ -161,6 +163,8 @@ const statusClass = (s: string) => {
     case 'refund_requested':
       return 'pill-warn';
     case 'refunded':
+      return 'pill-muted';
+    case 'partial_refunded':
       return 'pill-muted';
     default:
       return 'pill-muted';

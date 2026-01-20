@@ -85,6 +85,10 @@
               <span class="detail-value">{{ record.refundReason }}</span>
             </div>
           </div>
+          <div v-if="record.refundPolicyText" class="detail-row">
+            <span class="detail-label">返金ルール</span>
+            <span class="detail-value">{{ record.refundPolicyText }}</span>
+          </div>
         </div>
       </details>
     </section>
@@ -97,6 +101,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { createStripeCheckout, fetchMyEvents } from '../../api/client';
 import type { MyEventItem } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
+import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
@@ -114,6 +119,7 @@ interface PaymentRecord {
   refundStatus: string | null;
   refundedAmount: number | null;
   refundReason: string | null;
+  refundPolicyText?: string | null;
   method: string;
   paidAt: string | null;
   phase: string;
@@ -154,14 +160,15 @@ const statusText = (rec: PaymentRecord) => {
   const total = rec.amount || 0;
   const refunded = rec.refundedAmount ?? 0;
   const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
-  const refundingLike = ['cancel_requested', 'cancelled', 'pending_refund', 'processing_refund'];
-  if (rec.paymentStatus === 'cancelled' || rec.status === 'cancelled') return '支払いキャンセル';
+  const refundingLike = ['cancel_requested', 'pending_refund', 'processing_refund'];
+  if (rec.refundStatus === 'pending' || rec.status === 'pending_refund') return '返金処理中';
+  if (rec.paymentStatus === 'cancelled' || rec.status === 'cancelled') {
+    return total > 0 ? '返金なし（ルール）' : '支払いキャンセル';
+  }
   if (refundingLike.includes(rec.status)) return '返金処理中';
   if (rec.status === 'cancel_requested') return '返金処理中';
-  if (rec.status === 'cancelled' && total > 0) return '返金処理中';
-  if (rec.refundStatus === 'pending' || rec.status === 'pending_refund') return '返金処理中';
   if (refunded > 0) {
-    return refunded >= total && total > 0 ? '返金済み（全額）' : `返金済み（一部 ¥${formatYen(refunded)})`;
+    return refunded >= total && total > 0 ? '返金済み（全額）' : `一部返金（ルール） ¥${formatYen(refunded)}`;
   }
   if (rec.paymentStatus === 'refunded') return '返金済み（全額）';
   if (paidLike.includes(rec.paymentStatus || '') || paidLike.includes(rec.status)) return '支払い済み';
@@ -178,7 +185,9 @@ const statusClass = (rec: PaymentRecord) => {
   const text = statusText(rec);
   if (text.includes('返金処理中')) return 'chip chip--warn';
   if (text.includes('返金済み')) return 'chip chip--info';
+  if (text.includes('一部返金')) return 'chip chip--info';
   if (text.includes('支払い済み')) return 'chip chip--ok';
+  if (text.includes('返金なし')) return 'chip chip--muted';
   if (text.includes('支払いキャンセル')) return 'chip chip--muted';
   return 'chip';
 };
@@ -234,6 +243,9 @@ const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
               : getLocalizedText(item.lesson.class.title)
             : '—';
         const eventDate = item.event?.startTime ?? item.lesson?.startAt ?? null;
+        const refundPolicyText = item.event?.config
+          ? resolveRefundPolicyText(item.event.config as Record<string, any>)
+          : null;
         return {
           registrationId: item.registrationId,
           eventTitle: sourceTitle || '—',
@@ -244,6 +256,7 @@ const mapToRecords = (items: MyEventItem[]): PaymentRecord[] =>
           refundStatus: refund?.status ?? null,
           refundedAmount: refund?.refundedAmount ?? null,
           refundReason: refund?.reason ?? null,
+          refundPolicyText,
           method: paymentMethod,
           paidAt: createdAt,
           phase: buildPhase(item.event, item.lesson),

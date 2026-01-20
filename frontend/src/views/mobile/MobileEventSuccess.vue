@@ -1,44 +1,22 @@
 <template>
-  <div class="success-page">
-    <ConsoleTopBar v-if="showTopBar" class="topbar" titleKey="mobile.eventSuccess.title" @back="router.back()" />
-    <div class="content">
-      <div class="hero">
-        <div class="hero-icon" aria-hidden="true">
-          <svg viewBox="0 0 64 64" role="img">
-            <defs>
-              <linearGradient id="success-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#0ea5e9" />
-                <stop offset="100%" stop-color="#22c55e" />
-              </linearGradient>
-            </defs>
-            <circle cx="32" cy="32" r="30" fill="url(#success-grad)" />
-            <path d="M22 32.5 29.5 40 42 24" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </div>
-        <div class="hero-text">
-          <h1>申込が完了しました</h1>
-          <p>参加が確定しました</p>
-        </div>
-      </div>
-
+  <section class="payment-status">
+    <div class="card">
+      <h1>お支払いが完了しました</h1>
+      <p>Stripeでのお支払いを受け付けました。参加ステータスは数分以内に反映されます。</p>
       <div class="actions">
         <RouterLink class="btn primary" to="/me/events">マイチケットを見る</RouterLink>
         <RouterLink class="btn secondary" to="/events">イベント一覧へ戻る</RouterLink>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { MOBILE_EVENT_SUCCESS_KEY } from '../../constants/mobile';
-import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
-import { isLineInAppBrowser } from '../../utils/liff';
 
-const route = useRoute();
 const router = useRouter();
-const showTopBar = computed(() => !isLineInAppBrowser());
 
 onMounted(() => {
   // 成功ページのデータをクリアし、参照元がなければ一覧へ戻る
@@ -56,100 +34,61 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.success-page {
-  flex-direction: column;
+.payment-status {
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--color-bg, #f7f7f7);
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
-  gap: 12px;
-  box-sizing: border-box;
-}
-
-
-.topbar {
-  width: 100%;
-  margin-left: calc(-16px - env(safe-area-inset-left, 0px));
-  margin-right: calc(-16px - env(safe-area-inset-right, 0px));
-}
-.content {
-  width: 100%;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  text-align: left;
-}
-
-.hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-
-.hero-icon {
-  width: 88px;
-  height: 88px;
-  border-radius: 16px;
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: none;
+  padding: 1.5rem;
 }
 
-.hero-icon svg {
-  width: 88px;
-  height: 88px;
-  display: block;
+.card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 2rem;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
-.hero-text h1 {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 700;
-  color: #0f172a;
+h1 {
+  margin-top: 0;
+  font-size: 1.4rem;
 }
 
-.hero-text p {
-  margin: 4px 0 0;
-  font-size: 13px;
+p {
+  margin: 0.75rem 0 0;
   color: #475569;
 }
 
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
 }
 
 .btn {
-  width: 100%;
-  height: 48px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  font-weight: 600;
   text-decoration: none;
-  box-sizing: border-box;
+  border: 1px solid transparent;
 }
 
 .btn.primary {
-  border: none;
-  background: linear-gradient(135deg, #0ea5e9, #22c55e);
+  background: #111827;
   color: #fff;
-  letter-spacing: 0.01em;
-  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.2);
 }
 
 .btn.secondary {
-  border: 1px solid rgba(15, 23, 42, 0.16);
   background: #fff;
-  color: #0f172a;
+  color: #111827;
+  border-color: #e5e7eb;
 }
 </style>

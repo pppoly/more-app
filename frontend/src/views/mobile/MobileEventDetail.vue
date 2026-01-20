@@ -1463,7 +1463,7 @@ const formatScheduleLine = (start?: string, end?: string) => {
   return `${formatLongDate(start)} ${formatTime(start)}〜${endDateText} ${formatTime(end)}`;
 };
 
-const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+const showHeaderActions = computed(() => true);
 const toastOffsetBackup = ref<string | null>(null);
 const TOAST_OFFSET_PX = '84px';
 const eventFooterRef = ref<HTMLElement | null>(null);

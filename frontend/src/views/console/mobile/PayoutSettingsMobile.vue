@@ -52,7 +52,7 @@
       <div class="kpi-grid">
         <article class="kpi">
           <p class="kpi-label">
-            取引総額
+            取引総額（返金後）
           </p>
           <p class="kpi-value">{{ formatYenOrDash(balanceGrossRaw) }}</p>
         </article>
@@ -255,7 +255,12 @@ const stripeTotalRaw = computed(() =>
 );
 const stripeAvailable = computed(() => stripeAvailableRaw.value ?? 0);
 const stripePending = computed(() => stripePendingRaw.value ?? 0);
-const balanceGrossRaw = computed(() => balance.value?.grossPaid ?? null);
+const balanceGrossRaw = computed(() => {
+  if (!balance.value) return null;
+  if (balance.value.grossPaid == null) return null;
+  const refunded = balance.value.refunded ?? 0;
+  return Math.max(0, balance.value.grossPaid - refunded);
+});
 const balanceRefundedRaw = computed(() => balance.value?.refunded ?? null);
 const platformFeeRaw = computed(() => balance.value?.platformFee ?? null);
 const stripeFeeRaw = computed(() => balance.value?.stripeFee ?? null);
