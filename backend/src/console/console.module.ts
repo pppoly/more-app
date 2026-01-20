@@ -18,6 +18,7 @@ import { ConsoleCommunityTagsController } from './console-community-tags.control
 import { AdminEventsController } from './admin-events.controller';
 import { ContentModerationService } from '../common/moderation/content-moderation.service';
 import { AssetModule } from '../asset/asset.module';
+import { ConsoleRefundRequestsController } from './console-refund-requests.controller';
 
 @Module({
   imports: [StripeModule, PaymentsModule, NotificationModule, AiModule, AssetModule],
@@ -26,6 +27,7 @@ import { AssetModule } from '../asset/asset.module';
     ConsoleCommunitiesController,
     ConsoleEventAssistantController,
     ConsolePaymentsController,
+    ConsoleRefundRequestsController,
     ConsoleEventDraftController,
     ConsoleAiController,
     AdminEventsController,

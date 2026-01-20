@@ -91,19 +91,52 @@ export class NotificationService {
             },
           },
         },
+        lesson: {
+          select: {
+            id: true,
+            startAt: true,
+            class: {
+              select: {
+                id: true,
+                title: true,
+                locationName: true,
+                community: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    owner: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        lineUserId: true,
+                        preferredLocale: true,
+                        language: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
-    if (!registration || !registration.event || !registration.user) {
+    if (!registration || !registration.user || (!registration.event && !registration.lesson)) {
       this.logger.warn(`Registration notification skipped: missing data registrationId=${registrationId}`);
       return { sent: 0 };
     }
 
-    const eventTitle = this.getLocalizedText(registration.event.title) || 'イベント';
-    const { date: eventDate, time: eventTime } = formatJstDateTime(registration.event.startTime);
-    const location = registration.event.locationText || '';
-    const ticketName = this.getLocalizedText(registration.ticketType?.name) || '参加チケット';
-    const amountText = (registration.ticketType?.price ?? 0) > 0 ? formatYen(registration.ticketType?.price) : '無料';
+    const titleSource = registration.event?.title ?? registration.lesson?.class?.title ?? null;
+    const eventTitle = this.getLocalizedText(titleSource) || 'イベント';
+    const startAt = registration.event?.startTime ?? registration.lesson?.startAt ?? null;
+    const { date: eventDate, time: eventTime } = startAt ? formatJstDateTime(startAt) : { date: '', time: '' };
+    const location = registration.event?.locationText || registration.lesson?.class?.locationName || '';
+    const ticketName = registration.event ? this.getLocalizedText(registration.ticketType?.name) || '参加チケット' : 'レッスン';
+    const amountValue = registration.event ? registration.ticketType?.price ?? registration.amount ?? 0 : registration.amount ?? 0;
+    const amountText = amountValue > 0 ? formatYen(amountValue) : '無料';
     const userName = registration.user.name || 'ゲスト';
 
     const userData: NotificationData = {
@@ -120,9 +153,8 @@ export class NotificationService {
     };
 
     const userRecipient = this.buildRecipientFromUser(registration.user);
-    const organizerRecipient = registration.event.community?.owner
-      ? this.buildRecipientFromUser(registration.event.community.owner)
-      : null;
+    const organizerOwner = registration.event?.community?.owner ?? registration.lesson?.class?.community?.owner ?? null;
+    const organizerRecipient = organizerOwner ? this.buildRecipientFromUser(organizerOwner) : null;
 
     const results: NotificationSendResult[] = [];
     results.push(
@@ -176,19 +208,44 @@ export class NotificationService {
             },
           },
         },
+        lesson: {
+          select: {
+            id: true,
+            class: {
+              select: {
+                id: true,
+                title: true,
+                community: {
+                  select: {
+                    owner: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        lineUserId: true,
+                        preferredLocale: true,
+                        language: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
-    if (!registration || !registration.event || !registration.user) {
+    if (!registration || !registration.user || (!registration.event && !registration.lesson)) {
       this.logger.warn(`Cancel notification skipped: missing data registrationId=${registrationId}`);
       return { sent: 0 };
     }
 
-    const eventTitle = this.getLocalizedText(registration.event.title) || 'イベント';
+    const titleSource = registration.event?.title ?? registration.lesson?.class?.title ?? null;
+    const eventTitle = this.getLocalizedText(titleSource) || 'イベント';
     const userRecipient = this.buildRecipientFromUser(registration.user);
-    const organizerRecipient = registration.event.community?.owner
-      ? this.buildRecipientFromUser(registration.event.community.owner)
-      : null;
+    const organizerOwner = registration.event?.community?.owner ?? registration.lesson?.class?.community?.owner ?? null;
+    const organizerRecipient = organizerOwner ? this.buildRecipientFromUser(organizerOwner) : null;
 
     const results: NotificationSendResult[] = [];
     results.push(
@@ -226,15 +283,23 @@ export class NotificationService {
         event: {
           select: { title: true },
         },
+        lesson: {
+          select: {
+            class: {
+              select: { title: true },
+            },
+          },
+        },
       },
     });
 
-    if (!registration || !registration.event || !registration.user) {
+    if (!registration || !registration.user || (!registration.event && !registration.lesson)) {
       this.logger.warn(`Refund notification skipped: missing data registrationId=${params.registrationId}`);
       return { sent: 0 };
     }
 
-    const eventTitle = this.getLocalizedText(registration.event.title) || 'イベント';
+    const titleSource = registration.event?.title ?? registration.lesson?.class?.title ?? null;
+    const eventTitle = this.getLocalizedText(titleSource) || 'イベント';
     const refundAmount = formatYen(params.refundAmount ?? registration.amount);
     const userRecipient = this.buildRecipientFromUser(registration.user);
     const key = params.refundId ? `user.refund.success:${params.refundId}` : `user.refund.success:${params.registrationId}`;
