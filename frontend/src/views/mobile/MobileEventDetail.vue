@@ -421,14 +421,18 @@ const isFavoriteEvent = computed(() => {
 const hasRegistration = computed(() => Boolean(registrationItem.value));
 const registrationStatus = computed(() => {
   const raw = registrationStatusRaw.value;
+  const amount = registrationItem.value?.amount ?? 0;
+  const paymentStatus = registrationItem.value?.paymentStatus ?? '';
+  const requiresPaymentNow = amount > 0 && paymentStatus !== 'paid';
   switch (raw) {
     case 'pending_payment':
       return 'pending_payment';
     case 'pending':
       return 'pending';
     case 'paid':
-    case 'approved':
       return 'paid';
+    case 'approved':
+      return requiresPaymentNow ? 'pending_payment' : 'paid';
     case 'pending_refund':
       return 'cancel_requested';
     case 'refunded':
@@ -2177,11 +2181,11 @@ watch(
   width: 100%;
 }
 :deep(.event-about__content figure) {
-  margin: 12px -16px;
+  margin: 12px 0;
   padding: 0;
   background: transparent;
-  border-radius: 16px;
-  overflow: hidden;
+  border-radius: 0;
+  overflow: visible;
 }
 :deep(.event-about__content figure img),
 :deep(.event-about__content img) {
@@ -2190,7 +2194,7 @@ watch(
   max-width: 100% !important;
   height: auto !important;
   object-fit: cover !important;
-  border-radius: 16px !important;
+  border-radius: 0 !important;
   padding: 0 !important;
   background: #f4f5f7 !important;
   box-sizing: border-box !important;

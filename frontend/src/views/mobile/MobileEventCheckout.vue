@@ -230,7 +230,8 @@ const loadPendingFromServer = async (preferredRegistrationId?: string) => {
     const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
     const paid = paidLike.includes(matched.paymentStatus || '') || paidLike.includes(matched.status);
     const amount = matched.amount ?? 0;
-    if (amount > 0 && !paid) {
+    const payableStatuses = new Set(['pending_payment', 'approved']);
+    if (amount > 0 && !paid && payableStatuses.has(matched.status)) {
       return {
         registrationId: matched.registrationId,
         amount,
@@ -327,12 +328,20 @@ const handlePay = async () => {
           formAnswers: draft?.formAnswers,
         });
         sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
-        if (!registration.paymentRequired || (registration.amount ?? 0) === 0) {
+        if ((registration.amount ?? 0) === 0) {
           sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
           const payload = buildSuccessPayload('free');
           if (payload) {
             goToSuccessPage(payload);
           }
+          return;
+        }
+        if (!registration.paymentRequired) {
+          sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
+          if (registration.status === 'pending') {
+            window.alert('申し込みを受け付けました。主催者の承認後にお支払いが必要です。');
+          }
+          router.replace({ name: 'event-detail', params: { eventId: eventId.value } });
           return;
         }
         pendingPayment.value = {

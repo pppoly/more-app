@@ -272,6 +272,11 @@ const ticketPriceText = computed(() => {
   const price = selectedTicket.value?.price ?? 0;
   return price === 0 ? '無料' : currencyFormatter.format(price);
 });
+const requiresApproval = computed(() => {
+  if (!event.value) return false;
+  const config = (event.value.config as Record<string, any>) ?? {};
+  return Boolean(event.value.requireApproval ?? config.requireApproval);
+});
 const requiresPayment = computed(() => (selectedTicket.value?.price ?? 0) > 0);
 const resolveRegistrationWindow = (ev: EventDetail | null) => {
   if (!ev) return { open: false, reason: null as string | null };
@@ -295,6 +300,7 @@ const registrationUnavailableReason = computed(() => {
 const ctaLabel = computed(() => {
   if (registrationUnavailableReason.value) return '受付終了';
   if (submittingInline.value) return '処理中…';
+  if (requiresApproval.value) return '申し込みを送信する';
   return requiresPayment.value ? '申し込みを確定する' : '無料で申し込む';
 });
 const isCtaDisabled = computed(
@@ -407,6 +413,10 @@ const proceedToCheckout = () => {
     return;
   }
   if (!validateForm()) return;
+  if (requiresApproval.value) {
+    submitApprovalRegistration();
+    return;
+  }
   if (!requiresPayment.value) {
     submitFreeRegistration();
     return;
@@ -451,6 +461,40 @@ const submitFreeRegistration = async () => {
     }
   } catch (err) {
     registrationError.value = '申込に失敗しました。時間をおいて再試行してください。';
+  } finally {
+    submittingInline.value = false;
+  }
+};
+
+const submitApprovalRegistration = async () => {
+  if (!eventId.value) return;
+  if (registrationUnavailableReason.value) {
+    registrationError.value = registrationUnavailableReason.value;
+    return;
+  }
+  submittingInline.value = true;
+  registrationError.value = null;
+  try {
+    const registration = await createRegistration(eventId.value, {
+      ticketTypeId: defaultTicketId.value ?? undefined,
+      formAnswers: { ...formValues },
+    });
+    sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
+    if (registration.paymentRequired) {
+      router.push({
+        name: 'MobileEventCheckout',
+        params: { eventId: eventId.value },
+        query: { registrationId: registration.registrationId },
+      });
+      return;
+    }
+    const message = requiresPayment.value
+      ? '申し込みを受け付けました。主催者の承認後にお支払いが必要です。'
+      : '申し込みを受け付けました。主催者の承認をお待ちください。';
+    window.alert(message);
+    router.replace({ name: 'event-detail', params: { eventId: eventId.value } });
+  } catch (err) {
+    registrationError.value = resolveErrorMessage(err, '申込に失敗しました。時間をおいて再試行してください。');
   } finally {
     submittingInline.value = false;
   }

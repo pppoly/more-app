@@ -218,12 +218,21 @@ const getEndTime = (item: MyEventItem) => {
 
 const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && getStartTime(item) > new Date();
 const isExpired = (item: MyEventItem) => !item.attended && !isUpcoming(item) && !isVoidTicket(item);
-const isPaidStatus = (item: MyEventItem) => ['paid', 'approved'].includes(item.status);
+const isPaidStatus = (item: MyEventItem) => {
+  const amount = item.amount ?? 0;
+  if (item.status === 'paid') return true;
+  if (item.status !== 'approved') return false;
+  if (amount <= 0) return true;
+  const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+  return paidLike.includes(item.paymentStatus || '');
+};
 const isRefundingStatus = (item: MyEventItem) => ['cancel_requested', 'pending_refund'].includes(item.status);
 const isRefundedStatus = (item: MyEventItem) => item.status === 'refunded';
 const isCancelledStatus = (item: MyEventItem) => ['cancelled', 'rejected'].includes(item.status);
 const isPendingStatus = (item: MyEventItem) => item.status === 'pending';
 const isPendingPaymentStatus = (item: MyEventItem) => item.status === 'pending_payment';
+const isApprovedAwaitingPayment = (item: MyEventItem) =>
+  item.status === 'approved' && (item.amount ?? 0) > 0 && item.paymentStatus !== 'paid';
 
 const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   maximumFractionDigits: 0,
@@ -265,7 +274,7 @@ const isPaymentCancelledTicket = (item: MyEventItem) =>
 const isEligibleTicket = (item: MyEventItem) => {
   if (item.status === 'rejected') return false;
   if (isPaymentCancelledTicket(item)) return false;
-  if (item.status === 'pending' || item.status === 'pending_payment') return true;
+  if (item.status === 'pending' || item.status === 'pending_payment' || item.status === 'approved') return true;
   const amount = item.amount ?? 0;
   const paymentOk = isPaidStatus(item) || isRefundedStatus(item) || isRefundingStatus(item) || item.status === 'cancelled';
   if (amount > 0) return paymentOk;
@@ -422,6 +431,7 @@ const paymentLabel = (item: MyEventItem) => {
   if (isRefundingStatus(item)) return '返金処理中';
   if (isPendingPaymentStatus(item)) return '支払い待ち';
   if (isPendingStatus(item)) return '審査待ち';
+  if (isApprovedAwaitingPayment(item)) return '支払い待ち';
   if (item.status === 'rejected') return '却下';
   if (item.status === 'cancelled') return 'キャンセル';
   if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? '無料' : '支払い済み';
@@ -461,6 +471,7 @@ const stateSentence = (item: MyEventItem) => {
   if (item.status === 'rejected') return '申込が却下されました';
   if (item.status === 'pending_payment') return '支払い待ちです';
   if (item.status === 'pending') return '申込を審査中です';
+  if (isApprovedAwaitingPayment(item)) return '申込が承認されました。支払いを完了してください。';
   if (isPaidStatus(item)) return '参加が確定しています';
   if (item.attended) return '参加済みです';
   if (item.noShow) return '欠席として記録されています';

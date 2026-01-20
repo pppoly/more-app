@@ -302,6 +302,8 @@ export class EventsService {
         throw new BadRequestException('Event is not available for registration');
       }
 
+      const requireApproval = Boolean(event.requireApproval);
+
       const existing = await tx.eventRegistration.findFirst({
         where: {
           userId,
@@ -333,7 +335,10 @@ export class EventsService {
           registrationId: existing.id,
           status: existing.status,
           paymentStatus: existing.paymentStatus,
-          paymentRequired: (existing.amount ?? 0) > 0 && existing.paymentStatus !== 'paid',
+          paymentRequired:
+            (existing.amount ?? 0) > 0 &&
+            existing.paymentStatus !== 'paid' &&
+            (!requireApproval || existing.status === 'approved'),
           amount: existing.amount ?? 0,
           eventId: existing.event?.id ?? eventId,
           ticketTypeId: existing.ticketTypeId ?? dto.ticketTypeId,
@@ -394,7 +399,6 @@ export class EventsService {
 
       const isFree = ticketType.type === 'free' || (ticketType.price ?? 0) === 0;
       await this.assertRegistrationCapacity(tx, event, ticketType, isFree);
-      const requireApproval = Boolean(event.requireApproval);
       const initialStatus = requireApproval
         ? 'pending'
         : isFree
@@ -474,7 +478,10 @@ export class EventsService {
         registrationId: registration.id,
         status: registration.status,
         paymentStatus: registration.paymentStatus,
-        paymentRequired: !isFree,
+        paymentRequired:
+          (registration.amount ?? 0) > 0 &&
+          registration.paymentStatus !== 'paid' &&
+          (!requireApproval || registration.status === 'approved'),
         amount: registration.amount,
         eventId: registration.event?.id ?? eventId,
         ticketTypeId: registration.ticketTypeId,
