@@ -1068,6 +1068,7 @@ export interface AdminSettlementBatchDetailItem {
   nextAttemptAt: string | null;
   counts: Record<string, any>;
   blockedReasonCodes: string[];
+  skipReasonCodes: string[];
   disputedPayments: Array<{
     paymentId: string;
     stripeChargeId: string | null;

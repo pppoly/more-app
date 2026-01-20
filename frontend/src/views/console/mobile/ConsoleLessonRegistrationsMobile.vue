@@ -72,7 +72,6 @@
       </div>
       <div v-else class="reg-list">
         <article v-for="reg in filteredRegistrations" :key="reg.id" class="reg-card">
-          <span v-if="reg.status === 'cancel_requested'" class="flag">キャンセル申請中</span>
           <div class="row">
             <div class="user">
               <div class="avatar-shell">
@@ -84,17 +83,38 @@
               </div>
             </div>
             <div class="status-block">
+              <span v-if="reg.status === 'cancel_requested'" class="flag">キャンセル申請中</span>
               <span class="badge" :class="badgeClass(reg)">{{ reg.statusLabel }}</span>
-              <p v-if="reg.amountYen !== null" class="amount">¥{{ reg.amountYen.toLocaleString() }}</p>
+              <p v-if="reg.amountYen !== null" class="amount">
+                {{ reg.amountYen === 0 ? '無料' : `¥${reg.amountYen.toLocaleString()}` }}
+              </p>
               <p v-else class="amount hint">代表者が支払い</p>
             </div>
           </div>
           <div v-if="reg.status === 'cancel_requested'" class="action-row">
-            <p class="hint">参加者からキャンセル申請が届いています。決済履歴で返金を処理してください。</p>
+            <p class="hint">
+              参加者からキャンセル申請が届いています。
+              <span v-if="reg.refundRequest?.requestedAmount">希望返金額 ¥{{ reg.refundRequest.requestedAmount.toLocaleString() }}</span>
+            </p>
             <div class="action-buttons">
-              <button class="ghost small" type="button" disabled>返金を承認（準備中）</button>
-              <button class="ghost small" type="button" disabled>申請を却下（準備中）</button>
+              <button
+                class="ghost small"
+                type="button"
+                :disabled="!reg.refundRequest?.id || actionLoading[reg.id]"
+                @click="approveRefund(reg)"
+              >
+                {{ actionLoading[reg.id] ? '処理中…' : '返金を承認' }}
+              </button>
+              <button
+                class="ghost small"
+                type="button"
+                :disabled="!reg.refundRequest?.id || actionLoading[reg.id]"
+                @click="rejectRefund(reg)"
+              >
+                {{ actionLoading[reg.id] ? '処理中…' : '申請を却下' }}
+              </button>
             </div>
+            <p v-if="!reg.refundRequest?.id" class="hint">返金申請の情報が見つかりません。</p>
           </div>
         </article>
       </div>
@@ -105,11 +125,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchLessonPaymentSummary, fetchLessonRegistrations } from '../../../api/client';
+import { decideRefundRequest, fetchLessonPaymentSummary, fetchLessonRegistrations } from '../../../api/client';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../../utils/liff';
 import AppAvatar from '../../../components/common/AppAvatar.vue';
 import { useScrollMemory } from '../../../composables/useScrollMemory';
+import { useConfirm } from '../../../composables/useConfirm';
 
 interface RegistrationItem {
   id: string;
@@ -118,6 +139,14 @@ interface RegistrationItem {
   amount?: number | null;
   user?: { id: string; name?: string | null; avatarUrl?: string | null } | null;
   createdAt?: string;
+  refundRequest?: {
+    id: string;
+    status?: string | null;
+    decision?: string | null;
+    requestedAmount?: number | null;
+    approvedAmount?: number | null;
+    refundedAmount?: number | null;
+  } | null;
 }
 
 const route = useRoute();
@@ -136,6 +165,8 @@ const filterOptions: Array<{ value: FilterValue; label: string }> = [
   { value: 'refund', label: '返金処理中' },
 ];
 useScrollMemory();
+const { confirm } = useConfirm();
+const actionLoading = ref<Record<string, boolean>>({});
 
 const load = async () => {
   try {
@@ -175,15 +206,30 @@ const statusLabelMap: Record<NormalizedStatus, string> = {
 };
 
 const normalizeRegistration = (reg: RegistrationItem) => {
-  const normalizedStatus = normalizeStatus(reg.paymentStatus || reg.status);
+  const normalizedPaymentStatus = normalizeStatus(reg.paymentStatus);
   const amountField = typeof reg.amount === 'number' ? reg.amount : (reg as any).paidAmount;
-  const amountYen = typeof amountField === 'number' && amountField > 0 ? amountField : null;
+  const amountYen = typeof amountField === 'number' ? amountField : null;
   const isCancelRequested = reg.status === 'cancel_requested';
+  const isCancelled = reg.status === 'cancelled';
+  const normalizedStatus = isCancelRequested || reg.status === 'pending_refund'
+    ? 'refunding'
+    : reg.status === 'refunded'
+      ? 'refunded'
+      : isCancelled
+        ? 'unpaid'
+        : normalizedPaymentStatus;
+  const isFree = amountYen === 0;
   return {
     ...reg,
     normalizedStatus,
     amountYen,
-    statusLabel: isCancelRequested ? 'キャンセル待ち' : statusLabelMap[normalizedStatus] ?? '状態不明',
+    statusLabel: isCancelRequested
+      ? 'キャンセル申請中'
+      : isCancelled
+        ? 'キャンセル'
+        : isFree && normalizedStatus === 'paid'
+          ? '申込完了'
+          : statusLabelMap[normalizedStatus] ?? '状態不明',
   };
 };
 
@@ -191,8 +237,8 @@ const normalizedRegistrations = computed(() => registrations.value.map(normalize
 
 const filteredRegistrations = computed(() => {
   let list = normalizedRegistrations.value;
-  if (activeFilter.value === 'paid') list = list.filter((r) => r.normalizedStatus === 'paid');
-  if (activeFilter.value === 'unpaid') list = list.filter((r) => r.normalizedStatus === 'unpaid');
+  if (activeFilter.value === 'paid') list = list.filter((r) => r.normalizedStatus === 'paid' && r.status !== 'cancelled');
+  if (activeFilter.value === 'unpaid') list = list.filter((r) => r.normalizedStatus === 'unpaid' && r.status !== 'cancelled');
   if (activeFilter.value === 'refund')
     list = list.filter(
       (r) => r.status === 'cancel_requested' || r.normalizedStatus === 'refunding' || r.normalizedStatus === 'refunded',
@@ -248,6 +294,36 @@ const badgeClass = (reg: ReturnType<typeof normalizeRegistration>) => {
   if (reg.normalizedStatus === 'paid') return 'badge success';
   if (reg.normalizedStatus === 'unpaid') return 'badge muted';
   return 'badge muted';
+};
+
+const approveRefund = async (reg: ReturnType<typeof normalizeRegistration>) => {
+  if (!reg.refundRequest?.id || actionLoading.value[reg.id]) return;
+  const ok = await confirm('返金を承認しますか？');
+  if (!ok) return;
+  try {
+    actionLoading.value = { ...actionLoading.value, [reg.id]: true };
+    await decideRefundRequest(reg.refundRequest.id, { decision: 'approve_full' });
+    await load();
+  } catch (err: any) {
+    error.value = err?.message ?? '返金処理に失敗しました';
+  } finally {
+    actionLoading.value = { ...actionLoading.value, [reg.id]: false };
+  }
+};
+
+const rejectRefund = async (reg: ReturnType<typeof normalizeRegistration>) => {
+  if (!reg.refundRequest?.id || actionLoading.value[reg.id]) return;
+  const ok = await confirm('キャンセル申請を却下しますか？');
+  if (!ok) return;
+  try {
+    actionLoading.value = { ...actionLoading.value, [reg.id]: true };
+    await decideRefundRequest(reg.refundRequest.id, { decision: 'reject' });
+    await load();
+  } catch (err: any) {
+    error.value = err?.message ?? '却下に失敗しました';
+  } finally {
+    actionLoading.value = { ...actionLoading.value, [reg.id]: false };
+  }
 };
 </script>
 
@@ -370,17 +446,14 @@ const badgeClass = (reg: ReturnType<typeof normalizeRegistration>) => {
   border-radius: 12px;
   padding: 12px;
   background: #fff;
-  position: relative;
 }
 .flag {
-  position: absolute;
-  top: -6px;
-  left: 0;
+  align-self: flex-end;
   background: #f97316;
   color: #fff;
-  padding: 4px 10px;
-  border-radius: 10px;
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
 }
 .action-row {

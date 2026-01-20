@@ -19,20 +19,7 @@
         </div>
         <div class="chip-group">
           <div class="chips">
-            <button
-              type="button"
-              class="chip"
-              :class="{ active: status === '' }"
-              @click="status = ''; reload()"
-            >
-              すべて
-            </button>
-            <button
-              type="button"
-              class="chip"
-              :class="{ active: status === 'paid' }"
-              @click="status = 'paid'; reload()"
-            >
+            <button type="button" class="chip" :class="{ active: status === 'paid' }" @click="status = 'paid'; reload()">
               支払い済み
             </button>
             <button
@@ -50,6 +37,9 @@
               @click="status = 'refunded'; reload()"
             >
               返金済み
+            </button>
+            <button type="button" class="chip" :class="{ active: status === '' }" @click="status = ''; reload()">
+              すべて
             </button>
           </div>
         </div>
@@ -82,33 +72,6 @@
             <span v-if="item.refundRequest" class="pill" :class="refundStatusClass(item.refundRequest.status)">
               {{ refundStatusLabel(item.refundRequest, item.amount) }}
             </span>
-            <div v-if="item.refundRequest && item.refundRequest.status === 'requested' && item.status === 'paid'" class="refund-action-row">
-              <button
-                class="danger action-btn"
-                type="button"
-                :disabled="refundLoading[item.id]"
-                @click="approveRefundRequest(item)"
-              >
-                {{ refundLoading[item.id] ? '処理中...' : '返金を承認' }}
-              </button>
-              <button
-                class="ghost action-btn"
-                type="button"
-                :disabled="refundLoading[item.id]"
-                @click="rejectRefundRequest(item)"
-              >
-                却下
-              </button>
-            </div>
-            <button
-              v-else-if="item.status === 'paid' && (!item.refundRequest || item.refundRequest.status === 'rejected')"
-              class="danger action-btn"
-              type="button"
-              :disabled="refundLoading[item.id]"
-              @click="requestRefund(item)"
-            >
-              {{ refundLoading[item.id] ? '処理中...' : '返金を実行' }}
-            </button>
           </div>
         </li>
       </ul>
@@ -126,13 +89,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { decideRefundRequest, fetchCommunityBalance, fetchCommunityPayments, refundPayment } from '../../../api/client';
-import type {
-  ConsoleCommunityBalance,
-  ConsolePaymentItem,
-  ConsolePaymentList,
-  ConsolePaymentRefundRequest,
-} from '../../../types/api';
+import { fetchCommunityPayments } from '../../../api/client';
+import type { ConsolePaymentItem, ConsolePaymentList, ConsolePaymentRefundRequest } from '../../../types/api';
 import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
@@ -150,22 +108,14 @@ const lockedEventId = computed(() => (route.query.eventId as string | undefined)
 const initialEventId = computed(() => lockedEventId.value);
 
 const payments = ref<ConsolePaymentList>({ items: [], page: 1, pageSize: 20, total: 0 });
-const balance = ref<ConsoleCommunityBalance | null>(null);
 const loading = ref(false);
 const error = ref('');
 const page = ref(1);
-const status = ref<string>('');
+const status = ref<string>('paid');
 const eventId = ref(initialEventId.value);
 const lockedEvent = computed(() => !!lockedEventId.value);
-const refundLoading = ref<Record<string, boolean>>({});
 const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
-const visiblePayments = computed(() => payments.value.items.filter((p) => p.status !== 'pending'));
-
-const eventTitle = computed(() => {
-  if (!eventId.value) return '';
-  const target = payments.value.items.find((p) => p.event?.id === eventId.value);
-  return target?.event?.title ?? '';
-});
+const visiblePayments = computed(() => payments.value.items);
 
 const headerTitle = computed(() =>
   lockedEvent.value ? 'イベントの取引' : communityId.value ? 'コミュニティの取引' : '取引',
@@ -250,15 +200,6 @@ const refundStatusClass = (status: string) => {
   }
 };
 
-const loadBalance = async () => {
-  if (!communityId.value || lockedEvent.value) return;
-  try {
-    balance.value = await fetchCommunityBalance(communityId.value);
-  } catch (err) {
-    console.warn('Failed to load balance', err);
-  }
-};
-
 const loadPayments = async () => {
   if (!communityId.value) return;
   loading.value = true;
@@ -272,14 +213,13 @@ const loadPayments = async () => {
     });
     payments.value = list;
   } catch (err) {
-  error.value = err instanceof Error ? err.message : '取引の取得に失敗しました';
+    error.value = err instanceof Error ? err.message : '取引の取得に失敗しました';
   } finally {
     loading.value = false;
   }
 };
 
 const reload = () => {
-  loadBalance();
   loadPayments();
 };
 
@@ -287,70 +227,8 @@ const setPage = (value: number) => {
   page.value = value;
 };
 
-const clearFilters = () => {
-  eventId.value = lockedEventId.value || '';
-  status.value = '';
-  page.value = 1;
-  reload();
-};
-
-const displayTitle = (item: ConsolePaymentItem) => {
-  if (item.event?.title) return item.event.title;
-  if (item.lesson?.class?.title) {
-    return `${getLocalizedText(item.lesson.class.title)}（レッスン）`;
-  }
-  return '未紐づけ（クラス/イベントなし）';
-};
-
 const goBack = () => {
   router.back();
-};
-
-const requestRefund = async (item: ConsolePaymentItem) => {
-  const sure = window.confirm(`「${item.user.name}」に ${formatYen(item.amount)} を返金しますか？`);
-  if (!sure) return;
-  refundLoading.value = { ...refundLoading.value, [item.id]: true };
-  try {
-    await refundPayment(item.id, { reason: 'console_refund' });
-    await loadPayments();
-    await loadBalance();
-  } catch (err) {
-    alert(err instanceof Error ? err.message : '返金に失敗しました');
-  } finally {
-    refundLoading.value = { ...refundLoading.value, [item.id]: false };
-  }
-};
-
-const approveRefundRequest = async (item: ConsolePaymentItem) => {
-  if (!item.refundRequest) return;
-  const amount = item.refundRequest.requestedAmount ?? item.amount;
-  const sure = window.confirm(`「${item.user.name}」の返金申請を承認しますか？（${formatYen(amount)}）`);
-  if (!sure) return;
-  refundLoading.value = { ...refundLoading.value, [item.id]: true };
-  try {
-    await decideRefundRequest(item.refundRequest.id, { decision: 'approve_full' });
-    await loadPayments();
-    await loadBalance();
-  } catch (err) {
-    alert(err instanceof Error ? err.message : '返金審査に失敗しました');
-  } finally {
-    refundLoading.value = { ...refundLoading.value, [item.id]: false };
-  }
-};
-
-const rejectRefundRequest = async (item: ConsolePaymentItem) => {
-  if (!item.refundRequest) return;
-  const sure = window.confirm(`「${item.user.name}」の返金申請を却下しますか？`);
-  if (!sure) return;
-  refundLoading.value = { ...refundLoading.value, [item.id]: true };
-  try {
-    await decideRefundRequest(item.refundRequest.id, { decision: 'reject' });
-    await loadPayments();
-  } catch (err) {
-    alert(err instanceof Error ? err.message : '返金審査に失敗しました');
-  } finally {
-    refundLoading.value = { ...refundLoading.value, [item.id]: false };
-  }
 };
 
 watch(page, () => {

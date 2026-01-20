@@ -1044,6 +1044,7 @@ export class SettlementService {
       const rules = parseRules(item.counts);
       const blocked = parseBlocked(item.counts);
       const blockedReasonCodes: string[] = [];
+      const skipReasonCodes: string[] = [];
 
       if (item.status === 'blocked') {
         if ((item.hostBalance ?? 0) > 0) {
@@ -1068,6 +1069,10 @@ export class SettlementService {
         }
         if (!blockedReasonCodes.length) blockedReasonCodes.push('blocked');
       }
+      if (item.status === 'skipped') {
+        if ((item.hostBalance ?? 0) <= 0) skipReasonCodes.push('balance_non_positive');
+        if (!skipReasonCodes.length) skipReasonCodes.push('skipped');
+      }
 
       return {
         itemId: item.id,
@@ -1084,6 +1089,7 @@ export class SettlementService {
         nextAttemptAt: item.nextAttemptAt ? item.nextAttemptAt.toISOString() : null,
         counts: item.counts ?? {},
         blockedReasonCodes,
+        skipReasonCodes,
         disputedPayments: disputedByHost.get(item.hostId) ?? [],
         hostStripe: host
           ? {
