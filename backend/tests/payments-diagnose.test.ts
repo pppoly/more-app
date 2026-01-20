@@ -21,6 +21,16 @@ test('diagnoseStripePayment: keeps partial_refunded when Stripe shows refund', a
       amount_refunded: 1500,
     },
   } as any;
+  stripeClient.charges.ch_1 = {
+    id: 'ch_1',
+    currency: 'jpy',
+    amount_refunded: 1500,
+    payment_intent: 'pi_1',
+    refunds: {
+      object: 'list',
+      data: [{ id: 're_1', amount: 1500, currency: 'jpy', created: Math.floor(Date.now() / 1000) }],
+    },
+  } as any;
   const stripeService = buildStripeServiceStub(stripeClient) as any;
   const paymentsService = new PaymentsService(
     prisma as any,
@@ -84,6 +94,16 @@ test('diagnoseStripePayment: repairs paid -> partial_refunded when Stripe shows 
       amount_refunded: 1500,
     },
   } as any;
+  stripeClient.charges.ch_1 = {
+    id: 'ch_1',
+    currency: 'jpy',
+    amount_refunded: 1500,
+    payment_intent: 'pi_1',
+    refunds: {
+      object: 'list',
+      data: [{ id: 're_1', amount: 1500, currency: 'jpy', created: Math.floor(Date.now() / 1000) }],
+    },
+  } as any;
   const stripeService = buildStripeServiceStub(stripeClient) as any;
   const paymentsService = new PaymentsService(
     prisma as any,
@@ -135,4 +155,3 @@ test('diagnoseStripePayment: repairs paid -> partial_refunded when Stripe shows 
   assert.equal(registration.status, 'refunded');
   assert.equal(registration.paidAmount, 1500);
 });
-

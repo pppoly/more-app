@@ -179,6 +179,120 @@ test('Webhook payment_intent.succeeded: does not overwrite partial_refunded', as
   assert.equal(reg.paidAmount, 1500);
 });
 
+test('Webhook charge.refunded: creates platform_fee_reversal + host_payable_reversal and updates balances', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.communities.push({ id: 'com_1', stripeAccountId: null });
+
+  const stripeClient = new StripeClientStub();
+  stripeClient.paymentIntents['pi_1'] = buildPaidIntent({ id: 'pi_1', chargeId: 'ch_1', fee: 108 });
+  const stripeService = buildStripeServiceStub(stripeClient) as any;
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    stripeService,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
+  );
+
+  prisma.registrations.push({
+    id: 'reg_1',
+    userId: 'user_1',
+    status: 'pending',
+    paymentStatus: 'unpaid',
+    amount: 3000,
+    paidAmount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  prisma.payments.push({
+    id: 'pay_1',
+    userId: 'user_1',
+    communityId: 'com_1',
+    eventId: 'event_1',
+    registrationId: 'reg_1',
+    amount: 3000,
+    platformFee: 300,
+    currency: 'jpy',
+    status: 'pending',
+    method: 'stripe',
+    chargeModel: 'platform_charge',
+    stripeCheckoutSessionId: 'cs_1',
+    refundedGrossTotal: 0,
+    refundedPlatformFeeTotal: 0,
+    reversedMerchantTotal: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const paidEvent = {
+    id: 'evt_checkout_1',
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_1',
+        metadata: { paymentId: 'pay_1', registrationId: 'reg_1', communityId: 'com_1' },
+        payment_intent: 'pi_1',
+        mode: 'payment',
+        status: 'complete',
+        payment_status: 'paid',
+      },
+    },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(paidEvent)), 'sig');
+  await waitTick();
+
+  const payable = prisma.ledgerEntries.find((e) => e.entryType === 'host_payable' && e.businessPaymentId === 'pay_1');
+  assert.ok(payable);
+  assert.equal(payable.amount, 2592);
+
+  const created = Math.floor(Date.now() / 1000);
+  const refundEvent = {
+    id: 'evt_refund_1',
+    type: 'charge.refunded',
+    data: {
+      object: {
+        id: 'ch_1',
+        currency: 'jpy',
+        payment_intent: 'pi_1',
+        amount_refunded: 1500,
+        refunds: {
+          object: 'list',
+          data: [{ id: 're_1', amount: 1500, currency: 'jpy', created }],
+        },
+      },
+    },
+  } as any;
+
+  await paymentsService.handleStripeWebhook(Buffer.from(JSON.stringify(refundEvent)), 'sig');
+  await waitTick();
+
+  const platformFeeReversal = prisma.ledgerEntries.find((e) => e.idempotencyKey === 'ledger:platform_fee_reversal:re_1');
+  assert.ok(platformFeeReversal);
+  assert.equal(platformFeeReversal.amount, 150);
+
+  const hostReversal = prisma.ledgerEntries.find((e) => e.idempotencyKey === 'ledger:host_payable_reversal:re_1');
+  assert.ok(hostReversal);
+  assert.equal(hostReversal.amount, 1350);
+
+  const payment = prisma.payments.find((p) => p.id === 'pay_1')!;
+  assert.equal(payment.status, 'partial_refunded');
+  assert.equal(payment.refundedGrossTotal, 1500);
+  assert.equal(payment.refundedPlatformFeeTotal, 150);
+  assert.equal(payment.reversedMerchantTotal, 1350);
+
+  const reg = prisma.registrations.find((r) => r.id === 'reg_1')!;
+  assert.equal(reg.paymentStatus, 'refunded');
+  assert.equal(reg.status, 'refunded');
+  assert.equal(reg.paidAmount, 1500);
+
+  const balance = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(balance.platformFee, 300);
+  assert.equal(balance.refunded, 1500);
+  assert.equal(balance.stripeFee, 108);
+  assert.equal(balance.net, 1242);
+});
+
 test('Webhook durable ACK: returns error when event cannot be persisted', async () => {
   const prisma = new InMemoryPrisma();
   prisma.shouldFailPaymentGatewayEventUpsert = true;
@@ -461,6 +575,82 @@ test('Community balance: stripe fee is backfilled from payment fields into ledge
   const ledgerCount = prisma.ledgerEntries.length;
   await backfillPlatformChargeLedgerFees(prisma as any, { communityId: 'com_1' });
   assert.equal(prisma.ledgerEntries.length, ledgerCount);
+});
+
+test('Community balance: pending amount is derived from pending payments (not refunded)', async () => {
+  const prisma = new InMemoryPrisma();
+  prisma.communities.push({ id: 'com_1', stripeAccountId: null });
+
+  const paymentsService = new PaymentsService(
+    prisma as any,
+    { enabled: false, client: {} } as any,
+    new PermissionsServiceStub() as any,
+    new NotificationServiceStub() as any,
+    new SettlementServiceStub() as any,
+  );
+
+  const createdAt = new Date('2026-01-10T10:00:00.000Z');
+  prisma.payments.push(
+    {
+      id: 'pay_paid_1',
+      userId: 'user_1',
+      communityId: 'com_1',
+      eventId: 'event_1',
+      registrationId: 'reg_paid_1',
+      amount: 3000,
+      platformFee: 0,
+      currency: 'jpy',
+      status: 'paid',
+      method: 'stripe',
+      chargeModel: 'platform_charge',
+      refundedGrossTotal: 0,
+      refundedPlatformFeeTotal: 0,
+      reversedMerchantTotal: 0,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: 'pay_pending_1',
+      userId: 'user_1',
+      communityId: 'com_1',
+      eventId: 'event_1',
+      registrationId: 'reg_pending_1',
+      amount: 1500,
+      platformFee: 0,
+      currency: 'jpy',
+      status: 'pending',
+      method: 'stripe',
+      chargeModel: 'platform_charge',
+      refundedGrossTotal: 0,
+      refundedPlatformFeeTotal: 0,
+      reversedMerchantTotal: 0,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      id: 'pay_refunded_1',
+      userId: 'user_1',
+      communityId: 'com_1',
+      eventId: 'event_1',
+      registrationId: 'reg_refunded_1',
+      amount: 2000,
+      platformFee: 0,
+      currency: 'jpy',
+      status: 'refunded',
+      method: 'stripe',
+      chargeModel: 'platform_charge',
+      refundedGrossTotal: 2000,
+      refundedPlatformFeeTotal: 0,
+      reversedMerchantTotal: 0,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  );
+
+  const balance = await paymentsService.getCommunityBalance('user_1', 'com_1');
+  assert.equal(balance.grossPaid, 3000);
+  assert.equal(balance.transactionTotal, 4500);
+  assert.equal(balance.refunded, 2000);
 });
 
 test('Community balance: stripe fee is backfilled from Stripe balance transaction when payment is missing fee (Plan B)', async () => {

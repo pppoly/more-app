@@ -550,6 +550,7 @@ export class StripeClientStub {
   refundsCreateCalls: Array<{ params: any; opts?: any }> = [];
   transfersCreateCalls: Array<{ params: any; opts?: any }> = [];
   paymentIntents: Record<string, Stripe.PaymentIntent> = {};
+  charges: Record<string, Stripe.Charge> = {};
 
   shouldFailTransfersCreate: boolean = false;
   shouldFailRefundsCreate: boolean = false;
@@ -589,6 +590,14 @@ export class StripeClientStub {
     },
   };
 
+  chargesApi = {
+    retrieve: async (chargeId: string) => {
+      const charge = this.charges[chargeId];
+      if (!charge) throw new Error(`charge_not_found:${chargeId}`);
+      return charge;
+    },
+  };
+
   transfers = {
     create: async (params: any, opts?: any) => {
       this.transfersCreateCalls.push({ params, opts });
@@ -611,6 +620,7 @@ export const buildStripeServiceStub = (client: StripeClientStub) => {
       checkout: client.checkout,
       refunds: client.refunds,
       paymentIntents: { retrieve: client.paymentIntentsApi.retrieve },
+      charges: { retrieve: client.chargesApi.retrieve },
       transfers: client.transfers,
     },
   };

@@ -486,26 +486,35 @@ export class PaymentsService {
       status: { in: ['paid', 'partial_refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
+    const pendingWhere: Prisma.PaymentWhereInput = {
+      communityId,
+      status: 'pending',
+      ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
+    };
     const refundedWhere: Prisma.PaymentWhereInput = {
       communityId,
       status: { in: ['refunded', 'partial_refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
-    const allWhere: Prisma.PaymentWhereInput = {
+    const feeWhere: Prisma.PaymentWhereInput = {
       communityId,
       status: { in: ['paid', 'partial_refunded', 'refunded'] },
       ...(monthStart ? { createdAt: { gte: monthStart } } : {}),
     };
-    const [paidAgg, refundedAgg, allAgg] = await Promise.all([
+    const [paidAgg, pendingAgg, refundedAgg, feeAgg] = await Promise.all([
       this.prisma.payment.aggregate({
         where: paidWhere,
         _sum: { amount: true, platformFee: true },
       }),
       this.prisma.payment.aggregate({
+        where: pendingWhere,
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
         where: refundedWhere,
         _sum: { refundedGrossTotal: true },
       }),
-      this.prisma.payment.aggregate({ where: allWhere, _sum: { amount: true, stripeFeeAmountActual: true } }),
+      this.prisma.payment.aggregate({ where: feeWhere, _sum: { stripeFeeAmountActual: true } }),
     ]);
 
     let stripeBalance: { available: number; pending: number } | null = null;
@@ -540,7 +549,7 @@ export class PaymentsService {
             businessCommunityId: communityId,
             entryType: 'host_payable',
             provider: 'internal',
-            occurredAt: { lt: now },
+            occurredAt: { lte: now },
           },
           _sum: { amount: true },
         }),
@@ -549,7 +558,7 @@ export class PaymentsService {
             businessCommunityId: communityId,
             entryType: 'host_payable_reversal',
             provider: 'internal',
-            occurredAt: { lt: now },
+            occurredAt: { lte: now },
           },
           _sum: { amount: true },
         }),
@@ -566,7 +575,7 @@ export class PaymentsService {
                 businessCommunityId: communityId,
                 entryType: 'host_payable',
                 provider: 'internal',
-                occurredAt: { gte: monthStart, lt: now },
+                occurredAt: { gte: monthStart, lte: now },
               },
               _sum: { amount: true },
             })
@@ -580,7 +589,7 @@ export class PaymentsService {
                 businessCommunityId: communityId,
                 entryType: 'host_payable_reversal',
                 provider: 'internal',
-                occurredAt: { gte: monthStart, lt: now },
+                occurredAt: { gte: monthStart, lte: now },
               },
               _sum: { amount: true },
             })
@@ -594,7 +603,7 @@ export class PaymentsService {
             entryType: 'stripe_fee_actual',
             provider: 'stripe',
             direction: 'out',
-            occurredAt: monthStart ? { gte: monthStart, lt: now } : { lt: now },
+            occurredAt: monthStart ? { gte: monthStart, lte: now } : { lte: now },
           },
           _sum: { amount: true },
         }),
@@ -613,12 +622,13 @@ export class PaymentsService {
       ? (hostPayablePeriodAgg._sum.amount ?? 0) - (hostPayableReversalPeriodAgg._sum.amount ?? 0)
       : undefined;
 
-    const transactionTotal = allAgg._sum.amount ?? 0;
     const grossPaid = paidAgg._sum.amount ?? 0;
+    const pendingTotal = pendingAgg._sum.amount ?? 0;
+    const transactionTotal = grossPaid + pendingTotal;
     const platformFee = paidAgg._sum.platformFee ?? 0;
     const refunded = refundedAgg._sum.refundedGrossTotal ?? 0;
     const stripeFeeFromLedger = stripeFeeAgg._sum.amount ?? 0;
-    const stripeFeeFromPayments = allAgg._sum.stripeFeeAmountActual ?? 0;
+    const stripeFeeFromPayments = feeAgg._sum.stripeFeeAmountActual ?? 0;
     const stripeFee = stripeFeeFromLedger > 0 ? stripeFeeFromLedger : stripeFeeFromPayments;
     const net = monthStart ? accruedNetPeriod ?? 0 : accruedNetAll;
 
@@ -2576,6 +2586,153 @@ export class PaymentsService {
         metadata: { paymentIntentId, chargeId: charge.id },
       });
     }
+
+    if (payment.chargeModel !== 'platform_charge') return;
+    if (!refunds.length) return;
+    if (!payment.communityId) return;
+
+    const gross = payment.amount ?? 0;
+    const platformFee = payment.platformFee ?? 0;
+    const maxReverseMerchant = Math.max(0, gross - platformFee);
+    const currency = (payment.currency ?? 'jpy').toLowerCase();
+    if (currency !== 'jpy') return;
+
+    const [platformReversalAgg, merchantReversalAgg] = await Promise.all([
+      tx.ledgerEntry.aggregate({
+        where: {
+          businessPaymentId: payment.id,
+          entryType: 'platform_fee_reversal',
+          provider: 'internal',
+        },
+        _sum: { amount: true },
+      }),
+      tx.ledgerEntry.aggregate({
+        where: {
+          businessPaymentId: payment.id,
+          entryType: 'host_payable_reversal',
+          provider: 'internal',
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+    let reversedPlatformFeeTotal = platformReversalAgg._sum.amount ?? 0;
+    let reversedMerchantTotal = merchantReversalAgg._sum.amount ?? 0;
+
+    const refundIds = refunds.map((r) => r?.id).filter((id): id is string => Boolean(id));
+    const platformKeys = refundIds.map((id) => `ledger:platform_fee_reversal:${id}`);
+    const merchantKeys = refundIds.map((id) => `ledger:host_payable_reversal:${id}`);
+    const keys = [...platformKeys, ...merchantKeys];
+    const existingByKey = new Map<string, number>();
+    if (keys.length) {
+      const existing = await tx.ledgerEntry.findMany({
+        where: { idempotencyKey: { in: keys } },
+        select: { idempotencyKey: true, amount: true },
+      });
+      for (const entry of existing) {
+        if (!entry?.idempotencyKey) continue;
+        existingByKey.set(entry.idempotencyKey, Number(entry.amount ?? 0));
+      }
+    }
+
+    const sortedRefunds = [...refunds].sort((a, b) => {
+      const diff = (a?.created ?? 0) - (b?.created ?? 0);
+      if (diff !== 0) return diff;
+      return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
+
+    for (const refund of sortedRefunds) {
+      if (!refund?.id) continue;
+      const refundAmount = refund.amount ?? 0;
+      if (!Number.isFinite(refundAmount) || refundAmount <= 0) continue;
+
+      const occurredAt = typeof refund.created === 'number' ? new Date(refund.created * 1000) : new Date();
+      const platformKey = `ledger:platform_fee_reversal:${refund.id}`;
+      const merchantKey = `ledger:host_payable_reversal:${refund.id}`;
+
+      let refundPlatformFee = existingByKey.get(platformKey);
+      if (refundPlatformFee === undefined) {
+        const remainingPlatformFee = Math.max(0, platformFee - reversedPlatformFeeTotal);
+        const candidate = Math.max(0, computeProportionalAmount(platformFee, refundAmount, gross));
+        refundPlatformFee = Math.min(candidate, remainingPlatformFee);
+        if (refundPlatformFee > 0) {
+          const entry = await this.createLedgerEntryIfMissing({
+            tx,
+            businessPaymentId: payment.id,
+            businessRegistrationId: payment.registrationId ?? undefined,
+            businessLessonId: payment.lessonId ?? undefined,
+            businessCommunityId: payment.communityId ?? undefined,
+            entryType: 'platform_fee_reversal',
+            direction: 'out',
+            amount: refundPlatformFee,
+            currency: payment.currency ?? 'jpy',
+            provider: 'internal',
+            providerObjectType: 'refund',
+            providerObjectId: refund.id,
+            idempotencyKey: platformKey,
+            occurredAt,
+            metadata: { paymentId: payment.id, refundId: refund.id },
+          });
+          refundPlatformFee = Number(entry.amount ?? refundPlatformFee);
+        } else {
+          refundPlatformFee = 0;
+        }
+        existingByKey.set(platformKey, refundPlatformFee);
+        reversedPlatformFeeTotal += refundPlatformFee;
+      }
+
+      let reverseMerchant = existingByKey.get(merchantKey);
+      if (reverseMerchant === undefined) {
+        const remainingMerchant = Math.max(0, maxReverseMerchant - reversedMerchantTotal);
+        const candidate = Math.max(0, refundAmount - refundPlatformFee);
+        reverseMerchant = Math.min(candidate, remainingMerchant);
+        if (reverseMerchant > 0) {
+          const entry = await this.createLedgerEntryIfMissing({
+            tx,
+            businessPaymentId: payment.id,
+            businessRegistrationId: payment.registrationId ?? undefined,
+            businessLessonId: payment.lessonId ?? undefined,
+            businessCommunityId: payment.communityId ?? undefined,
+            entryType: 'host_payable_reversal',
+            direction: 'in',
+            amount: reverseMerchant,
+            currency: payment.currency ?? 'jpy',
+            provider: 'internal',
+            providerObjectType: 'refund',
+            providerObjectId: refund.id,
+            idempotencyKey: merchantKey,
+            occurredAt,
+            metadata: { paymentId: payment.id, refundId: refund.id },
+          });
+          reverseMerchant = Number(entry.amount ?? reverseMerchant);
+        } else {
+          reverseMerchant = 0;
+        }
+        existingByKey.set(merchantKey, reverseMerchant);
+        reversedMerchantTotal += reverseMerchant;
+      }
+    }
+
+    const paymentUpdate: Prisma.PaymentUpdateInput = {};
+    const nextRefundedPlatformFeeTotal = Math.min(
+      platformFee,
+      Math.max(payment.refundedPlatformFeeTotal ?? 0, reversedPlatformFeeTotal),
+    );
+    const nextReversedMerchantTotal = Math.min(
+      maxReverseMerchant,
+      Math.max(payment.reversedMerchantTotal ?? 0, reversedMerchantTotal),
+    );
+    if (nextRefundedPlatformFeeTotal > (payment.refundedPlatformFeeTotal ?? 0)) {
+      paymentUpdate.refundedPlatformFeeTotal = nextRefundedPlatformFeeTotal;
+    }
+    if (nextReversedMerchantTotal > (payment.reversedMerchantTotal ?? 0)) {
+      paymentUpdate.reversedMerchantTotal = nextReversedMerchantTotal;
+    }
+    if (payment.payoutStatus === 'PAID_OUT' && payment.reasonCode !== 'post_payout_refund') {
+      paymentUpdate.reasonCode = 'post_payout_refund';
+    }
+    if (Object.keys(paymentUpdate).length) {
+      await tx.payment.update({ where: { id: payment.id }, data: paymentUpdate });
+    }
   }
 
   private async handleChargeDispute(eventType: string, dispute: Stripe.Dispute) {
@@ -3208,6 +3365,35 @@ export class PaymentsService {
       await this.maybeTriggerRealtimePayout(payment.id);
     }
 
+    let settlementReconciled = false;
+    try {
+      await this.reconcilePaymentSettlement(payment.id, intentId, { suppressErrors: true });
+      settlementReconciled = true;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to reconcile settlement in diagnose: payment=${payment.id} intent=${intentId} error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    let refundLedgerSynced = false;
+    if (chargeId && nextRefundedGross > 0) {
+      try {
+        const charge = await this.withStripeRetry(() =>
+          this.stripeService.client.charges.retrieve(chargeId, { expand: ['refunds'] } as any),
+        );
+        await this.handleChargeRefunded(charge as any, this.prisma);
+        refundLedgerSynced = true;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to sync refunded charge in diagnose: payment=${payment.id} charge=${chargeId} error=${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
     return {
       paymentId,
       intentId,
@@ -3216,6 +3402,8 @@ export class PaymentsService {
       localStatusAfter: updateData.status ?? payment.status,
       refundedAmountFromStripe,
       refundedGrossTotal: updateData.refundedGrossTotal ?? payment.refundedGrossTotal ?? 0,
+      settlementReconciled,
+      refundLedgerSynced,
     };
   }
 
