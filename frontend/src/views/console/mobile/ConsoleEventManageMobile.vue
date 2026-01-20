@@ -202,6 +202,14 @@
             {{ entryActionLoading[activeEntry.id] ? '処理中…' : '拒否する' }}
           </button>
           <button
+            v-if="activeEntry.status === 'pending'"
+            class="sheet-action"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="approveEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '承認する' }}
+          </button>
+          <button
             v-if="canApproveRefundEntry(activeEntry)"
             class="sheet-action danger"
             :disabled="entryActionLoading[activeEntry.id]"
@@ -277,6 +285,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  approveEventRegistration,
   fetchConsoleEvent,
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
@@ -836,6 +845,24 @@ const rejectEntry = async () => {
   }
 };
 
+const approveEntry = async () => {
+  if (!activeEntry.value) return;
+  const sure = window.confirm('この申込を承認しますか？');
+  if (!sure) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await approveEventRegistration(eventId.value, activeEntry.value.id);
+    registrations.value = registrations.value.map((reg) =>
+      reg.registrationId === activeEntry.value?.id ? { ...reg, status: 'approved' } : reg,
+    );
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '承認に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
+};
+
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
 
@@ -859,7 +886,7 @@ const canApproveRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
   entry.status === 'cancel_requested' && Boolean(entry.refundRequest?.id);
 
 const canKickEntry = (entry: ReturnType<typeof mapEntry>) =>
-  !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
+  !['pending', 'cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
   !canRefundEntry(entry);
 
 const approveRefundEntry = async () => {

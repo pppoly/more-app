@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/require-await, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { JwtService } from '@nestjs/jwt';
 import { firstValueFrom } from 'rxjs';
@@ -22,6 +22,7 @@ interface EmailCodeEntry {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private emailCodeStore = new Map<string, EmailCodeEntry>();
 
   constructor(
@@ -111,7 +112,13 @@ export class AuthService {
     // Mock email sending: log message for developers/testing.
     const subject = `Your MORE verification code: ${code}`;
     const body = `You can use the code ${code} to log into MORE App.\n\nCode: ${code}\nValid for 5 minutes.`;
-    console.info(`[EmailLogin] ${normalized}\nSubject: ${subject}\n${body}`);
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const isProdLike = envLabel === 'production' || envLabel === 'prod';
+    if (isProdLike) {
+      this.logger.log(`[EmailLogin] code generated for ${normalized}`);
+    } else {
+      this.logger.log(`[EmailLogin] ${normalized}\nSubject: ${subject}\n${body}`);
+    }
     return { success: true };
   }
 

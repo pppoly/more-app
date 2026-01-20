@@ -2,7 +2,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import * as bodyParser from 'body-parser';
 import { UPLOAD_ROOT } from './common/storage/upload-root';
@@ -15,9 +15,12 @@ const buildPrefixedPath = (...segments: string[]) => {
 };
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   // Disable Nest built-in body parser to allow custom raw handler for Stripe webhook
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const globalPrefix = 'api/v1';
+  const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+  const isDevLike = !envLabel || envLabel === 'development' || envLabel === 'dev' || envLabel === 'local';
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -65,15 +68,27 @@ async function bootstrap() {
     return urlencodedParser(req, res, next);
   });
   app.setGlobalPrefix(globalPrefix);
-  const defaultConfiguredOrigins = 'http://localhost:5173,http://127.0.0.1:5173';
+  const defaultConfiguredOrigins = isDevLike ? 'http://localhost:5173,http://127.0.0.1:5173' : '';
   const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? defaultConfiguredOrigins)
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const defaultDevOrigins =
-    process.env.NODE_ENV === 'production'
-      ? []
-      : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173'];
+
+  if (!configuredOrigins.length && !isDevLike) {
+    try {
+      const raw = (process.env.FRONTEND_BASE_URL || '').trim();
+      if (raw) {
+        const url = new URL(raw);
+        configuredOrigins.push(url.origin);
+      }
+    } catch {
+      // ignore invalid FRONTEND_BASE_URL; require explicit FRONTEND_ORIGINS for deployed envs
+    }
+  }
+
+  const defaultDevOrigins = isDevLike
+    ? ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173']
+    : [];
   const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultDevOrigins]));
 
   app.enableCors({
@@ -86,7 +101,6 @@ async function bootstrap() {
   app.useStaticAssets(UPLOAD_ROOT, { prefix: apiUploadsPrefix });
 
   // Desktop redirect to promo in test environment
-  const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
   const enableDesktopPromoEnv =
     process.env.DESKTOP_PROMO === '1' || envLabel === 'test' || envLabel === 'testing' || envLabel === 'staging';
   app.use((req: any, res: any, next: any) => {
@@ -136,7 +150,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || '0.0.0.0';
   await app.listen(port, host);
-  console.log(`MORE App backend is running on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/api/v1`);
+  logger.log(`MORE App backend is running on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/api/v1`);
 }
 
 bootstrap();

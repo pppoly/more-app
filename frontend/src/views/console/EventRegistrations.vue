@@ -125,6 +125,14 @@
                         type="button"
                         class="ghost tiny"
                         :disabled="actionLoading[reg.registrationId]"
+                        @click="handleApprove(reg.registrationId)"
+                      >
+                        {{ actionLoading[reg.registrationId] ? '処理中…' : '承認' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="ghost tiny"
+                        :disabled="actionLoading[reg.registrationId]"
                         @click="handleReject(reg.registrationId)"
                       >
                         {{ actionLoading[reg.registrationId] ? '処理中…' : '拒否' }}
@@ -183,6 +191,7 @@ import {
   fetchEventRegistrationsSummary,
   fetchEventRegistrations,
   exportEventRegistrationsCsv,
+  approveEventRegistration,
   rejectEventRegistration,
   decideRefundRequest,
   cancelConsoleEvent,
@@ -347,6 +356,23 @@ const handleReject = async (registrationId: string) => {
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '拒否に失敗しました。再試行してください。';
+  } finally {
+    actionLoading.value = { ...actionLoading.value, [registrationId]: false };
+  }
+};
+
+const handleApprove = async (registrationId: string) => {
+  const sure = await confirmDialog('この申込を承認しますか？');
+  if (!sure) return;
+  actionLoading.value = { ...actionLoading.value, [registrationId]: true };
+  try {
+    await approveEventRegistration(eventId, registrationId);
+    const target = registrations.value.find((r) => r.registrationId === registrationId);
+    if (target) {
+      target.status = 'approved';
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '承認に失敗しました。再試行してください。';
   } finally {
     actionLoading.value = { ...actionLoading.value, [registrationId]: false };
   }

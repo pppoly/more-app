@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
-import { BadRequestException, Body, Controller, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import type { Request } from 'express';
@@ -64,6 +64,12 @@ export class PaymentsController {
   @Post('mock')
   @UseGuards(JwtAuthGuard)
   createMockPayment(@Req() req: any, @Body() body: MockPaymentDto) {
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const isProdLike = envLabel === 'production' || envLabel === 'prod';
+    const allowMockPayment = process.env.MOCK_PAYMENT_ENABLED === 'true' || !isProdLike;
+    if (!allowMockPayment) {
+      throw new ForbiddenException('Mock payments are disabled in this environment');
+    }
     return this.paymentsService.createMockPayment(req.user.id, body.registrationId);
   }
 
