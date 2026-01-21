@@ -1,3 +1,11 @@
+backend/.dockerignore
+backend/Dockerfile
+backend/pnpm-lock.yaml
+docker-compose.prod.yml
+docker-compose.yml.bak.20260120_224930
+frontend/pnpm-lock.yaml
+
+
 ############################
 # Environment & Secrets
 ############################
@@ -15,7 +23,7 @@ docs/
 # Frontend
 frontend/dist/
 frontend/dist-liff/
-
+frontend/dist-liff/liff.html
 # Backend
 backend/dist/
 

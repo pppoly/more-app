@@ -442,6 +442,7 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
       });
       setToken(response.accessToken);
       state.user = normalizeUser(response.user);
+      authSheets.hideLoginSheet();
       applyUserLocale(state.user);
       needsLiffOpen.value = false;
     } catch (error) {
@@ -553,11 +554,15 @@ export function useAuth() {
     if (!state.accessToken) return;
     const profile = await fetchMe();
     state.user = normalizeUser(profile);
+    authSheets.hideLoginSheet();
     applyUserLocale(state.user);
   };
 
   const setUserProfile = (profile: UserProfile | null) => {
     state.user = normalizeUser(profile);
+    if (state.user) {
+      authSheets.hideLoginSheet();
+    }
     applyUserLocale(state.user);
   };
 

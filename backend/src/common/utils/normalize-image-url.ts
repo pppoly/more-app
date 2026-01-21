@@ -1,3 +1,5 @@
+import { buildAssetUrl } from '../storage/asset-path';
+
 export function normalizeImageUrl(
   value: string | null | undefined,
   baseUrl?: string,
@@ -11,7 +13,16 @@ export function normalizeImageUrl(
     return normalizedValue;
   }
 
+  const resolved = buildAssetUrl(normalizedValue);
+  if (resolved && /^https?:\/\//i.test(resolved)) {
+    return resolved;
+  }
+
   const origin = (baseUrl || '').trim().replace(/\/$/, '');
+  if (resolved && resolved.startsWith('/')) {
+    return origin ? origin + resolved : resolved;
+  }
+
   if (normalizedValue.startsWith('/uploads/')) {
     return origin + normalizedValue;
   }

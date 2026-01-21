@@ -9,10 +9,6 @@ import { UPLOAD_ROOT } from './common/storage/upload-root';
 import type { IncomingMessage } from 'http';
 
 const normalizePathSegment = (segment: string) => segment.replace(/^\/+|\/+$/g, '');
-const buildPrefixedPath = (...segments: string[]) => {
-  const filtered = segments.map(normalizePathSegment).filter(Boolean);
-  return `/${filtered.join('/')}/`;
-};
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -95,10 +91,12 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
   });
-  const uploadsPrefix = buildPrefixedPath(process.env.UPLOADS_HTTP_PREFIX || 'uploads');
-  app.useStaticAssets(UPLOAD_ROOT, { prefix: uploadsPrefix });
-  const apiUploadsPrefix = buildPrefixedPath(globalPrefix, process.env.UPLOADS_HTTP_PREFIX || 'uploads');
-  app.useStaticAssets(UPLOAD_ROOT, { prefix: apiUploadsPrefix });
+  const uploadsPrefix = `/${normalizePathSegment(process.env.UPLOADS_HTTP_PREFIX || 'uploads')}`;
+  app.use(uploadsPrefix, express.static(UPLOAD_ROOT));
+  const apiUploadsPrefix = `/${normalizePathSegment(globalPrefix)}/${normalizePathSegment(
+    process.env.UPLOADS_HTTP_PREFIX || 'uploads',
+  )}`;
+  app.use(apiUploadsPrefix, express.static(UPLOAD_ROOT));
 
   // Desktop redirect to promo in test environment
   const enableDesktopPromoEnv =
