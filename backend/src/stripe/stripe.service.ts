@@ -25,10 +25,11 @@ export class StripeService {
 
     if (isLive || isUat) {
       const missing: string[] = [];
-      if (!secretKey) missing.push('STRIPE_SECRET_KEY');
-      if (!this.publishableKey) missing.push('STRIPE_PUBLISHABLE_KEY');
-      if (!webhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
-      if (!frontendBaseUrlRaw) missing.push('FRONTEND_BASE_URL');
+      if (!secretKey) missing.push(isLive ? 'STRIPE_SECRET_KEY_LIVE' : 'STRIPE_SECRET_KEY_TEST');
+      if (!this.publishableKey) missing.push(isLive ? 'STRIPE_PUBLISHABLE_KEY_LIVE' : 'STRIPE_PUBLISHABLE_KEY_TEST');
+      if (!webhookSecret) missing.push(isLive ? 'STRIPE_WEBHOOK_SECRET_LIVE' : 'STRIPE_WEBHOOK_SECRET_TEST');
+      if (!frontendBaseUrlRaw)
+        missing.push(isLive ? 'FRONTEND_BASE_URL_LIVE(or FRONTEND_BASE_URL)' : 'FRONTEND_BASE_URL_UAT(or FRONTEND_BASE_URL)');
       if (!this.apiVersion) missing.push('STRIPE_API_VERSION');
       if (missing.length) {
         throw new Error(`Missing required Stripe environment variables (${envLabel}): ${missing.join(', ')}`);

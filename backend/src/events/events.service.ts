@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
+import { normalizeImageUrl } from '../common/utils/normalize-image-url';
 
 interface CreateRegistrationDto {
   ticketTypeId?: string;
@@ -21,6 +22,7 @@ export class EventsService {
   ) {}
 
   async listPublicOpenEvents() {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const successRegistrationWhere = this.successfulRegistrationWhere();
     const events = await this.prisma.event.findMany({
       where: {
@@ -97,13 +99,17 @@ export class EventsService {
       const min = prices.length ? Math.min(...prices) : 0;
       const max = prices.length ? Math.max(...prices) : 0;
       const attendeeAvatars = event.registrations.map(
-        (registration) => registration.user?.avatarUrl ?? DEFAULT_AVATAR,
+        (registration) =>
+          normalizeImageUrl(registration.user?.avatarUrl, frontendBaseUrl) ?? DEFAULT_AVATAR,
       );
-      const communityLogo = this.extractCommunityLogo(event.community?.description) ?? null;
+      const communityLogo = normalizeImageUrl(
+        this.extractCommunityLogo(event.community?.description),
+        frontendBaseUrl,
+      );
       const currentParticipants = event._count?.registrations ?? 0;
       const capacityFromConfig =
         (event.config as any)?.capacity ?? (event.config as any)?.maxParticipants ?? event.maxParticipants ?? null;
-      const coverImageUrl = buildAssetUrl(event.galleries[0]?.imageUrl);
+      const coverImageUrl = normalizeImageUrl(buildAssetUrl(event.galleries[0]?.imageUrl), frontendBaseUrl);
       return {
         id: event.id,
         status: event.status,
@@ -123,7 +129,7 @@ export class EventsService {
           name: event.community.name,
           slug: event.community.slug,
         },
-        communityLogoUrl: communityLogo,
+        communityLogoUrl: communityLogo ?? null,
         priceRange: { min, max },
         coverImageUrl,
         config: {
@@ -137,6 +143,7 @@ export class EventsService {
   }
 
   async getEventById(id: string) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const DEFAULT_AVATAR =
       'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
     const successRegistrationWhere = this.successfulRegistrationWhere();
@@ -219,16 +226,19 @@ export class EventsService {
     const capacity = event.maxParticipants ?? null;
     const regProgress = capacity ? Math.min(100, Math.round((currentParticipants / capacity) * 100)) : 0;
     const attendeeAvatars = event.registrations
-      .map((reg) => reg.user?.avatarUrl ?? DEFAULT_AVATAR)
+      .map((reg) => normalizeImageUrl(reg.user?.avatarUrl, frontendBaseUrl) ?? DEFAULT_AVATAR)
       .filter((url): url is string => Boolean(url));
     const participants = event.registrations.map((reg) => ({
       id: reg.id,
       name: reg.user?.name ?? 'ゲスト',
-      avatarUrl: reg.user?.avatarUrl ?? DEFAULT_AVATAR,
+      avatarUrl: normalizeImageUrl(reg.user?.avatarUrl, frontendBaseUrl) ?? DEFAULT_AVATAR,
     }));
 
-    const communityCoverUrl = buildAssetUrl(event.community?.coverImageUrl);
-    const communityLogo = this.extractCommunityLogo(event.community?.description) ?? communityCoverUrl ?? null;
+    const communityCoverUrl = normalizeImageUrl(buildAssetUrl(event.community?.coverImageUrl), frontendBaseUrl);
+    const communityLogo =
+      normalizeImageUrl(this.extractCommunityLogo(event.community?.description), frontendBaseUrl) ??
+      communityCoverUrl ??
+      null;
 
     const mergedConfig = {
       ...(event.config as Record<string, any>),
@@ -249,7 +259,7 @@ export class EventsService {
     const { registrations, _count, galleries, ...rest } = event;
     return {
       ...rest,
-      coverImageUrl: buildAssetUrl(galleries?.[0]?.imageUrl),
+      coverImageUrl: normalizeImageUrl(buildAssetUrl(galleries?.[0]?.imageUrl), frontendBaseUrl),
       config: mergedConfig,
     };
   }
@@ -572,6 +582,7 @@ export class EventsService {
   }
 
   async getEventGallery(eventId: string) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const event = await this.prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {
       throw new NotFoundException('Event not found');
@@ -587,7 +598,7 @@ export class EventsService {
     });
     return gallery
       .map((item) => {
-        const normalized = buildAssetUrl(item.imageUrl);
+        const normalized = normalizeImageUrl(buildAssetUrl(item.imageUrl), frontendBaseUrl);
         return normalized
           ? {
               ...item,

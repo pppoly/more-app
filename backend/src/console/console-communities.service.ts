@@ -8,6 +8,7 @@ import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
 import { getPaymentsConfig } from '../payments/payments.config';
 import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 import { AssetService } from '../asset/asset.service';
+import { normalizeImageUrl } from '../common/utils/normalize-image-url';
 
 @Injectable()
 export class ConsoleCommunitiesService {
@@ -27,6 +28,7 @@ export class ConsoleCommunitiesService {
   };
 
   async listManagedCommunities(userId: string) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const communities = await this.prisma.community.findMany({
       where: {
         OR: [
@@ -66,8 +68,8 @@ export class ConsoleCommunitiesService {
       labels: community.labels,
       visibleLevel: community.visibleLevel,
       createdAt: community.createdAt,
-      coverImageUrl: buildAssetUrl(community.coverImageUrl),
-      logoImageUrl: this.getLogoUrl(community as any),
+      coverImageUrl: normalizeImageUrl(buildAssetUrl(community.coverImageUrl), frontendBaseUrl),
+      logoImageUrl: this.getLogoUrl(community as any, frontendBaseUrl),
       role: community.ownerId === userId ? 'owner' : (community as any).members?.[0]?.role ?? 'admin',
     }));
   }
@@ -331,14 +333,36 @@ export class ConsoleCommunitiesService {
   }
 
   private decorateCommunity(community: Community) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
+    const description =
+      community.description && typeof community.description === 'object'
+        ? { ...(community.description as Record<string, any>) }
+        : community.description;
+    if (description && typeof description === 'object') {
+      if (typeof (description as any).logoImageUrl === 'string') {
+        (description as any).logoImageUrl = normalizeImageUrl((description as any).logoImageUrl, frontendBaseUrl);
+      }
+      if (
+        (description as any)._portalConfig &&
+        typeof (description as any)._portalConfig === 'object' &&
+        typeof (description as any)._portalConfig.logoImageUrl === 'string'
+      ) {
+        (description as any)._portalConfig = {
+          ...(description as any)._portalConfig,
+          logoImageUrl: normalizeImageUrl((description as any)._portalConfig.logoImageUrl, frontendBaseUrl),
+        };
+      }
+    }
+
     return {
       ...community,
-      coverImageUrl: buildAssetUrl(community.coverImageUrl),
-      logoImageUrl: this.getLogoUrl(community),
+      description,
+      coverImageUrl: normalizeImageUrl(buildAssetUrl(community.coverImageUrl), frontendBaseUrl),
+      logoImageUrl: this.getLogoUrl(community, frontendBaseUrl),
     };
   }
 
-  private getLogoUrl(community: Community): string | null {
+  private getLogoUrl(community: Community, frontendBaseUrl?: string): string | null {
     const desc = community.description as any;
     const rawFromDesc =
       desc && typeof desc === 'object' && typeof desc.logoImageUrl === 'string' ? desc.logoImageUrl : null;
@@ -348,7 +372,7 @@ export class ConsoleCommunitiesService {
         : null;
     const rawTop = typeof (community as any).logoImageUrl === 'string' ? (community as any).logoImageUrl : null;
     const rawLogo = rawFromDesc || rawFromPortal || rawTop;
-    return buildAssetUrl(rawLogo);
+    return normalizeImageUrl(buildAssetUrl(rawLogo), frontendBaseUrl) ?? null;
   }
 
   private mergeLogoIntoDescription(

@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_APP_TARGET: ${VITE_APP_TARGET:-web}
+        VITE_APP_ENV: ${VITE_APP_ENV:-production}
+        VITE_LIFF_ID: ${VITE_LIFF_ID:-}
+        VITE_LINE_CHANNEL_ID: ${VITE_LINE_CHANNEL_ID:-}
+        VITE_DEV_LOGIN_SECRET: ${VITE_DEV_LOGIN_SECRET:-}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_STRIPE_FEE_PERCENT: ${VITE_STRIPE_FEE_PERCENT:-}
+        VITE_STRIPE_FEE_FIXED_JPY: ${VITE_STRIPE_FEE_FIXED_JPY:-}
+        VITE_STRIPE_FEE_MIN_JPY: ${VITE_STRIPE_FEE_MIN_JPY:-}
+        VITE_PLATFORM_FEE_WAIVED: ${VITE_PLATFORM_FEE_WAIVED:-}
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    restart: unless-stopped
+    depends_on:
+      - backend
+

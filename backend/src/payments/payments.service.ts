@@ -1331,7 +1331,7 @@ export class PaymentsService {
     }
     const webhookSecret = resolveStripeEnv().webhookSecret;
     if (!webhookSecret) {
-      this.logger.error('STRIPE_WEBHOOK_SECRET is not configured');
+      this.logger.error('Stripe webhook secret is not configured (STRIPE_WEBHOOK_SECRET_LIVE/TEST)');
       throw new InternalServerErrorException('Stripe webhook secret is not configured');
     }
     const payloadInfo = this.describeStripeWebhookPayload(rawBody);
