@@ -975,8 +975,25 @@ const shareEvent = async () => {
   }
 
   if (isLineInAppBrowser()) {
-    window.location.href = lineShareUrl;
-    showUiMessage('LINE で開きました');
+    if (navigator.share) {
+      try {
+        await navigator.share(payload);
+        showUiMessage('共有しました');
+        return;
+      } catch (error: any) {
+        const name = error?.name || '';
+        if (name === 'AbortError' || name === 'NotAllowedError') {
+          return;
+        }
+      }
+    }
+    if (navigator.clipboard?.writeText && shareUrlWithSource) {
+      await navigator.clipboard.writeText(shareUrlWithSource);
+      showUiMessage('リンクをコピーしました');
+      return;
+    }
+    showUiMessage('共有に失敗しました');
+    return;
   } else if (navigator.share) {
     try {
       await navigator.share(payload);
