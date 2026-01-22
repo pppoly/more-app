@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
+import { buildLiffUrl, ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -964,13 +964,6 @@ const shareEvent = async () => {
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
   const liffShareUrl = buildLiffUrl(shareToPath) || '';
-  const shareUrlWithSource = isLineBrowserLike
-    ? liffShareUrl || webShareUrl || fallbackUrl
-    : webShareUrl || fallbackUrl;
-  const shareTitle = detail.value.title || 'イベント';
-  const payload = { title: shareTitle, url: shareUrlWithSource };
-  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
-  const shareText = `${shareTitle}\n${shareUrlWithSource}`;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
@@ -982,6 +975,13 @@ const shareEvent = async () => {
       (new URLSearchParams(window.location.search).has('liff.state') ||
         new URLSearchParams(window.location.search).has('liff.referrer') ||
         document.referrer.includes('line.me')));
+  const shareUrlWithSource = isLineBrowserLike
+    ? liffShareUrl || webShareUrl || fallbackUrl
+    : webShareUrl || fallbackUrl;
+  const shareTitle = detail.value.title || 'イベント';
+  const payload = { title: shareTitle, url: shareUrlWithSource };
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  const shareText = `${shareTitle}\n${shareUrlWithSource}`;
   const fallbackShare = async (allowSystemShare: boolean, allowExternalOpen: boolean) => {
     if (allowSystemShare && navigator.share) {
       try {
