@@ -90,6 +90,18 @@ const routes: RouteRecordRaw[] = [
     meta: { devPageName: 'デスクトップホーム' },
   },
   {
+    path: '/liff',
+    name: 'liff-entry',
+    redirect: (to) => {
+      const raw = Array.isArray(to.query.to) ? to.query.to[0] : to.query.to;
+      if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
+        return raw;
+      }
+      return { name: 'events' };
+    },
+    meta: { devPageName: 'LIFFエントリー' },
+  },
+  {
     path: '/desktop-home',
     name: 'legacy-home',
     redirect: (to) =>
