@@ -157,12 +157,7 @@ logDevLiffState();
 export const isLineInAppBrowser = () => {
   if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') return false;
   const ua = navigator.userAgent.toLowerCase();
-  return (
-    ua.includes(' line/') ||
-    ua.includes(' line ') ||
-    ua.includes('line/') ||
-    ua.includes('liff') ||
-    ua.includes('miniapp') ||
-    ua.includes('line')
-  );
+  if (ua.includes('liff') || ua.includes('miniapp')) return true;
+  // Match LINE token without catching words like "guideline".
+  return /(^|\W)line(\/|\W|$)/.test(ua);
 };

@@ -324,16 +324,16 @@ import { getEventCategoryLabel } from '../../utils/eventCategory';
 import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
-import { useFavorites } from '../../composables/useFavorites';
-import { useResourceConfig } from '../../composables/useResourceConfig';
-import { useLocale } from '../../composables/useLocale';
-import { APP_TARGET, FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, isLiffReady, loadLiff } from '../../utils/liff';
-import { trackEvent } from '../../utils/analytics';
-import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
-import backIcon from '../../assets/icons/arrow-back.svg';
-import shareIcon from '../../assets/share.svg';
-import followIcon from '../../assets/follow.svg';
+	import { useFavorites } from '../../composables/useFavorites';
+	import { useResourceConfig } from '../../composables/useResourceConfig';
+	import { useLocale } from '../../composables/useLocale';
+	import { APP_TARGET, FRONTEND_BASE_URL, LIFF_ID } from '../../config';
+	import { isLineInAppBrowser, isLiffReady, liffInstance } from '../../utils/liff';
+	import { trackEvent } from '../../utils/analytics';
+	import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
+	import backIcon from '../../assets/icons/arrow-back.svg';
+	import shareIcon from '../../assets/share.svg';
+	import followIcon from '../../assets/follow.svg';
 import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
@@ -934,6 +934,22 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  const expectedRoute = route.fullPath;
+  let shareNavGuardActive = true;
+  const restoreRouteIfNeeded = () => {
+    if (!shareNavGuardActive) return;
+    const current = router.currentRoute.value.fullPath;
+    if (current !== expectedRoute) {
+      router.replace(expectedRoute).catch(() => undefined);
+    }
+  };
+  const onPopState = () => {
+    // Some LINE WebViews emit an unexpected back navigation after shareTargetPicker.
+    window.setTimeout(restoreRouteIfNeeded, 0);
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', onPopState);
+  }
   const frontendBase = FRONTEND_BASE_URL;
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
@@ -947,6 +963,7 @@ const shareEvent = async () => {
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
   const isLineBrowserLike =
+    APP_TARGET === 'liff' ||
     isLineInAppBrowser() ||
     inMiniAppHost ||
     (typeof window !== 'undefined' &&
@@ -981,56 +998,53 @@ const shareEvent = async () => {
     }
   };
 
-  if (LIFF_ID) {
-    try {
-      const liff = await loadLiff(LIFF_ID);
-      if (isLiffReady.value) {
-        try {
-          const ready = (liff as any).ready;
-          if (ready && typeof ready.then === 'function') {
-            await Promise.race([
-              ready,
-              new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 4000)),
-            ]);
+  try {
+    if (APP_TARGET === 'liff' && !LIFF_ID) {
+      showUiMessage('LINE 設定を確認してください');
+      await fallbackShare(false, false);
+      return;
+    }
+    if (isLiffReady.value) {
+      try {
+        const liff = liffInstance;
+        const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+        const canShare =
+          typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
+        const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
+        if (canUseSharePicker) {
+          const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
+          if (!isLoggedIn) {
+            showUiMessage('共有にはログインが必要です');
+            await fallbackShare(false, false);
+            return;
           }
-        } catch {
-          // ignore; fall through to capability checks
-        }
-      }
-      const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-      const canShare =
-        typeof (liff as any).isApiAvailable === 'function'
-          ? (liff as any).isApiAvailable('shareTargetPicker')
-          : Boolean(liff.shareTargetPicker);
-      const canUseSharePicker = inClient && canShare && Boolean(liff.shareTargetPicker);
-      if (canUseSharePicker) {
-        const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
-        if (!isLoggedIn) {
-          showUiMessage('共有にはログインが必要です');
-          await fallbackShare(false, false);
+          const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+          window.setTimeout(restoreRouteIfNeeded, 0);
+          showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
           return;
         }
-        const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
-        if (result) {
-          showUiMessage('共有しました');
-        }
-        return;
+      } catch (err) {
+        console.error('Failed to share via LIFF', err);
       }
-    } catch (err) {
-      console.error('Failed to share via LIFF', err);
+    } else if (APP_TARGET === 'liff') {
+      showUiMessage('LINE 初期化中です。もう一度お試しください。');
     }
-  } else if (APP_TARGET === 'liff') {
-    showUiMessage('LINE 設定を確認してください');
-    await fallbackShare(false, false);
-    return;
-  }
 
-  if (isLineBrowserLike) {
-    await fallbackShare(false, false);
-    return;
-  }
+    if (isLineBrowserLike) {
+      await fallbackShare(false, false);
+      return;
+    }
 
-  await fallbackShare(true, true);
+    await fallbackShare(true, true);
+  } finally {
+    // Keep the guard briefly to catch delayed back events when returning from the share UI.
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        shareNavGuardActive = false;
+        window.removeEventListener('popstate', onPopState);
+      }, 1200);
+    }
+  }
 };
 
 let uiMessageTimer: number | null = null;
