@@ -224,7 +224,6 @@ import { useI18n } from 'vue-i18n';
 import { useToast } from '../../../composables/useToast';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import ImageCropperModal from '../../../components/ImageCropperModal.vue';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 
@@ -235,7 +234,7 @@ const communityId = ref<string | null>((route.params.communityId as string) || n
 const { t } = useI18n();
 const toast = useToast();
 const isCreateMode = computed(() => !communityId.value || communityId.value === 'new');
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const isLiffEntry = computed(() => {
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);

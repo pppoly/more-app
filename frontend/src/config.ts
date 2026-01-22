@@ -29,8 +29,6 @@ const resolveFrontendBaseUrl = () => {
 };
 
 export const FRONTEND_BASE_URL = resolveFrontendBaseUrl();
-const inferredTarget = import.meta.env.MODE === 'liff' ? 'liff' : 'web';
-export const APP_TARGET = import.meta.env.VITE_APP_TARGET || inferredTarget;
 export const LINE_CHANNEL_ID = import.meta.env.VITE_LINE_CHANNEL_ID || '';
 export const LIFF_ID = import.meta.env.VITE_LIFF_ID || '';
 export const DEV_LOGIN_SECRET = import.meta.env.VITE_DEV_LOGIN_SECRET || '';
@@ -43,8 +41,6 @@ export const isProduction = () => {
   if (appEnv && appEnv !== 'production') return false;
   return import.meta.env.PROD || mode === 'production' || appEnv === 'production';
 };
-
-export const isProductionLiff = () => isProduction() && APP_TARGET === 'liff';
 
 export const requireLiffId = () => {
   if (LIFF_ID) return LIFF_ID;

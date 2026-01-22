@@ -117,8 +117,8 @@ import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
-import { APP_TARGET } from '../config';
 import { setNextTransitionOverride } from '../composables/useNavStack';
+import { isLiffClient } from '../utils/device';
 import { isLineInAppBrowser } from '../utils/liff';
 import { getTransitionName, restoreScroll, saveScroll, useNavPending } from '../composables/useNavStack';
 
@@ -143,7 +143,7 @@ const navPending = useNavPending();
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 const contentTopPaddingStyle = computed(() => ({}));
-const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff' || isLineInAppBrowser());
+const isLiffMode = computed(() => Boolean(props.isLiff) || isLiffClient() || isLineInAppBrowser());
 
 const tabIcons = {
   events: {

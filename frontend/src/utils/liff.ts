@@ -88,25 +88,42 @@ export async function loadLiff(liffId?: string): Promise<typeof liff> {
 export const liffInstance = liff;
 export { isLiffReady, isLiffClientCapable };
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function normalizeLiffStateToPath(raw: string | null): string | null {
+  if (!raw) return null;
+  let decoded = safeDecode(raw);
+  if (decoded.startsWith('?')) {
+    decoded = `/${decoded}`;
+  } else if (!decoded.startsWith('/') && decoded.startsWith('to=')) {
+    decoded = `/?${decoded}`;
+  }
+  if (!decoded.startsWith('/') || decoded.startsWith('//')) return null;
+  try {
+    const parsed = new URL(decoded, 'https://example.local');
+    const nestedTo = parsed.searchParams.get('to');
+    if (nestedTo && nestedTo.startsWith('/') && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
+      return nestedTo;
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return decoded;
+  }
+}
+
 export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   const resolvedId = resolveLiffId(liffId);
   if (!resolvedId) return null;
   const base = `https://miniapp.line.me/${resolvedId}`;
   if (!toPath) return base;
-  let normalized = toPath.startsWith('/') ? toPath : `/${toPath}`;
-  try {
-    const parsed = new URL(normalized, 'https://example.local');
-    const nestedTo = parsed.searchParams.get('to');
-    if (
-      nestedTo &&
-      nestedTo.startsWith('/') &&
-      (parsed.pathname === '/' || parsed.pathname === '/liff')
-    ) {
-      normalized = nestedTo;
-    }
-  } catch {
-    // Keep original path when URL parsing fails.
-  }
+  const normalizedCandidate = toPath.startsWith('/') ? toPath : `/${toPath}`;
+  const normalized = normalizeLiffStateToPath(normalizedCandidate) || normalizedCandidate;
   return `${base}?to=${encodeURIComponent(normalized)}`;
 };
 

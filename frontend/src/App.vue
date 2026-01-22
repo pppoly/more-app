@@ -140,8 +140,7 @@ import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
 import { isLineBrowser } from './utils/device';
-import { buildLiffUrl, isLineInAppBrowser } from './utils/liff';
-import { APP_TARGET } from './config';
+import { buildLiffUrl } from './utils/liff';
 import { BUILD_VERSION } from './version';
 import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
@@ -168,12 +167,7 @@ const {
 const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
-const showLiffGuide = computed(
-  () =>
-    needsLiffOpen.value &&
-    !isLiffClientMode.value &&
-    (APP_TARGET === 'liff' || isLineInAppBrowser()),
-);
+const showLiffGuide = computed(() => needsLiffOpen.value && !isLiffClientMode.value && isLineBrowser());
 const showLiffLoginRecovery = computed(
   () => isLiffClientMode.value && needsLiffOpen.value,
 );

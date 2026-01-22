@@ -17,7 +17,7 @@ import PaymentReturn from '../views/payments/PaymentReturn.vue';
 import StripeReturn from '../views/console/StripeReturn.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
-import { isLineInAppBrowser } from '../utils/liff';
+import { isLineInAppBrowser, normalizeLiffStateToPath } from '../utils/liff';
 import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from '../composables/useAuthSheets';
 import { communityRouteGuard, payoutPolicyGuard } from './guards';
@@ -89,6 +89,11 @@ const routes: RouteRecordRaw[] = [
       if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
         return raw;
       }
+      const liffStateRaw = Array.isArray(to.query['liff.state']) ? to.query['liff.state'][0] : to.query['liff.state'];
+      if (typeof liffStateRaw === 'string') {
+        const liffPath = normalizeLiffStateToPath(liffStateRaw);
+        if (liffPath) return liffPath;
+      }
       return isMobile()
         ? { name: 'events' }
         : { path: '/promo', query: { from: to.fullPath } };
@@ -102,6 +107,11 @@ const routes: RouteRecordRaw[] = [
       const raw = Array.isArray(to.query.to) ? to.query.to[0] : to.query.to;
       if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
         return raw;
+      }
+      const liffStateRaw = Array.isArray(to.query['liff.state']) ? to.query['liff.state'][0] : to.query['liff.state'];
+      if (typeof liffStateRaw === 'string') {
+        const liffPath = normalizeLiffStateToPath(liffStateRaw);
+        if (liffPath) return liffPath;
       }
       return { name: 'events' };
     },

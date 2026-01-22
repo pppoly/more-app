@@ -16,8 +16,8 @@ import {
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
-import { API_BASE_URL, APP_TARGET, requireLiffId } from '../config';
-import { isLineInAppBrowser, isLiffReady, loadLiff } from '../utils/liff';
+import { API_BASE_URL, requireLiffId } from '../config';
+import { isLineInAppBrowser, isLiffReady, loadLiff, normalizeLiffStateToPath } from '../utils/liff';
 import { reportError } from '../utils/reporting';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import { trackEvent } from '../utils/analytics';
@@ -83,30 +83,6 @@ const resolveLiffId = () => {
   }
 };
 
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function normalizeLiffStateToPath(raw: string | null): string | null {
-  if (!raw) return null;
-  const decoded = safeDecode(raw);
-  if (!decoded.startsWith('/') || decoded.startsWith('//')) return null;
-  try {
-    const parsed = new URL(decoded, 'https://example.local');
-    const nestedTo = parsed.searchParams.get('to');
-    if (nestedTo && nestedTo.startsWith('/') && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
-      return nestedTo;
-    }
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return decoded;
-  }
-}
-
 function cleanLiffCallbackUrl(liffStateParam: string | null) {
   if (typeof window === 'undefined') return;
   try {
@@ -115,7 +91,8 @@ function cleanLiffCallbackUrl(liffStateParam: string | null) {
     url.searchParams.delete('state');
     url.searchParams.delete('oauth_verifier');
     const currentTo = url.searchParams.get('to');
-    const normalizedState = normalizeLiffStateToPath(liffStateParam) || normalizeLiffStateToPath(url.searchParams.get('liff.state'));
+    const normalizedState =
+      normalizeLiffStateToPath(liffStateParam) || normalizeLiffStateToPath(url.searchParams.get('liff.state'));
     if (!currentTo && normalizedState) {
       url.searchParams.set('to', normalizedState);
     }
@@ -163,7 +140,7 @@ async function exchangeLiffToken(
   const url = `${backendBase}${endpoint}`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-App-Target': APP_TARGET },
+    headers: { 'Content-Type': 'application/json', 'X-App-Target': 'liff' },
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -234,7 +211,6 @@ function isLiffHost(): boolean {
 
 function shouldAttemptLiffAuth(): boolean {
   if (!hasWindow()) return false;
-  if (APP_TARGET === 'liff') return true;
   if (isLiffHost()) return true;
   return isLiffClient() || isLineInAppBrowser();
 }
@@ -253,9 +229,11 @@ function setToken(token: string | null) {
   }
 }
 
-setRequestHeaderProvider(() => ({
-  'X-App-Target': APP_TARGET,
-}));
+setRequestHeaderProvider(() => {
+  if (!hasWindow()) return { 'X-App-Target': 'web' };
+  const target = isLiffHost() || isLiffClient() || isLineInAppBrowser() ? 'liff' : 'web';
+  return { 'X-App-Target': target };
+});
 
 function redirectToLineOauth() {
   // In LIFF client, block web OAuth redirect to avoid loops.
@@ -299,9 +277,9 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
     };
     try {
       const search = window.location.search || '';
-      const isCallback =
-        /(?:^|[?&])(code|state|liff\.state)=/.test(search);
-      const liffStateParam = new URLSearchParams(search).get('liff.state');
+      const params = new URLSearchParams(search);
+      const isCallback = params.has('code') || params.has('oauth_verifier');
+      const liffStateParam = params.get('liff.state');
 
       // 回调阶段：禁止再次触发 login，直接做 token exchange
       if (isCallback) {
@@ -486,11 +464,6 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         clearLiffLoginInflight();
       }
       clearStoredRedirect();
-      // URL の code/state を削除して、後続の重複判定を回避
-      if (typeof window !== 'undefined' && window.location.search) {
-        const cleanUrl = `${window.location.origin}${window.location.pathname}`;
-        window.history.replaceState({}, document.title, cleanUrl);
-      }
       return { ok: true };
     } catch (error) {
       logDevAuth('bootstrap error', error);

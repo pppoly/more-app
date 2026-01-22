@@ -105,7 +105,6 @@ import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 
 type FilterId = 'all' | 'paid' | 'pending' | 'refunded';
 
@@ -127,7 +126,7 @@ interface PaymentRecord {
 
 const router = useRouter();
 const route = useRoute();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const debugMode = computed(() => route.query.debug === '1');
 
 const loading = ref(true);

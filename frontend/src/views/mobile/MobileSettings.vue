@@ -115,7 +115,6 @@ import { useI18n } from 'vue-i18n';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 import { BUILD_VERSION } from '../../version';
 
 const router = useRouter();
@@ -123,7 +122,7 @@ const { logout, user, setUserProfile } = useAuth();
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const toast = useToast();
 const { t } = useI18n();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const buildVersion = BUILD_VERSION;
 
 const isLoggedIn = computed(() => Boolean(user.value));

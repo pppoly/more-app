@@ -169,8 +169,8 @@ import type {
 } from '../../../types/api';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
-	import { isLineInAppBrowser } from '../../../utils/liff';
-	import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../../config';
+import { isLineInAppBrowser } from '../../../utils/liff';
+import { STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -184,7 +184,7 @@ const monthBalance = ref<ConsoleCommunityBalance | null>(null);
 const stripeStatus = ref<StripeAccountStatus | null>(null);
 const platformSettlement = ref<PlatformSettlementSchedule | null>(null);
 const stripePayoutSchedule = ref<StripePayoutSchedule | null>(null);
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 
 const hasStripeAccount = computed(() => Boolean(community.value?.stripeAccountId));
 const stripeReady = computed(() => Boolean(community.value?.stripeAccountId && community.value?.stripeAccountOnboarded));

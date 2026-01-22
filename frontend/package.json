@@ -6,9 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "dev:liff": "vite --mode liff --base /liff/ --host --open /liff/index.html",
-    "build:liff": "vite build --mode liff --base /liff/ --outDir dist-liff"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@line/liff": "^2.27.3",

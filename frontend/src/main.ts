@@ -48,7 +48,7 @@ import App from './App.vue';
 import router from './router';
 import './assets/main.css';
 import { i18n } from './i18n';
-import { buildLiffUrl } from './utils/liff';
+import { buildLiffUrl, normalizeLiffStateToPath } from './utils/liff';
 import { isLineBrowser, isLiffClient } from './utils/device';
 
 const ALLOW_WEB_IN_LINE_KEY = 'allowWebInLine';
@@ -97,16 +97,10 @@ if (typeof window !== 'undefined') {
 if (typeof window !== 'undefined') {
   void router.isReady().then(() => {
     const search = new URLSearchParams(window.location.search);
-    const to = search.get('to') || search.get('liff.state');
-    if (!to || !to.startsWith('/')) return;
-    let decoded = to;
-    try {
-      decoded = decodeURIComponent(to);
-    } catch {
-      decoded = to;
-    }
-    if (!decoded.startsWith('/')) return;
-    const target = router.resolve(decoded);
+    const raw = search.get('to') || search.get('liff.state');
+    const normalized = normalizeLiffStateToPath(raw);
+    if (!normalized) return;
+    const target = router.resolve(normalized);
     if (!target.matched.length) return;
     if (target.fullPath === router.currentRoute.value.fullPath) return;
     router.replace(target.fullPath).catch(() => undefined);

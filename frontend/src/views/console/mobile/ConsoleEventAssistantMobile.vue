@@ -485,7 +485,6 @@ import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import { getAssistantDisplay } from '../../../utils/assistantDisplay';
 import { evaluateDraftVisibility } from '../../../utils/draftAnchor';
 import {
@@ -552,7 +551,7 @@ const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const isDebugEnabled = computed(() => import.meta.env.DEV);
 const isEventAssistantDebug = computed(() => {
   const flag = import.meta.env.VITE_EVENT_ASSISTANT_DEBUG;

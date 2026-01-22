@@ -14,7 +14,6 @@
 import { computed, onMounted, ref } from 'vue';
 import { isLiffClient, isLineBrowser } from '../../utils/device';
 import { buildLiffUrl } from '../../utils/liff';
-import { isProductionLiff } from '../../config';
 const STORAGE_KEY = 'liff-open-prompt-dismissed';
 
 const visible = ref(false);
@@ -26,7 +25,6 @@ function hasWindow(): boolean {
 
 const shouldShow = () => {
   if (!hasWindow()) return false;
-  if (isProductionLiff()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
   const onTargetHost =
     window.location.hostname === 'test.socialmore.jp' ||

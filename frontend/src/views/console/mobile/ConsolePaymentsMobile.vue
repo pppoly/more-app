@@ -111,7 +111,6 @@ import { useConsoleCommunityStore } from '../../../stores/consoleCommunity';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import { getLocalizedText } from '../../../utils/i18nContent';
 import { useScrollMemory } from '../../../composables/useScrollMemory';
 
@@ -130,7 +129,7 @@ const page = ref(1);
 const status = ref<string>('paid');
 const eventId = ref(initialEventId.value);
 const lockedEvent = computed(() => !!lockedEventId.value);
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const visiblePayments = computed(() => payments.value.items);
 
 const headerTitle = computed(() =>

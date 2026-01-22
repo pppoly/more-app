@@ -1,4 +1,3 @@
-import { APP_TARGET } from '../config';
 import { sendAnalyticsEvents, AnalyticsEventInput } from '../api/client';
 import { useAuth } from '../composables/useAuth';
 
@@ -37,6 +36,14 @@ export function trackEvent(eventName: string, payload?: Record<string, any>) {
   const userId = auth.user.value?.id ?? null;
   const path = hasWindow() ? window.location.pathname + window.location.search : '';
   const userAgent = hasWindow() ? window.navigator.userAgent : undefined;
+  const isLiff = (() => {
+    if (!hasWindow() || !userAgent) return false;
+    const host = window.location.hostname || '';
+    if (host.includes('miniapp.line.me') || host.includes('liff.line.me')) return true;
+    const ua = userAgent.toLowerCase();
+    if (ua.includes('liff') || ua.includes('miniapp')) return true;
+    return /(^|\W)line(\/|\W|$)/.test(ua);
+  })();
 
   queue.push({
     eventName,
@@ -44,7 +51,7 @@ export function trackEvent(eventName: string, payload?: Record<string, any>) {
     sessionId,
     userId,
     path,
-    isLiff: APP_TARGET === 'liff',
+    isLiff,
     userAgent,
     payload: payload ?? null,
   });

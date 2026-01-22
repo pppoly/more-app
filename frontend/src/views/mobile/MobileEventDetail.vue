@@ -324,16 +324,17 @@ import { getEventCategoryLabel } from '../../utils/eventCategory';
 import { resolveRefundPolicyText } from '../../utils/refundPolicy';
 import { useAuth } from '../../composables/useAuth';
 import Button from '../../components/ui/Button.vue';
-	import { useFavorites } from '../../composables/useFavorites';
-	import { useResourceConfig } from '../../composables/useResourceConfig';
-	import { useLocale } from '../../composables/useLocale';
-	import { APP_TARGET, FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-	import { isLineInAppBrowser, isLiffReady, liffInstance } from '../../utils/liff';
-	import { trackEvent } from '../../utils/analytics';
-	import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
-	import backIcon from '../../assets/icons/arrow-back.svg';
-	import shareIcon from '../../assets/share.svg';
-	import followIcon from '../../assets/follow.svg';
+import { useFavorites } from '../../composables/useFavorites';
+import { useResourceConfig } from '../../composables/useResourceConfig';
+import { useLocale } from '../../composables/useLocale';
+import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
+import { isLineInAppBrowser, isLiffReady, liffInstance, loadLiff } from '../../utils/liff';
+import { trackEvent } from '../../utils/analytics';
+import { isLiffClient } from '../../utils/device';
+import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
+import backIcon from '../../assets/icons/arrow-back.svg';
+import shareIcon from '../../assets/share.svg';
+import followIcon from '../../assets/follow.svg';
 import AppAvatar from '../../components/common/AppAvatar.vue';
 
 const route = useRoute();
@@ -963,7 +964,7 @@ const shareEvent = async () => {
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
   const isLineBrowserLike =
-    APP_TARGET === 'liff' ||
+    isLiffClient() ||
     isLineInAppBrowser() ||
     inMiniAppHost ||
     (typeof window !== 'undefined' &&
@@ -999,10 +1000,17 @@ const shareEvent = async () => {
   };
 
   try {
-    if (APP_TARGET === 'liff' && !LIFF_ID) {
+    if (isLineBrowserLike && !LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
       await fallbackShare(false, false);
       return;
+    }
+    if (isLineBrowserLike && LIFF_ID && !isLiffReady.value) {
+      try {
+        await loadLiff(LIFF_ID);
+      } catch (err) {
+        console.error('Failed to init LIFF', err);
+      }
     }
     if (isLiffReady.value) {
       try {
@@ -1026,7 +1034,7 @@ const shareEvent = async () => {
       } catch (err) {
         console.error('Failed to share via LIFF', err);
       }
-    } else if (APP_TARGET === 'liff') {
+    } else if (isLineBrowserLike) {
       showUiMessage('LINE 初期化中です。もう一度お試しください。');
     }
 

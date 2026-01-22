@@ -901,7 +901,7 @@ import {
   CONSOLE_EVENT_NOTE_RETURN_KEY,
   CONSOLE_EVENT_FORM_DRAFT_KEY,
 } from '../../constants/console';
-import { APP_TARGET, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../config';
+import { STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../config';
 import { isLineBrowser, isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
 
@@ -930,7 +930,7 @@ const router = useRouter();
 const toast = useToast();
 const isLiffClientMode = computed(() => {
   const hasLiff = typeof window !== 'undefined' && Boolean((window as any).liff);
-  return APP_TARGET === 'liff' || hasLiff || isLineInAppBrowser() || isLiffClient() || isLineBrowser();
+  return hasLiff || isLineInAppBrowser() || isLiffClient() || isLineBrowser();
 });
 const isMoreSettingsRoute = computed(() => route.name === 'ConsoleMobileEventMoreSettings');
 const goBack = () => router.back();

@@ -309,12 +309,11 @@ import moreIcon from '../../../assets/icons/more-horizontal.svg';
 import QRCode from 'qrcode';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import AppAvatar from '../../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const router = useRouter();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const eventId = computed(() => route.params.eventId as string);
 const communityId = computed(() => eventDetail.value?.communityId);
 

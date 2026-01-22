@@ -135,8 +135,6 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useConfirm } from '../../composables/useConfirm';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
-import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 
 type FilterTabId = 'upcoming' | 'past' | 'refund' | 'all';
 

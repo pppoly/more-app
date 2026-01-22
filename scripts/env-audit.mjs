@@ -82,7 +82,6 @@ const usageMeta = {
       VITE_API_BASE_URL: { module: 'API', purpose: 'Backend API base URL', prodRequired: 'yes' },
       VITE_LIFF_ID: { module: 'LINE/LIFF', purpose: 'LIFF App ID (only required for LIFF)', prodRequired: 'conditional' },
       VITE_LINE_CHANNEL_ID: { module: 'LINE/LIFF', purpose: 'LINE Channel ID (frontend usage)', prodRequired: 'conditional' },
-      VITE_APP_TARGET: { module: 'App', purpose: 'Target app mode (web/liff)', prodRequired: 'no' },
       VITE_APP_ENV: { module: 'App', purpose: 'Frontend env label (optional)', prodRequired: 'no' },
       VITE_DEV_LOGIN_SECRET: { module: 'Auth', purpose: 'Dev-login secret (frontend)', prodRequired: 'no' },
       VITE_GOOGLE_MAPS_API_KEY: { module: 'Maps', purpose: 'Google Maps API key', prodRequired: 'no' },
@@ -416,4 +415,3 @@ main().catch((err) => {
   console.error('[env-audit] failed:', err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
-
