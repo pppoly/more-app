@@ -140,8 +140,8 @@ import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
 import { isLineBrowser } from './utils/device';
-import { buildLiffUrl } from './utils/liff';
-import { isProductionLiff } from './config';
+import { buildLiffUrl, isLineInAppBrowser } from './utils/liff';
+import { APP_TARGET } from './config';
 import { BUILD_VERSION } from './version';
 import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
@@ -169,10 +169,13 @@ const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
 const showLiffGuide = computed(
-  () => isProductionLiff() && !isLiffClientMode.value,
+  () =>
+    needsLiffOpen.value &&
+    !isLiffClientMode.value &&
+    (APP_TARGET === 'liff' || isLineInAppBrowser()),
 );
 const showLiffLoginRecovery = computed(
-  () => isProductionLiff() && isLiffClientMode.value && needsLiffOpen.value,
+  () => isLiffClientMode.value && needsLiffOpen.value,
 );
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
@@ -199,11 +202,7 @@ const currentPageName = computed(() => {
 
 const allowWebKey = 'allowWebInLine';
 const showLiffOpenButton = computed(
-  () =>
-    !isProductionLiff() &&
-    isLiffEntry.value &&
-    needsLiffOpen.value &&
-    !isLiffClientMode.value,
+  () => isLiffEntry.value && needsLiffOpen.value && !isLiffClientMode.value,
 );
 
 const isFromLiffEntry = () => {

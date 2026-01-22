@@ -16,12 +16,12 @@ import {
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
-import { API_BASE_URL, APP_TARGET, isProductionLiff, requireLiffId } from '../config';
-import { isLiffReady, loadLiff } from '../utils/liff';
+import { API_BASE_URL, APP_TARGET, requireLiffId } from '../config';
+import { isLineInAppBrowser, isLiffReady, loadLiff } from '../utils/liff';
 import { reportError } from '../utils/reporting';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import { trackEvent } from '../utils/analytics';
-import { isLineBrowser } from '../utils/device';
+import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from './useAuthSheets';
 import { useToast } from './useToast';
 
@@ -177,6 +177,12 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function shouldAttemptLiffAuth(): boolean {
+  if (!hasWindow()) return false;
+  if (APP_TARGET === 'liff') return true;
+  return isLiffClient() || isLineInAppBrowser();
+}
+
 function setToken(token: string | null) {
   state.accessToken = token;
   applyClientToken(token);
@@ -196,9 +202,9 @@ setRequestHeaderProvider(() => ({
 }));
 
 function redirectToLineOauth() {
-  // 在 LIFF 模式下禁用 Web OAuth 跳转，避免循环
-  if (APP_TARGET === 'liff') {
-    logDevAuth('redirectToLineOauth skipped in LIFF mode');
+  // In LIFF client, block web OAuth redirect to avoid loops.
+  if (isLiffClient()) {
+    logDevAuth('redirectToLineOauth skipped in LIFF client');
     return;
   }
   if (typeof window === 'undefined') return;
@@ -208,9 +214,9 @@ function redirectToLineOauth() {
 }
 
 async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
-  if (APP_TARGET !== 'liff' || !hasWindow()) return { ok: false, reason: 'not_in_client' };
+  if (!hasWindow()) return { ok: false, reason: 'not_in_client' };
+  if (!shouldAttemptLiffAuth()) return { ok: false, reason: 'not_in_client' };
   if (state.accessToken && !force) return { ok: true };
-  if (!isProductionLiff() && !force) return { ok: false, reason: 'not_in_client' };
   const resolvedLiffId = resolveLiffId();
   if (!resolvedLiffId) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
@@ -442,6 +448,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
 
 async function loginWithLiffProfile(isLiffEntry: boolean) {
   if (!isLiffEntry || state.accessToken) return;
+  if (!shouldAttemptLiffAuth()) return;
   const resolvedLiffId = resolveLiffId();
   if (!resolvedLiffId) return;
   if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/liff')) {
@@ -495,7 +502,7 @@ function handleUnauthorized(context?: { status?: number; url?: string }) {
   handlingUnauthorized = true;
   setToken(null);
   state.user = null;
-  if (APP_TARGET === 'liff') {
+  if (shouldAttemptLiffAuth()) {
     if (isLiffLoginInflight()) {
       handlingUnauthorized = false;
       return;
@@ -528,7 +535,7 @@ async function restoreSession() {
   if (!hasWindow()) return;
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
-    if (APP_TARGET === 'liff') {
+    if (shouldAttemptLiffAuth()) {
       await bootstrapLiffAuth();
     }
     return;
@@ -550,7 +557,7 @@ async function restoreSession() {
     if (isBusinessError(error)) {
       setToken(null);
       state.user = null;
-      if (APP_TARGET === 'liff') {
+      if (shouldAttemptLiffAuth()) {
         await bootstrapLiffAuth(true);
       }
       return;
