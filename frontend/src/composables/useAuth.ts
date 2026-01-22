@@ -638,6 +638,7 @@ export function useAuth() {
     setToken(null);
     state.user = null;
     consoleCommunityStore.resetCommunities();
+    needsLiffOpen.value = false;
   };
 
   const loginWithLiff = async (): Promise<LiffAuthResult> => bootstrapLiffAuth(true);
