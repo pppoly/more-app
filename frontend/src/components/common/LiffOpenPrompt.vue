@@ -28,7 +28,9 @@ const shouldShow = () => {
   if (!hasWindow()) return false;
   if (isProductionLiff()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
-  const onTargetHost = window.location.hostname === 'test.socialmore.jp';
+  const onTargetHost =
+    window.location.hostname === 'test.socialmore.jp' ||
+    window.location.hostname === 'app.socialmore.jp';
   // LIFF 内では提示しない
   if (isLiffClient()) return false;
   return onTargetHost && !dismissed && Boolean(liffUrl.value);
