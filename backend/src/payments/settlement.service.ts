@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StripeService } from '../stripe/stripe.service';
 import { getPaymentsConfig } from './payments.config';
+import { computeSettlementAmount } from './settlement.utils';
 import Stripe from 'stripe';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -99,6 +100,7 @@ export class SettlementService {
         status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
         eligibleAt: { lte: cutoff },
         communityId: { not: null },
+        settlementStatus: { not: 'settled' },
       },
     });
     return count > 0;
@@ -203,6 +205,7 @@ export class SettlementService {
         communityId: { not: null },
         status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
         createdAt: { lt: params.periodTo },
+        settlementStatus: { not: 'settled' },
         ...(params.payoutMode
           ? { payoutMode: params.payoutMode }
           : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
@@ -216,6 +219,7 @@ export class SettlementService {
         createdAt: true,
         eligibleAt: true,
         settlementFrozen: true,
+        settlementStatus: true,
       },
     })) as Array<{
       id: string;
@@ -226,6 +230,7 @@ export class SettlementService {
       createdAt: Date;
       eligibleAt: Date | null;
       settlementFrozen: boolean;
+      settlementStatus?: string | null;
     }>;
 
     const hostIdsFromPayments = Array.from(
@@ -546,6 +551,7 @@ export class SettlementService {
       where: {
         eligibleAt: { lte: params.periodTo },
         eligibilityStatus: 'PENDING',
+        settlementStatus: { not: 'settled' },
         ...(params.payoutMode
           ? { payoutMode: params.payoutMode }
           : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
@@ -735,7 +741,65 @@ export class SettlementService {
     };
 
     await this.writeReport(batch.id, config.settlementReportDir, summary, csv);
+    if (settlementEnabled) {
+      await this.markPaymentsSettled({
+        periodTo: params.periodTo,
+        payoutMode: params.payoutMode,
+        settledAt: new Date(),
+      });
+    }
     return { batchId: batch.id, status: finalStatus };
+  }
+
+  private async markPaymentsSettled(params: {
+    periodTo: Date;
+    payoutMode?: 'BATCH' | 'REALTIME';
+    settledAt: Date;
+  }) {
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        method: 'stripe',
+        chargeModel: 'platform_charge',
+        communityId: { not: null },
+        status: { in: ['paid', 'partial_refunded', 'refunded'] },
+        eligibleAt: { lte: params.periodTo },
+        settlementStatus: { not: 'settled' },
+        settlementFrozen: false,
+        ...(params.payoutMode
+          ? { payoutMode: params.payoutMode }
+          : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
+      },
+      select: {
+        id: true,
+        amount: true,
+        platformFee: true,
+        stripeFeeAmountActual: true,
+        stripeFeeAmountEstimated: true,
+        refundedGrossTotal: true,
+        refundedPlatformFeeTotal: true,
+      },
+    });
+    if (!payments.length) return;
+    await this.prisma.$transaction(
+      payments.map((payment) => {
+        const stripeFee = payment.stripeFeeAmountActual ?? payment.stripeFeeAmountEstimated ?? 0;
+        const settlementAmount = computeSettlementAmount({
+          gross: payment.amount ?? 0,
+          platformFee: payment.platformFee ?? 0,
+          stripeFee,
+          refundedGross: payment.refundedGrossTotal ?? 0,
+          refundedPlatformFee: payment.refundedPlatformFeeTotal ?? 0,
+        });
+        return this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            settlementStatus: 'settled',
+            settlementAmount,
+            settledAt: params.settledAt,
+          },
+        });
+      }),
+    );
   }
 
   async retrySettlementBatch(batchId: string) {

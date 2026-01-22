@@ -380,6 +380,9 @@ model Payment {
   payoutStatus            String?
   reasonCode              String?
   ruleVersionId           String?
+  settlementStatus        SettlementStatus   @default(unsettled)
+  settlementAmount        Int?
+  settledAt               DateTime?
   settlementFrozen        Boolean            @default(false)
   community               Community?         @relation(fields: [communityId], references: [id])
   event                   Event?             @relation(fields: [eventId], references: [id])
@@ -398,11 +401,17 @@ model Payment {
   @@index([eligibilityStatus, eligibleAt])
   @@index([payoutStatus])
   @@index([reasonCode])
+  @@index([settlementStatus])
 }
 
 enum ChargeModel {
   platform_charge
   destination_charge
+}
+
+enum SettlementStatus {
+  unsettled
+  settled
 }
 
 model EventInbox {

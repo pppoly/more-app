@@ -112,6 +112,11 @@ export class ConsoleEventsService {
       }
     }
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
+    const refundDeadlineAt = eventData.refundDeadlineAt ? new Date(eventData.refundDeadlineAt as any) : null;
+    const endTime = eventData.endTime ? new Date(eventData.endTime as any) : null;
+    if (refundDeadlineAt && endTime && refundDeadlineAt > endTime) {
+      throw new BadRequestException('返金締切は終了日時より前に設定してください');
+    }
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);
       this.applyModerationToEventData(eventData, moderation, false);
@@ -200,6 +205,11 @@ export class ConsoleEventsService {
       }
     }
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
+    const updateRefundDeadlineAt = eventData.refundDeadlineAt ? new Date(eventData.refundDeadlineAt as any) : null;
+    const updateEndTime = eventData.endTime ? new Date(eventData.endTime as any) : null;
+    if (updateRefundDeadlineAt && updateEndTime && updateRefundDeadlineAt > updateEndTime) {
+      throw new BadRequestException('返金締切は終了日時より前に設定してください');
+    }
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);
       this.applyModerationToEventData(eventData, moderation, true);
@@ -1131,6 +1141,11 @@ export class ConsoleEventsService {
     assign('category', payload.category ?? null);
     assign('startTime', payload.startTime);
     assign('endTime', payload.endTime);
+    if (payload.refundDeadlineAt !== undefined) {
+      assign('refundDeadlineAt', payload.refundDeadlineAt ?? null);
+    } else if (!isUpdate && payload.startTime) {
+      assign('refundDeadlineAt', payload.startTime);
+    }
 
     const regEnd = payload.regEndTime ?? payload.regDeadline ?? payload.regEnd;
     if (regEnd !== undefined) {

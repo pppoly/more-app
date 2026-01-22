@@ -374,6 +374,13 @@ export class PaymentsService {
         status: item.status,
         method: item.method,
         createdAt: item.createdAt,
+        settlementStatus: item.settlementStatus ?? null,
+        settlementAmount: item.settlementAmount ?? null,
+        settledAt: item.settledAt ?? null,
+        stripeFeeAmountActual: item.stripeFeeAmountActual ?? null,
+        stripeFeeAmountEstimated: item.stripeFeeAmountEstimated ?? null,
+        refundedGrossTotal: item.refundedGrossTotal ?? 0,
+        refundedPlatformFeeTotal: item.refundedPlatformFeeTotal ?? 0,
         eligibleAt: item.eligibleAt ?? null,
         payoutMode: item.payoutMode ?? null,
         eligibilityStatus: item.eligibilityStatus ?? null,
@@ -448,6 +455,13 @@ export class PaymentsService {
         status: item.status,
         method: item.method,
         createdAt: item.createdAt,
+        settlementStatus: item.settlementStatus ?? null,
+        settlementAmount: item.settlementAmount ?? null,
+        settledAt: item.settledAt ?? null,
+        stripeFeeAmountActual: item.stripeFeeAmountActual ?? null,
+        stripeFeeAmountEstimated: item.stripeFeeAmountEstimated ?? null,
+        refundedGrossTotal: item.refundedGrossTotal ?? 0,
+        refundedPlatformFeeTotal: item.refundedPlatformFeeTotal ?? 0,
         eligibleAt: item.eligibleAt ?? null,
         payoutMode: item.payoutMode ?? null,
         eligibilityStatus: item.eligibilityStatus ?? null,
@@ -1649,6 +1663,9 @@ export class PaymentsService {
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
+    if (payment.settlementStatus === 'settled') {
+      throw new BadRequestException('精算済みの支払いは返金できません');
+    }
     if (payment.eventId) {
       await this.permissions.assertEventManager(userId, payment.eventId);
     } else if (payment.lessonId) {
@@ -1695,6 +1712,9 @@ export class PaymentsService {
       (await this.prisma.payment.findFirst({ where: { registrationId } }));
     if (!payment) {
       throw new BadRequestException('Payment not found');
+    }
+    if (payment.settlementStatus === 'settled') {
+      throw new BadRequestException('精算済みの支払いは返金できません');
     }
     const synced = !['paid', 'partial_refunded'].includes(payment.status)
       ? await this.syncStripePaymentPaidIfNeeded(payment)

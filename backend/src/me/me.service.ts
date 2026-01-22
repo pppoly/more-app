@@ -372,7 +372,7 @@ export class MeService {
         paymentStatus: true,
         lessonId: true,
         event: {
-          select: { startTime: true, config: true, refundPolicy: true },
+          select: { startTime: true, refundDeadlineAt: true, config: true, refundPolicy: true },
         },
         payment: {
           select: { id: true },
@@ -384,8 +384,14 @@ export class MeService {
       throw new NotFoundException('キャンセル可能な申込が見つかりません');
     }
 
-    if (registration.event && new Date(registration.event.startTime) <= new Date()) {
-      throw new BadRequestException('イベント開始後はキャンセルできません');
+    if (registration.event) {
+      const refundDeadlineAt = registration.event.refundDeadlineAt ?? registration.event.startTime;
+      if (refundDeadlineAt && new Date(refundDeadlineAt) <= new Date()) {
+        throw new BadRequestException('返金締切を過ぎているためキャンセルできません');
+      }
+      if (new Date(registration.event.startTime) <= new Date()) {
+        throw new BadRequestException('イベント開始後はキャンセルできません');
+      }
     }
 
     if ((registration.amount ?? 0) > 0 && registration.paymentStatus === 'paid') {
@@ -509,7 +515,7 @@ export class MeService {
       },
       include: {
         event: {
-          select: { startTime: true, config: true, refundPolicy: true },
+          select: { startTime: true, refundDeadlineAt: true, config: true, refundPolicy: true },
         },
         payment: true,
       },
@@ -517,6 +523,12 @@ export class MeService {
 
     if (!registration) {
       throw new NotFoundException('キャンセル可能な申込が見つかりません');
+    }
+    if (registration.event) {
+      const refundDeadlineAt = registration.event.refundDeadlineAt ?? registration.event.startTime;
+      if (refundDeadlineAt && new Date(refundDeadlineAt) <= new Date()) {
+        throw new BadRequestException('返金締切を過ぎているためキャンセルできません');
+      }
     }
 
     if (registration.status === 'cancel_requested') {
