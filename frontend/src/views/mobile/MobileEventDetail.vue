@@ -934,13 +934,10 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/?to=${encodeURIComponent(shareToPath)}`
-      : '';
-  const shareUrlWithSource = webShareUrl || fallbackUrl;
+    typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '';
+  const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareUrlWithSource = webShareUrl ? `${webShareUrl}?from=line_share` : fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
