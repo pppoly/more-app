@@ -677,7 +677,17 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (isLiffContext() && !(auth.accessToken.value || hasAuthToken()) && !isLiffPublicRoute(to)) {
-    return next({ name: 'auth-login', query: { redirect: to.fullPath } });
+    try {
+      const result = await auth.loginWithLiff();
+      if (result.ok) return next();
+      if (result.reason === 'login_redirect') {
+        endNavPending();
+        return next(false);
+      }
+    } catch (error) {
+      console.warn('LIFF login failed in guard', error);
+    }
+    return next({ name: 'events' });
   }
 
   if (to.meta.requiresAuth && !auth.user.value) {
