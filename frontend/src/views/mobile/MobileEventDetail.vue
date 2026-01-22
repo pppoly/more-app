@@ -946,20 +946,47 @@ const shareEvent = async () => {
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
   const isLineContext = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
+  const fallbackShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share(payload);
+        showUiMessage('共有しました');
+        return;
+      } catch (error: any) {
+        const name = error?.name || '';
+        if (name === 'AbortError' || name === 'NotAllowedError') {
+          return;
+        }
+      }
+    }
+    window.open(lineShareUrl, '_blank');
+    showUiMessage('LINE で開きました');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload.url);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   if (isLineContext) {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
+      await fallbackShare();
       return;
     }
     try {
       const liff = await loadLiff(LIFF_ID);
       if (!isLiffReady.value) {
         showUiMessage('LINE 共有に対応していません（LIFF 初期化失敗）');
+        await fallbackShare();
         return;
       }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       if (!inClient) {
         showUiMessage('LINE 共有に対応していません（LINE 内ブラウザ外）');
+        await fallbackShare();
         return;
       }
       const canShare =
@@ -968,6 +995,7 @@ const shareEvent = async () => {
           : Boolean(liff.shareTargetPicker);
       if (!canShare || !liff.shareTargetPicker) {
         showUiMessage('LINE 共有に対応していません（shareTargetPicker 未対応）');
+        await fallbackShare();
         return;
       }
       const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
@@ -984,34 +1012,12 @@ const shareEvent = async () => {
     } catch (err) {
       console.error('Failed to share via LIFF', err);
       showUiMessage('LINE 共有に失敗しました');
+      await fallbackShare();
       return;
     }
   }
 
-  if (navigator.share) {
-    try {
-      await navigator.share(payload);
-      showUiMessage('共有しました');
-      return;
-    } catch (error: any) {
-      const name = error?.name || '';
-      if (name === 'AbortError' || name === 'NotAllowedError') {
-        return;
-      }
-      // ignore and fallback to LINE
-    }
-  } else {
-    window.open(lineShareUrl, '_blank');
-    showUiMessage('LINE で開きました');
-  }
-
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(payload.url);
-    }
-  } catch {
-    // ignore
-  }
+  await fallbackShare();
 };
 
 let uiMessageTimer: number | null = null;
