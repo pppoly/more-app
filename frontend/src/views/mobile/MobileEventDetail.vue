@@ -939,16 +939,18 @@ const shareEvent = async () => {
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
-  const shouldTryLiff = APP_TARGET === 'liff' || isLineInAppBrowser();
+  const inLiffRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/liff');
+  const shouldTryLiff = APP_TARGET === 'liff' || inLiffRoute || isLineInAppBrowser();
 
+  let inLineClient = false;
   if (shouldTryLiff) {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
     } else {
       try {
         const liff = await loadLiff(LIFF_ID);
-        const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-        if (inClient && liff.shareTargetPicker) {
+        inLineClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+        if (inLineClient && liff.shareTargetPicker) {
           await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
           showUiMessage('LINE で共有しました');
           return;
@@ -959,19 +961,31 @@ const shareEvent = async () => {
     }
   }
 
-  if (navigator.share) {
-    try {
-      await navigator.share(payload);
-      showUiMessage('共有しました');
+  if (inLineClient || inLiffRoute) {
+    if (navigator.clipboard?.writeText && shareUrlWithSource) {
+      await navigator.clipboard.writeText(shareUrlWithSource);
+      showUiMessage('リンクをコピーしました');
       return;
-    } catch {
-      // ignore and fallback to LINE
     }
+    showUiMessage('共有に失敗しました');
+    return;
   }
 
   if (isLineInAppBrowser()) {
     window.location.href = lineShareUrl;
     showUiMessage('LINE で開きました');
+  } else if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      showUiMessage('共有しました');
+      return;
+    } catch (error: any) {
+      const name = error?.name || '';
+      if (name === 'AbortError' || name === 'NotAllowedError') {
+        return;
+      }
+      // ignore and fallback to LINE
+    }
   } else {
     window.open(lineShareUrl, '_blank');
     showUiMessage('LINE で開きました');
