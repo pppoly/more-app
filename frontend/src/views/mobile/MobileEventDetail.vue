@@ -936,35 +936,24 @@ const shareEvent = async () => {
   if (!detail.value) return;
   const webShareUrl =
     typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '';
-  const shareUrlWithSource = webShareUrl ? `${webShareUrl}?from=line_share` : '';
+  const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareUrlWithSource = webShareUrl ? `${webShareUrl}?from=line_share` : fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
-  const shouldTryLiff = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
-
-  let inLineClient = false;
-  if (shouldTryLiff) {
-    if (!LIFF_ID) {
-      showUiMessage('LINE 設定を確認してください');
-    } else {
-      try {
-        const liff = await loadLiff(LIFF_ID);
-        inLineClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-        // LIFF内は遷移が発生しやすいため、共有UIは使わずリンクコピーのみ行う
-      } catch (err) {
-        console.error('Failed to share via LIFF', err);
+  const isLineContext = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
+  if (isLineContext) {
+    try {
+      if (navigator.clipboard?.writeText && shareUrlWithSource) {
+        await navigator.clipboard.writeText(shareUrlWithSource);
+        showUiMessage('リンクをコピーしました');
+        return;
       }
-    }
-  }
-
-  if (inLineClient || isLineInAppBrowser() || inMiniAppHost) {
-    if (navigator.clipboard?.writeText && shareUrlWithSource) {
-      await navigator.clipboard.writeText(shareUrlWithSource);
-      showUiMessage('リンクをコピーしました');
-      return;
+    } catch {
+      // ignore clipboard failures
     }
     showUiMessage('共有に失敗しました');
     return;
