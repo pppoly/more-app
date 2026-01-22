@@ -327,7 +327,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
-import { buildLiffUrl, isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
@@ -933,11 +933,9 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const liffDeepLink = buildLiffUrl(`/events/${detail.value.id}`);
-  const shareUrl =
-    liffDeepLink ||
-    (typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '');
-  const shareUrlWithSource = liffDeepLink ? `${liffDeepLink}&from=line_share` : shareUrl;
+  const webShareUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '';
+  const shareUrlWithSource = webShareUrl ? `${webShareUrl}?from=line_share` : '';
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
