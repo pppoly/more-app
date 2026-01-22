@@ -2,33 +2,11 @@ import liff from '@line/liff';
 import { ref } from 'vue';
 import { trackEvent } from './analytics';
 import { LIFF_ID, requireLiffId } from '../config';
-const LIFF_INIT_TIMEOUT_MS = 10_000;
+const LIFF_INIT_TIMEOUT_MS = 30_000;
 
 const isLiffReady = ref(false);
 const hasWindow = () => typeof window !== 'undefined';
 const isLiffClientCapable = ref(false);
-
-let initStarted = false;
-let finalized = false;
-let readyResolver: ((ready: boolean) => void) | null = null;
-
-const readyPromise = new Promise<boolean>((resolve) => {
-  readyResolver = resolve;
-});
-
-function finalize(ready: boolean, context?: string) {
-  // Allow late success to upgrade from false -> true, but never downgrade a true state.
-  if (finalized && isLiffReady.value && !ready) return;
-  isLiffReady.value = ready;
-  readyResolver?.(ready);
-  if (ready) {
-    finalized = true;
-    trackEvent('liff_ready');
-  }
-  if (!ready && context) {
-    console.warn(`LIFF init skipped (${context}); continuing as web page.`);
-  }
-}
 
 const resolveLiffId = (liffId?: string, require = false) => {
   if (liffId && liffId.trim()) return liffId.trim();
@@ -37,12 +15,57 @@ const resolveLiffId = (liffId?: string, require = false) => {
   return requireLiffId();
 };
 
-type LiffInitConfig = Parameters<typeof liff.init>[0] | undefined;
+type RawInitConfig = Parameters<typeof liff.init>[0];
+type LiffInitConfig = Omit<RawInitConfig, 'liffId'> | undefined;
+
+let initPromise: Promise<void> | null = null;
+let initError: unknown = null;
+let initLiffId: string | null = null;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (typeof timer === 'number') window.clearTimeout(timer);
+  });
+}
+
+function startInit(resolvedId: string, initConfig?: LiffInitConfig): Promise<void> {
+  if (!hasWindow()) {
+    return Promise.reject(new Error('LIFF is only available in browser'));
+  }
+  if (initPromise) return initPromise;
+  initLiffId = resolvedId;
+  initError = null;
+  const config: RawInitConfig = {
+    ...(initConfig ?? {}),
+    withLoginOnExternalBrowser: (initConfig as any)?.withLoginOnExternalBrowser ?? true,
+    liffId: resolvedId,
+  };
+  initPromise = liff
+    .init(config)
+    .then(() => {
+      isLiffReady.value = true;
+      try {
+        isLiffClientCapable.value = Boolean((liff as any)?.isInClient?.());
+      } catch {
+        isLiffClientCapable.value = false;
+      }
+      trackEvent('liff_ready');
+    })
+    .catch((error) => {
+      initError = error;
+      isLiffReady.value = false;
+      isLiffClientCapable.value = false;
+      initPromise = null;
+      throw error;
+    });
+  return initPromise;
+}
 
 export function bootstrapLiff(liffId?: string, initConfig?: LiffInitConfig): void {
-  if (initStarted || !hasWindow()) return;
-  initStarted = true;
-
   let resolvedId = '';
   try {
     resolvedId = resolveLiffId(liffId, true);
@@ -50,24 +73,16 @@ export function bootstrapLiff(liffId?: string, initConfig?: LiffInitConfig): voi
     console.error('LIFF_ID is required to initialize LIFF.', error);
   }
   if (!resolvedId) {
-    finalize(false, 'missing-id');
+    isLiffReady.value = false;
     return;
   }
-
-  const timeoutId = window.setTimeout(() => finalize(false, 'timeout'), LIFF_INIT_TIMEOUT_MS);
-
-  // Fire-and-forget: do not await, do not block rendering.
-  void liff
-    .init({ liffId: resolvedId, ...(initConfig ?? {}) })
-    .then(() => finalize(true))
-    .catch((error) => {
-      console.warn('LIFF init failed; continuing without LIFF.', error);
-      finalize(false, 'init-error');
-    })
-    .finally(() => window.clearTimeout(timeoutId));
+  if (initPromise) return;
+  void startInit(resolvedId, initConfig).catch((error) => {
+    console.warn('LIFF init failed; continuing without LIFF.', error);
+  });
 }
 
-export async function loadLiff(liffId?: string): Promise<typeof liff> {
+export async function loadLiff(liffId?: string, initConfig?: LiffInitConfig): Promise<typeof liff> {
   const resolvedId = resolveLiffId(liffId, true);
   if (!resolvedId) {
     throw new Error('LIFF_ID is not configured');
@@ -75,10 +90,17 @@ export async function loadLiff(liffId?: string): Promise<typeof liff> {
   if (!hasWindow()) {
     throw new Error('LIFF is only available in browser');
   }
-  if (!initStarted) {
-    bootstrapLiff(resolvedId);
+  if (!initPromise) {
+    startInit(resolvedId, initConfig);
+  } else if (initLiffId && initLiffId !== resolvedId) {
+    console.warn(`LIFF already initialized with a different id (${initLiffId}); requested=${resolvedId}`);
   }
-  await readyPromise;
+  try {
+    await withTimeout(initPromise as Promise<void>, LIFF_INIT_TIMEOUT_MS, 'liff.init');
+  } catch (error) {
+    console.warn('LIFF init did not complete; continuing without LIFF.', initError ?? error);
+    throw error instanceof Error ? error : new Error('LIFF init failed');
+  }
   try {
     isLiffClientCapable.value = !!(liff.isInClient && liff.isInClient());
   } catch {
@@ -179,10 +201,11 @@ export async function ensureLiffPermissions(scopes: string[]): Promise<void> {
 
 export async function ensureLiffLoggedIn(scopes: string[] = []): Promise<typeof liff> {
   const instance = await loadLiff();
+  const inClient = typeof (instance as any)?.isInClient === 'function' ? (instance as any).isInClient() : false;
   const loginAvailable = typeof instance.isLoggedIn === 'function';
   const loggedIn = loginAvailable ? instance.isLoggedIn() : false;
-  if (loginAvailable && !loggedIn && typeof instance.login === 'function') {
-    await instance.login();
+  if (inClient && loginAvailable && !loggedIn && typeof instance.login === 'function') {
+    instance.login();
   }
   await ensureLiffPermissions(scopes);
   return instance;

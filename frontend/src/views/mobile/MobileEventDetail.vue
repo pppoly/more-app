@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { buildLiffUrl, ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
+  import { ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -963,8 +963,7 @@ const shareEvent = async () => {
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const liffShareUrl = buildLiffUrl(shareToPath) || '';
-  const shareUrlWithSource = liffShareUrl || webShareUrl || fallbackUrl;
+  const shareUrlWithSource = webShareUrl || fallbackUrl;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));

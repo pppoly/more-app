@@ -3,11 +3,15 @@ if (typeof window !== 'undefined') {
   const params = new URLSearchParams(window.location.search);
   const debugUrl = params.get('debug');
   const traceDebug = debugUrl === '1' || debugUrl === 'true';
+  const debugBlockRedirect =
+    (params.get('debugBlockRedirect') || '').toLowerCase() === '1' ||
+    (params.get('debugBlockRedirect') || '').toLowerCase() === 'true';
   const trace: any = {
     initialURL: window.location.href,
     finalURL: window.location.href,
     didRedirect: false,
     debug: traceDebug,
+    blockRedirect: debugBlockRedirect,
   };
   const setFinal = (url: any) => {
     trace.didRedirect = true;
@@ -23,8 +27,18 @@ if (typeof window !== 'undefined') {
         get: hrefDesc.get ? hrefDesc.get.bind(loc) : undefined,
         set: (url) => {
           setFinal(url);
-          console.warn('[debug:url] blocked location.href set', url);
-          return;
+          console.warn('[debug:url] location.href set', url);
+          if (debugBlockRedirect) return;
+          try {
+            hrefDesc.set.call(loc, url);
+          } catch {
+            // Fallback: some environments disallow calling the original setter directly.
+            try {
+              window.location.assign(String(url));
+            } catch {
+              // ignore
+            }
+          }
         },
       });
     }
@@ -32,8 +46,9 @@ if (typeof window !== 'undefined') {
       const original = loc[fnName]?.bind(loc);
       loc[fnName] = (url: any) => {
         setFinal(url);
-        console.warn(`[debug:url] blocked location.${fnName}`, url);
-        return;
+        console.warn(`[debug:url] location.${fnName}`, url);
+        if (debugBlockRedirect) return;
+        return original?.(url);
       };
       return original;
     };
@@ -50,7 +65,7 @@ import './assets/main.css';
 import { i18n } from './i18n';
 import { LIFF_ID } from './config';
 import { bootstrapLiff, buildLiffUrl, normalizeLiffStateToPath } from './utils/liff';
-import { isLineBrowser } from './utils/device';
+import { isLiffClient, isLineBrowser } from './utils/device';
 
 const ALLOW_WEB_IN_LINE_KEY = 'allowWebInLine';
 const LIFF_ENTRY_SESSION_KEY = 'liffEntry';
@@ -81,13 +96,16 @@ function shouldAutoOpenMiniApp(): string | null {
   const host = window.location.hostname;
   if (host.includes('miniapp.line.me') || host.includes('liff.line.me')) return null;
   if (!isLineBrowser()) return null;
+  if (isLiffClient()) {
+    markLiffEntry();
+    return null;
+  }
   const params = new URLSearchParams(window.location.search);
   const isLiffEntry =
     params.has('liff.state') ||
     params.has('liff.referrer') ||
     (typeof document !== 'undefined' &&
-      (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'))) ||
-    hasLiffEntryFlag();
+      (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me')));
   if (isLiffEntry) {
     markLiffEntry();
     return null;

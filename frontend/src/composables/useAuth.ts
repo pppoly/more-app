@@ -225,6 +225,7 @@ function setToken(token: string | null) {
   if (!hasWindow()) return;
   if (token) {
     manualLogout.value = false;
+    needsLiffOpen.value = false;
     window.localStorage.setItem(TOKEN_KEY, token);
   } else {
     window.localStorage.removeItem(TOKEN_KEY);
@@ -270,6 +271,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
   if (liffBootstrapPromise) return liffBootstrapPromise;
   liffBootstrapPromise = (async () => {
     state.initializing = true;
+    needsLiffOpen.value = false;
     const notify = force;
     const fail = (reason: LiffAuthFailReason, message?: string, type: 'error' | 'info' = 'error'): LiffAuthResult => {
       if (notify && message) {
@@ -366,6 +368,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         });
         clearLiffLoginInflight();
         cleanLiffCallbackUrl(liffStateParam);
+        needsLiffOpen.value = false;
         return { ok: true };
       }
 
@@ -403,7 +406,6 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
       const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
       if (!loggedIn) {
         logDevAuth('not logged in inside LIFF client');
-        needsLiffOpen.value = true;
         if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {
           markLiffLoginInflight();
           liff.login({ redirectUri: cleanRedirect });
@@ -466,6 +468,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         clearLiffLoginInflight();
       }
       clearStoredRedirect();
+      needsLiffOpen.value = false;
       return { ok: true };
     } catch (error) {
       logDevAuth('bootstrap error', error);
@@ -493,16 +496,13 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
     try {
       const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
-        needsLiffOpen.value = true;
         return;
       }
       if (!liff.isInClient || !liff.isInClient()) {
-        needsLiffOpen.value = true;
         return;
       }
       const profile = await liff.getProfile().catch(() => null);
       if (!profile?.userId) {
-        needsLiffOpen.value = true;
         return;
       }
       const response = await lineLiffProfileLogin({
@@ -517,7 +517,6 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
       needsLiffOpen.value = false;
     } catch (error) {
       console.warn('LIFF profile login failed', error);
-      needsLiffOpen.value = true;
     } finally {
       liffProfilePromise = null;
     }
@@ -571,6 +570,11 @@ async function restoreSession() {
   if (initialized) return;
   initialized = true;
   if (!hasWindow()) return;
+  if (manualLogout.value) {
+    needsLiffOpen.value = false;
+    manualLogout.value = false;
+    return;
+  }
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
     if (shouldAttemptLiffAuth()) {
