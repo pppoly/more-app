@@ -953,18 +953,14 @@ const shareEvent = async () => {
       try {
         const liff = await loadLiff(LIFF_ID);
         inLineClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-        if (inLineClient && liff.shareTargetPicker) {
-          await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
-          showUiMessage('LINE で共有しました');
-          return;
-        }
+        // LIFF内は遷移が発生しやすいため、共有UIは使わずリンクコピーのみ行う
       } catch (err) {
         console.error('Failed to share via LIFF', err);
       }
     }
   }
 
-  if (inLineClient) {
+  if (inLineClient || isLineInAppBrowser() || inMiniAppHost) {
     if (navigator.clipboard?.writeText && shareUrlWithSource) {
       await navigator.clipboard.writeText(shareUrlWithSource);
       showUiMessage('リンクをコピーしました');
@@ -974,27 +970,7 @@ const shareEvent = async () => {
     return;
   }
 
-  if (isLineInAppBrowser()) {
-    if (navigator.share) {
-      try {
-        await navigator.share(payload);
-        showUiMessage('共有しました');
-        return;
-      } catch (error: any) {
-        const name = error?.name || '';
-        if (name === 'AbortError' || name === 'NotAllowedError') {
-          return;
-        }
-      }
-    }
-    if (navigator.clipboard?.writeText && shareUrlWithSource) {
-      await navigator.clipboard.writeText(shareUrlWithSource);
-      showUiMessage('リンクをコピーしました');
-      return;
-    }
-    showUiMessage('共有に失敗しました');
-    return;
-  } else if (navigator.share) {
+  if (navigator.share) {
     try {
       await navigator.share(payload);
       showUiMessage('共有しました');
