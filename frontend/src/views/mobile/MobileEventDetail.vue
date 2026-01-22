@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { isLineInAppBrowser, isLiffReady, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
@@ -952,9 +952,13 @@ const shareEvent = async () => {
     }
     try {
       const liff = await loadLiff(LIFF_ID);
+      if (!isLiffReady.value) {
+        showUiMessage('LINE 共有に対応していません（LIFF 初期化失敗）');
+        return;
+      }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       if (!inClient) {
-        showUiMessage('LINE 共有に対応していません');
+        showUiMessage('LINE 共有に対応していません（LINE 内ブラウザ外）');
         return;
       }
       const canShare =
@@ -962,12 +966,13 @@ const shareEvent = async () => {
           ? (liff as any).isApiAvailable('shareTargetPicker')
           : Boolean(liff.shareTargetPicker);
       if (!canShare || !liff.shareTargetPicker) {
-        showUiMessage('LINE 共有に対応していません');
+        showUiMessage('LINE 共有に対応していません（shareTargetPicker 未対応）');
         return;
       }
       const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
       if (!isLoggedIn) {
-        showUiMessage('LINE にログインしてください');
+        const redirectUri = typeof window !== 'undefined' ? window.location.href : undefined;
+        liff.login(redirectUri ? { redirectUri } : undefined);
         return;
       }
       const result = await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);

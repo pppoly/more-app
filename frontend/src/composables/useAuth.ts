@@ -338,6 +338,10 @@ async function bootstrapLiffAuth(force = false) {
       if (!loggedIn) {
         logDevAuth('not logged in inside LIFF client');
         needsLiffOpen.value = true;
+        if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {
+          markLiffLoginInflight();
+          liff.login({ redirectUri: cleanRedirect });
+        }
         return;
       }
       clearLiffLoginInflight();
