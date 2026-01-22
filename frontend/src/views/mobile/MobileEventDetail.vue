@@ -939,36 +939,28 @@ const shareEvent = async () => {
     (typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '');
   const shareUrlWithSource = liffDeepLink ? `${liffDeepLink}&from=line_share` : shareUrl;
   const shareTitle = detail.value.title || 'イベント';
+  const payload = { title: shareTitle, url: shareUrlWithSource };
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  const shouldTryLiff = APP_TARGET === 'liff' || isLineInAppBrowser();
 
-  if (APP_TARGET === 'liff') {
+  if (shouldTryLiff) {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
-      return;
-    }
-    try {
-      const liff = await loadLiff(LIFF_ID);
-      if (liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
-        showUiMessage('LINE で共有しました');
-        return;
+    } else {
+      try {
+        const liff = await loadLiff(LIFF_ID);
+        const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+        if (inClient && liff.shareTargetPicker) {
+          await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
+          showUiMessage('LINE で共有しました');
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to share via LIFF', err);
       }
-      // fallback: copy link
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrlWithSource);
-        showUiMessage('リンクをコピーしました');
-        return;
-      }
-    } catch (err) {
-      console.error('Failed to share via LIFF', err);
-      showUiMessage('LINE 共有に失敗しました');
-      return;
     }
-    return;
   }
 
-  const payload = { title: shareTitle, url: shareUrlWithSource };
-
-  // 1) ネイティブ共有（優先）
   if (navigator.share) {
     try {
       await navigator.share(payload);
@@ -979,12 +971,14 @@ const shareEvent = async () => {
     }
   }
 
-  // 2) LINE 共有ページ（Web）
-  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
-  window.open(lineShareUrl, '_blank');
-  showUiMessage('LINE で開きました');
+  if (isLineInAppBrowser()) {
+    window.location.href = lineShareUrl;
+    showUiMessage('LINE で開きました');
+  } else {
+    window.open(lineShareUrl, '_blank');
+    showUiMessage('LINE で開きました');
+  }
 
-  // 3) 追加のフォールバックとしてコピー
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(payload.url);
