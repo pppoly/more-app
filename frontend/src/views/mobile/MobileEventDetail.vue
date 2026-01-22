@@ -949,8 +949,8 @@ const shareEvent = async () => {
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
-  const fallbackShare = async () => {
-    if (navigator.share) {
+  const fallbackShare = async (allowSystemShare: boolean) => {
+    if (allowSystemShare && navigator.share) {
       try {
         await navigator.share(payload);
         showUiMessage('共有しました');
@@ -976,20 +976,20 @@ const shareEvent = async () => {
   if (isLineContext) {
     if (!LIFF_ID) {
       showUiMessage('LINE 設定を確認してください');
-      await fallbackShare();
+      await fallbackShare(false);
       return;
     }
     try {
       const liff = await loadLiff(LIFF_ID);
       if (!isLiffReady.value) {
         showUiMessage('LINE 共有に対応していません（LIFF 初期化失敗）');
-        await fallbackShare();
+        await fallbackShare(false);
         return;
       }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       if (!inClient) {
         showUiMessage('LINE 共有に対応していません（LINE 内ブラウザ外）');
-        await fallbackShare();
+        await fallbackShare(false);
         return;
       }
       const canShare =
@@ -998,7 +998,7 @@ const shareEvent = async () => {
           : Boolean(liff.shareTargetPicker);
       if (!canShare || !liff.shareTargetPicker) {
         showUiMessage('LINE 共有に対応していません（shareTargetPicker 未対応）');
-        await fallbackShare();
+        await fallbackShare(false);
         return;
       }
       const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
@@ -1015,12 +1015,12 @@ const shareEvent = async () => {
     } catch (err) {
       console.error('Failed to share via LIFF', err);
       showUiMessage('LINE 共有に失敗しました');
-      await fallbackShare();
+      await fallbackShare(false);
       return;
     }
   }
 
-  await fallbackShare();
+  await fallbackShare(true);
 };
 
 let uiMessageTimer: number | null = null;
