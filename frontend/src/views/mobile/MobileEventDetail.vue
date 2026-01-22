@@ -936,7 +936,7 @@ const shareEvent = async () => {
   if (!detail.value) return;
   const frontendBase = FRONTEND_BASE_URL;
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
-  const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
+  const webShareUrl = frontendBase ? `${frontendBase}/liff?to=${encodeURIComponent(shareToPath)}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
   const inMiniAppHost =
     typeof window !== 'undefined' &&
