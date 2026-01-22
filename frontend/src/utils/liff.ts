@@ -124,7 +124,7 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   if (!toPath) return base;
   const normalizedCandidate = toPath.startsWith('/') ? toPath : `/${toPath}`;
   const normalized = normalizeLiffStateToPath(normalizedCandidate) || normalizedCandidate;
-  return `${base}?to=${encodeURIComponent(normalized)}`;
+  return `${base}${normalized}`;
 };
 
 export async function getLiffProfile(): Promise<{

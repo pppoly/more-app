@@ -953,7 +953,7 @@ const shareEvent = async () => {
   }
   const frontendBase = FRONTEND_BASE_URL;
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
-  const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
+  const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
   const shareUrlWithSource = webShareUrl || fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
@@ -1020,11 +1020,16 @@ const shareEvent = async () => {
           typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
         const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
         if (canUseSharePicker) {
-          const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
-          if (!isLoggedIn) {
-            showUiMessage('共有にはログインが必要です');
-            await fallbackShare(false, false);
-            return;
+          try {
+            const ready = (liff as any).ready;
+            if (ready && typeof ready.then === 'function') {
+              await Promise.race([
+                ready,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 2000)),
+              ]);
+            }
+          } catch {
+            // Ignore ready timeout; shareTargetPicker may still work.
           }
           const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
           window.setTimeout(restoreRouteIfNeeded, 0);

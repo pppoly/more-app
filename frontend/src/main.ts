@@ -60,21 +60,30 @@ function shouldAutoOpenMiniApp(): string | null {
   if (!isLineBrowser()) return null;
   if (isLiffClient()) return null;
   const params = new URLSearchParams(window.location.search);
-  const deepLinkRaw = params.get('to') || params.get('liff.state');
-  if (!deepLinkRaw) return null;
-  let deepLinkDecoded = deepLinkRaw;
-  try {
-    deepLinkDecoded = decodeURIComponent(deepLinkRaw);
-  } catch {
-    deepLinkDecoded = deepLinkRaw;
-  }
-  const isShareLink = deepLinkDecoded.includes('from=line_share');
   const continueWeb = (params.get('continueWeb') || '').toLowerCase();
   if (continueWeb === '1' || continueWeb === 'true') return null;
-  const attemptKey = `miniappAutoOpen:${window.location.pathname}${window.location.search}`;
+
+  const current = window.location.pathname + window.location.search;
+  const deepLinkRaw = params.get('to') || params.get('liff.state');
+  const deepLinkPath = normalizeLiffStateToPath(deepLinkRaw);
+  const from = (params.get('from') || '').toLowerCase();
+  const src = (params.get('src') || '').toLowerCase();
+  const isShareLink =
+    from === 'line_share' ||
+    src === 'line_share' ||
+    current.includes('from=line_share') ||
+    (deepLinkPath ? deepLinkPath.includes('from=line_share') : false);
+  const hasDeepLink = Boolean(deepLinkPath);
+
+  // Only auto-open when the URL indicates a deep link or a share link.
+  if (!isShareLink && !hasDeepLink) return null;
+
+  const attemptKey = `miniappAutoOpen:${current}`;
+  const now = Date.now();
   try {
-    if (window.sessionStorage.getItem(attemptKey) === '1') return null;
-    window.sessionStorage.setItem(attemptKey, '1');
+    const lastAttempt = Number(window.sessionStorage.getItem(attemptKey) || '0');
+    if (Number.isFinite(lastAttempt) && now - lastAttempt < 5000) return null;
+    window.sessionStorage.setItem(attemptKey, String(now));
   } catch {
     // ignore storage errors; best-effort only
   }
@@ -82,7 +91,7 @@ function shouldAutoOpenMiniApp(): string | null {
     const allowWeb = window.sessionStorage.getItem(ALLOW_WEB_IN_LINE_KEY) === '1';
     if (allowWeb) return null;
   }
-  return buildLiffUrl(window.location.pathname + window.location.search);
+  return buildLiffUrl(current);
 }
 
 // Auto-open share links inside LINE in-app browser.
