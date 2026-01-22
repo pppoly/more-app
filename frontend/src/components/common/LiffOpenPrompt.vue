@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <div v-if="visible" class="liff-prompt">
-      <div class="liff-prompt__text">LINEアプリで開くと、より便利にご利用いただけます</div>
+      <div class="liff-prompt__text">LINEミニアプリで開くと、より便利にご利用いただけます</div>
       <div class="liff-prompt__actions">
-        <button type="button" class="liff-prompt__open" @click="openInLine">LINEで開く</button>
+        <button type="button" class="liff-prompt__open" @click="openInLine">LINEミニアプリで開く</button>
         <button type="button" class="liff-prompt__close" aria-label="閉じる" @click="dismiss">×</button>
       </div>
     </div>
@@ -29,8 +29,8 @@ const shouldShow = () => {
   if (isProductionLiff()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
   const onTargetHost = window.location.hostname === 'test.socialmore.jp';
-  // LINE 内（Line Browser/LIFF）では「LINE で開く」提示を出さない
-  if (isLineBrowser() || isLiffClient()) return false;
+  // LIFF 内では提示しない
+  if (isLiffClient()) return false;
   return onTargetHost && !dismissed && Boolean(liffUrl.value);
 };
 
@@ -51,6 +51,10 @@ function dismiss() {
 }
 
 onMounted(() => {
+  if (isLineBrowser() && !isLiffClient() && liffUrl.value) {
+    window.location.href = liffUrl.value;
+    return;
+  }
   visible.value = shouldShow();
 });
 </script>
