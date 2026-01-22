@@ -11,19 +11,18 @@ import EventForm from '../views/console/EventForm.vue';
 import EventRegistrations from '../views/console/EventRegistrations.vue';
 import OrganizerApply from '../views/account/OrganizerApply.vue';
 import ConsoleAccessLayout from '../views/console/ConsoleAccessLayout.vue';
-import AdminHome from '../views/admin/AdminHome.vue';
-import AdminResourceManager from '../views/admin/AdminResourceManager.vue';
-import AdminResourceGroup from '../views/admin/AdminResourceGroup.vue';
 import PaymentSuccess from '../views/payments/PaymentSuccess.vue';
 import PaymentCancel from '../views/payments/PaymentCancel.vue';
 import PaymentReturn from '../views/payments/PaymentReturn.vue';
 import StripeReturn from '../views/console/StripeReturn.vue';
 import { useAuth } from '../composables/useAuth';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
-import ConsoleMobileShell from '../layouts/ConsoleMobileShell.vue';
 import { isLineInAppBrowser } from '../utils/liff';
+import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from '../composables/useAuthSheets';
-import { fetchOrganizerPayoutPolicyStatus } from '../api/client';
+import { communityRouteGuard, payoutPolicyGuard } from './guards';
+import { consoleMobileRoutes, consoleMobileStandaloneRoutes } from './consoleMobileRoutes';
+import { adminRoutes } from './adminRoutes';
 import {
   beginNav,
   beginNavPending,
@@ -42,42 +41,44 @@ function isMobile() {
   return hasTouch || window.innerWidth < 1024 || /Mobile|Android|iPhone|iPod|iPad|Line/i.test(ua);
 }
 
+const AUTH_TOKEN_KEY = 'moreapp_access_token';
+
+function hasAuthToken() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(window.localStorage.getItem(AUTH_TOKEN_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function isLiffContext() {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  if (host.includes('miniapp.line.me') || host.includes('liff.line.me')) return true;
+  if (isLineInAppBrowser()) return true;
+  return isLiffClient();
+}
+
+function isLiffPublicRoute(to: any) {
+  const path = to.path || '';
+  if (path === '/' || path === '/liff' || path === '/events') return true;
+  if (path.startsWith('/events/') && !path.includes('/register')) return true;
+  if (path.startsWith('/community')) return true;
+  if (path.startsWith('/promo')) return true;
+  if (path.startsWith('/auth') || path === '/login') return true;
+  if (path.startsWith('/experience')) return true;
+  if (path.startsWith('/payments/return') || path.startsWith('/liff/payments/return')) return true;
+  if (path.startsWith('/legal')) return true;
+  return false;
+}
+
 const loadMobileOrDesktop = (
   mobileImport: () => Promise<unknown>,
   desktopImport: () => Promise<unknown>,
 ) => {
   return () => (isMobile() ? mobileImport() : desktopImport());
 };
-
-async function communityRouteGuard(to: any, from: any, next: any) {
-  const store = useConsoleCommunityStore();
-  await store.loadCommunities();
-  const communityId = to.params.communityId as string | undefined;
-  if (!communityId || !store.hasCommunity(communityId)) {
-    store.ensureActiveCommunity();
-    if (store.activeCommunityId.value) {
-      return next({
-        name: 'console-community-events',
-        params: { communityId: store.activeCommunityId.value },
-      });
-    }
-    return next({ name: 'console-community-create' });
-  }
-  store.setActiveCommunity(communityId);
-  return next();
-}
-
-async function payoutPolicyGuard(to: any, from: any, next: any) {
-  try {
-    const status = await fetchOrganizerPayoutPolicyStatus();
-    if (status.acceptedAt) {
-      return next();
-    }
-  } catch (error) {
-    console.warn('Failed to load payout policy status', error);
-  }
-  return next({ path: '/organizer/payout-policy', query: { returnTo: to.fullPath } });
-}
 
 const routes: RouteRecordRaw[] = [
   {
@@ -350,353 +351,8 @@ const routes: RouteRecordRaw[] = [
       forceNavDir: 'forward',
     },
   },
-  {
-    path: '/console',
-    component: ConsoleMobileShell,
-    meta: {
-      requiresAuth: true,
-      requiresOrganizer: true,
-      layout: 'console-mobile',
-      stackKey: 'mobile',
-      devPageName: 'Console モバイルシェル',
-      navTransition: 'none',
-    },
-    children: [
-      {
-        path: '',
-        name: 'ConsoleMobileHome',
-        component: () => import('../views/console/mobile/ConsoleHomeMobile.vue'),
-        meta: {
-          title: 'コミュニティ管理',
-          stackKey: 'mobile',
-          keepAlive: true,
-          devPageName: 'Console-ホーム',
-          hideShellHeader: true,
-          flushContent: true,
-          navTransition: 'none',
-        },
-      },
-      {
-        path: 'communities/:communityId/events',
-        name: 'ConsoleMobileCommunityEvents',
-        component: () => import('../views/console/mobile/ConsoleCommunityEventsMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'コミュニティイベント',
-          stackKey: 'mobile',
-          keepAlive: true,
-          devPageName: 'Console-コミュニティイベント',
-          hideShellHeader: true,
-          flushContent: true,
-        },
-      },
-      {
-        path: 'classes',
-        name: 'ConsoleMobileClasses',
-        component: () => import('../views/console/mobile/ConsoleClassesListMobile.vue'),
-        meta: {
-          title: '教室管理',
-          hideShellHeader: true,
-          hideTabbar: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          keepAlive: true,
-          devPageName: 'Console-教室一覧',
-        },
-      },
-      {
-        path: 'classes/new',
-        name: 'ConsoleMobileClassForm',
-        component: () => import('../views/console/mobile/ConsoleClassFormMobile.vue'),
-        meta: {
-          title: '教室を作成',
-          hideShellHeader: true,
-          hideTabbar: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-教室フォーム',
-        },
-      },
-      {
-        path: 'classes/:classId/lessons',
-        name: 'ConsoleMobileLessons',
-        component: () => import('../views/console/mobile/ConsoleLessonsMobile.vue'),
-        meta: {
-          title: 'レッスン管理',
-          hideShellHeader: true,
-          hideTabbar: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-レッスン管理',
-        },
-        props: true,
-      },
-      {
-        path: 'lessons/:lessonId/registrations',
-        name: 'ConsoleMobileLessonRegistrations',
-        component: () => import('../views/console/mobile/ConsoleLessonRegistrationsMobile.vue'),
-        meta: {
-          title: '申込一覧',
-          hideShellHeader: true,
-          hideTabbar: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-レッスン申込',
-        },
-        props: true,
-      },
-      {
-        path: 'communities/new',
-        name: 'ConsoleMobileCommunityCreate',
-        component: () => import('../views/console/mobile/ConsoleCommunitySettingsMobile.vue'),
-        meta: {
-          title: 'コミュニティ作成',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-コミュニティ作成',
-        },
-      },
-      {
-        path: 'communities/:communityId/events/paste',
-        name: 'ConsoleMobileEventPaste',
-        component: () => import('../views/console/mobile/ConsoleEventPasteMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: '下書きを貼り付ける',
-          hideTabbar: true,
-          hideShellHeader: true,
-          flushContent: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          devPageName: 'Console-下書き貼り付け',
-        },
-      },
-      {
-        path: 'communities/:communityId/events/create',
-        name: 'ConsoleMobileEventCreate',
-        component: () => import('../views/console/mobile/ConsoleEventAssistantMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'イベント作成',
-          hideTabbar: true,
-          hideShellHeader: true,
-          fixedPage: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-イベントアシスタント',
-        },
-      },
-      {
-        path: 'communities/:communityId/event-assistant/dashboard',
-        name: 'ConsoleMobileAssistantDashboard',
-        component: () => import('../views/console/mobile/ConsoleEventAssistantDashboard.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'アシスタントダッシュボード',
-          stackKey: 'mobile',
-          hideTabbar: true,
-          hideShellHeader: true,
-          flushContent: true,
-          devPageName: 'Console-アシスタントダッシュボード',
-        },
-      },
-      {
-        path: 'communities/:communityId/event-assistant/logs',
-        name: 'ConsoleMobileAssistantLogs',
-        component: () => import('../views/console/mobile/ConsoleEventAssistantLogsMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'アシスタント履歴',
-          stackKey: 'mobile',
-          hideTabbar: true,
-          hideShellHeader: true,
-          flushContent: true,
-          devPageName: 'Console-アシスタント履歴',
-        },
-      },
-      {
-        path: 'communities/:communityId/events/form',
-        name: 'ConsoleMobileEventForm',
-        component: () => import('../views/console/EventForm.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'イベント作成',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-イベントフォーム',
-        },
-      },
-      {
-        path: 'communities/:communityId/events/more-settings',
-        name: 'ConsoleMobileEventMoreSettings',
-        component: () => import('../views/console/EventForm.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: '追加設定',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-追加設定',
-        },
-      },
-      {
-        path: 'communities/:communityId/events/note-editor',
-        name: 'ConsoleMobileEventNoteEditor',
-        component: () => import('../views/console/mobile/ConsoleEventNoteEditorMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'イベント詳細編集',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-イベント詳細編集',
-        },
-      },
-      {
-        path: 'communities/:communityId/settings',
-        name: 'ConsoleMobileCommunitySettings',
-        component: () => import('../views/console/mobile/ConsoleCommunitySettingsMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'コミュニティ設定',
-          stackKey: 'mobile',
-          hideTabbar: true,
-          hideShellHeader: true,
-          devPageName: 'Console-コミュニティ設定',
-          flushContent: true,
-        },
-      },
-      {
-        path: 'communities/:communityId/portal',
-        name: 'ConsoleMobileCommunityPortal',
-        component: () => import('../views/console/mobile/ConsoleCommunityPortalMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: 'ポータル設定',
-          hideTabbar: true,
-          hideShellHeader: true,
-          devPageName: 'Console-ポータルテンプレート',
-          flushContent: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-        },
-      },
-      {
-        path: 'events/:eventId/manage',
-        name: 'ConsoleMobileEventManage',
-        component: () => import('../views/console/mobile/ConsoleEventManageMobile.vue'),
-        meta: {
-          title: 'イベント管理',
-          stackKey: 'mobile',
-          devPageName: 'Console-イベント管理',
-          hideShellHeader: true,
-          hideTabbar: true,
-          flushContent: true,
-        },
-      },
-      {
-        path: 'events/:eventId/publish-success',
-        name: 'ConsoleMobileEventPublishSuccess',
-        component: () => import('../views/console/mobile/ConsoleEventPublishSuccessMobile.vue'),
-        meta: {
-          title: '公開完了',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-公開完了',
-        },
-      },
-      {
-        path: 'settings/payout',
-        name: 'ConsoleMobilePayout',
-        component: () => import('../views/console/mobile/PayoutSettingsMobile.vue'),
-        beforeEnter: payoutPolicyGuard,
-        meta: {
-          title: 'コミュニティ財務',
-          devPageName: 'Console-受け取り設定',
-          flushContent: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          hideTabbar: true,
-        },
-      },
-      {
-        path: 'communities/:communityId/payments',
-        name: 'ConsoleMobilePayments',
-        component: () => import('../views/console/mobile/ConsolePaymentsMobile.vue'),
-        beforeEnter: communityRouteGuard,
-        meta: {
-          title: '決済履歴',
-          devPageName: 'Console-決済履歴',
-          hideTabbar: true,
-          hideShellHeader: true,
-          flushContent: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-        },
-      },
-      {
-        path: 'subscription',
-        name: 'ConsoleMobileSubscription',
-        beforeEnter: (_to, _from, next) => next({ name: 'ConsoleMobileSubscriptionStandalone' }),
-        component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
-        meta: {
-          title: 'サブスクリプション',
-          devPageName: 'Console-サブスク管理',
-          hideShellHeader: true,
-          hideTabbar: true,
-          flushContent: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-        },
-      },
-      {
-        path: 'tickets/scanner',
-        name: 'ConsoleTicketScanner',
-        component: () => import('../views/console/mobile/ConsoleTicketScannerMobile.vue'),
-        meta: {
-          title: 'チケットスキャン',
-          hideTabbar: true,
-          hideShellHeader: true,
-          layout: 'console-mobile',
-          stackKey: 'mobile',
-          flushContent: true,
-          devPageName: 'Console-チケットスキャン',
-        },
-      },
-    ],
-  },
-  {
-    path: '/console-subscription',
-    name: 'ConsoleMobileSubscriptionStandalone',
-    component: () => import('../views/console/mobile/SubscriptionMobile.vue'),
-    meta: {
-      devPageName: 'Console-サブスク管理（独立）',
-      hideTabbar: true,
-      hideShellHeader: true,
-      layout: 'console-mobile',
-      stackKey: 'mobile',
-      flushContent: true,
-    },
-  },
+  consoleMobileRoutes,
+  ...consoleMobileStandaloneRoutes,
   {
     path: '/console-desktop',
     component: ConsoleAccessLayout,
@@ -783,128 +439,7 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
-  {
-    path: '/admin',
-    name: 'admin-home',
-    component: AdminHome,
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      flushContent: true,
-      devPageName: '管理者ホーム',
-    },
-  },
-  {
-    path: '/admin/resources',
-    name: 'admin-resource-manager',
-    component: AdminResourceManager,
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      flushContent: true,
-      devPageName: 'リソース設定',
-    },
-  },
-  {
-    path: '/admin/resources/:groupId',
-    name: 'admin-resource-group',
-    component: AdminResourceGroup,
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      devPageName: 'リソース設定詳細',
-    },
-    props: true,
-  },
-  {
-    path: '/admin/ai',
-    name: 'admin-ai-overview',
-    component: () => import('../views/admin/AdminAiOverview.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 利用概要' },
-  },
-  {
-    path: '/admin/ai/console',
-    name: 'admin-ai-console',
-    component: () => import('../views/admin/AdminAiConsole.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      flushContent: true,
-      devPageName: 'AI コンソール',
-    },
-  },
-  {
-    path: '/admin/ai/prompts',
-    name: 'admin-ai-prompts',
-    component: () => import('../views/admin/AdminAiPrompts.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      flushContent: true,
-      devPageName: 'AI Prompt 管理',
-    },
-  },
-  {
-    path: '/admin/ai/:moduleId',
-    name: 'admin-ai-detail',
-    component: () => import('../views/admin/AdminAiModuleDetail.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'AI 利用詳細' },
-    props: true,
-  },
-  {
-    path: '/admin/events/reviews',
-    name: 'admin-event-reviews',
-    component: () => import('../views/admin/AdminEventReviews.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'イベント審査' },
-  },
-  {
-    path: '/admin/payments',
-    name: 'admin-payments',
-    component: () => import('../views/admin/AdminPayments.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '決済モニター' },
-  },
-  {
-    path: '/admin/settlements',
-    name: 'admin-settlements',
-    component: () => import('../views/admin/AdminSettlements.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '結算モニター' },
-  },
-  {
-    path: '/admin/settlements/:batchId',
-    name: 'admin-settlement-batch',
-    component: () => import('../views/admin/AdminSettlementBatchDetail.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      hideShellHeader: true,
-      flushContent: true,
-      devPageName: '結算バッチ詳細',
-    },
-    props: true,
-  },
-  {
-    path: '/admin/users',
-    name: 'admin-users',
-    component: () => import('../views/admin/AdminUsers.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'ユーザー管理' },
-  },
-  {
-    path: '/admin/events',
-    name: 'admin-events',
-    component: () => import('../views/admin/AdminEvents.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'イベント管理' },
-  },
-  {
-    path: '/admin/communities',
-    name: 'admin-communities',
-    component: () => import('../views/admin/AdminCommunities.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: 'コミュニティ管理' },
-  },
+  ...adminRoutes,
   {
     path: '/community/:slug',
     name: 'community-portal',
@@ -1139,6 +674,10 @@ router.beforeEach(async (to, from, next) => {
       console.warn('Failed to restore user session', error);
       auth.logout();
     }
+  }
+
+  if (isLiffContext() && !(auth.accessToken.value || hasAuthToken()) && !isLiffPublicRoute(to)) {
+    return next({ name: 'auth-login', query: { redirect: to.fullPath } });
   }
 
   if (to.meta.requiresAuth && !auth.user.value) {

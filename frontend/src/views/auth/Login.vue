@@ -140,7 +140,7 @@ const handleLineLogin = async () => {
     loading.value = true;
     error.value = '';
     try {
-      const liffRedirect = '/events';
+      const liffRedirect = redirectTarget.value || '/events';
       window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, liffRedirect);
       const result = await auth.loginWithLiff();
       if (result.ok) {

@@ -1250,6 +1250,11 @@ const closeBookingSheet = () => {
 const handleCtaClick = () => {
   if (!detail.value) return;
   if (legacyRefund.value || isHostRefundedCancellation.value || registrationStatus.value === 'cancel_requested') return;
+  if (!isLoggedIn.value) {
+    const redirect = `/events/${detail.value.id}/register`;
+    router.push({ name: 'auth-login', query: { redirect } });
+    return;
+  }
   if (registrationStatus.value === 'pending_payment') {
     const registrationId = registrationItem.value?.registrationId;
     if (registrationId) {

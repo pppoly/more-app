@@ -215,6 +215,11 @@ const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   maximumFractionDigits: 0,
 });
 
+const ensureLoggedIn = () => {
+  if (user.value) return;
+  router.replace({ name: 'auth-login', query: { redirect: route.fullPath } });
+};
+
 const derivePriceText = (target: EventDetail | null) => {
   if (!target?.ticketTypes?.length) return '無料 / 未定';
   const prices = target.ticketTypes.map((ticket) => ticket.price ?? 0);
@@ -369,7 +374,8 @@ watch(
 );
 
 onMounted(() => {
-  // 主催者申請へのリダイレクトは行わず、未ログイン時は後続処理でログイン誘導とする
+  ensureLoggedIn();
+  if (!user.value) return;
   loadEvent();
 });
 
