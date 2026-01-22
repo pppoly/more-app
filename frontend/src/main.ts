@@ -53,9 +53,16 @@ import { i18n } from './i18n';
 if (typeof window !== 'undefined') {
   void router.isReady().then(() => {
     const search = new URLSearchParams(window.location.search);
-    const to = search.get('to');
+    const to = search.get('to') || search.get('liff.state');
     if (!to || !to.startsWith('/')) return;
-    const target = router.resolve(to);
+    let decoded = to;
+    try {
+      decoded = decodeURIComponent(to);
+    } catch {
+      decoded = to;
+    }
+    if (!decoded.startsWith('/')) return;
+    const target = router.resolve(decoded);
     if (!target.matched.length) return;
     if (target.fullPath === router.currentRoute.value.fullPath) return;
     router.replace(target.fullPath).catch(() => undefined);
