@@ -68,6 +68,7 @@ const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
+const manualLogout = ref(false);
 const authSheets = useAuthSheets();
 const liffAuthHardStopped = ref(false);
 const backendUnavailable = ref(false);
@@ -223,6 +224,7 @@ function setToken(token: string | null) {
   }
   if (!hasWindow()) return;
   if (token) {
+    manualLogout.value = false;
     window.localStorage.setItem(TOKEN_KEY, token);
   } else {
     window.localStorage.removeItem(TOKEN_KEY);
@@ -533,6 +535,11 @@ function handleUnauthorized(context?: { status?: number; url?: string }) {
   handlingUnauthorized = true;
   setToken(null);
   state.user = null;
+  if (manualLogout.value) {
+    needsLiffOpen.value = false;
+    handlingUnauthorized = false;
+    return;
+  }
   if (shouldAttemptLiffAuth()) {
     if (isLiffLoginInflight()) {
       handlingUnauthorized = false;
@@ -638,6 +645,7 @@ export function useAuth() {
     setToken(null);
     state.user = null;
     consoleCommunityStore.resetCommunities();
+    manualLogout.value = true;
     needsLiffOpen.value = false;
   };
 
