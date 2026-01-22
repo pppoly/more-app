@@ -983,6 +983,19 @@ const shareEvent = async () => {
         await fallbackShare(false);
         return;
       }
+      try {
+        const ready = (liff as any).ready;
+        if (ready && typeof ready.then === 'function') {
+          await Promise.race([
+            ready,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 4000)),
+          ]);
+        }
+      } catch {
+        showUiMessage('LINE 共有に対応していません（LIFF 未準備）');
+        await fallbackShare(false);
+        return;
+      }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       if (!inClient) {
         showUiMessage('LINE 共有に対応していません（LINE 内ブラウザ外）');
