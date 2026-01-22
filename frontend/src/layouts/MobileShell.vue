@@ -205,8 +205,6 @@ const activeTab = computed(() => {
 const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ログイン'));
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
-  // LIFF 時はトップレベルのみタブ表示
-  if (isLiffMode.value && !props.rootNavRoute) return false;
   const topLevelOnly = props.showBrandTopBar || isLiffMode.value;
   const baseMatch = (path: string, tabPath: string) =>
     topLevelOnly ? path === tabPath : path === tabPath || path.startsWith(`${tabPath}/`);
