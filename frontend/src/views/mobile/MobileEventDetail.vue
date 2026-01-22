@@ -946,17 +946,29 @@ const shareEvent = async () => {
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
   const isLineContext = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
   if (isLineContext) {
+    if (!LIFF_ID) {
+      showUiMessage('LINE 設定を確認してください');
+      return;
+    }
     try {
-      if (navigator.clipboard?.writeText && shareUrlWithSource) {
-        await navigator.clipboard.writeText(shareUrlWithSource);
-        showUiMessage('リンクをコピーしました');
+      const liff = await loadLiff(LIFF_ID);
+      const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+      const canShare =
+        typeof (liff as any).isApiAvailable === 'function'
+          ? (liff as any).isApiAvailable('shareTargetPicker')
+          : Boolean(liff.shareTargetPicker);
+      if (inClient && canShare && liff.shareTargetPicker) {
+        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
+        showUiMessage('共有しました');
         return;
       }
-    } catch {
-      // ignore clipboard failures
+      showUiMessage('LINE 共有に対応していません');
+      return;
+    } catch (err) {
+      console.error('Failed to share via LIFF', err);
+      showUiMessage('LINE 共有に失敗しました');
+      return;
     }
-    showUiMessage('共有に失敗しました');
-    return;
   }
 
   if (navigator.share) {
