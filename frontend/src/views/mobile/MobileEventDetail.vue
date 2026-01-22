@@ -327,7 +327,7 @@ import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
-import { APP_TARGET, LIFF_ID } from '../../config';
+import { APP_TARGET, FRONTEND_BASE_URL, LIFF_ID } from '../../config';
 import { isLineInAppBrowser, isLiffReady, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -934,10 +934,11 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const webShareUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/events/${detail.value.id}` : '';
+  const frontendBase = FRONTEND_BASE_URL;
+  const shareToPath = `/events/${detail.value.id}?from=line_share`;
+  const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareUrlWithSource = webShareUrl ? `${webShareUrl}?from=line_share` : fallbackUrl;
+  const shareUrlWithSource = webShareUrl || fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;

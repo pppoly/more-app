@@ -10,6 +10,25 @@ const resolveApiBaseUrl = () => {
 };
 
 export const API_BASE_URL = resolveApiBaseUrl();
+
+const resolveFrontendBaseUrl = () => {
+  const envValue = import.meta.env.VITE_FRONTEND_BASE_URL;
+  if (envValue) return envValue.replace(/\/$/, '');
+  try {
+    const apiUrl = new URL(API_BASE_URL);
+    if (apiUrl.pathname.startsWith('/api/')) {
+      apiUrl.pathname = '';
+    }
+    if (apiUrl.hostname.startsWith('api.')) {
+      apiUrl.hostname = apiUrl.hostname.replace(/^api\./, 'app.');
+    }
+    return apiUrl.toString().replace(/\/$/, '');
+  } catch {
+    return API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  }
+};
+
+export const FRONTEND_BASE_URL = resolveFrontendBaseUrl();
 const inferredTarget = import.meta.env.MODE === 'liff' ? 'liff' : 'web';
 export const APP_TARGET = import.meta.env.VITE_APP_TARGET || inferredTarget;
 export const LINE_CHANNEL_ID = import.meta.env.VITE_LINE_CHANNEL_ID || '';
