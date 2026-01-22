@@ -24,6 +24,7 @@ import { trackEvent } from '../utils/analytics';
 import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from './useAuthSheets';
 import { useToast } from './useToast';
+import { LOGIN_REDIRECT_STORAGE_KEY } from '../constants/auth';
 
 interface AuthState {
   user: UserProfile | null;
@@ -124,7 +125,8 @@ async function exchangeLiffToken(
   endpoint: '/api/v1/auth/line/liff-login' | '/api/v1/auth/line/liff',
   body: Record<string, any>,
 ) {
-  const response = await fetch(endpoint, {
+  const url = `${backendBase}${endpoint}`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-App-Target': APP_TARGET },
     body: JSON.stringify(body),
@@ -177,6 +179,18 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function getStoredRedirect(): string | null {
+  if (!hasWindow()) return null;
+  const raw = window.localStorage.getItem(LOGIN_REDIRECT_STORAGE_KEY);
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null;
+  return raw;
+}
+
+function clearStoredRedirect() {
+  if (!hasWindow()) return;
+  window.localStorage.removeItem(LOGIN_REDIRECT_STORAGE_KEY);
+}
+
 function isLiffHost(): boolean {
   if (!hasWindow()) return false;
   const host = window.location.hostname;
@@ -210,7 +224,7 @@ setRequestHeaderProvider(() => ({
 
 function redirectToLineOauth() {
   // In LIFF client, block web OAuth redirect to avoid loops.
-  if (isLiffClient() || isLiffHost()) {
+  if (isLiffClient() || isLiffHost() || isLineInAppBrowser()) {
     logDevAuth('redirectToLineOauth skipped in LIFF client');
     return;
   }
@@ -328,6 +342,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
           await emitLiffDebug('callback_no_token');
           return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
         }
+        clearStoredRedirect();
         await emitLiffDebug('callback_exchange_done', {
           endpoint: exchangeEndpoint,
           status: exchangeStatus,
@@ -365,11 +380,12 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         return fail('not_in_client', 'LINE アプリ内で開いてください。');
       }
       const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
+      const storedRedirect = getStoredRedirect();
       const toPath = window.location.pathname.startsWith('/liff')
         ? window.location.pathname.replace(/^\/liff/, '') || '/'
         : window.location.pathname;
       const toQuery = window.location.search || '';
-      const toValue = `${toPath}${toQuery}`;
+      const toValue = storedRedirect || `${toPath}${toQuery}`;
       const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
       if (!loggedIn) {
         logDevAuth('not logged in inside LIFF client');
@@ -435,6 +451,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         trackEvent('liff_login_success');
         clearLiffLoginInflight();
       }
+      clearStoredRedirect();
       // URL の code/state を削除して、後続の重複判定を回避
       if (typeof window !== 'undefined' && window.location.search) {
         const cleanUrl = `${window.location.origin}${window.location.pathname}`;
