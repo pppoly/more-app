@@ -964,6 +964,7 @@ const shareEvent = async () => {
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
   const liffShareUrl = buildLiffUrl(shareToPath) || '';
+  const shareUrlWithSource = liffShareUrl || webShareUrl || fallbackUrl;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
@@ -975,9 +976,6 @@ const shareEvent = async () => {
       (new URLSearchParams(window.location.search).has('liff.state') ||
         new URLSearchParams(window.location.search).has('liff.referrer') ||
         document.referrer.includes('line.me')));
-  const shareUrlWithSource = isLineBrowserLike
-    ? liffShareUrl || webShareUrl || fallbackUrl
-    : webShareUrl || fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
