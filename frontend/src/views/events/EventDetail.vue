@@ -567,8 +567,18 @@ const goBack = () => {
 };
 
 const shareEvent = () => {
-  if (navigator.share && event.value) {
-    navigator.share({ title: title.value, url: window.location.href }).catch(() => undefined);
+  if (!event.value) return;
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  if (!shareUrl) return;
+  const payload = { title: title.value, url: shareUrl };
+  if (navigator.share) {
+    navigator.share(payload).catch(() => undefined);
+    return;
+  }
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  window.open(lineShareUrl, '_blank');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(payload.url).catch(() => undefined);
   }
 };
 
