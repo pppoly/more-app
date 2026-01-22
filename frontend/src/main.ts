@@ -48,18 +48,50 @@ import App from './App.vue';
 import router from './router';
 import './assets/main.css';
 import { i18n } from './i18n';
-import { buildLiffUrl, normalizeLiffStateToPath } from './utils/liff';
-import { isLineBrowser, isLiffClient } from './utils/device';
+import { LIFF_ID } from './config';
+import { bootstrapLiff, buildLiffUrl, normalizeLiffStateToPath } from './utils/liff';
+import { isLineBrowser } from './utils/device';
 
 const ALLOW_WEB_IN_LINE_KEY = 'allowWebInLine';
+const LIFF_ENTRY_SESSION_KEY = 'liffEntry';
+const SHARE_RETURN_TO_KEY = 'share:returnTo';
+const SHARE_RETURN_AT_KEY = 'share:returnAt';
+const SHARE_RETURN_TTL_MS = 60_000;
+
+function markLiffEntry() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(LIFF_ENTRY_SESSION_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+function hasLiffEntryFlag(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(LIFF_ENTRY_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function shouldAutoOpenMiniApp(): string | null {
   if (typeof window === 'undefined') return null;
   const host = window.location.hostname;
   if (host.includes('miniapp.line.me') || host.includes('liff.line.me')) return null;
   if (!isLineBrowser()) return null;
-  if (isLiffClient()) return null;
   const params = new URLSearchParams(window.location.search);
+  const isLiffEntry =
+    params.has('liff.state') ||
+    params.has('liff.referrer') ||
+    (typeof document !== 'undefined' &&
+      (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'))) ||
+    hasLiffEntryFlag();
+  if (isLiffEntry) {
+    markLiffEntry();
+    return null;
+  }
   const continueWeb = (params.get('continueWeb') || '').toLowerCase();
   if (continueWeb === '1' || continueWeb === 'true') return null;
 
@@ -99,6 +131,9 @@ if (typeof window !== 'undefined') {
   const liffUrl = shouldAutoOpenMiniApp();
   if (liffUrl) {
     window.location.href = liffUrl;
+  } else if (isLineBrowser() && LIFF_ID && hasLiffEntryFlag()) {
+    // Pre-initialize LIFF so shareTargetPicker is ready by the time the user taps share.
+    bootstrapLiff(LIFF_ID);
   }
 }
 
@@ -113,6 +148,31 @@ if (typeof window !== 'undefined') {
     if (!target.matched.length) return;
     if (target.fullPath === router.currentRoute.value.fullPath) return;
     router.replace(target.fullPath).catch(() => undefined);
+  });
+}
+
+// Restore the previous route after returning from the LINE share UI (some WebViews reload to root).
+if (typeof window !== 'undefined') {
+  void router.isReady().then(() => {
+    try {
+      const returnTo = window.sessionStorage.getItem(SHARE_RETURN_TO_KEY) || '';
+      const at = Number(window.sessionStorage.getItem(SHARE_RETURN_AT_KEY) || '0');
+      if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//')) return;
+      if (!Number.isFinite(at) || Date.now() - at > SHARE_RETURN_TTL_MS) return;
+      const resolved = router.resolve(returnTo);
+      if (!resolved.matched.length) return;
+      if (resolved.fullPath === router.currentRoute.value.fullPath) return;
+      router.replace(resolved.fullPath).catch(() => undefined);
+    } catch {
+      // ignore storage errors
+    } finally {
+      try {
+        window.sessionStorage.removeItem(SHARE_RETURN_TO_KEY);
+        window.sessionStorage.removeItem(SHARE_RETURN_AT_KEY);
+      } catch {
+        // ignore
+      }
+    }
   });
 }
 

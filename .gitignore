@@ -4,7 +4,7 @@ backend/pnpm-lock.yaml
 docker-compose.prod.yml
 docker-compose.yml.bak.20260120_224930
 frontend/pnpm-lock.yaml
-
+frontend/dist-liff/
 
 ############################
 # Environment & Secrets

@@ -51,14 +51,7 @@ function dismiss() {
 }
 
 onMounted(() => {
-  const dismissed = hasWindow() && window.localStorage?.getItem(STORAGE_KEY) === '1';
-  const shouldAutoOpen = isLineBrowser() && !isLiffClient() && liffUrl.value && !dismissed;
   visible.value = shouldShow();
-  if (shouldAutoOpen) {
-    window.setTimeout(() => {
-      window.location.href = liffUrl.value as string;
-    }, 300);
-  }
 });
 </script>
 

@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, isLiffReady, liffInstance, loadLiff } from '../../utils/liff';
+import { isLineInAppBrowser, isLiffReady, liffInstance } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -935,6 +935,14 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
+  if (typeof window !== 'undefined') {
+    try {
+      window.sessionStorage.setItem('share:returnTo', route.fullPath);
+      window.sessionStorage.setItem('share:returnAt', String(Date.now()));
+    } catch {
+      // ignore
+    }
+  }
   const expectedRoute = route.fullPath;
   let shareNavGuardActive = true;
   const restoreRouteIfNeeded = () => {
@@ -1006,11 +1014,8 @@ const shareEvent = async () => {
       return;
     }
     if (isLineBrowserLike && LIFF_ID && !isLiffReady.value) {
-      try {
-        await loadLiff(LIFF_ID);
-      } catch (err) {
-        console.error('Failed to init LIFF', err);
-      }
+      showUiMessage('LINE 初期化中です。もう一度お試しください。');
+      return;
     }
     if (isLiffReady.value) {
       try {
@@ -1020,20 +1025,14 @@ const shareEvent = async () => {
           typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
         const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
         if (canUseSharePicker) {
-          try {
-            const ready = (liff as any).ready;
-            if (ready && typeof ready.then === 'function') {
-              await Promise.race([
-                ready,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 2000)),
-              ]);
-            }
-          } catch {
-            // Ignore ready timeout; shareTargetPicker may still work.
-          }
           const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
           window.setTimeout(restoreRouteIfNeeded, 0);
           showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
+          return;
+        }
+        if (isLineBrowserLike) {
+          showUiMessage('LINE 共有が利用できません。リンクをコピーしました');
+          await fallbackShare(false, false);
           return;
         }
       } catch (err) {
@@ -1055,7 +1054,7 @@ const shareEvent = async () => {
       window.setTimeout(() => {
         shareNavGuardActive = false;
         window.removeEventListener('popstate', onPopState);
-      }, 1200);
+      }, 6000);
     }
   }
 };

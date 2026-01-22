@@ -116,7 +116,10 @@ function normalizeError(error: any) {
     const message = buildErrorMessage(error);
     reportError('http:request_failed', { url, status, message });
     if (isNetworkError(error) || isServerError(error)) {
-      setMaintenanceMode(true, error);
+      const nonBlocking = typeof url === 'string' && url.includes('/analytics/events');
+      if (!nonBlocking) {
+        setMaintenanceMode(true, error);
+      }
     }
     if (status === 401 && unauthorizedHandler) {
       unauthorizedHandler({ status, url });
