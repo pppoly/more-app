@@ -36,39 +36,57 @@
       <div v-else-if="error" class="empty error">{{ error }}</div>
       <div v-else-if="!items.length" class="empty">データがありません。</div>
       <div v-else class="card-list">
-        <article v-for="item in visibleItems" :key="item.id" class="payment-card">
-          <div class="card-top">
-            <div>
-              <p class="eyebrow">{{ item.community?.name || item.community?.id || '—' }}</p>
-              <h3>¥{{ formatNumber(item.amount) }}</h3>
-              <p class="meta">方法: {{ item.method }}</p>
+        <details v-for="item in visibleItems" :key="item.id" class="payment-card">
+          <summary class="payment-summary">
+            <div class="card-top">
+              <div>
+                <p class="eyebrow">{{ item.community?.name || item.community?.id || '—' }}</p>
+                <h3>¥{{ formatNumber(item.amount) }}</h3>
+                <p class="meta">方法: {{ item.method }}</p>
+                <p class="meta">精算額: ¥{{ formatNumber(settlementAmountDisplay(item)) }}</p>
+              </div>
+              <div class="summary-right">
+                <span class="pill" :class="statusClass(item.status)">{{ item.status }}</span>
+                <span class="pill" :class="settlementClass(item)">{{ settlementLabel(item) }}</span>
+              </div>
             </div>
-            <span class="pill" :class="statusClass(item.status)">{{ item.status }}</span>
+          </summary>
+          <div class="detail-body">
+            <p class="meta">イベント: {{ item.event?.title || '—' }}</p>
+            <p class="meta">ユーザー: {{ item.user?.name || item.user?.id || '—' }}</p>
+            <p class="meta">
+              プラットフォーム手数料: ¥{{ formatNumber(item.platformFee) }}
+              <span v-if="item.feePercent !== null" class="muted">({{ item.feePercent }}%)</span>
+            </p>
+            <p class="meta">
+              結算: {{ item.eligibilityStatus || '—' }} / {{ item.payoutStatus || '—' }} / {{
+                item.reasonCode || '—'
+              }}
+            </p>
+            <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
+            <div class="settlement-formula">
+              <p>精算金額 = 受取金額 - Stripe手数料 - プラットフォーム手数料(返金比例で調整) - 返金額</p>
+              <div class="formula-row">
+                <span>受取: ¥{{ formatNumber(item.amount) }}</span>
+                <span>Stripe: ¥{{ formatNumber(resolveStripeFee(item)) }}</span>
+                <span>プラットフォーム手数料: ¥{{ formatNumber(resolveNetPlatformFee(item)) }}</span>
+                <span>返金: ¥{{ formatNumber(resolveRefundedGross(item)) }}</span>
+              </div>
+              <p>精算金額: ¥{{ formatNumber(settlementAmountDisplay(item)) }}</p>
+            </div>
+            <div class="actions">
+              <button class="ghost" type="button" :disabled="busyId === item.id" @click="diagnose(item.id)">診断</button>
+              <button
+                class="ghost danger"
+                type="button"
+                :disabled="busyId === item.id || item.status === 'refunded'"
+                @click="openRefund(item)"
+              >
+                返金
+              </button>
+            </div>
           </div>
-          <p class="meta">イベント: {{ item.event?.title || '—' }}</p>
-          <p class="meta">ユーザー: {{ item.user?.name || item.user?.id || '—' }}</p>
-          <p class="meta">
-            プラットフォーム手数料: ¥{{ formatNumber(item.platformFee) }}
-            <span v-if="item.feePercent !== null" class="muted">({{ item.feePercent }}%)</span>
-          </p>
-          <p class="meta">
-            結算: {{ item.eligibilityStatus || '—' }} / {{ item.payoutStatus || '—' }} / {{
-              item.reasonCode || '—'
-            }}
-          </p>
-          <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
-          <div class="actions">
-            <button class="ghost" type="button" :disabled="busyId === item.id" @click="diagnose(item.id)">診断</button>
-            <button
-              class="ghost danger"
-              type="button"
-              :disabled="busyId === item.id || item.status === 'refunded'"
-              @click="openRefund(item)"
-            >
-              返金
-            </button>
-          </div>
-        </article>
+        </details>
         <button v-if="canLoadMore" class="ghost full" type="button" :disabled="loading" @click="loadMore">
           さらに読み込む
         </button>
@@ -114,6 +132,20 @@ const statusClass = (status: string) => {
   if (status === 'refunded') return 'pill-info';
   return 'pill-danger';
 };
+const resolveStripeFee = (item: ConsolePaymentItem) =>
+  item.stripeFeeAmountActual ?? item.stripeFeeAmountEstimated ?? 0;
+const resolveRefundedGross = (item: ConsolePaymentItem) => item.refundedGrossTotal ?? 0;
+const resolveNetPlatformFee = (item: ConsolePaymentItem) =>
+  Math.max(0, (item.platformFee ?? 0) - (item.refundedPlatformFeeTotal ?? 0));
+const computeSettlementAmount = (item: ConsolePaymentItem) =>
+  (item.amount ?? 0) -
+  resolveStripeFee(item) -
+  resolveNetPlatformFee(item) -
+  resolveRefundedGross(item);
+const settlementAmountDisplay = (item: ConsolePaymentItem) =>
+  item.settlementAmount ?? computeSettlementAmount(item);
+const settlementLabel = (item: ConsolePaymentItem) => (item.settlementStatus === 'settled' ? '精算済み' : '未精算');
+const settlementClass = (item: ConsolePaymentItem) => (item.settlementStatus === 'settled' ? 'pill-live' : 'pill-muted');
 
 const load = async () => {
   loading.value = true;
@@ -219,6 +251,42 @@ onMounted(load);
   flex-direction: column;
   gap: 8px;
 }
+.payment-summary {
+  list-style: none;
+  cursor: pointer;
+}
+.payment-summary::-webkit-details-marker {
+  display: none;
+}
+.summary-right {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.detail-body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settlement-formula {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.formula-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .card-top {
   display: flex;
   justify-content: space-between;
@@ -277,6 +345,10 @@ onMounted(load);
 .pill-info {
   background: #eff6ff;
   color: #1d4ed8;
+}
+.pill-muted {
+  background: #f1f5f9;
+  color: #475569;
 }
 .pill-danger {
   background: #fef2f2;

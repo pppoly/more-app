@@ -56,23 +56,39 @@
       <p v-else-if="!visiblePayments.length" class="empty">表示できる取引がありません。</p>
       <ul v-else class="pay-list">
         <li v-for="item in visiblePayments" :key="item.id" class="pay-item">
-          <div class="pay-main">
-            <div class="pay-head">
-              <p class="pay-user">{{ item.user.name }}</p>
-              <span class="pill" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
+          <details class="pay-card">
+            <summary class="pay-summary">
+              <div class="pay-main">
+                <div class="pay-head">
+                  <p class="pay-user">{{ item.user.name }}</p>
+                  <span class="pill" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
+                </div>
+                <div class="pay-title-row">
+                  <span class="pay-tag" :class="infoTagClass(displayInfo(item).label)">{{ displayInfo(item).label }}</span>
+                  <p class="pay-title">{{ displayInfo(item).title }}</p>
+                </div>
+                <p class="pay-meta">{{ formatDate(item.createdAt) }} · {{ item.method }}</p>
+              </div>
+              <div class="pay-actions">
+                <p class="pay-amount">{{ formatYen(item.amount) }}</p>
+                <p class="pay-settle-amount">精算額: {{ formatYen(settlementAmountDisplay(item)) }}</p>
+                <span class="pill" :class="settlementClass(item)">{{ settlementLabel(item) }}</span>
+                <span v-if="item.refundRequest" class="pill" :class="refundStatusClass(item.refundRequest.status)">
+                  {{ refundStatusLabel(item.refundRequest, item.amount) }}
+                </span>
+              </div>
+            </summary>
+            <div class="pay-detail">
+              <p class="detail-row">精算金額 = 受取金額 - Stripe手数料 - プラットフォーム手数料(返金比例で調整) - 返金額</p>
+              <div class="detail-row detail-breakdown">
+                <span>受取: {{ formatYen(item.amount) }}</span>
+                <span>Stripe: {{ formatYen(resolveStripeFee(item)) }}</span>
+                <span>プラットフォーム手数料: {{ formatYen(resolveNetPlatformFee(item)) }}</span>
+                <span>返金: {{ formatYen(resolveRefundedGross(item)) }}</span>
+              </div>
+              <p class="detail-row">精算金額: {{ formatYen(settlementAmountDisplay(item)) }}</p>
             </div>
-            <div class="pay-title-row">
-              <span class="pay-tag" :class="infoTagClass(displayInfo(item).label)">{{ displayInfo(item).label }}</span>
-              <p class="pay-title">{{ displayInfo(item).title }}</p>
-            </div>
-            <p class="pay-meta">{{ formatDate(item.createdAt) }} · {{ item.method }}</p>
-          </div>
-          <div class="pay-actions">
-            <p class="pay-amount">{{ formatYen(item.amount) }}</p>
-            <span v-if="item.refundRequest" class="pill" :class="refundStatusClass(item.refundRequest.status)">
-              {{ refundStatusLabel(item.refundRequest, item.amount) }}
-            </span>
-          </div>
+          </details>
         </li>
       </ul>
       <div class="pager" v-if="payments.total > payments.pageSize">
@@ -127,6 +143,21 @@ const formatYen = (value: number) =>
 
 const formatDate = (value: string) =>
   new Date(value).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+const resolveStripeFee = (item: ConsolePaymentItem) =>
+  item.stripeFeeAmountActual ?? item.stripeFeeAmountEstimated ?? 0;
+const resolveRefundedGross = (item: ConsolePaymentItem) => item.refundedGrossTotal ?? 0;
+const resolveNetPlatformFee = (item: ConsolePaymentItem) =>
+  Math.max(0, (item.platformFee ?? 0) - (item.refundedPlatformFeeTotal ?? 0));
+const computeSettlementAmount = (item: ConsolePaymentItem) =>
+  (item.amount ?? 0) -
+  resolveStripeFee(item) -
+  resolveNetPlatformFee(item) -
+  resolveRefundedGross(item);
+const settlementAmountDisplay = (item: ConsolePaymentItem) =>
+  item.settlementAmount ?? computeSettlementAmount(item);
+const settlementLabel = (item: ConsolePaymentItem) => (item.settlementStatus === 'settled' ? '精算済み' : '未精算');
+const settlementClass = (item: ConsolePaymentItem) => (item.settlementStatus === 'settled' ? 'pill-ok' : 'pill-muted');
 
 const displayInfo = (item: ConsolePaymentItem) => {
   if (item.event?.title) {
@@ -428,13 +459,28 @@ h1 {
   gap: 10px;
 }
 .pay-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pay-card {
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+  padding: 12px;
+}
+.pay-card[open] {
+  background: #f1f5f9;
+}
+.pay-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.pay-summary::-webkit-details-marker {
+  display: none;
 }
 .pay-head {
   display: flex;
@@ -497,6 +543,29 @@ h1 {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 8px;
+}
+.pay-settle-amount {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+.pay-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+}
+.detail-row {
+  margin: 0;
+}
+.detail-breakdown {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .refund-action-row {

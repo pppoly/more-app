@@ -583,6 +583,19 @@
               <section class="ios-panel advanced-card">
                 <p class="advanced-section-title">料金・返金</p>
                 <div class="ios-form">
+                  <button
+                    type="button"
+                    class="ios-row ios-row--action advanced-row"
+                    @click="openFieldEditor('refundDeadlineAt')"
+                  >
+                    <div class="advanced-row__text">
+                      <span class="ios-label">返金締切</span>
+                      <span class="advanced-row__hint">未設定の場合は開始日時</span>
+                    </div>
+                    <span class="ios-value ios-value--secondary" :class="{ 'ios-value--placeholder': !form.refundDeadlineAt }">
+                      {{ refundDeadlineLabel }}
+                    </span>
+                  </button>
                   <div class="ios-row ios-row--builder-line advanced-row">
                     <div class="advanced-row__text">
                       <span class="ios-label">返金ルール</span>
@@ -652,17 +665,22 @@
                       <span class="refund-rule-suffix">%</span>
                     </div>
                   </div>
-                  <div class="ios-row ios-row--builder-line ios-row--textarea advanced-row" @click="focusRefundPolicy">
-                    <div class="advanced-row__text">
-                      <span class="ios-label">返金ポリシー</span>
-                      <span class="advanced-row__hint">例：イベント3日前まで全額返金</span>
+                  <div class="refund-policy-box">
+                    <div class="refund-policy-head">
+                      <div>
+                        <span class="ios-label">返金ポリシー</span>
+                        <span class="advanced-row__hint">参加者向けに表示される説明文</span>
+                      </div>
+                      <button type="button" class="ghost refund-policy-reset" @click="refreshRefundPolicyText">
+                        ルールから再生成
+                      </button>
                     </div>
                     <textarea
-                      class="ios-inline-input ios-inline-input--textarea"
-                      placeholder="入力してください"
+                      class="refund-policy-textarea"
+                      placeholder="例：イベント3日前まで全額返金、それ以降は返金不可"
                       ref="refundPolicyInputRef"
                       v-model="form.config.refundPolicy"
-                      rows="3"
+                      rows="4"
                     ></textarea>
                   </div>
                 </div>
@@ -893,6 +911,7 @@ type FieldKey =
   | 'description'
   | 'startTime'
   | 'endTime'
+  | 'refundDeadlineAt'
   | 'regStartTime'
   | 'regEndTime'
   | 'minParticipants'
@@ -1018,6 +1037,7 @@ const form = reactive({
   category: '',
   startTime: '',
   endTime: '',
+  refundDeadlineAt: '',
   regStartTime: '',
   regEndTime: '',
   minParticipants: 5 as number | null,
@@ -1034,6 +1054,16 @@ const refundPolicyRules = computed<RefundPolicyRules>(() => {
   }
   return form.config.refundPolicyRules;
 });
+
+const getRefundPolicyMinDays = (rules: RefundPolicyRules) => {
+  const normalized = normalizeRefundPolicyRules(rules);
+  if (normalized.mode === 'none') return null;
+  if (normalized.mode === 'single' && normalized.single) return normalized.single.daysBefore;
+  if (normalized.mode === 'tiered' && normalized.tiers?.length) {
+    return Math.min(...normalized.tiers.map((tier) => tier.daysBefore));
+  }
+  return null;
+};
 
 const registrationFields = ref<BuilderField[]>([]);
 const galleries = ref<EventGalleryItem[]>([]);
@@ -1113,6 +1143,12 @@ const applyRefundTemplate = (templateId: RefundPolicyTemplateId) => {
     return;
   }
   const normalized = normalizeRefundPolicyRules(form.config.refundPolicyRules as RefundPolicyRules);
+  if (normalized.mode === 'none') {
+    const fallback = normalizeRefundPolicyRules(template.rules);
+    form.config.refundPolicyRules = cloneRefundPolicyRules(fallback);
+    form.config.refundPolicy = buildRefundPolicyText(fallback);
+    return;
+  }
   form.config.refundPolicyRules = cloneRefundPolicyRules(normalized);
   if (!form.config.refundPolicy || typeof form.config.refundPolicy !== 'string') {
     form.config.refundPolicy = buildRefundPolicyText(normalized);
@@ -1371,6 +1407,7 @@ const fieldMeta: Record<FieldKey, { label: string; type: FieldMetaType; placehol
   description: { label: 'ショート説明', type: 'textarea', placeholder: 'あとで設定できます' },
   startTime: { label: '開始日時', type: 'datetime' },
   endTime: { label: '終了日時', type: 'datetime' },
+  refundDeadlineAt: { label: '返金締切', type: 'datetime' },
   regStartTime: { label: '受付開始', type: 'datetime' },
   regEndTime: { label: '受付締切', type: 'datetime' },
   minParticipants: { label: '最低参加人数', type: 'number', placeholder: 'あとで設定できます' },
@@ -1402,6 +1439,10 @@ const selectOptions: Partial<Record<FieldKey, Array<{ label: string; value: stri
   ],
 };
 
+const refundDeadlineLabel = computed(() =>
+  form.refundDeadlineAt ? formatDisplayDate(form.refundDeadlineAt) : '未設定',
+);
+
 const sheetOpen = computed(
   () =>
     Boolean(
@@ -1431,6 +1472,10 @@ const getSelectLabel = (key: 'visibility', value?: string | null) => {
   const list = selectOptions[key] || [];
   const target = list.find((item) => item.value === value);
   return target?.label || '選択してください';
+};
+const refreshRefundPolicyText = () => {
+  applyRefundTemplate(form.config.refundPolicyTemplate as RefundPolicyTemplateId);
+  toast.show('返金ポリシーを更新しました', 'success');
 };
 const advancedSummary = computed(() => {
   const items: string[] = [];
@@ -1895,6 +1940,7 @@ const applyEventDetailToForm = (
   form.locationLng = event.locationLng ?? null;
   form.startTime = toLocalInput(event.startTime);
   form.endTime = toLocalInput(event.endTime ?? event.startTime);
+  form.refundDeadlineAt = toLocalInput((event as any).refundDeadlineAt ?? event.startTime);
   form.regStartTime = toLocalInput(event.regStartTime ?? event.startTime);
   form.regEndTime = toLocalInput(event.regEndTime ?? event.regDeadline ?? event.endTime ?? event.startTime);
   form.minParticipants = event.minParticipants ?? form.minParticipants;
@@ -2041,6 +2087,9 @@ watch(
   (value) => {
     if (value) {
       autoFillEndTime();
+      if (!form.refundDeadlineAt) {
+        form.refundDeadlineAt = toLocalInput(value);
+      }
     }
   },
 );
@@ -2924,21 +2973,6 @@ const handleInlineFocus = (event: Event) => {
   setCaretToEnd(target);
 };
 
-const focusRefundPolicy = () => {
-  nextTick(() => {
-    if (refundPolicyInputRef.value) {
-      refundPolicyInputRef.value.focus();
-      setCaretToEnd(refundPolicyInputRef.value);
-    }
-  });
-};
-
-const handleRefundPolicyInput = (event: Event) => {
-  const target = event.target as HTMLElement;
-  form.config.refundPolicy = target.textContent ?? '';
-  setCaretToEnd(target);
-};
-
 const minParticipantsDisplay = computed(() =>
   form.minParticipants != null ? String(form.minParticipants) : '',
 );
@@ -3360,6 +3394,27 @@ const persistEvent = async (status: 'draft' | 'open') => {
       actionLoading.value = null;
       return;
     }
+    if (form.refundDeadlineAt && form.endTime) {
+      if (new Date(form.refundDeadlineAt) > new Date(form.endTime)) {
+        error.value = '返金締切は終了日時より前に設定してください。';
+        submitting.value = false;
+        actionLoading.value = null;
+        return;
+      }
+    }
+    if (form.refundDeadlineAt && form.startTime) {
+      const minDays = getRefundPolicyMinDays(refundPolicyRules.value);
+      if (minDays !== null) {
+        const start = new Date(form.startTime);
+        const lowerBound = new Date(start.getTime() - minDays * 24 * 60 * 60 * 1000);
+        if (new Date(form.refundDeadlineAt) < lowerBound) {
+          error.value = '返金締切は返金ルールの期限以降に設定してください。';
+          submitting.value = false;
+          actionLoading.value = null;
+          return;
+        }
+      }
+    }
   }
 
   const payload = {
@@ -3373,6 +3428,7 @@ const persistEvent = async (status: 'draft' | 'open') => {
     locationLng: typeof form.locationLng === 'number' ? form.locationLng : null,
     startTime: toIso(form.startTime),
     endTime: toIso(form.endTime),
+    refundDeadlineAt: toIso(form.refundDeadlineAt || form.startTime),
     regStartTime: toIso(form.regStartTime),
     regEndTime: toIso(form.regEndTime),
     regDeadline: toIso(form.regEndTime),
@@ -6109,6 +6165,39 @@ select {
 .advanced-row.is-disabled textarea {
   color: #94a3b8;
   background: #f8fafc;
+}
+.refund-policy-box {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.refund-policy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.refund-policy-reset {
+  padding: 6px 10px;
+}
+.refund-policy-textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 96px;
+}
+.refund-policy-textarea:focus {
+  outline: none;
+  border-color: #94a3b8;
 }
 .advanced-close {
   height: 36px;

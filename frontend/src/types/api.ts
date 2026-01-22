@@ -60,6 +60,7 @@ export interface EventSummary {
   descriptionHtml?: string | null;
   startTime: string;
   endTime?: string;
+  refundDeadlineAt?: string | null;
   regStartTime?: string | null;
   regEndTime?: string | null;
   regDeadline?: string | null;
@@ -312,6 +313,13 @@ export interface ConsolePaymentItem {
   status: string;
   method: string;
   createdAt: string;
+  settlementStatus?: string | null;
+  settlementAmount?: number | null;
+  settledAt?: string | null;
+  stripeFeeAmountActual?: number | null;
+  stripeFeeAmountEstimated?: number | null;
+  refundedGrossTotal?: number | null;
+  refundedPlatformFeeTotal?: number | null;
   eligibleAt?: string | null;
   payoutMode?: string | null;
   eligibilityStatus?: string | null;
@@ -443,6 +451,7 @@ export interface ConsoleEventSummary {
   title: LocalizedContent;
   startTime: string;
   endTime?: string;
+  refundDeadlineAt?: string | null;
   regStartTime?: string | null;
   regEndTime?: string | null;
   regDeadline?: string | null;
