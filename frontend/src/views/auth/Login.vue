@@ -31,6 +31,8 @@ import { useToast } from '../../composables/useToast';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
 import { API_BASE_URL, APP_TARGET, isProduction } from '../../config';
+import { isLineInAppBrowser } from '../../utils/liff';
+import { isLiffClient } from '../../utils/device';
 
 const auth = useAuth();
 const route = useRoute();
@@ -121,7 +123,11 @@ const handleDevLogin = async () => {
 
 const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
-  if (APP_TARGET === 'liff') {
+  const host = window.location.hostname;
+  const isLiffHost = host.includes('miniapp.line.me') || host.includes('liff.line.me');
+  const shouldUseLiffLogin =
+    APP_TARGET === 'liff' || isLiffClient() || isLiffHost || isLineInAppBrowser();
+  if (shouldUseLiffLogin) {
     loading.value = true;
     error.value = '';
     try {

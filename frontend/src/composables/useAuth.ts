@@ -177,9 +177,16 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function isLiffHost(): boolean {
+  if (!hasWindow()) return false;
+  const host = window.location.hostname;
+  return host.includes('miniapp.line.me') || host.includes('liff.line.me');
+}
+
 function shouldAttemptLiffAuth(): boolean {
   if (!hasWindow()) return false;
   if (APP_TARGET === 'liff') return true;
+  if (isLiffHost()) return true;
   return isLiffClient() || isLineInAppBrowser();
 }
 
@@ -203,7 +210,7 @@ setRequestHeaderProvider(() => ({
 
 function redirectToLineOauth() {
   // In LIFF client, block web OAuth redirect to avoid loops.
-  if (isLiffClient()) {
+  if (isLiffClient() || isLiffHost()) {
     logDevAuth('redirectToLineOauth skipped in LIFF client');
     return;
   }
