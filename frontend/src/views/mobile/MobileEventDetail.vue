@@ -940,7 +940,10 @@ const shareEvent = async () => {
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   const inLiffRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/liff');
-  const shouldTryLiff = APP_TARGET === 'liff' || inLiffRoute || isLineInAppBrowser();
+  const inMiniAppHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
+  const shouldTryLiff = APP_TARGET === 'liff' || inLiffRoute || inMiniAppHost || isLineInAppBrowser();
 
   let inLineClient = false;
   if (shouldTryLiff) {
@@ -961,7 +964,7 @@ const shareEvent = async () => {
     }
   }
 
-  if (inLineClient || inLiffRoute) {
+  if (inLineClient || inLiffRoute || inMiniAppHost) {
     if (navigator.clipboard?.writeText && shareUrlWithSource) {
       await navigator.clipboard.writeText(shareUrlWithSource);
       showUiMessage('リンクをコピーしました');
