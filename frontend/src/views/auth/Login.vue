@@ -27,6 +27,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
+import { useToast } from '../../composables/useToast';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
 import { API_BASE_URL, APP_TARGET, isProduction } from '../../config';
@@ -34,6 +35,7 @@ import { API_BASE_URL, APP_TARGET, isProduction } from '../../config';
 const auth = useAuth();
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 const devName = ref('');
 const loading = ref(false);
 const error = ref('');
@@ -123,9 +125,23 @@ const handleLineLogin = async () => {
     loading.value = true;
     error.value = '';
     try {
-      await auth.loginWithLiff();
+      const result = await auth.loginWithLiff();
+      if (!result.ok && result.reason !== 'login_redirect') {
+        const message =
+          result.reason === 'missing_id'
+            ? 'LINE 設定が未完了です。管理者に連絡してください。'
+            : result.reason === 'init_failed'
+              ? 'LINE ログインの初期化に失敗しました。'
+              : result.reason === 'not_in_client'
+                ? 'LINE アプリ内で開いてください。'
+                : 'LINE ログインに失敗しました。もう一度お試しください。';
+        error.value = message;
+        toast.show(message, 'error');
+      }
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'LINEログインに失敗しました';
+      const message = err instanceof Error ? err.message : 'LINE ログインに失敗しました。もう一度お試しください。';
+      error.value = message;
+      toast.show(message, 'error');
     } finally {
       loading.value = false;
     }

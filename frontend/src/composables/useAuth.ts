@@ -23,12 +23,24 @@ import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import { trackEvent } from '../utils/analytics';
 import { isLineBrowser } from '../utils/device';
 import { useAuthSheets } from './useAuthSheets';
+import { useToast } from './useToast';
 
 interface AuthState {
   user: UserProfile | null;
   accessToken: string | null;
   initializing: boolean;
 }
+
+type LiffAuthFailReason =
+  | 'missing_id'
+  | 'init_failed'
+  | 'not_in_client'
+  | 'login_redirect'
+  | 'no_token'
+  | 'token_exchange_failed'
+  | 'unknown';
+
+type LiffAuthResult = { ok: true } | { ok: false; reason: LiffAuthFailReason };
 
 const TOKEN_KEY = 'moreapp_access_token';
 const debugAuth = import.meta.env.DEV || import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'test';
@@ -49,7 +61,7 @@ let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
 let liffProfilePromise: Promise<void> | null = null;
-let liffBootstrapPromise: Promise<void> | null = null;
+let liffBootstrapPromise: Promise<LiffAuthResult> | null = null;
 const LIFF_LOGIN_INFLIGHT_UNTIL_KEY = 'liff_login_inflight_until';
 const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
@@ -59,6 +71,7 @@ const authSheets = useAuthSheets();
 const liffAuthHardStopped = ref(false);
 const backendUnavailable = ref(false);
 const fatalError = ref<Error | null>(null);
+const toast = useToast();
 
 const resolveLiffId = () => {
   try {
@@ -194,24 +207,34 @@ function redirectToLineOauth() {
   window.location.href = url;
 }
 
-async function bootstrapLiffAuth(force = false) {
-  if (APP_TARGET !== 'liff' || !hasWindow()) return;
-  if (state.accessToken && !force) return;
-  if (!isProductionLiff() && !force) return;
+async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
+  if (APP_TARGET !== 'liff' || !hasWindow()) return { ok: false, reason: 'not_in_client' };
+  if (state.accessToken && !force) return { ok: true };
+  if (!isProductionLiff() && !force) return { ok: false, reason: 'not_in_client' };
   const resolvedLiffId = resolveLiffId();
   if (!resolvedLiffId) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
     liffAuthHardStopped.value = true;
     needsLiffOpen.value = true;
-    return;
+    if (force) {
+      toast.show('LINE 設定が未完了です。管理者に連絡してください。', 'error');
+    }
+    return { ok: false, reason: 'missing_id' };
   }
   if (liffAuthHardStopped.value) {
     logDevAuth('liff auth hard-stopped');
-    return;
+    return { ok: false, reason: 'unknown' };
   }
   if (liffBootstrapPromise) return liffBootstrapPromise;
   liffBootstrapPromise = (async () => {
     state.initializing = true;
+    const notify = force;
+    const fail = (reason: LiffAuthFailReason, message?: string, type: 'error' | 'info' = 'error'): LiffAuthResult => {
+      if (notify && message) {
+        toast.show(message, type);
+      }
+      return { ok: false, reason };
+    };
     try {
       const search = window.location.search || '';
       const isCallback =
@@ -290,7 +313,7 @@ async function bootstrapLiffAuth(force = false) {
           trackEvent('liff_login_success');
         } else {
           await emitLiffDebug('callback_no_token');
-          return;
+          return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
         }
         await emitLiffDebug('callback_exchange_done', {
           endpoint: exchangeEndpoint,
@@ -301,13 +324,13 @@ async function bootstrapLiffAuth(force = false) {
         clearLiffLoginInflight();
         const cleanTarget = sanitizeLiffState(liffStateParam);
         window.history.replaceState({}, document.title, cleanTarget);
-        return;
+        return { ok: true };
       }
 
       const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
-        return;
+        return fail('init_failed', 'LINE ログインの初期化に失敗しました。');
       }
       try {
         const ready = (liff as any).ready;
@@ -326,7 +349,7 @@ async function bootstrapLiffAuth(force = false) {
       if (!inClient) {
         logDevAuth('not in liff client; skip login');
         needsLiffOpen.value = true;
-        return;
+        return fail('not_in_client', 'LINE アプリ内で開いてください。');
       }
       const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
       const toPath = window.location.pathname.startsWith('/liff')
@@ -341,8 +364,9 @@ async function bootstrapLiffAuth(force = false) {
         if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {
           markLiffLoginInflight();
           liff.login({ redirectUri: cleanRedirect });
+          return fail('login_redirect');
         }
-        return;
+        return fail('login_redirect');
       }
       clearLiffLoginInflight();
       let profile: any = null;
@@ -383,7 +407,7 @@ async function bootstrapLiffAuth(force = false) {
       } else if (!idToken) {
         logDevAuth('no token after login; cannot proceed');
         needsLiffOpen.value = true;
-        return;
+        return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
       } else {
         logDevAuth('exchanging token with backend /auth/line/liff-login');
         const response = await lineLiffLogin({
@@ -403,9 +427,11 @@ async function bootstrapLiffAuth(force = false) {
         const cleanUrl = `${window.location.origin}${window.location.pathname}`;
         window.history.replaceState({}, document.title, cleanUrl);
       }
+      return { ok: true };
     } catch (error) {
       logDevAuth('bootstrap error', error);
       reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
+      return fail('token_exchange_failed', 'LINE ログインに失敗しました。もう一度お試しください。');
     } finally {
       state.initializing = false;
       liffBootstrapPromise = null;
@@ -576,7 +602,7 @@ export function useAuth() {
     consoleCommunityStore.resetCommunities();
   };
 
-  const loginWithLiff = async () => bootstrapLiffAuth(true);
+  const loginWithLiff = async (): Promise<LiffAuthResult> => bootstrapLiffAuth(true);
 
   return {
     user: computed(() => state.user),
