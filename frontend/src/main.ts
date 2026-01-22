@@ -60,12 +60,28 @@ function shouldAutoOpenMiniApp(): string | null {
   if (!isLineBrowser()) return null;
   if (isLiffClient()) return null;
   const params = new URLSearchParams(window.location.search);
-  const hasDeepLink = params.has('to') || params.has('liff.state');
-  if (!hasDeepLink) return null;
+  const deepLinkRaw = params.get('to') || params.get('liff.state');
+  if (!deepLinkRaw) return null;
+  let deepLinkDecoded = deepLinkRaw;
+  try {
+    deepLinkDecoded = decodeURIComponent(deepLinkRaw);
+  } catch {
+    deepLinkDecoded = deepLinkRaw;
+  }
+  const isShareLink = deepLinkDecoded.includes('from=line_share');
   const continueWeb = (params.get('continueWeb') || '').toLowerCase();
   if (continueWeb === '1' || continueWeb === 'true') return null;
-  const allowWeb = window.sessionStorage.getItem(ALLOW_WEB_IN_LINE_KEY) === '1';
-  if (allowWeb) return null;
+  const attemptKey = `miniappAutoOpen:${window.location.pathname}${window.location.search}`;
+  try {
+    if (window.sessionStorage.getItem(attemptKey) === '1') return null;
+    window.sessionStorage.setItem(attemptKey, '1');
+  } catch {
+    // ignore storage errors; best-effort only
+  }
+  if (!isShareLink) {
+    const allowWeb = window.sessionStorage.getItem(ALLOW_WEB_IN_LINE_KEY) === '1';
+    if (allowWeb) return null;
+  }
   return buildLiffUrl(window.location.pathname + window.location.search);
 }
 
@@ -73,7 +89,7 @@ function shouldAutoOpenMiniApp(): string | null {
 if (typeof window !== 'undefined') {
   const liffUrl = shouldAutoOpenMiniApp();
   if (liffUrl) {
-    window.location.replace(liffUrl);
+    window.location.href = liffUrl;
   }
 }
 

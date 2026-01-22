@@ -267,16 +267,35 @@ onMounted(() => {
     console.info('[build]', BUILD_VERSION);
   }
   // Decide overlay logic
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const deepLinkRaw = params ? params.get('to') || params.get('liff.state') : null;
+  const continueWeb = (params?.get('continueWeb') || '').toLowerCase();
+  const forceContinueWeb = continueWeb === '1' || continueWeb === 'true';
+  let deepLinkDecoded = deepLinkRaw || '';
+  try {
+    deepLinkDecoded = deepLinkRaw ? decodeURIComponent(deepLinkRaw) : '';
+  } catch {
+    deepLinkDecoded = deepLinkRaw || '';
+  }
+  const isShareDeepLink = deepLinkDecoded.includes('from=line_share');
   const allowSession = typeof window !== 'undefined' && window.sessionStorage.getItem(allowWebKey) === '1';
-  if (allowSession) {
+  if (forceContinueWeb) {
     allowWebContinue.value = true;
     return;
+  }
+  if (allowSession) {
+    if (isShareDeepLink) {
+      // Share links should still guide users to open the Mini App unless explicitly bypassed.
+    } else {
+      allowWebContinue.value = true;
+      return;
+    }
   }
   if (isFromLiffEntry()) {
     allowWebContinue.value = true;
     return;
   }
-  const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('to');
+  const hasDeepLink = Boolean(deepLinkRaw);
   if (isLineBrowser() && hasDeepLink) {
     void waitForLiffClient().then((isLiff) => {
       if (isLiff) {

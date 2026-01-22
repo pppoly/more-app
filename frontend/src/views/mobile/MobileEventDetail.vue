@@ -938,15 +938,21 @@ const shareEvent = async () => {
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const inMiniAppHost =
-    typeof window !== 'undefined' &&
-    (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
-  const isLineContext = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
-  const avoidExternalOpen = isLineInAppBrowser() || inMiniAppHost;
   const shareUrlWithSource = webShareUrl || fallbackUrl;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  const shareText = `${shareTitle}\n${shareUrlWithSource}`;
+  const inMiniAppHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
+  const isLineBrowserLike =
+    isLineInAppBrowser() ||
+    inMiniAppHost ||
+    (typeof window !== 'undefined' &&
+      (new URLSearchParams(window.location.search).has('liff.state') ||
+        new URLSearchParams(window.location.search).has('liff.referrer') ||
+        document.referrer.includes('line.me')));
   const fallbackShare = async (allowSystemShare: boolean, allowExternalOpen: boolean) => {
     if (allowSystemShare && navigator.share) {
       try {
@@ -975,61 +981,56 @@ const shareEvent = async () => {
     }
   };
 
-  if (isLineContext) {
-    if (!LIFF_ID) {
-      showUiMessage('LINE 設定を確認してください');
-      await fallbackShare(false, false);
-      return;
-    }
+  if (LIFF_ID) {
     try {
       const liff = await loadLiff(LIFF_ID);
-      if (!isLiffReady.value) {
-        showUiMessage('LINE 共有に対応していません（LIFF 初期化失敗）');
-        await fallbackShare(false, false);
-        return;
-      }
-      try {
-        const ready = (liff as any).ready;
-        if (ready && typeof ready.then === 'function') {
-          await Promise.race([
-            ready,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 4000)),
-          ]);
+      if (isLiffReady.value) {
+        try {
+          const ready = (liff as any).ready;
+          if (ready && typeof ready.then === 'function') {
+            await Promise.race([
+              ready,
+              new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 4000)),
+            ]);
+          }
+        } catch {
+          // ignore; fall through to capability checks
         }
-      } catch {
-        showUiMessage('LINE 共有に対応していません（LIFF 未準備）');
-        await fallbackShare(false, false);
-        return;
       }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-      if (!inClient) {
-        showUiMessage('LINE 共有に対応していません（LINE 内ブラウザ外）');
-        await fallbackShare(false, false);
-        return;
-      }
       const canShare =
         typeof (liff as any).isApiAvailable === 'function'
           ? (liff as any).isApiAvailable('shareTargetPicker')
           : Boolean(liff.shareTargetPicker);
-      if (!canShare || !liff.shareTargetPicker) {
-        showUiMessage('LINE 共有に対応していません（shareTargetPicker 未対応）');
-        await fallbackShare(false, false);
+      const canUseSharePicker = inClient && canShare && Boolean(liff.shareTargetPicker);
+      if (canUseSharePicker) {
+        const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
+        if (!isLoggedIn) {
+          showUiMessage('共有にはログインが必要です');
+          await fallbackShare(false, false);
+          return;
+        }
+        const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+        if (result) {
+          showUiMessage('共有しました');
+        }
         return;
       }
-      const result = await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
-      if (result) {
-        showUiMessage('共有しました');
-      }
-      return;
     } catch (err) {
       console.error('Failed to share via LIFF', err);
-      showUiMessage('LINE 共有に失敗しました');
-      await fallbackShare(false, false);
-      return;
     }
+  } else if (APP_TARGET === 'liff') {
+    showUiMessage('LINE 設定を確認してください');
+    await fallbackShare(false, false);
+    return;
   }
 
-  await fallbackShare(true, !avoidExternalOpen);
+  if (isLineBrowserLike) {
+    await fallbackShare(false, false);
+    return;
+  }
+
+  await fallbackShare(true, true);
 };
 
 let uiMessageTimer: number | null = null;
