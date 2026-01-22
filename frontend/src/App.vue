@@ -276,13 +276,18 @@ onMounted(() => {
     allowWebContinue.value = true;
     return;
   }
-  // LINE 内蔵ブラウザの場合は「LINE で開く」提示を出さない
-  if (uaLine.value && isLineBrowser()) {
-    allowWebContinue.value = true;
+  const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('to');
+  if (isLineBrowser() && hasDeepLink) {
+    void waitForLiffClient().then((isLiff) => {
+      if (isLiff) {
+        allowWebContinue.value = true;
+        return;
+      }
+      showLineModal.value = true;
+    });
     return;
   }
   if (!uaLine.value) return;
-  if (typeof window !== 'undefined' && window.location.hostname !== 'test.socialmore.jp') return;
   void waitForLiffClient().then((isLiff) => {
     if (isLiff) {
       allowWebContinue.value = true;

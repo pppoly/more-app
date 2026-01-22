@@ -83,12 +83,47 @@ const resolveLiffId = () => {
   }
 };
 
-function sanitizeLiffState(raw: string | null): string {
-  if (!raw) return '/events';
+function safeDecode(value: string): string {
   try {
-    return decodeURIComponent(raw);
+    return decodeURIComponent(value);
   } catch {
-    return '/events';
+    return value;
+  }
+}
+
+function normalizeLiffStateToPath(raw: string | null): string | null {
+  if (!raw) return null;
+  const decoded = safeDecode(raw);
+  if (!decoded.startsWith('/') || decoded.startsWith('//')) return null;
+  try {
+    const parsed = new URL(decoded, 'https://example.local');
+    const nestedTo = parsed.searchParams.get('to');
+    if (nestedTo && nestedTo.startsWith('/') && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
+      return nestedTo;
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return decoded;
+  }
+}
+
+function cleanLiffCallbackUrl(liffStateParam: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    url.searchParams.delete('state');
+    url.searchParams.delete('oauth_verifier');
+    const currentTo = url.searchParams.get('to');
+    const normalizedState = normalizeLiffStateToPath(liffStateParam) || normalizeLiffStateToPath(url.searchParams.get('liff.state'));
+    if (!currentTo && normalizedState) {
+      url.searchParams.set('to', normalizedState);
+    }
+    url.searchParams.delete('liff.state');
+    url.searchParams.delete('liff.referrer');
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  } catch (error) {
+    console.warn('Failed to clean LIFF callback URL; continuing without cleanup.', error);
   }
 }
 
@@ -350,8 +385,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
           hasAccessToken: !!state.accessToken,
         });
         clearLiffLoginInflight();
-        const cleanTarget = sanitizeLiffState(liffStateParam);
-        window.history.replaceState({}, document.title, cleanTarget);
+        cleanLiffCallbackUrl(liffStateParam);
         return { ok: true };
       }
 

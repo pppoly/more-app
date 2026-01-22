@@ -84,10 +84,15 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    redirect: (to) =>
-      isMobile()
+    redirect: (to) => {
+      const raw = Array.isArray(to.query.to) ? to.query.to[0] : to.query.to;
+      if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
+        return raw;
+      }
+      return isMobile()
         ? { name: 'events' }
-        : { path: '/promo', query: { from: to.fullPath } },
+        : { path: '/promo', query: { from: to.fullPath } };
+    },
     meta: { devPageName: 'デスクトップホーム' },
   },
   {

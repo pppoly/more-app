@@ -11,7 +11,8 @@ export function isLineBrowser(): boolean {
     ua.includes(' line/') ||
     ua.includes(' line ') ||
     ua.includes('liff') ||
-    ua.includes('miniapp')
+    ua.includes('miniapp') ||
+    ua.includes('line')
   );
 }
 

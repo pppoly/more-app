@@ -49,8 +49,35 @@ import router from './router/liff';
 import './assets/main.css';
 import { i18n } from './i18n';
 import { isProductionLiff } from './config';
-import { bootstrapLiff, isLiffReady } from './utils/liff';
+import { bootstrapLiff, buildLiffUrl, isLiffReady } from './utils/liff';
 import { trackEvent } from './utils/analytics';
+import { isLineBrowser, isLiffClient } from './utils/device';
+
+const ALLOW_WEB_IN_LINE_KEY = 'allowWebInLine';
+
+function shouldAutoOpenMiniApp(): string | null {
+  if (typeof window === 'undefined') return null;
+  const host = window.location.hostname;
+  if (host.includes('miniapp.line.me') || host.includes('liff.line.me')) return null;
+  if (!isLineBrowser()) return null;
+  if (isLiffClient()) return null;
+  const params = new URLSearchParams(window.location.search);
+  const hasDeepLink = params.has('to') || params.has('liff.state');
+  if (!hasDeepLink) return null;
+  const continueWeb = (params.get('continueWeb') || '').toLowerCase();
+  if (continueWeb === '1' || continueWeb === 'true') return null;
+  const allowWeb = window.sessionStorage.getItem(ALLOW_WEB_IN_LINE_KEY) === '1';
+  if (allowWeb) return null;
+  return buildLiffUrl(window.location.pathname + window.location.search);
+}
+
+// Auto-open share links inside LINE in-app browser (when this build is opened outside LIFF).
+if (typeof window !== 'undefined') {
+  const liffUrl = shouldAutoOpenMiniApp();
+  if (liffUrl) {
+    window.location.replace(liffUrl);
+  }
+}
 
 // Kick off LIFF init in the background; never await so first paint is not blocked.
 if (isProductionLiff()) {
