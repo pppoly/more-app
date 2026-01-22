@@ -93,7 +93,20 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   if (!resolvedId) return null;
   const base = `https://miniapp.line.me/${resolvedId}`;
   if (!toPath) return base;
-  const normalized = toPath.startsWith('/') ? toPath : `/${toPath}`;
+  let normalized = toPath.startsWith('/') ? toPath : `/${toPath}`;
+  try {
+    const parsed = new URL(normalized, 'https://example.local');
+    const nestedTo = parsed.searchParams.get('to');
+    if (
+      nestedTo &&
+      nestedTo.startsWith('/') &&
+      (parsed.pathname === '/' || parsed.pathname === '/liff')
+    ) {
+      normalized = nestedTo;
+    }
+  } catch {
+    // Keep original path when URL parsing fails.
+  }
   return `${base}?to=${encodeURIComponent(normalized)}`;
 };
 

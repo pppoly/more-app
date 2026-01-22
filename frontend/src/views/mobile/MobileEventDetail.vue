@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { APP_TARGET, FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, isLiffReady, loadLiff } from '../../utils/liff';
+import { buildLiffUrl, isLineInAppBrowser, isLiffReady, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
@@ -937,15 +937,18 @@ const shareEvent = async () => {
   const frontendBase = FRONTEND_BASE_URL;
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}/?to=${encodeURIComponent(shareToPath)}` : '';
+  const liffShareUrl = buildLiffUrl(shareToPath) || '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareUrlWithSource = webShareUrl || fallbackUrl;
-  const shareTitle = detail.value.title || 'イベント';
-  const payload = { title: shareTitle, url: shareUrlWithSource };
-  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
   const isLineContext = APP_TARGET === 'liff' || isLineInAppBrowser() || inMiniAppHost;
+  const shareUrlWithSource = isLineContext
+    ? liffShareUrl || webShareUrl || fallbackUrl
+    : webShareUrl || fallbackUrl;
+  const shareTitle = detail.value.title || 'イベント';
+  const payload = { title: shareTitle, url: shareUrlWithSource };
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   const fallbackShare = async () => {
     if (navigator.share) {
       try {
