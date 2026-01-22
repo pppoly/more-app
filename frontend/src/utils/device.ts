@@ -7,7 +7,12 @@ function hasNavigator(): boolean {
 export function isLineBrowser(): boolean {
   if (!hasNavigator()) return false;
   const ua = navigator.userAgent.toLowerCase();
-  return ua.includes(' line/') || ua.includes(' line ');
+  return (
+    ua.includes(' line/') ||
+    ua.includes(' line ') ||
+    ua.includes('liff') ||
+    ua.includes('miniapp')
+  );
 }
 
 export function isLiffClient(): boolean {
