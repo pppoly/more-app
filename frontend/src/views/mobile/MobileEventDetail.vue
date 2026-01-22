@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, isLiffReady, liffInstance } from '../../utils/liff';
+import { ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -1013,13 +1013,9 @@ const shareEvent = async () => {
       await fallbackShare(false, false);
       return;
     }
-    if (isLineBrowserLike && LIFF_ID && !isLiffReady.value) {
-      showUiMessage('LINE 初期化中です。もう一度お試しください。');
-      return;
-    }
-    if (isLiffReady.value) {
+    if (isLineBrowserLike && LIFF_ID) {
       try {
-        const liff = liffInstance;
+        const liff = await ensureLiffLoggedIn();
         const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
         const canShare =
           typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
@@ -1030,16 +1026,12 @@ const shareEvent = async () => {
           showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
           return;
         }
-        if (isLineBrowserLike) {
-          showUiMessage('LINE 共有が利用できません。リンクをコピーしました');
-          await fallbackShare(false, false);
-          return;
-        }
+        showUiMessage('LINE 共有が利用できません。リンクをコピーしました');
       } catch (err) {
         console.error('Failed to share via LIFF', err);
       }
-    } else if (isLineBrowserLike) {
-      showUiMessage('LINE 初期化中です。もう一度お試しください。');
+      await fallbackShare(false, false);
+      return;
     }
 
     if (isLineBrowserLike) {

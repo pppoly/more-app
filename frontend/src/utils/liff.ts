@@ -37,7 +37,9 @@ const resolveLiffId = (liffId?: string, require = false) => {
   return requireLiffId();
 };
 
-export function bootstrapLiff(liffId?: string): void {
+type LiffInitConfig = Parameters<typeof liff.init>[0] | undefined;
+
+export function bootstrapLiff(liffId?: string, initConfig?: LiffInitConfig): void {
   if (initStarted || !hasWindow()) return;
   initStarted = true;
 
@@ -56,7 +58,7 @@ export function bootstrapLiff(liffId?: string): void {
 
   // Fire-and-forget: do not await, do not block rendering.
   void liff
-    .init({ liffId: resolvedId })
+    .init({ liffId: resolvedId, ...(initConfig ?? {}) })
     .then(() => finalize(true))
     .catch((error) => {
       console.warn('LIFF init failed; continuing without LIFF.', error);
@@ -146,6 +148,44 @@ export async function getLiffProfile(): Promise<{
     console.warn('Failed to fetch LIFF profile; continuing without it.', error);
     return null;
   }
+}
+
+async function requestAdditionalPermissions(scopes: string[]) {
+  if (!scopes.length) return;
+  if (typeof liff.permission?.requestAll !== 'function') return;
+  try {
+    for (const scope of scopes) {
+      if (typeof liff.permission?.query !== 'function') break;
+      const status = await liff.permission.query(scope);
+      if (status?.state === 'prompt') {
+        await liff.permission.requestAll();
+        break;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to request LIFF permissions', error);
+  }
+}
+
+export async function ensureLiffPermissions(scopes: string[]): Promise<void> {
+  if (!scopes.length) return;
+  try {
+    await loadLiff();
+  } catch {
+    return;
+  }
+  await requestAdditionalPermissions(scopes);
+}
+
+export async function ensureLiffLoggedIn(scopes: string[] = []): Promise<typeof liff> {
+  const instance = await loadLiff();
+  const loginAvailable = typeof instance.isLoggedIn === 'function';
+  const loggedIn = loginAvailable ? instance.isLoggedIn() : false;
+  if (loginAvailable && !loggedIn && typeof instance.login === 'function') {
+    await instance.login();
+  }
+  await ensureLiffPermissions(scopes);
+  return instance;
 }
 
 function logDevLiffState() {

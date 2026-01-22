@@ -133,7 +133,7 @@ if (typeof window !== 'undefined') {
     window.location.href = liffUrl;
   } else if (isLineBrowser() && LIFF_ID && hasLiffEntryFlag()) {
     // Pre-initialize LIFF so shareTargetPicker is ready by the time the user taps share.
-    bootstrapLiff(LIFF_ID);
+    bootstrapLiff(LIFF_ID, { withLoginOnExternalBrowser: true });
   }
 }
 
