@@ -49,6 +49,19 @@ import router from './router';
 import './assets/main.css';
 import { i18n } from './i18n';
 
+// Handle LIFF deep link (?to=/path) for the web build as well.
+if (typeof window !== 'undefined') {
+  void router.isReady().then(() => {
+    const search = new URLSearchParams(window.location.search);
+    const to = search.get('to');
+    if (!to || !to.startsWith('/')) return;
+    const target = router.resolve(to);
+    if (!target.matched.length) return;
+    if (target.fullPath === router.currentRoute.value.fullPath) return;
+    router.replace(target.fullPath).catch(() => undefined);
+  });
+}
+
 // Prevent pinch-zoom / double-tap zoom so mobile layouts stay fixed-scale.
 let lastTouchEnd = 0;
 const preventMultiTouch = (event: TouchEvent) => {
