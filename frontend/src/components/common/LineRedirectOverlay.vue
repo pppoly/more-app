@@ -4,7 +4,7 @@
     <div class="line-redirect__card">
       <p class="line-redirect__title">創翔モアは LINEアプリ内のミニアプリとしてご利用ください</p>
       <div class="line-redirect__actions">
-        <button type="button" class="primary" @click="openLiff">LINEで開く</button>
+        <button type="button" class="primary" @click="openLiff">LINEミニアプリで開く</button>
         <button
           v-if="allowWebContinue"
           type="button"

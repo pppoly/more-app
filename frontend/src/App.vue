@@ -31,7 +31,7 @@
       class="liff-open-inline"
       @click="openInLine"
     >
-      LINEで開く
+      LINEミニアプリで開く
     </button>
     <template v-if="showLiffGuide">
       <LineRedirectOverlay :allow-web-continue="false" />
