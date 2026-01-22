@@ -953,16 +953,27 @@ const shareEvent = async () => {
     try {
       const liff = await loadLiff(LIFF_ID);
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+      if (!inClient) {
+        showUiMessage('LINE 共有に対応していません');
+        return;
+      }
       const canShare =
         typeof (liff as any).isApiAvailable === 'function'
           ? (liff as any).isApiAvailable('shareTargetPicker')
           : Boolean(liff.shareTargetPicker);
-      if (inClient && canShare && liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
-        showUiMessage('共有しました');
+      if (!canShare || !liff.shareTargetPicker) {
+        showUiMessage('LINE 共有に対応していません');
         return;
       }
-      showUiMessage('LINE 共有に対応していません');
+      const isLoggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : true;
+      if (!isLoggedIn) {
+        showUiMessage('LINE にログインしてください');
+        return;
+      }
+      const result = await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrlWithSource}` }]);
+      if (result) {
+        showUiMessage('共有しました');
+      }
       return;
     } catch (err) {
       console.error('Failed to share via LIFF', err);
