@@ -2,13 +2,16 @@
 import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { EventsService } from '../events/events.service';
+import { join } from 'path';
 import sharp from 'sharp';
+import { UPLOAD_ROOT } from '../common/storage/upload-root';
 
 @Controller('og')
 export class OgController {
   constructor(private readonly eventsService: EventsService) {}
 
   private static defaultEventCoverPng: Buffer | null = null;
+  private static defaultEventCoverJpeg: Buffer | null = null;
   private static defaultAvatarPng: Buffer | null = null;
 
   private requestOrigin(req: Request): string {
@@ -25,9 +28,13 @@ export class OgController {
     for (const [key, raw] of Object.entries(query || {})) {
       if (raw === null || raw === undefined) continue;
       if (Array.isArray(raw)) {
+        const seen = new Set<string>();
         for (const item of raw) {
           if (item === null || item === undefined) continue;
-          params.append(key, String(item));
+          const value = String(item);
+          if (seen.has(value)) continue;
+          seen.add(value);
+          params.append(key, value);
         }
         continue;
       }
@@ -58,6 +65,22 @@ export class OgController {
       .png({ compressionLevel: 9 })
       .toBuffer();
     OgController.defaultEventCoverPng = buffer;
+    return buffer;
+  }
+
+  private async ensureDefaultEventCoverJpeg(): Promise<Buffer> {
+    if (OgController.defaultEventCoverJpeg) return OgController.defaultEventCoverJpeg;
+    const buffer = await sharp({
+      create: {
+        width: 1200,
+        height: 630,
+        channels: 3,
+        background: { r: 246, g: 248, b: 251 },
+      },
+    })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    OgController.defaultEventCoverJpeg = buffer;
     return buffer;
   }
 
@@ -93,6 +116,68 @@ export class OgController {
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Content-Length', String(png.length));
     return res.status(200).send(png);
+  }
+
+  private extractUploadKey(rawUrl?: string | null): string | null {
+    if (!rawUrl) return null;
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return null;
+    let pathname = trimmed;
+    try {
+      pathname = new URL(trimmed).pathname;
+    } catch {
+      pathname = trimmed.split('?')[0]?.split('#')[0] || trimmed;
+    }
+    const marker = '/uploads/';
+    const index = pathname.indexOf(marker);
+    if (index >= 0) {
+      const key = pathname.slice(index + marker.length).replace(/^\/+/, '');
+      return key || null;
+    }
+    const cleaned = pathname.replace(/^\/+/, '');
+    if (cleaned.startsWith('uploads/')) return cleaned.slice('uploads/'.length) || null;
+    return null;
+  }
+
+  @Get('events/:id/image.jpg')
+  async renderEventOgImage(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    let coverUrl: string | null = null;
+    try {
+      const event = await this.eventsService.getEventById(id);
+      coverUrl =
+        this.toAbsolute((event as any).coverImageUrl) ||
+        this.toAbsolute((event as any).bannerUrl) ||
+        this.toAbsolute((event as any).coverUrl) ||
+        null;
+    } catch {
+      coverUrl = null;
+    }
+
+    const fallback = await this.ensureDefaultEventCoverJpeg();
+    const uploadKey = this.extractUploadKey(coverUrl);
+    const background = { r: 246, g: 248, b: 251 };
+
+    if (uploadKey) {
+      const diskPath = join(UPLOAD_ROOT, uploadKey);
+      try {
+        const jpeg = await sharp(diskPath, { failOn: 'none' })
+          .rotate()
+          .resize({ width: 1200, height: 630, fit: 'contain', background })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Content-Length', String(jpeg.length));
+        return res.status(200).send(jpeg);
+      } catch {
+        // fall through to fallback
+      }
+    }
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Length', String(fallback.length));
+    return res.status(200).send(fallback);
   }
 
   private frontendBaseUrl() {
@@ -150,13 +235,15 @@ export class OgController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const base = this.frontendBaseUrl();
     const queryStr = this.buildQueryString(query);
-    const shareUrl = `${base}/events/${id}${queryStr}`;
+    const origin = this.requestOrigin(req);
+    const sharePath = `/events/${id}${queryStr}`;
+    const shareUrl = `${origin}${sharePath}`;
+    const redirectUrl = `${origin}/?to=${encodeURIComponent(sharePath)}`;
 
     const fallbackTitle = 'SOCIALMORE イベント';
     const fallbackDesc = 'SOCIALMOREで開催されるイベントです。詳細をチェックして参加しませんか？';
-    const fallbackImage = this.defaultEventCoverUrl(req);
+    const fallbackImage = `${origin}/api/v1/og/events/${encodeURIComponent(id)}/image.jpg`;
 
     let title = fallbackTitle;
     let desc = fallbackDesc;
@@ -176,11 +263,7 @@ export class OgController {
         fallbackDesc,
       );
       desc = this.normalizeDesc(rawDesc, fallbackDesc);
-      image =
-        this.toAbsolute((event as any).coverImageUrl) ||
-        this.toAbsolute((event as any).bannerUrl) ||
-        this.toAbsolute((event as any).coverUrl) ||
-        fallbackImage;
+      image = fallbackImage;
     } catch {
       // use fallback
     }
@@ -190,6 +273,7 @@ export class OgController {
       desc: this.esc(desc),
       image: this.esc(image),
       url: this.esc(shareUrl),
+      redirectUrl: this.esc(redirectUrl),
     };
 
     const html = `<!doctype html>
@@ -199,12 +283,25 @@ export class OgController {
   <meta property="og:title" content="${meta.title}" />
   <meta property="og:description" content="${meta.desc}" />
   <meta property="og:image" content="${meta.image}" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="${meta.title}" />
   <meta property="og:url" content="${meta.url}" />
   <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SOCIALMORE" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${meta.title}" />
   <meta name="twitter:description" content="${meta.desc}" />
   <meta name="twitter:image" content="${meta.image}" />
+  <script>
+    (function () {
+      try {
+        if (typeof window === 'undefined') return;
+        window.location.replace("${meta.redirectUrl}");
+      } catch {}
+    })();
+  </script>
 </head>
 <body></body>
 </html>`;
