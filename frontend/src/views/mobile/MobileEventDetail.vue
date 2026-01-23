@@ -1004,6 +1004,57 @@ const shareEvent = async () => {
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
   const shareText = `${shareTitle}\n${shareUrlWithSource}`;
+  const shareImageUrl = frontendBase ? `${frontendBase}/api/v1/og/events/${detail.value.id}/image.jpg` : '';
+  const shareTimeText = detail.value.timeFullText || '';
+  const shareLocationText = detail.value.locationText || '';
+  const shareFlexMessage = {
+    type: 'flex',
+    altText: shareTitle,
+    contents: {
+      type: 'bubble',
+      hero: {
+        type: 'image',
+        url: shareImageUrl || shareUrlWithSource,
+        size: 'full',
+        aspectRatio: '16:9',
+        aspectMode: 'cover',
+        action: { type: 'uri', uri: shareUrlWithSource },
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'text',
+            text: shareUrlWithSource,
+            size: 'xs',
+            color: '#6b7280',
+            wrap: true,
+            action: { type: 'uri', uri: shareUrlWithSource },
+          },
+          { type: 'text', text: shareTitle, weight: 'bold', size: 'lg', wrap: true },
+          ...(shareTimeText
+            ? [{ type: 'text', text: shareTimeText, size: 'sm', color: '#111827', wrap: true }]
+            : []),
+          ...(shareLocationText
+            ? [{ type: 'text', text: shareLocationText, size: 'sm', color: '#111827', wrap: true }]
+            : []),
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            action: { type: 'uri', label: 'イベントを開く', uri: shareUrlWithSource },
+          },
+        ],
+      },
+    },
+  };
   const fallbackShare = async (allowSystemShare: boolean, allowExternalOpen: boolean) => {
     if (allowSystemShare && navigator.share) {
       try {
@@ -1048,7 +1099,7 @@ const shareEvent = async () => {
         const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
         if (canUseSharePicker) {
           await ensureLiffPermissions(['chat_message.write']);
-          const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+          const result = await liff.shareTargetPicker([shareFlexMessage as any]);
           shrinkGuardWindow();
           window.setTimeout(restoreRouteIfNeeded, 0);
           showUiMessage(result ? '共有しました' : '共有をキャンセルしました');

@@ -6,7 +6,8 @@ Use the following Nginx config to let preview bots (LINE/FB/WA/Slack/Twitter) fe
 ```
 map $http_user_agent $is_preview_bot {
     default 0;
-    ~*Line 1;
+    # IMPORTANT: do NOT match "Line" because real LINE in-app browsers include "Line" in the UA.
+    # Only match actual preview crawlers/bots.
     ~*LineBot 1;
     ~*facebookexternalhit 1;
     ~*Twitterbot 1;

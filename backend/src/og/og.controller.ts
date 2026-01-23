@@ -294,6 +294,7 @@ export class OgController {
   <meta name="twitter:title" content="${meta.title}" />
   <meta name="twitter:description" content="${meta.desc}" />
   <meta name="twitter:image" content="${meta.image}" />
+  <meta http-equiv="refresh" content="0;url=${meta.redirectUrl}" />
   <script>
     (function () {
       try {
@@ -303,7 +304,9 @@ export class OgController {
     })();
   </script>
 </head>
-<body></body>
+<body>
+  <a href="${meta.redirectUrl}">Continue</a>
+</body>
 </html>`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.status(200).send(html);
