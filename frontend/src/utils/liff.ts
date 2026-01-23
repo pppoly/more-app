@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { trackEvent } from './analytics';
 import { LIFF_ID, requireLiffId } from '../config';
 const LIFF_INIT_TIMEOUT_MS = 30_000;
+const LIFF_READY_TIMEOUT_MS = 30_000;
 
 const isLiffReady = ref(false);
 const hasWindow = () => typeof window !== 'undefined';
@@ -46,7 +47,11 @@ function startInit(resolvedId: string, initConfig?: LiffInitConfig): Promise<voi
   };
   initPromise = liff
     .init(config)
-    .then(() => {
+    .then(async () => {
+      const ready = (liff as any)?.ready;
+      if (ready && typeof ready.then === 'function') {
+        await withTimeout(ready, LIFF_READY_TIMEOUT_MS, 'liff.ready');
+      }
       isLiffReady.value = true;
       try {
         isLiffClientCapable.value = Boolean((liff as any)?.isInClient?.());

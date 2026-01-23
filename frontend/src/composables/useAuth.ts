@@ -451,6 +451,17 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         clearLiffLoginInflight();
       } else if (!idToken) {
         logDevAuth('no token after login; cannot proceed');
+        if (!isLiffLoginInflight() && typeof liff.login === 'function') {
+          // Recover by forcing a fresh LIFF login session.
+          markLiffLoginInflight();
+          try {
+            (liff as any)?.logout?.();
+          } catch {
+            // ignore
+          }
+          liff.login({ redirectUri: cleanRedirect });
+          return fail('login_redirect');
+        }
         needsLiffOpen.value = true;
         return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
       } else {

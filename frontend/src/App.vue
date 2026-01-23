@@ -42,7 +42,7 @@
         <div class="liff-recovery__card">
           <p class="liff-recovery__title">LINEログインが完了していません</p>
           <p class="liff-recovery__text">LINEアプリを再起動して、もう一度開き直してください。</p>
-          <button type="button" class="liff-recovery__button" @click="reloadPage">再読み込み</button>
+          <button type="button" class="liff-recovery__button" @click="retryLiffLogin">再読み込み</button>
         </div>
       </div>
     </template>
@@ -152,7 +152,7 @@ import { useAuthSheets, injectAuthSheetsContext } from './composables/useAuthShe
 import { useAppState } from './composables/useAppState';
 import MaintenanceView from './views/MaintenanceView.vue';
 
-const { user, initializing, logout, loginWithLiffProfile, needsLiffOpen } = useAuth();
+const { user, initializing, logout, loginWithLiffProfile, loginWithLiff, needsLiffOpen } = useAuth();
 const isMobile = ref(false);
 const liffReady = inject('isLiffReady', ref(false));
 const {
@@ -351,6 +351,17 @@ const openInLine = () => {
 const reloadPage = () => {
   if (typeof window === 'undefined') return;
   window.location.reload();
+};
+
+const retryLiffLogin = async () => {
+  try {
+    const result = await loginWithLiff();
+    if (result.ok) return;
+    if (!result.ok && result.reason === 'login_redirect') return;
+  } catch {
+    // ignore; fall back to reload
+  }
+  reloadPage();
 };
 
 </script>
