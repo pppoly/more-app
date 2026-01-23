@@ -8,7 +8,10 @@ import { AssetService } from '../asset/asset.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentsService } from '../payments/payments.service';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
-const DEFAULT_COMMUNITY_AVATAR = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
+const DEFAULT_COMMUNITY_AVATAR = FRONTEND_BASE_URL
+  ? `${FRONTEND_BASE_URL}/api/v1/og/assets/default-avatar.png`
+  : '/api/v1/og/assets/default-avatar.png';
 
 function extractCommunityLogo(description: any): string | null {
   if (!description || typeof description !== 'object') return null;

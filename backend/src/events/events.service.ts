@@ -92,7 +92,7 @@ export class EventsService {
     });
 
     const DEFAULT_AVATAR =
-      'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+      normalizeImageUrl('/api/v1/og/assets/default-avatar.png', frontendBaseUrl) || '/api/v1/og/assets/default-avatar.png';
 
     return events.map((event) => {
       const prices = event.ticketTypes.map((tt) => tt.price ?? 0);
@@ -145,7 +145,7 @@ export class EventsService {
   async getEventById(id: string) {
     const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const DEFAULT_AVATAR =
-      'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-avatar.png';
+      normalizeImageUrl('/api/v1/og/assets/default-avatar.png', frontendBaseUrl) || '/api/v1/og/assets/default-avatar.png';
     const successRegistrationWhere = this.successfulRegistrationWhere();
     const event = await this.prisma.event.findUnique({
       where: { id },

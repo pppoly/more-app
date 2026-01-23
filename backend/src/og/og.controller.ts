@@ -1,11 +1,99 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { EventsService } from '../events/events.service';
+import sharp from 'sharp';
 
 @Controller('og')
 export class OgController {
   constructor(private readonly eventsService: EventsService) {}
+
+  private static defaultEventCoverPng: Buffer | null = null;
+  private static defaultAvatarPng: Buffer | null = null;
+
+  private requestOrigin(req: Request): string {
+    const forwardedProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
+    const forwardedHost = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
+    const host = forwardedHost || req.headers.host;
+    const proto = forwardedProto || 'https';
+    if (!host) return this.frontendBaseUrl();
+    return `${proto}://${host}`;
+  }
+
+  private buildQueryString(query: Record<string, unknown>): string {
+    const params = new URLSearchParams();
+    for (const [key, raw] of Object.entries(query || {})) {
+      if (raw === null || raw === undefined) continue;
+      if (Array.isArray(raw)) {
+        for (const item of raw) {
+          if (item === null || item === undefined) continue;
+          params.append(key, String(item));
+        }
+        continue;
+      }
+      params.set(key, String(raw));
+    }
+    const s = params.toString();
+    return s ? `?${s}` : '';
+  }
+
+  private defaultEventCoverUrl(req: Request): string {
+    return `${this.requestOrigin(req)}/api/v1/og/assets/default-event-cover.png`;
+  }
+
+  private defaultAvatarUrl(req: Request): string {
+    return `${this.requestOrigin(req)}/api/v1/og/assets/default-avatar.png`;
+  }
+
+  private async ensureDefaultEventCoverPng(): Promise<Buffer> {
+    if (OgController.defaultEventCoverPng) return OgController.defaultEventCoverPng;
+    const buffer = await sharp({
+      create: {
+        width: 1200,
+        height: 630,
+        channels: 4,
+        background: { r: 246, g: 248, b: 251, alpha: 1 },
+      },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    OgController.defaultEventCoverPng = buffer;
+    return buffer;
+  }
+
+  private async ensureDefaultAvatarPng(): Promise<Buffer> {
+    if (OgController.defaultAvatarPng) return OgController.defaultAvatarPng;
+    const buffer = await sharp({
+      create: {
+        width: 256,
+        height: 256,
+        channels: 4,
+        background: { r: 229, g: 231, b: 235, alpha: 1 },
+      },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    OgController.defaultAvatarPng = buffer;
+    return buffer;
+  }
+
+  @Get('assets/default-event-cover.png')
+  async renderDefaultEventCover(@Req() req: Request, @Res() res: Response) {
+    const png = await this.ensureDefaultEventCoverPng();
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Length', String(png.length));
+    return res.status(200).send(png);
+  }
+
+  @Get('assets/default-avatar.png')
+  async renderDefaultAvatar(@Req() req: Request, @Res() res: Response) {
+    const png = await this.ensureDefaultAvatarPng();
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Length', String(png.length));
+    return res.status(200).send(png);
+  }
 
   private frontendBaseUrl() {
     const raw = (process.env.FRONTEND_BASE_URL || 'https://test.socialmore.jp').trim().replace(/\/$/, '');
@@ -56,14 +144,19 @@ export class OgController {
   }
 
   @Get('events/:id')
-  async renderEventOg(@Param('id') id: string, @Query() query: Record<string, string>, @Res() res: Response) {
+  async renderEventOg(
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const base = this.frontendBaseUrl();
-    const queryStr = Object.keys(query || {}).length ? `?${new URLSearchParams(query as any).toString()}` : '';
+    const queryStr = this.buildQueryString(query);
     const shareUrl = `${base}/events/${id}${queryStr}`;
 
     const fallbackTitle = 'SOCIALMORE イベント';
     const fallbackDesc = 'SOCIALMOREで開催されるイベントです。詳細をチェックして参加しませんか？';
-    const fallbackImage = 'https://raw.githubusercontent.com/moreard/dev-assets/main/socialmore/default-event-cover.png';
+    const fallbackImage = this.defaultEventCoverUrl(req);
 
     let title = fallbackTitle;
     let desc = fallbackDesc;
