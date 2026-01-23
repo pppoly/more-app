@@ -96,6 +96,7 @@ rules:
 ## Common traps (根因级别)
 - **在 `liff.init()` resolve 前就做 SPA 路由跳转/URL rewrite**：会导致 `liff.state`/deep link 丢失、shareTargetPicker 偶发失败、回调参数被意外清理（官方明确要求 URL 变更延后）。
 - **在不属于 Endpoint URL（或子路径）的页面执行 `liff.init()`**：会出现 warning，且部分 LIFF 特性“不保证可用”。
+- **Endpoint URL 被 30x 重定向且丢 query**：LIFF 会把 deep link 放进 `liff.state` query param；如果 Nginx/Edge 对带 `liff.state` 的请求做 `301/302` 并且不保留 `$args`，则 `liff.state` 会在到达 SPA 前被丢弃，表现为“永远回到首页/列表”。检查方式：`curl -I "https://<endpoint>/?liff.state=abc"` 应返回 `200`（或至少保留 query）。
 - **把“分享页面”当成分享普通网页链接**：官方对 Mini App 页面分享的推荐是 permanent link；否则容易出现“无法自动打开/无法落到指定页/缺少引导”。
 - **误判授权范围**：启用 channel consent simplification ≠ 自动拿到 `profile/chat_message.write`；不主动触发 verification screen 会导致 profile/ID token payload 缺字段。
 - **外部浏览器的 shareTargetPicker 体验**：可能被迫邮箱登录（SSO session 不存在）；需要产品层面接受或在 UI 上引导用户在 LINE 内打开。

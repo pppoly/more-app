@@ -172,13 +172,11 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   const normalizedCandidate = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   const normalized = normalizeLiffStateToPath(normalizedCandidate) || normalizedCandidate;
   if (!normalized.startsWith('/') || normalized.startsWith('//')) return base;
-  // Permanent link should be calculated as:
-  //   LIFF URL + (Page URL - Endpoint URL)
-  //
-  // We don't know the Console "Endpoint URL" path at runtime, so we encode the target page into a query
-  // parameter (`to`). This keeps the actual opened page at the endpoint (or its subpath) while allowing
-  // the app to route to the intended SPA page after `liff.init()` resolves.
-  return `${base}?to=${encodeURIComponent(normalized)}`;
+  // Permanent link:
+  //   https://miniapp.line.me/{liffId} + (page URL - endpoint URL)
+  // When the endpoint URL is `https://{host}` (no path), it becomes:
+  //   https://miniapp.line.me/{liffId}{pathname}{search}{hash}
+  return `${base}${normalized}`;
 };
 
 export async function getLiffProfile(): Promise<{
