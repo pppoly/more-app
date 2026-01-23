@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { buildLiffUrl, ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -989,6 +989,8 @@ const shareEvent = async () => {
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
   const shareUrlWithSource = webShareUrl || fallbackUrl;
+  const miniAppOpenUrl = buildLiffUrl(shareToPath) || '';
+  const shareOpenUrl = miniAppOpenUrl || shareUrlWithSource;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
@@ -1018,7 +1020,7 @@ const shareEvent = async () => {
         size: 'full',
         aspectRatio: '16:9',
         aspectMode: 'cover',
-        action: { type: 'uri', uri: shareUrlWithSource },
+        action: { type: 'uri', uri: shareOpenUrl },
       },
       body: {
         type: 'box',
@@ -1031,7 +1033,7 @@ const shareEvent = async () => {
             weight: 'bold',
             size: 'lg',
             wrap: true,
-            action: { type: 'uri', uri: shareUrlWithSource },
+            action: { type: 'uri', uri: shareOpenUrl },
           },
           ...(shareTimeText
             ? [
@@ -1041,7 +1043,7 @@ const shareEvent = async () => {
                   size: 'sm',
                   color: '#111827',
                   wrap: true,
-                  action: { type: 'uri', uri: shareUrlWithSource },
+                  action: { type: 'uri', uri: shareOpenUrl },
                 },
               ]
             : []),
@@ -1053,7 +1055,7 @@ const shareEvent = async () => {
                   size: 'sm',
                   color: '#111827',
                   wrap: true,
-                  action: { type: 'uri', uri: shareUrlWithSource },
+                  action: { type: 'uri', uri: shareOpenUrl },
                 },
               ]
             : []),
@@ -1066,7 +1068,7 @@ const shareEvent = async () => {
           {
             type: 'button',
             style: 'primary',
-            action: { type: 'uri', label: 'イベントを開く', uri: shareUrlWithSource },
+            action: { type: 'uri', label: 'イベントを開く', uri: shareOpenUrl },
           },
         ],
       },
