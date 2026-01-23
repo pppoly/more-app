@@ -1,3 +1,4 @@
+import ogRouter from "./og.routes";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -14,12 +15,11 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   // Disable Nest built-in body parser to allow custom raw handler for Stripe webhook
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+app.use('/api/v1/og', ogRouter);
   const globalPrefix = 'api/v1';
   const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
   const isDevLike = !envLabel || envLabel === 'development' || envLabel === 'dev' || envLabel === 'local';
   app.useGlobalPipes(
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     new ValidationPipe({
       whitelist: true,
       transform: true,
@@ -39,14 +39,10 @@ app.use('/api/v1/og', ogRouter);
   };
   const stripeRawBodyParser = express.raw({ type: stripeRawType });
   app.use(stripeWebhookPath, (req: express.Request, res: express.Response, next: express.NextFunction) => {
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     if (req.method !== 'POST') return next();
     return stripeRawBodyParser(req, res, next);
   });
   app.use(stripeWebhookPath, (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     if (req.method !== 'POST') return next();
     if (stripeWebhookDebug) {
       const body = req.body as unknown;
@@ -61,15 +57,11 @@ app.use('/api/v1/og', ogRouter);
   });
   const jsonParser = bodyParser.json({ limit: '15mb' });
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     if (isStripeWebhook(req)) return next();
     return jsonParser(req, res, next);
   });
   const urlencodedParser = bodyParser.urlencoded({ limit: '15mb', extended: true });
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     if (isStripeWebhook(req)) return next();
     return urlencodedParser(req, res, next);
   });
@@ -103,21 +95,15 @@ app.use('/api/v1/og', ogRouter);
   });
   const uploadsPrefix = `/${normalizePathSegment(process.env.UPLOADS_HTTP_PREFIX || 'uploads')}`;
   app.use(uploadsPrefix, express.static(UPLOAD_ROOT));
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
   const apiUploadsPrefix = `/${normalizePathSegment(globalPrefix)}/${normalizePathSegment(
     process.env.UPLOADS_HTTP_PREFIX || 'uploads',
   )}`;
   app.use(apiUploadsPrefix, express.static(UPLOAD_ROOT));
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
 
   // Desktop redirect to promo in test environment
   const enableDesktopPromoEnv =
     process.env.DESKTOP_PROMO === '1' || envLabel === 'test' || envLabel === 'testing' || envLabel === 'staging';
   app.use((req: any, res: any, next: any) => {
-import ogRouter from './og.routes';
-app.use('/api/v1/og', ogRouter);
     if (req.method !== 'GET') return next();
     const accept = (req.headers.accept as string | undefined) || '';
     if (!accept.includes('text/html')) return next();

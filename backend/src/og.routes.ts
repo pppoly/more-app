@@ -16,7 +16,7 @@ router.get('/events/:id', async (req, res) => {
       select: {
         title: true,
         description: true,
-        coverImageUrl: true,
+        
       },
     });
 
@@ -24,7 +24,7 @@ router.get('/events/:id', async (req, res) => {
     const description =
       event?.description ??
       'SOCIALMOREで開催されるイベントです。詳細をチェックして参加しませんか？';
-    const image = event?.coverImageUrl ?? DEFAULT_OG_IMAGE;
+    const image = DEFAULT_OG_IMAGE;
     const url = `https://app.socialmore.jp/events/${id}`;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
