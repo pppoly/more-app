@@ -208,9 +208,37 @@ async function bootstrapApp() {
   const initialDeepLink = consumeInitialDeepLink();
   if (initialDeepLink) {
     try {
-      const target = router.resolve(initialDeepLink);
-      if (target.matched.length && target.fullPath !== router.currentRoute.value.fullPath) {
-        await router.replace(target.fullPath);
+      const tryResolve = (path: string) => {
+        try {
+          const target = router.resolve(path);
+          if (target.matched.length) return target.fullPath;
+        } catch {
+          // ignore
+        }
+        return null;
+      };
+
+      const resolved = tryResolve(initialDeepLink);
+      if (resolved && resolved !== router.currentRoute.value.fullPath) {
+        await router.replace(resolved);
+      } else if (!resolved && typeof window !== 'undefined') {
+        // LIFF may pass page info relative to the Console Endpoint URL (not necessarily "/").
+        // If the decoded liff.state doesn't match any SPA route, try resolving it relative to the current path.
+        const currentBase = router.currentRoute.value.path || window.location.pathname || '/';
+        if (currentBase && currentBase !== '/' && initialDeepLink.startsWith('/') && !initialDeepLink.startsWith('//')) {
+          try {
+            const parsed = new URL(initialDeepLink, 'https://example.local');
+            const base = currentBase.replace(/\/$/, '');
+            const joinedPathname = `${base}${parsed.pathname.startsWith('/') ? parsed.pathname : `/${parsed.pathname}`}`;
+            const joined = `${joinedPathname}${parsed.search}${parsed.hash}`;
+            const joinedResolved = tryResolve(joined);
+            if (joinedResolved && joinedResolved !== router.currentRoute.value.fullPath) {
+              await router.replace(joinedResolved);
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     } catch {
       // ignore navigation errors
