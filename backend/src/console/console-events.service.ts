@@ -11,6 +11,7 @@ import { PermissionsService } from '../auth/permissions.service';
 import { assetKeyToDiskPath, buildAssetUrl } from '../common/storage/asset-path';
 import { ContentModerationService, ModerationResult } from '../common/moderation/content-moderation.service';
 import { NotificationService } from '../notifications/notification.service';
+import { normalizeImageUrl } from '../common/utils/normalize-image-url';
 
 const EVENT_UPLOAD_PREFIX = 'events';
 
@@ -35,6 +36,7 @@ export class ConsoleEventsService {
 
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
       status: { in: ['paid', 'approved'] },
       OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
@@ -69,7 +71,7 @@ export class ConsoleEventsService {
     });
     return events.map((event) => {
       const { _count, ...rest } = event;
-      const coverImageUrl = buildAssetUrl(rest.galleries[0]?.imageUrl);
+      const coverImageUrl = normalizeImageUrl(buildAssetUrl(rest.galleries[0]?.imageUrl), frontendBaseUrl);
       const currentParticipants = _count?.registrations ?? 0;
       const baseConfig =
         rest.config && typeof rest.config === 'object' ? { ...(rest.config as Record<string, any>) } : {};
@@ -110,6 +112,11 @@ export class ConsoleEventsService {
       }
     }
     const eventData = this.prepareEventData(rest) as Prisma.EventCreateInput;
+    const refundDeadlineAt = eventData.refundDeadlineAt ? new Date(eventData.refundDeadlineAt as any) : null;
+    const endTime = eventData.endTime ? new Date(eventData.endTime as any) : null;
+    if (refundDeadlineAt && endTime && refundDeadlineAt > endTime) {
+      throw new BadRequestException('返金締切は終了日時より前に設定してください');
+    }
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);
       this.applyModerationToEventData(eventData, moderation, false);
@@ -164,6 +171,7 @@ export class ConsoleEventsService {
 
   async getEvent(userId: string, eventId: string) {
     await this.permissions.assertEventManager(userId, eventId);
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: { ticketTypes: true, community: true, galleries: { orderBy: { order: 'asc' } } },
@@ -171,7 +179,7 @@ export class ConsoleEventsService {
     if (!event) throw new NotFoundException('Event not found');
     const galleries = (event.galleries ?? []).map((gallery) => ({
       ...gallery,
-      imageUrl: buildAssetUrl(gallery.imageUrl),
+      imageUrl: normalizeImageUrl(buildAssetUrl(gallery.imageUrl), frontendBaseUrl),
     }));
     return { ...event, galleries };
   }
@@ -197,6 +205,11 @@ export class ConsoleEventsService {
       }
     }
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
+    const updateRefundDeadlineAt = eventData.refundDeadlineAt ? new Date(eventData.refundDeadlineAt as any) : null;
+    const updateEndTime = eventData.endTime ? new Date(eventData.endTime as any) : null;
+    if (updateRefundDeadlineAt && updateEndTime && updateRefundDeadlineAt > updateEndTime) {
+      throw new BadRequestException('返金締切は終了日時より前に設定してください');
+    }
     if (!isDraft) {
       const moderation = await this.moderateEventText(rest);
       this.applyModerationToEventData(eventData, moderation, true);
@@ -1011,6 +1024,7 @@ export class ConsoleEventsService {
       return [];
     }
     await this.permissions.assertEventManager(userId, eventId);
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       select: { config: true, status: true },
@@ -1050,13 +1064,14 @@ export class ConsoleEventsService {
     const created = await this.prisma.$transaction(creations);
     return created.map((item) => ({
       id: item.id,
-      imageUrl: buildAssetUrl(item.imageUrl),
+      imageUrl: normalizeImageUrl(buildAssetUrl(item.imageUrl), frontendBaseUrl),
       order: item.order,
     }));
   }
 
   async removeEventCover(userId: string, eventId: string, coverId: string) {
     await this.permissions.assertEventManager(userId, eventId);
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const target = await this.prisma.eventGallery.findUnique({ where: { id: coverId } });
     if (!target || target.eventId !== eventId) {
       throw new NotFoundException('封面不存在');
@@ -1090,7 +1105,7 @@ export class ConsoleEventsService {
 
     return remaining.map((item, index) => ({
       id: item.id,
-      imageUrl: buildAssetUrl(item.imageUrl),
+      imageUrl: normalizeImageUrl(buildAssetUrl(item.imageUrl), frontendBaseUrl),
       order: index,
     }));
   }
@@ -1126,6 +1141,11 @@ export class ConsoleEventsService {
     assign('category', payload.category ?? null);
     assign('startTime', payload.startTime);
     assign('endTime', payload.endTime);
+    if (payload.refundDeadlineAt !== undefined) {
+      assign('refundDeadlineAt', payload.refundDeadlineAt ?? null);
+    } else if (!isUpdate && payload.startTime) {
+      assign('refundDeadlineAt', payload.startTime);
+    }
 
     const regEnd = payload.regEndTime ?? payload.regDeadline ?? payload.regEnd;
     if (regEnd !== undefined) {

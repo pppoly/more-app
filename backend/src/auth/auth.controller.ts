@@ -116,6 +116,12 @@ export class AuthController {
 
   @Post('email/send-code')
   async sendEmailCode(@Body() body: { email?: string }) {
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const isProdLike = envLabel === 'production' || envLabel === 'prod';
+    const allowEmailLogin = process.env.EMAIL_LOGIN_ENABLED === 'true' || !isProdLike;
+    if (!allowEmailLogin) {
+      throw new ForbiddenException('Email login is disabled in this environment');
+    }
     if (!body?.email) {
       throw new BadRequestException('email is required');
     }
@@ -124,6 +130,12 @@ export class AuthController {
 
   @Post('email/verify')
   async verifyEmail(@Body() body: { email?: string; code?: string }) {
+    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+    const isProdLike = envLabel === 'production' || envLabel === 'prod';
+    const allowEmailLogin = process.env.EMAIL_LOGIN_ENABLED === 'true' || !isProdLike;
+    if (!allowEmailLogin) {
+      throw new ForbiddenException('Email login is disabled in this environment');
+    }
     if (!body?.email || !body?.code) {
       throw new BadRequestException('email and code are required');
     }

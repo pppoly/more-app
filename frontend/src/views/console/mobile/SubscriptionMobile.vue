@@ -87,10 +87,10 @@ import {
   subscribeCommunityPlan,
 } from '../../../api/client';
 import type { ConsoleCommunityDetail, PricingPlan } from '../../../types/api';
-import { loadStripe, type Stripe, type StripeElements, type PaymentElement as StripePaymentElement } from '@stripe/stripe-js';
+import { loadStripe, type Stripe, type StripeElements, type StripePaymentElement } from '@stripe/stripe-js';
 import { useRouter } from 'vue-router';
 import { useToast } from '../../../composables/useToast';
-import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const { t, tm } = useI18n();
 const communityStore = useConsoleCommunityStore();
@@ -122,10 +122,14 @@ const stripeFeeRateText = computed(() => {
   const percent = STRIPE_FEE_PERCENT;
   if (!Number.isFinite(percent)) return '';
   const percentText = Number.isInteger(percent) ? `${percent}%` : `${percent}%`;
+  const parts: string[] = [percentText];
   if (STRIPE_FEE_FIXED_JPY > 0) {
-    return `${percentText} + ${formatYen(STRIPE_FEE_FIXED_JPY)}`;
+    parts.push(`+ ${formatYen(STRIPE_FEE_FIXED_JPY)}`);
   }
-  return percentText;
+  if (STRIPE_FEE_MIN_JPY > 0) {
+    parts.push(`（最低${formatYen(STRIPE_FEE_MIN_JPY)}）`);
+  }
+  return parts.join(' ');
 });
 
 const stripeFeeDisplay = computed(

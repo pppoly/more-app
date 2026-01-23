@@ -1,5 +1,7 @@
 <template>
+  <MaintenanceView v-if="maintenanceMode" :error="maintenanceError" />
   <div
+    v-else
     class="app-shell"
     :class="{ 'app-shell--mobile': isMobile }"
     :data-liff-ready="liffReady"
@@ -29,9 +31,22 @@
       class="liff-open-inline"
       @click="openInLine"
     >
-      LINEで開く
+      LINEミニアプリで開く
     </button>
-    <template v-if="isMobile && showLineModal && !allowWebContinue">
+    <template v-if="showLiffGuide">
+      <LineRedirectOverlay :allow-web-continue="false" />
+    </template>
+    <template v-else-if="showLiffLoginRecovery">
+      <div class="liff-recovery">
+        <div class="liff-recovery__backdrop"></div>
+        <div class="liff-recovery__card">
+          <p class="liff-recovery__title">LINEログインが完了していません</p>
+          <p class="liff-recovery__text">LINEアプリを再起動して、もう一度開き直してください。</p>
+          <button type="button" class="liff-recovery__button" @click="retryLiffLogin">再読み込み</button>
+        </div>
+      </div>
+    </template>
+    <template v-else-if="isMobile && showLineModal && !allowWebContinue">
       <LineRedirectOverlay @continue-web="continueWeb" />
     </template>
 
@@ -125,6 +140,7 @@ import { useLocale } from './composables/useLocale';
 import LiffOpenPrompt from './components/common/LiffOpenPrompt.vue';
 import { useAppShellMode } from './composables/useAppShellMode';
 import { isLineBrowser } from './utils/device';
+import { buildLiffUrl } from './utils/liff';
 import { BUILD_VERSION } from './version';
 import AppShell from './layouts/AppShell.vue';
 import logo1 from './assets/images/logo1.svg';
@@ -133,8 +149,10 @@ import LiffDebugPanel from './components/common/LiffDebugPanel.vue';
 import LoginRequiredSheet from './components/auth/LoginRequiredSheet.vue';
 import ForbiddenSheet from './components/auth/ForbiddenSheet.vue';
 import { useAuthSheets, injectAuthSheetsContext } from './composables/useAuthSheets';
+import { useAppState } from './composables/useAppState';
+import MaintenanceView from './views/MaintenanceView.vue';
 
-const { user, initializing, logout, loginWithLiffProfile, needsLiffOpen } = useAuth();
+const { user, initializing, logout, loginWithLiffProfile, loginWithLiff, needsLiffOpen } = useAuth();
 const isMobile = ref(false);
 const liffReady = inject('isLiffReady', ref(false));
 const {
@@ -149,6 +167,10 @@ const {
 const brandLogo = logo1;
 const allowWebContinue = ref(false);
 const showLineModal = ref(false);
+const showLiffGuide = computed(() => needsLiffOpen.value && !isLiffClientMode.value && isLineBrowser());
+const showLiffLoginRecovery = computed(
+  () => isLiffClientMode.value && needsLiffOpen.value,
+);
 const rootNavPaths = ['/', '/events', '/console', '/me', '/admin'];
 const isRootNavRoute = computed(() => rootNavPaths.includes(currentRoute.path));
 const brandBarForRoute = computed(() => showBrandBar.value && currentRoute.path === '/events');
@@ -162,6 +184,7 @@ injectAuthSheetsContext(router, currentRoute);
 const showDevPageName = computed(() => debugParam.value && !isLiffClientMode.value);
 const { currentLocale, supportedLocales, setLocale } = useLocale();
 const authSheets = useAuthSheets();
+const { maintenanceMode, maintenanceError } = useAppState();
 const currentPageName = computed(() => {
   const metaName = currentRoute.meta?.devPageName as string | undefined;
   if (metaName) return metaName;
@@ -183,7 +206,11 @@ const isFromLiffEntry = () => {
   const from = params.get('from');
   const src = params.get('src');
   if ((from && from.toLowerCase() === 'liff') || (src && src.toLowerCase() === 'liff')) return true;
-  if (document.referrer && document.referrer.includes('liff.line.me')) return true;
+  if (
+    document.referrer &&
+    (document.referrer.includes('liff.line.me') || document.referrer.includes('miniapp.line.me'))
+  )
+    return true;
   return false;
 };
 
@@ -234,22 +261,46 @@ onMounted(() => {
     console.info('[build]', BUILD_VERSION);
   }
   // Decide overlay logic
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const deepLinkRaw = params ? params.get('to') || params.get('liff.state') : null;
+  const continueWeb = (params?.get('continueWeb') || '').toLowerCase();
+  const forceContinueWeb = continueWeb === '1' || continueWeb === 'true';
+  let deepLinkDecoded = deepLinkRaw || '';
+  try {
+    deepLinkDecoded = deepLinkRaw ? decodeURIComponent(deepLinkRaw) : '';
+  } catch {
+    deepLinkDecoded = deepLinkRaw || '';
+  }
+  const isShareDeepLink = deepLinkDecoded.includes('from=line_share');
   const allowSession = typeof window !== 'undefined' && window.sessionStorage.getItem(allowWebKey) === '1';
-  if (allowSession) {
+  if (forceContinueWeb) {
     allowWebContinue.value = true;
     return;
+  }
+  if (allowSession) {
+    if (isShareDeepLink) {
+      // Share links should still guide users to open the Mini App unless explicitly bypassed.
+    } else {
+      allowWebContinue.value = true;
+      return;
+    }
   }
   if (isFromLiffEntry()) {
     allowWebContinue.value = true;
     return;
   }
-  // LINE 内蔵ブラウザの場合は「LINE で開く」提示を出さない
-  if (uaLine.value && isLineBrowser()) {
-    allowWebContinue.value = true;
+  const hasDeepLink = Boolean(deepLinkRaw);
+  if (isLineBrowser() && hasDeepLink) {
+    void waitForLiffClient().then((isLiff) => {
+      if (isLiff) {
+        allowWebContinue.value = true;
+        return;
+      }
+      showLineModal.value = true;
+    });
     return;
   }
   if (!uaLine.value) return;
-  if (typeof window !== 'undefined' && window.location.hostname !== 'test.socialmore.jp') return;
   void waitForLiffClient().then((isLiff) => {
     if (isLiff) {
       allowWebContinue.value = true;
@@ -289,7 +340,28 @@ const onForbiddenPrimary = () => {
 const openInLine = () => {
   if (typeof window === 'undefined') return;
   const current = currentRoute.fullPath || window.location.pathname + window.location.search;
-  window.location.href = `https://liff.line.me/2008600730-qxlPrj5Q?to=${encodeURIComponent(current)}`;
+  const url = buildLiffUrl(current);
+  if (!url) {
+    console.error('LIFF_ID is not configured; cannot open in LINE.');
+    return;
+  }
+  window.location.href = url;
+};
+
+const reloadPage = () => {
+  if (typeof window === 'undefined') return;
+  window.location.reload();
+};
+
+const retryLiffLogin = async () => {
+  try {
+    const result = await loginWithLiff();
+    if (result.ok) return;
+    if (!result.ok && result.reason === 'login_redirect') return;
+  } catch {
+    // ignore; fall back to reload
+  }
+  reloadPage();
 };
 
 </script>
@@ -343,6 +415,61 @@ const openInLine = () => {
   padding: 10px 14px;
   font-weight: 700;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
+.liff-recovery {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1600;
+  padding: 20px;
+}
+
+.liff-recovery__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.liff-recovery__card {
+  position: relative;
+  width: min(460px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.liff-recovery__title {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.liff-recovery__text {
+  margin: 0;
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.liff-recovery__button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #0f172a;
+  color: #fff;
 }
 
 .app-header {

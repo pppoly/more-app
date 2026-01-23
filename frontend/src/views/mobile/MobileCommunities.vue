@@ -44,7 +44,6 @@ import { useRouter } from 'vue-router';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 import { fetchMyCommunities, type MyCommunityItem } from '../../api/client';
 import AppAvatar from '../../components/common/AppAvatar.vue';
 
@@ -78,7 +77,7 @@ const runtimeDefaultAvatar =
 const apiOrigin =
   (import.meta.env.VITE_API_BASE_URL || '').replace(/\/api\/v1\/?$/, '') ||
   (typeof window !== 'undefined' ? window.location.origin : '');
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 useScrollMemory();
 
 const goBack = () => {

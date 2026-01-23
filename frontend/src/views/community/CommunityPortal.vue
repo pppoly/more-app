@@ -443,7 +443,7 @@ watch(
 
 const ensureAuthed = async () => {
   if (accessToken.value) return true;
-  toast.show('フォローにはログインが必要です', { type: 'info' });
+  toast.show('フォローにはログインが必要です', 'info');
   router.push({ name: 'auth-login', query: { redirect: route.fullPath } });
   return false;
 };
@@ -470,7 +470,7 @@ const toggleFollow = async () => {
       const res = await unfollowCommunity(community.value.id);
       if (res.locked) {
         following.value = true;
-        toast.show('コミュニティの設定によりフォロー解除ができません', { type: 'info' });
+        toast.show('コミュニティの設定によりフォロー解除ができません', 'info');
       } else {
         following.value = res.following;
         notifyFollowChange();
@@ -484,7 +484,7 @@ const toggleFollow = async () => {
   } catch (err) {
     following.value = prev;
     console.error(err);
-    toast.show('処理に失敗しました。しばらくしてからお試しください。', { type: 'error' });
+    toast.show('処理に失敗しました。しばらくしてからお試しください。', 'error');
   } finally {
     followBusy.value = false;
   }

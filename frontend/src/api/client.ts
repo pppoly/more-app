@@ -1,7 +1,8 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 import { API_BASE_URL, DEV_LOGIN_SECRET } from '../config';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { reportError } from '../utils/reporting';
+import { setMaintenanceMode } from '../composables/useAppState';
 import type {
   AiUsageDetailResponse,
   AiUsageSummaryResponse,
@@ -51,7 +52,6 @@ import type {
   StripeCheckoutResponse,
   SubscriptionResponse,
   UserProfile,
-  ResourceGroup,
   CommunityTagCategory,
   AnalyticsEventResponse,
 } from '../types/api';
@@ -93,29 +93,62 @@ function buildErrorMessage(error: any) {
   return message;
 }
 
+export function isNetworkError(error: unknown): boolean {
+  return axios.isAxiosError(error) && !error.response;
+}
+
+export function isServerError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  return typeof status === 'number' && status >= 500;
+}
+
+export function isBusinessError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  return typeof status === 'number' && status < 500;
+}
+
 function normalizeError(error: any) {
-  const status = error?.response?.status;
-  const url = error?.config?.url;
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const url = error.config?.url;
+    const message = buildErrorMessage(error);
+    reportError('http:request_failed', { url, status, message });
+    if (isNetworkError(error) || isServerError(error)) {
+      const nonBlocking = typeof url === 'string' && url.includes('/analytics/events');
+      if (!nonBlocking) {
+        setMaintenanceMode(true, error);
+      }
+    }
+    if (status === 401 && unauthorizedHandler) {
+      unauthorizedHandler({ status, url });
+    }
+    if (status === 403) {
+      try {
+        const { useAuthSheets } = require('../composables/useAuthSheets');
+        const sheets = useAuthSheets();
+        const reason = error.response?.data?.error || 'FORBIDDEN';
+        sheets.showForbiddenSheet({ reason, returnTo: undefined });
+      } catch {
+        // ignore sheet errors in non-UI contexts
+      }
+    }
+    if (message && error.message !== message) {
+      error.message = message;
+    }
+    (error as any).status = status;
+    return error;
+  }
+  const status = (error as any)?.response?.status;
+  const url = (error as any)?.config?.url;
   const message = buildErrorMessage(error);
   reportError('http:request_failed', { url, status, message });
-  if (status === 401 && unauthorizedHandler) {
-    unauthorizedHandler({ status, url });
-  }
-  if (status === 403) {
-    try {
-      const { useAuthSheets } = require('../composables/useAuthSheets');
-      const sheets = useAuthSheets();
-      const reason = error?.response?.data?.error || 'FORBIDDEN';
-      sheets.showForbiddenSheet({ reason, returnTo: undefined });
-    } catch {
-      // ignore sheet errors in non-UI contexts
-    }
-  }
   const wrapped = new Error(message);
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   (wrapped as any).cause = error;
   (wrapped as any).status = status;
-  (wrapped as any).response = error?.response;
+  (wrapped as any).response = (error as any)?.response;
   return wrapped;
 }
 
@@ -169,14 +202,17 @@ export function onUnauthorized(handler: (context: { status?: number; url?: strin
 }
 
 apiClient.interceptors.request.use((config) => {
+  const headers = AxiosHeaders.from(config.headers ?? {});
   if (authToken) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${authToken}`;
+    headers.set('Authorization', `Bearer ${authToken}`);
   }
   if (headerProvider) {
     const extra = headerProvider();
-    config.headers = { ...(config.headers ?? {}), ...extra };
+    Object.entries(extra).forEach(([key, value]) => {
+      headers.set(key, value);
+    });
   }
+  config.headers = headers;
   return config;
 });
 
@@ -432,9 +468,16 @@ export async function createStripeCheckout(registrationId: string): Promise<Stri
   return data;
 }
 
-// Admin: resource groups
-export async function fetchResourceGroups(): Promise<ResourceGroup[]> {
-  const { data } = await apiClient.get<ResourceGroup[]>('/admin/resources');
+export async function confirmStripeCheckoutSession(sessionId: string): Promise<{
+  paymentId: string;
+  registrationId: string | null;
+  status: string;
+}> {
+  const { data } = await apiClient.post<{
+    paymentId: string;
+    registrationId: string | null;
+    status: string;
+  }>('/payments/stripe/confirm', { sessionId });
   return data;
 }
 
@@ -446,7 +489,7 @@ export async function fetchAdminAiUsageSummary(): Promise<AiUsageSummaryResponse
 
 // Admin: Prompts
 export async function fetchAdminPrompts(): Promise<PromptDefinition[]> {
-  const { data } = await apiClient.get<PromptDefinition[]>('/admin/ai/prompts');
+  const { data } = await apiClient.get<PromptDefinition[]>('/ai/prompts');
   return data;
 }
 
@@ -998,6 +1041,7 @@ export async function evalPrompt(payload: EvalPromptRequest) {
 }
 export async function adminListUsers(params?: {
   status?: string;
+  isOrganizer?: string;
   q?: string;
   page?: number;
   pageSize?: number;

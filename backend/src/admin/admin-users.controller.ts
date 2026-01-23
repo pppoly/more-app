@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsService } from '../auth/permissions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -51,7 +51,7 @@ export class AdminUsersController {
   async updateStatus(@Param('userId') userId: string, @Body('status') status: string, @Req() req: any) {
     await this.permissions.assertAdmin(req.user.id);
     if (!['active', 'banned'].includes(status)) {
-      throw new Error('Invalid status');
+      throw new BadRequestException('Invalid status');
     }
     const updated = await this.prisma.user.update({
       where: { id: userId },

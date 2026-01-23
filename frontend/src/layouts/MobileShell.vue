@@ -117,8 +117,8 @@ import { useLocale } from '../composables/useLocale';
 import { updateProfile } from '../api/client';
 import { useToast } from '../composables/useToast';
 import { useI18n } from 'vue-i18n';
-import { APP_TARGET } from '../config';
 import { setNextTransitionOverride } from '../composables/useNavStack';
+import { isLiffClient } from '../utils/device';
 import { isLineInAppBrowser } from '../utils/liff';
 import { getTransitionName, restoreScroll, saveScroll, useNavPending } from '../composables/useNavStack';
 
@@ -143,7 +143,7 @@ const navPending = useNavPending();
 
 const brandLogo = computed(() => resourceConfig.getStringValue('brand.logo')?.trim());
 const contentTopPaddingStyle = computed(() => ({}));
-const isLiffMode = computed(() => props.isLiff || APP_TARGET === 'liff' || isLineInAppBrowser());
+const isLiffMode = computed(() => Boolean(props.isLiff) || isLiffClient() || isLineInAppBrowser());
 
 const tabIcons = {
   events: {
@@ -205,8 +205,6 @@ const activeTab = computed(() => {
 const primaryActionLabel = computed(() => (user.value ? 'マイページ' : 'ログイン'));
 const showTabbar = computed(() => {
   if (route.meta?.hideTabbar) return false;
-  // LIFF 時はトップレベルのみタブ表示
-  if (isLiffMode.value && !props.rootNavRoute) return false;
   const topLevelOnly = props.showBrandTopBar || isLiffMode.value;
   const baseMatch = (path: string, tabPath: string) =>
     topLevelOnly ? path === tabPath : path === tabPath || path.startsWith(`${tabPath}/`);

@@ -327,25 +327,32 @@ export class ClassesService {
     if (!lesson.registrations.length) {
       throw new BadRequestException('申込がないためキャンセルできません');
     }
-    if (lesson.status === 'cancelled') {
-      return { lessonId: lesson.id, status: 'cancelled' };
-    }
 
-    const paidRegistrations = lesson.registrations.filter((reg) => reg.paymentStatus === 'paid');
-    const freeRegistrations = lesson.registrations.filter(
-      (reg) => reg.paymentStatus !== 'paid' && reg.status !== 'rejected',
+    const refundableRegistrations = lesson.registrations.filter(
+      (reg) => reg.paymentStatus === 'paid' && (reg.amount ?? 0) > 0,
+    );
+    const cancellableRegistrations = lesson.registrations.filter(
+      (reg) => !(reg.paymentStatus === 'paid' && (reg.amount ?? 0) > 0) && reg.status !== 'rejected',
     );
     const refundResults: Array<{ registrationId: string; status: string; error?: string }> = [];
 
-    for (const reg of paidRegistrations) {
+    for (const reg of refundableRegistrations) {
       try {
         const payment = reg.payment ?? (await this.prisma.payment.findFirst({ where: { registrationId: reg.id } }));
         if (!payment) {
-          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'No payment found' });
+          refundResults.push({ registrationId: reg.id, status: 'blocked', error: 'No payment found' });
+          await this.prisma.eventRegistration.update({
+            where: { id: reg.id },
+            data: { status: 'pending_refund' },
+          });
           continue;
         }
         if (payment.method !== 'stripe') {
-          refundResults.push({ registrationId: reg.id, status: 'skipped', error: 'Unsupported payment method' });
+          refundResults.push({ registrationId: reg.id, status: 'blocked', error: 'Unsupported payment method' });
+          await this.prisma.eventRegistration.update({
+            where: { id: reg.id },
+            data: { status: 'pending_refund' },
+          });
           continue;
         }
         await this.paymentsService.refundStripePayment(userId, payment.id, 'lesson_cancelled');
@@ -367,10 +374,10 @@ export class ClassesService {
       }
     }
 
-    if (freeRegistrations.length) {
+    if (cancellableRegistrations.length) {
       await this.prisma.eventRegistration.updateMany({
-        where: { id: { in: freeRegistrations.map((r) => r.id) } },
-        data: { status: 'cancelled', noShow: false, attended: false },
+        where: { id: { in: cancellableRegistrations.map((r) => r.id) } },
+        data: { status: 'cancelled', paymentStatus: 'cancelled', paidAmount: 0, noShow: false, attended: false },
       });
     }
 
@@ -406,6 +413,16 @@ export class ClassesService {
         registrations: {
           include: {
             user: { select: { id: true, name: true, avatarUrl: true } },
+            refundRequest: {
+              select: {
+                id: true,
+                status: true,
+                decision: true,
+                requestedAmount: true,
+                approvedAmount: true,
+                refundedAmount: true,
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -420,6 +437,7 @@ export class ClassesService {
       amount: reg.amount,
       user: reg.user,
       createdAt: reg.createdAt,
+      refundRequest: reg.refundRequest,
     }));
   }
 

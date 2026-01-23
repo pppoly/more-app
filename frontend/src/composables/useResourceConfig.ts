@@ -9,8 +9,13 @@ import {
 
 const STORAGE_KEY = 'moreapp_resource_config';
 
+const isStringList = (value: unknown): value is ReadonlyArray<string> => Array.isArray(value);
+
+const cloneDefaultValue = (slot: ResourceSlotDefinition): ResourceValue =>
+  typeof slot.defaultValue === 'string' ? slot.defaultValue : [...slot.defaultValue];
+
 const defaultValues = RESOURCE_SLOTS.reduce<Record<ResourceKey, ResourceValue>>((acc, slot) => {
-  acc[slot.id] = slot.defaultValue;
+  acc[slot.id] = cloneDefaultValue(slot);
   return acc;
 }, {} as Record<ResourceKey, ResourceValue>);
 
@@ -24,10 +29,10 @@ function hasWindow() {
 
 function normalizeValue(slot: ResourceSlotDefinition, value: ResourceValue | null | undefined): ResourceValue {
   if (!value && value !== '') {
-    return slot.defaultValue;
+    return cloneDefaultValue(slot);
   }
   if (slot.type === 'image-list') {
-    if (Array.isArray(value)) {
+    if (isStringList(value)) {
       return value.map((item) => item.trim()).filter(Boolean);
     }
     if (typeof value === 'string') {
@@ -36,19 +41,19 @@ function normalizeValue(slot: ResourceSlotDefinition, value: ResourceValue | nul
         .map((item) => item.trim())
         .filter(Boolean);
     }
-    return slot.defaultValue;
+    return cloneDefaultValue(slot);
   }
-  if (Array.isArray(value)) {
+  if (isStringList(value)) {
     const flattened = value
       .map((item) => item.trim())
       .filter(Boolean)
       .join('\n');
-    return flattened || (slot.defaultValue as string);
+    return flattened || (cloneDefaultValue(slot) as string);
   }
   if (typeof value === 'string') {
     return value.trim();
   }
-  return slot.defaultValue;
+  return cloneDefaultValue(slot);
 }
 
 function ensureInitialized() {
@@ -83,7 +88,7 @@ export function getResourceStringValue(key: ResourceKey): string {
   const slot = RESOURCE_SLOT_MAP[key];
   const value = state[key];
   if (slot.type === 'image-list') {
-    return Array.isArray(value) ? value[0] ?? '' : '';
+    return isStringList(value) ? value[0] ?? '' : '';
   }
   return typeof value === 'string' ? value : (slot.defaultValue as string);
 }
@@ -91,7 +96,7 @@ export function getResourceStringValue(key: ResourceKey): string {
 export function getResourceListValue(key: ResourceKey): string[] {
   ensureInitialized();
   const value = state[key];
-  return Array.isArray(value) ? value : [];
+  return isStringList(value) ? [...value] : [];
 }
 
 export function getResourceValue(key: ResourceKey): ResourceValue {
@@ -112,7 +117,7 @@ export function useResourceConfig() {
 
   const resetResourceValue = (key: ResourceKey) => {
     const slot = RESOURCE_SLOT_MAP[key];
-    state[key] = Array.isArray(slot.defaultValue) ? [...slot.defaultValue] : slot.defaultValue;
+    state[key] = cloneDefaultValue(slot);
     persist();
   };
 

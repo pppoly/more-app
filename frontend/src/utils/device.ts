@@ -7,14 +7,18 @@ function hasNavigator(): boolean {
 export function isLineBrowser(): boolean {
   if (!hasNavigator()) return false;
   const ua = navigator.userAgent.toLowerCase();
-  return ua.includes(' line/') || ua.includes(' line ');
+  if (ua.includes('liff') || ua.includes('miniapp')) return true;
+  // Match LINE token without catching words like "guideline".
+  return /(^|\W)line(\/|\W|$)/.test(ua);
 }
 
 export function isLiffClient(): boolean {
   try {
     return Boolean(liffInstance?.isInClient && liffInstance.isInClient());
   } catch {
-    // If LIFF is not initialized or throws, treat as non-LIFF client.
-    return false;
+    // If LIFF is not initialized yet, fall back to UA heuristics.
   }
+  if (!hasNavigator()) return false;
+  const ua = navigator.userAgent.toLowerCase();
+  return ua.includes('liff') || ua.includes('miniapp');
 }

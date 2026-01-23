@@ -14,7 +14,7 @@
           >
             <div class="cropper-image">
               <div class="cropper-shift" :style="shiftStyle">
-                <img :src="src" :style="imageStyle" draggable="false" />
+                <img :src="src ?? undefined" :style="imageStyle" draggable="false" />
               </div>
             </div>
             <div class="cropper-mask" />

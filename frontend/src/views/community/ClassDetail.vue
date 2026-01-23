@@ -8,7 +8,7 @@
           <p class="price">¥{{ detail.priceYenPerLesson.toLocaleString() }} / 1回</p>
         </div>
         <p v-if="detail.locationName" class="location">{{ detail.locationName }}</p>
-        <p class="description" v-if="displaySecondary(detail)">{{ displaySecondary(detail) }}</p>
+        <p v-if="classDescription" class="description">{{ classDescription }}</p>
       </header>
 
       <section class="section">
@@ -86,7 +86,7 @@
 
         <div class="actions">
           <button class="btn primary" type="button" @click="router.push({ name: 'my-events' })">マイチケットへ</button>
-          <button class="btn secondary" type="button" @click="goBack">コース一覧に戻る</button>
+          <button class="btn secondary" type="button" @click="returnToSchedule">日程一覧に戻る</button>
         </div>
       </div>
     </div>
@@ -101,7 +101,7 @@ import type { ClassDetail, Lesson } from '../../types/api';
 import { useToast } from '../../composables/useToast';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLineInAppBrowser } from '../../utils/liff';
-import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
+import { MOBILE_CLASS_SUCCESS_KEY, MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 
 const route = useRoute();
 const router = useRouter();
@@ -118,6 +118,22 @@ const registrationDone = ref(false);
 const registeredLessons = ref<Set<string>>(new Set());
 
 const REG_KEY = 'class_registrations';
+
+const applyPaymentSuccess = () => {
+  try {
+    const raw = sessionStorage.getItem(MOBILE_CLASS_SUCCESS_KEY);
+    if (!raw) return;
+    const payload = JSON.parse(raw) as { classId?: string; lessonId?: string };
+    if (!payload?.classId || payload.classId !== (route.params.classId as string)) return;
+    if (payload.lessonId) {
+      saveLocalReg(payload.lessonId);
+    }
+    registrationDone.value = true;
+    sessionStorage.removeItem(MOBILE_CLASS_SUCCESS_KEY);
+  } catch {
+    // ignore invalid payload
+  }
+};
 
 const loadLocalRegs = () => {
   try {
@@ -143,19 +159,25 @@ const saveLocalReg = (lessonId: string) => {
   }
 };
 
-const displaySecondary = (cls: any) => {
-  const loc = cls.locationName;
-  const desc = cls.description;
-  const text =
-    typeof desc === 'string'
-      ? desc
-      : desc?.ja || desc?.['ja-JP'] || desc?.zh || desc?.['zh-CN'] || desc?.original || '';
-  const cleaned = text?.trim() || '';
-  const isJunk = !cleaned || cleaned.length < 4 || (!/[ぁ-んァ-ン一-龥]/.test(cleaned) && cleaned.length < 8);
-  if (loc && loc.trim().length > 0) return loc;
-  if (!isJunk) return cleaned;
-  return '';
+const sanitizeDescription = (value: string | Record<string, any> | null | undefined) => {
+  const raw =
+    typeof value === 'string'
+      ? value
+      : value?.ja ||
+        value?.['ja-JP'] ||
+        value?.zh ||
+        value?.['zh-CN'] ||
+        value?.original ||
+        '';
+  const cleaned = raw?.trim() || '';
+  if (!cleaned) return '';
+  if (cleaned.length < 4) return '';
+  const containsJapanese = /[ぁ-んァ-ン一-龥]/.test(cleaned);
+  if (!containsJapanese && cleaned.length < 8) return '';
+  return cleaned;
 };
+
+const classDescription = computed(() => sanitizeDescription(detail.value?.description));
 
 const selectedLesson = computed(() =>
   detail.value?.upcomingLessons.find((l) => l.id === selectedLessonId.value),
@@ -279,6 +301,8 @@ const handleSubmit = async () => {
           registrationId: res.registrationId,
           source: 'class',
           classId: route.params.classId,
+          lessonId,
+          slug: route.params.slug,
         }),
       );
       window.location.href = checkout.checkoutUrl;
@@ -295,9 +319,14 @@ const handleSubmit = async () => {
 };
 
 onMounted(load);
+onMounted(applyPaymentSuccess);
 
 const goBack = () => {
   router.back();
+};
+
+const returnToSchedule = () => {
+  registrationDone.value = false;
 };
 </script>
 

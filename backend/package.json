@@ -21,7 +21,10 @@
     "verify:payments-replay": "ts-node scripts/verify-payments-replay.ts",
     "verify:payments-out-of-order": "ts-node scripts/verify-payments-out-of-order.ts",
     "verify:payments-partial-refund": "ts-node scripts/verify-payments-partial-refund.ts",
-    "test:payout-policy": "node --test -r ts-node/register tests/organizer-payout-policy.test.ts"
+    "test:payout-policy": "node --test -r ts-node/register tests/organizer-payout-policy.test.ts",
+    "backfill:settlement-fields": "ts-node scripts/backfill-settlement-fields.ts",
+    "verify:settlement-fields": "ts-node scripts/verify-settlement-fields.ts",
+    "export:community-tags": "ts-node scripts/export-community-tags.ts"
   },
   "dependencies": {
     "@google-cloud/aiplatform": "^5.13.0",

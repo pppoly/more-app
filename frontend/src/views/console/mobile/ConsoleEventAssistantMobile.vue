@@ -220,7 +220,7 @@
             </button>
             <div v-if="showCandidateDetails" class="candidate-details">
               <div
-                v-for="(opt, idx) in choiceQuestionState.options"
+                v-for="(opt, idx) in (choiceQuestionState || readyMenuFallback)?.options || []"
                 :key="`detail-${idx}`"
                 class="candidate-detail-card"
               >
@@ -252,12 +252,12 @@
           <p class="choice-helper">{{ choiceHelperText }}</p>
           <div class="choice-options">
             <button
-              v-for="(opt, idx) in choiceQuestionState.options"
+              v-for="(opt, idx) in (choiceQuestionState || readyMenuFallback)?.options || []"
               :key="`choice-${idx}`"
               type="button"
               class="chip"
               :class="{ 'chip--recommended': opt.recommended }"
-              @click="handleChoiceSelect(choiceQuestionState.key, opt.value)"
+              @click="handleChoiceSelect((choiceQuestionState || readyMenuFallback)!.key, opt.value)"
             >
               {{ opt.label }}
             </button>
@@ -485,7 +485,6 @@ import { useToast } from '../../../composables/useToast';
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import { getAssistantDisplay } from '../../../utils/assistantDisplay';
 import { evaluateDraftVisibility } from '../../../utils/draftAnchor';
 import {
@@ -552,7 +551,7 @@ const route = useRoute();
 const router = useRouter();
 const communityStore = useConsoleCommunityStore();
 const toast = useToast();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const isDebugEnabled = computed(() => import.meta.env.DEV);
 const isEventAssistantDebug = computed(() => {
   const flag = import.meta.env.VITE_EVENT_ASSISTANT_DEBUG;
@@ -2050,24 +2049,6 @@ const requestAssistantReply = async (
         turnMessageKeys,
       );
     }
-    if (machineOnlyActiveThisTurn && canRenderBubble && nudgeMessage) {
-      const nudgeId = pushAssistantMessageOnce(
-        nudgeMessage,
-        'system-safe',
-        'frontend.machine',
-        undefined,
-        { includeInContext: false },
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        turnMessageKeys,
-      );
-      if (!messageId) {
-        messageId = nudgeId;
-      }
-    }
     if (canAppendQuestionBubble) {
       lastQuestionKey.value = nextQuestionKey ?? null;
       lastQuestionKeyPending.value = true;
@@ -2425,10 +2406,8 @@ const toggleThinking = (messageId: string) => {
 };
 
 const openPlanPreview = (plan?: (GeneratedEventContent & { summary?: string }) | null) => {
-  const targetPlan =
-    plan ??
-    (lastReadyDraft.value as (GeneratedEventContent & { summary?: string }) | null) ??
-    (aiResult.value as (GeneratedEventContent & { summary?: string }) | null);
+  const fromDraft = lastReadyDraft.value ? buildProposalFromDraft(lastReadyDraft.value, buildQaSummary('')) : null;
+  const targetPlan = plan ?? fromDraft ?? aiResult.value;
   if (!targetPlan) return;
   planPreview.value = targetPlan;
 };
@@ -2669,16 +2648,16 @@ const handleExplainBack = () => {
 const handleChoiceSelect = async (key: string, value: string) => {
   if (!key || !value || aiLoading.value) return;
   // consume ready_next_action on client without发消息
-  if (key === 'ready_next_action') {
-    lastQuestionKeyPending.value = false;
-    if (value === 'preview') {
-      if (lastReadyDraft.value) {
-        openPlanPreview(lastReadyDraft.value as GeneratedEventContent);
-      }
-      return;
-    }
-    if (value === 'manual') {
-      goToForm(false);
+	  if (key === 'ready_next_action') {
+	    lastQuestionKeyPending.value = false;
+	    if (value === 'preview') {
+	      if (lastReadyDraft.value) {
+	        openPlanPreview(buildProposalFromDraft(lastReadyDraft.value, buildQaSummary('')));
+	      }
+	      return;
+	    }
+	    if (value === 'manual') {
+	      goToForm(false);
       return;
     }
   }

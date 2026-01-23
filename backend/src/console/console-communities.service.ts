@@ -5,8 +5,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../auth/permissions.service';
 import { StripeService } from '../stripe/stripe.service';
 import { StripeOnboardingService } from '../stripe/stripe-onboarding.service';
+import { getPaymentsConfig } from '../payments/payments.config';
 import { buildAssetUrl, toAssetKey } from '../common/storage/asset-path';
 import { AssetService } from '../asset/asset.service';
+import { normalizeImageUrl } from '../common/utils/normalize-image-url';
 
 @Injectable()
 export class ConsoleCommunitiesService {
@@ -26,6 +28,7 @@ export class ConsoleCommunitiesService {
   };
 
   async listManagedCommunities(userId: string) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const communities = await this.prisma.community.findMany({
       where: {
         OR: [
@@ -65,8 +68,8 @@ export class ConsoleCommunitiesService {
       labels: community.labels,
       visibleLevel: community.visibleLevel,
       createdAt: community.createdAt,
-      coverImageUrl: buildAssetUrl(community.coverImageUrl),
-      logoImageUrl: this.getLogoUrl(community as any),
+      coverImageUrl: normalizeImageUrl(buildAssetUrl(community.coverImageUrl), frontendBaseUrl),
+      logoImageUrl: this.getLogoUrl(community as any, frontendBaseUrl),
       role: community.ownerId === userId ? 'owner' : (community as any).members?.[0]?.role ?? 'admin',
     }));
   }
@@ -179,11 +182,15 @@ export class ConsoleCommunitiesService {
     if (!community) {
       throw new NotFoundException('Community not found');
     }
+    const settlementConfig = getPaymentsConfig();
+    const platformSettlement = this.buildPlatformSettlementInfo(settlementConfig);
     if (!this.stripeService.enabled || !community.stripeAccountId) {
       return {
         stripeAccountId: community.stripeAccountId,
         stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
         stripeAccountStatus: null,
+        stripePayoutSchedule: null,
+        platformSettlement,
       };
     }
     try {
@@ -203,6 +210,13 @@ export class ConsoleCommunitiesService {
           chargesEnabled: account.charges_enabled ?? null,
           disabledReason: account.requirements?.disabled_reason ?? null,
         },
+        stripePayoutSchedule: {
+          interval: account.settings?.payouts?.schedule?.interval ?? null,
+          weeklyAnchor: account.settings?.payouts?.schedule?.weekly_anchor ?? null,
+          monthlyAnchor: account.settings?.payouts?.schedule?.monthly_anchor ?? null,
+          delayDays: account.settings?.payouts?.schedule?.delay_days ?? null,
+        },
+        platformSettlement,
       };
     } catch (error) {
       this.logger.warn(`Failed to refresh Stripe account status for community ${communityId}: ${error}`);
@@ -210,19 +224,145 @@ export class ConsoleCommunitiesService {
         stripeAccountId: community.stripeAccountId,
         stripeAccountOnboarded: community.stripeAccountOnboarded ?? false,
         stripeAccountStatus: null,
+        stripePayoutSchedule: null,
+        platformSettlement,
       };
     }
   }
 
-  private decorateCommunity(community: Community) {
+  private buildPlatformSettlementInfo(config: ReturnType<typeof getPaymentsConfig>) {
+    if (!config.settlementAutoRunEnabled) {
+      return {
+        enabled: false,
+        nextRunAt: null,
+        timeZone: config.settlementTimeZone,
+        hour: config.settlementAutoRunHour,
+        minute: config.settlementAutoRunMinute,
+        windowDays: config.settlementWindowDays,
+        delayDays: config.settlementDelayDays,
+        minTransferAmount: config.settlementMinTransferAmount,
+      };
+    }
+
+    const now = new Date();
+    const localToday = this.getTimeParts(now, config.settlementTimeZone);
+    const scheduledToday = this.zonedTimeToUtc(
+      {
+        year: localToday.year,
+        month: localToday.month,
+        day: localToday.day,
+        hour: config.settlementAutoRunHour,
+        minute: config.settlementAutoRunMinute,
+        second: 0,
+      },
+      config.settlementTimeZone,
+    );
+    const nextBase = now < scheduledToday ? now : new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const localNext = this.getTimeParts(nextBase, config.settlementTimeZone);
+    const nextRunAt = this.zonedTimeToUtc(
+      {
+        year: localNext.year,
+        month: localNext.month,
+        day: localNext.day,
+        hour: config.settlementAutoRunHour,
+        minute: config.settlementAutoRunMinute,
+        second: 0,
+      },
+      config.settlementTimeZone,
+    );
+
     return {
-      ...community,
-      coverImageUrl: buildAssetUrl(community.coverImageUrl),
-      logoImageUrl: this.getLogoUrl(community),
+      enabled: true,
+      nextRunAt: nextRunAt.toISOString(),
+      timeZone: config.settlementTimeZone,
+      hour: config.settlementAutoRunHour,
+      minute: config.settlementAutoRunMinute,
+      windowDays: config.settlementWindowDays,
+      delayDays: config.settlementDelayDays,
+      minTransferAmount: config.settlementMinTransferAmount,
     };
   }
 
-  private getLogoUrl(community: Community): string | null {
+  private getTimeParts(date: Date, timeZone: string) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    return {
+      year: pick('year'),
+      month: pick('month'),
+      day: pick('day'),
+      hour: pick('hour'),
+      minute: pick('minute'),
+      second: pick('second'),
+    };
+  }
+
+  private zonedTimeToUtc(
+    parts: { year: number; month: number; day: number; hour: number; minute: number; second: number },
+    timeZone: string,
+  ) {
+    const utcGuess = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+    const guessedLocal = this.getTimeParts(utcGuess, timeZone);
+    const guessedLocalAsUtc = Date.UTC(
+      guessedLocal.year,
+      guessedLocal.month - 1,
+      guessedLocal.day,
+      guessedLocal.hour,
+      guessedLocal.minute,
+      guessedLocal.second,
+    );
+    const desiredLocalAsUtc = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    );
+    const diffMs = guessedLocalAsUtc - desiredLocalAsUtc;
+    return new Date(utcGuess.getTime() - diffMs);
+  }
+
+  private decorateCommunity(community: Community) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
+    const description =
+      community.description && typeof community.description === 'object'
+        ? { ...(community.description as Record<string, any>) }
+        : community.description;
+    if (description && typeof description === 'object') {
+      if (typeof (description as any).logoImageUrl === 'string') {
+        (description as any).logoImageUrl = normalizeImageUrl((description as any).logoImageUrl, frontendBaseUrl);
+      }
+      if (
+        (description as any)._portalConfig &&
+        typeof (description as any)._portalConfig === 'object' &&
+        typeof (description as any)._portalConfig.logoImageUrl === 'string'
+      ) {
+        (description as any)._portalConfig = {
+          ...(description as any)._portalConfig,
+          logoImageUrl: normalizeImageUrl((description as any)._portalConfig.logoImageUrl, frontendBaseUrl),
+        };
+      }
+    }
+
+    return {
+      ...community,
+      description,
+      coverImageUrl: normalizeImageUrl(buildAssetUrl(community.coverImageUrl), frontendBaseUrl),
+      logoImageUrl: this.getLogoUrl(community, frontendBaseUrl),
+    };
+  }
+
+  private getLogoUrl(community: Community, frontendBaseUrl?: string): string | null {
     const desc = community.description as any;
     const rawFromDesc =
       desc && typeof desc === 'object' && typeof desc.logoImageUrl === 'string' ? desc.logoImageUrl : null;
@@ -232,7 +372,7 @@ export class ConsoleCommunitiesService {
         : null;
     const rawTop = typeof (community as any).logoImageUrl === 'string' ? (community as any).logoImageUrl : null;
     const rawLogo = rawFromDesc || rawFromPortal || rawTop;
-    return buildAssetUrl(rawLogo);
+    return normalizeImageUrl(buildAssetUrl(rawLogo), frontendBaseUrl) ?? null;
   }
 
   private mergeLogoIntoDescription(

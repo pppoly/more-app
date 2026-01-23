@@ -2,6 +2,11 @@ import { computed, reactive, ref } from 'vue';
 import {
   devLogin as apiDevLogin,
   fetchMe,
+  isBusinessError,
+  isNetworkError,
+  isServerError,
+  lineLiffLogin,
+  lineLiffTokenLogin,
   lineLiffProfileLogin,
   onUnauthorized,
   setAccessToken as applyClientToken,
@@ -11,19 +16,32 @@ import {
 import type { UserProfile } from '../types/api';
 import { resolveAssetUrl } from '../utils/assetUrl';
 import { useLocale } from './useLocale';
-import { API_BASE_URL, APP_TARGET, LIFF_ID } from '../config';
-import { isLiffReady, loadLiff } from '../utils/liff';
+import { API_BASE_URL, requireLiffId } from '../config';
+import { isLineInAppBrowser, isLiffReady, loadLiff, normalizeLiffStateToPath } from '../utils/liff';
 import { reportError } from '../utils/reporting';
 import { useConsoleCommunityStore } from '../stores/consoleCommunity';
 import { trackEvent } from '../utils/analytics';
-import { isLineBrowser } from '../utils/device';
+import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from './useAuthSheets';
+import { useToast } from './useToast';
+import { LOGIN_REDIRECT_STORAGE_KEY, MANUAL_LOGOUT_STORAGE_KEY } from '../constants/auth';
 
 interface AuthState {
   user: UserProfile | null;
   accessToken: string | null;
   initializing: boolean;
 }
+
+type LiffAuthFailReason =
+  | 'missing_id'
+  | 'init_failed'
+  | 'not_in_client'
+  | 'login_redirect'
+  | 'no_token'
+  | 'token_exchange_failed'
+  | 'unknown';
+
+type LiffAuthResult = { ok: true } | { ok: false; reason: LiffAuthFailReason };
 
 const TOKEN_KEY = 'moreapp_access_token';
 const debugAuth = import.meta.env.DEV || import.meta.env.MODE === 'staging' || import.meta.env.MODE === 'test';
@@ -44,21 +62,46 @@ let initialized = false;
 let handlingUnauthorized = false;
 let liffLoginPromise: Promise<void> | null = null;
 let liffProfilePromise: Promise<void> | null = null;
-let liffBootstrapPromise: Promise<void> | null = null;
+let liffBootstrapPromise: Promise<LiffAuthResult> | null = null;
 const LIFF_LOGIN_INFLIGHT_UNTIL_KEY = 'liff_login_inflight_until';
 const { setLocale } = useLocale();
 const consoleCommunityStore = useConsoleCommunityStore();
 const backendBase = API_BASE_URL.replace(/\/$/, '').replace(/\/api\/v1$/, '');
 const needsLiffOpen = ref(false);
+const manualLogout = ref(false);
 const authSheets = useAuthSheets();
 const liffAuthHardStopped = ref(false);
+const backendUnavailable = ref(false);
+const fatalError = ref<Error | null>(null);
+const toast = useToast();
 
-function sanitizeLiffState(raw: string | null): string {
-  if (!raw) return '/events';
+const resolveLiffId = () => {
   try {
-    return decodeURIComponent(raw);
-  } catch {
-    return '/events';
+    return requireLiffId();
+  } catch (error) {
+    console.error('LIFF_ID is required for LIFF login.', error);
+    return '';
+  }
+};
+
+function cleanLiffCallbackUrl(liffStateParam: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    url.searchParams.delete('state');
+    url.searchParams.delete('oauth_verifier');
+    const currentTo = url.searchParams.get('to');
+    const normalizedState =
+      normalizeLiffStateToPath(liffStateParam) || normalizeLiffStateToPath(url.searchParams.get('liff.state'));
+    if (!currentTo && normalizedState) {
+      url.searchParams.set('to', normalizedState);
+    }
+    url.searchParams.delete('liff.state');
+    url.searchParams.delete('liff.referrer');
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  } catch (error) {
+    console.warn('Failed to clean LIFF callback URL; continuing without cleanup.', error);
   }
 }
 
@@ -95,9 +138,10 @@ async function exchangeLiffToken(
   endpoint: '/api/v1/auth/line/liff-login' | '/api/v1/auth/line/liff',
   body: Record<string, any>,
 ) {
-  const response = await fetch(endpoint, {
+  const url = `${backendBase}${endpoint}`;
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-App-Target': APP_TARGET },
+    headers: { 'Content-Type': 'application/json', 'X-App-Target': 'liff' },
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -148,6 +192,52 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function isManualLogoutStored(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(MANUAL_LOGOUT_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setManualLogoutStored(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (enabled) {
+      window.sessionStorage.setItem(MANUAL_LOGOUT_STORAGE_KEY, '1');
+    } else {
+      window.sessionStorage.removeItem(MANUAL_LOGOUT_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function getStoredRedirect(): string | null {
+  if (!hasWindow()) return null;
+  const raw = window.localStorage.getItem(LOGIN_REDIRECT_STORAGE_KEY);
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null;
+  return raw;
+}
+
+function clearStoredRedirect() {
+  if (!hasWindow()) return;
+  window.localStorage.removeItem(LOGIN_REDIRECT_STORAGE_KEY);
+}
+
+function isLiffHost(): boolean {
+  if (!hasWindow()) return false;
+  const host = window.location.hostname;
+  return host.includes('miniapp.line.me') || host.includes('liff.line.me');
+}
+
+function shouldAttemptLiffAuth(): boolean {
+  if (!hasWindow()) return false;
+  if (isLiffHost()) return true;
+  return isLiffClient() || isLineInAppBrowser();
+}
+
 function setToken(token: string | null) {
   state.accessToken = token;
   applyClientToken(token);
@@ -156,20 +246,34 @@ function setToken(token: string | null) {
   }
   if (!hasWindow()) return;
   if (token) {
+    manualLogout.value = false;
+    setManualLogoutStored(false);
+    needsLiffOpen.value = false;
     window.localStorage.setItem(TOKEN_KEY, token);
   } else {
-    window.localStorage.removeItem(TOKEN_KEY);
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      try {
+        // Best-effort: make hasAuthToken() false even if removeItem is blocked.
+        window.localStorage.setItem(TOKEN_KEY, '');
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 
-setRequestHeaderProvider(() => ({
-  'X-App-Target': APP_TARGET,
-}));
+setRequestHeaderProvider(() => {
+  if (!hasWindow()) return { 'X-App-Target': 'web' };
+  const target = isLiffHost() || isLiffClient() || isLineInAppBrowser() ? 'liff' : 'web';
+  return { 'X-App-Target': target };
+});
 
 function redirectToLineOauth() {
-  // 在 LIFF 模式下禁用 Web OAuth 跳转，避免循环
-  if (APP_TARGET === 'liff') {
-    logDevAuth('redirectToLineOauth skipped in LIFF mode');
+  // In LIFF client, block web OAuth redirect to avoid loops.
+  if (isLiffClient() || isLiffHost() || isLineInAppBrowser()) {
+    logDevAuth('redirectToLineOauth skipped in LIFF client');
     return;
   }
   if (typeof window === 'undefined') return;
@@ -178,33 +282,46 @@ function redirectToLineOauth() {
   window.location.href = url;
 }
 
-async function bootstrapLiffAuth(force = false) {
-  if (APP_TARGET !== 'liff' || !hasWindow()) return;
-  if (state.accessToken && !force) return;
-  if (!LIFF_ID) {
+async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
+  if (!hasWindow()) return { ok: false, reason: 'not_in_client' };
+  if (!shouldAttemptLiffAuth()) return { ok: false, reason: 'not_in_client' };
+  if (state.accessToken && !force) return { ok: true };
+  const resolvedLiffId = resolveLiffId();
+  if (!resolvedLiffId) {
     console.warn('LIFF_ID is not configured; skip LIFF login.');
     liffAuthHardStopped.value = true;
     needsLiffOpen.value = true;
-    return;
+    if (force) {
+      toast.show('LINE 設定が未完了です。管理者に連絡してください。', 'error');
+    }
+    return { ok: false, reason: 'missing_id' };
   }
   if (liffAuthHardStopped.value) {
     logDevAuth('liff auth hard-stopped');
-    return;
+    return { ok: false, reason: 'unknown' };
   }
   if (liffBootstrapPromise) return liffBootstrapPromise;
   liffBootstrapPromise = (async () => {
     state.initializing = true;
+    needsLiffOpen.value = false;
+    const notify = force;
+    const fail = (reason: LiffAuthFailReason, message?: string, type: 'error' | 'info' = 'error'): LiffAuthResult => {
+      if (notify && message) {
+        toast.show(message, type);
+      }
+      return { ok: false, reason };
+    };
     try {
       const search = window.location.search || '';
-      const isCallback =
-        /(?:^|[?&])(code|state|liff\.state)=/.test(search);
-      const liffStateParam = new URLSearchParams(search).get('liff.state');
+      const params = new URLSearchParams(search);
+      const isCallback = params.has('code') || params.has('oauth_verifier');
+      const liffStateParam = params.get('liff.state');
 
       // 回调阶段：禁止再次触发 login，直接做 token exchange
       if (isCallback) {
         emitLiffDebug('callback_enter');
         markLiffLoginInflight();
-        const liff = await loadLiff(LIFF_ID);
+        const liff = await loadLiff(resolvedLiffId);
         // ready を待機（最大 8 秒）。タイムアウトは失敗扱いだが login は再実行しない
         try {
           emitLiffDebug('callback_wait_ready');
@@ -225,7 +342,11 @@ async function bootstrapLiffAuth(force = false) {
         const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
         await emitLiffDebug('callback_tokens', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
         const profile = await liff.getProfile().catch(() => null);
-        let exchangeEndpoint: '/api/v1/auth/line/liff-login' | '/api/v1/auth/line/liff' | null = null;
+        let exchangeEndpoint:
+          | '/api/v1/auth/line/liff-login'
+          | '/api/v1/auth/line/liff'
+          | '/api/v1/auth/line/liff-profile'
+          | null = null;
         let exchangeStatus: number | null = null;
         if (idToken) {
           exchangeEndpoint = '/api/v1/auth/line/liff-login';
@@ -253,10 +374,24 @@ async function bootstrapLiffAuth(force = false) {
           state.user = normalizeUser(data?.user);
           applyUserLocale(state.user);
           trackEvent('liff_login_success');
+        } else if (profile?.userId) {
+          exchangeEndpoint = '/api/v1/auth/line/liff-profile';
+          await emitLiffDebug('callback_exchange_start', { endpoint: exchangeEndpoint });
+          const response = await lineLiffProfileLogin({
+            lineUserId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl,
+          });
+          exchangeStatus = 200;
+          setToken(response?.accessToken);
+          state.user = normalizeUser(response?.user ?? null);
+          applyUserLocale(state.user);
+          trackEvent('liff_login_success');
         } else {
           await emitLiffDebug('callback_no_token');
-          return;
+          return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
         }
+        clearStoredRedirect();
         await emitLiffDebug('callback_exchange_done', {
           endpoint: exchangeEndpoint,
           status: exchangeStatus,
@@ -264,67 +399,124 @@ async function bootstrapLiffAuth(force = false) {
           hasAccessToken: !!state.accessToken,
         });
         clearLiffLoginInflight();
-        const cleanTarget = sanitizeLiffState(liffStateParam);
-        window.history.replaceState({}, document.title, cleanTarget);
-        return;
+        cleanLiffCallbackUrl(liffStateParam);
+        needsLiffOpen.value = false;
+        return { ok: true };
       }
 
-      const liff = await loadLiff(LIFF_ID);
+      const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
-        return;
+        return fail('init_failed', 'LINE ログインの初期化に失敗しました。');
+      }
+      try {
+        const ready = (liff as any).ready;
+        if (ready && typeof ready.then === 'function') {
+          await Promise.race([
+            ready,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('liff.ready timeout')), 4000)),
+          ]);
+        }
+      } catch (err) {
+        logDevAuth('liff.ready timeout (non-callback)', err);
       }
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       const loggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : false;
       logDevAuth('bootstrap', { inClient, loggedIn, apiBase: API_BASE_URL });
       if (!inClient) {
         logDevAuth('not in liff client; skip login');
-        return;
+        needsLiffOpen.value = true;
+        return fail('not_in_client', 'LINE アプリ内で開いてください。');
       }
+      const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
+      const storedRedirect = getStoredRedirect();
+      const toPath = window.location.pathname.startsWith('/liff')
+        ? window.location.pathname.replace(/^\/liff/, '') || '/'
+        : window.location.pathname;
+      const toQuery = window.location.search || '';
+      const toValue = storedRedirect || `${toPath}${toQuery}`;
+      const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
       if (!loggedIn) {
-        if (isLiffLoginInflight()) {
-          logDevAuth('login inflight (localStorage TTL); skip new login');
-          return;
+        logDevAuth('not logged in inside LIFF client');
+        if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {
+          markLiffLoginInflight();
+          liff.login({ redirectUri: cleanRedirect });
+          return fail('login_redirect');
         }
-        markLiffLoginInflight();
-        const cleanRedirect = `${window.location.origin}${window.location.pathname}`;
-        logDevAuth('calling liff.login', { reason: 'NOT_LOGGED_IN', redirect: cleanRedirect });
-        liff.login({ redirectUri: cleanRedirect });
-        return;
+        return fail('login_redirect');
       }
       clearLiffLoginInflight();
-      const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
-      logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
-      if (!idToken) {
-        logDevAuth('no idToken after login; abort exchange');
-        return;
-      }
       let profile: any = null;
       try {
         profile = await liff.getProfile();
       } catch {
         profile = null;
       }
-      logDevAuth('exchanging token with backend /auth/line/liff-login');
-      const response = await lineLiffLogin({
-        idToken,
-        displayName: profile?.displayName,
-        pictureUrl: profile?.pictureUrl,
-      });
-      logDevAuth('token exchange ok', { userId: response?.user?.id, hasAccessToken: !!response?.accessToken });
-      setToken(response.accessToken);
-      state.user = normalizeUser(response.user);
-      applyUserLocale(state.user);
-      trackEvent('liff_login_success');
-      clearLiffLoginInflight();
-      // URL の code/state を削除して、後続の重複判定を回避
-      if (typeof window !== 'undefined' && window.location.search) {
-        const cleanUrl = `${window.location.origin}${window.location.pathname}`;
-        window.history.replaceState({}, document.title, cleanUrl);
+      const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
+      const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
+      logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
+      if (!idToken && accessToken) {
+        logDevAuth('exchanging accessToken with backend /auth/line/liff');
+        const response = await lineLiffTokenLogin({
+          accessToken,
+          displayName: profile?.displayName,
+          pictureUrl: profile?.pictureUrl,
+        });
+        logDevAuth('token exchange ok', { userId: response?.user?.id, hasAccessToken: !!response?.accessToken });
+        setToken(response.accessToken);
+        state.user = normalizeUser(response.user);
+        applyUserLocale(state.user);
+        trackEvent('liff_login_success');
+        clearLiffLoginInflight();
+      } else if (!idToken && profile?.userId) {
+        logDevAuth('no token; fallback to profile login');
+        const response = await lineLiffProfileLogin({
+          lineUserId: profile.userId,
+          displayName: profile.displayName,
+          pictureUrl: profile.pictureUrl,
+        });
+        logDevAuth('profile login ok', { userId: response?.user?.id, hasAccessToken: !!response?.accessToken });
+        setToken(response.accessToken);
+        state.user = normalizeUser(response.user);
+        applyUserLocale(state.user);
+        trackEvent('liff_login_success');
+        clearLiffLoginInflight();
+      } else if (!idToken) {
+        logDevAuth('no token after login; cannot proceed');
+        if (!isLiffLoginInflight() && typeof liff.login === 'function') {
+          // Recover by forcing a fresh LIFF login session.
+          markLiffLoginInflight();
+          try {
+            (liff as any)?.logout?.();
+          } catch {
+            // ignore
+          }
+          liff.login({ redirectUri: cleanRedirect });
+          return fail('login_redirect');
+        }
+        needsLiffOpen.value = true;
+        return fail('no_token', 'LINE ログインに失敗しました。もう一度お試しください。');
+      } else {
+        logDevAuth('exchanging token with backend /auth/line/liff-login');
+        const response = await lineLiffLogin({
+          idToken,
+          displayName: profile?.displayName,
+          pictureUrl: profile?.pictureUrl,
+        });
+        logDevAuth('token exchange ok', { userId: response?.user?.id, hasAccessToken: !!response?.accessToken });
+        setToken(response.accessToken);
+        state.user = normalizeUser(response.user);
+        applyUserLocale(state.user);
+        trackEvent('liff_login_success');
+        clearLiffLoginInflight();
       }
+      clearStoredRedirect();
+      needsLiffOpen.value = false;
+      return { ok: true };
     } catch (error) {
       logDevAuth('bootstrap error', error);
       reportError('liff:login_failed', { message: error instanceof Error ? error.message : String(error) });
+      return fail('token_exchange_failed', 'LINE ログインに失敗しました。もう一度お試しください。');
     } finally {
       state.initializing = false;
       liffBootstrapPromise = null;
@@ -335,22 +527,25 @@ async function bootstrapLiffAuth(force = false) {
 
 async function loginWithLiffProfile(isLiffEntry: boolean) {
   if (!isLiffEntry || state.accessToken) return;
-  if (!LIFF_ID) return;
+  if (!shouldAttemptLiffAuth()) return;
+  const resolvedLiffId = resolveLiffId();
+  if (!resolvedLiffId) return;
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/liff')) {
+    logDevAuth('skip profile login outside /liff endpoint');
+    return;
+  }
   if (liffProfilePromise) return liffProfilePromise;
   liffProfilePromise = (async () => {
     try {
-      const liff = await loadLiff(LIFF_ID);
+      const liff = await loadLiff(resolvedLiffId);
       if (!isLiffReady.value) {
-        needsLiffOpen.value = true;
         return;
       }
       if (!liff.isInClient || !liff.isInClient()) {
-        needsLiffOpen.value = true;
         return;
       }
       const profile = await liff.getProfile().catch(() => null);
       if (!profile?.userId) {
-        needsLiffOpen.value = true;
         return;
       }
       const response = await lineLiffProfileLogin({
@@ -360,11 +555,11 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
       });
       setToken(response.accessToken);
       state.user = normalizeUser(response.user);
+      authSheets.hideLoginSheet();
       applyUserLocale(state.user);
       needsLiffOpen.value = false;
     } catch (error) {
       console.warn('LIFF profile login failed', error);
-      needsLiffOpen.value = true;
     } finally {
       liffProfilePromise = null;
     }
@@ -382,7 +577,12 @@ function handleUnauthorized(context?: { status?: number; url?: string }) {
   handlingUnauthorized = true;
   setToken(null);
   state.user = null;
-  if (APP_TARGET === 'liff') {
+  if (manualLogout.value) {
+    needsLiffOpen.value = false;
+    handlingUnauthorized = false;
+    return;
+  }
+  if (shouldAttemptLiffAuth()) {
     if (isLiffLoginInflight()) {
       handlingUnauthorized = false;
       return;
@@ -413,9 +613,21 @@ async function restoreSession() {
   if (initialized) return;
   initialized = true;
   if (!hasWindow()) return;
+  if (isManualLogoutStored()) {
+    manualLogout.value = true;
+    needsLiffOpen.value = false;
+    setToken(null);
+    state.user = null;
+    return;
+  }
+  if (manualLogout.value) {
+    needsLiffOpen.value = false;
+    manualLogout.value = false;
+    return;
+  }
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
-    if (APP_TARGET === 'liff') {
+    if (shouldAttemptLiffAuth()) {
       await bootstrapLiffAuth();
     }
     return;
@@ -423,14 +635,27 @@ async function restoreSession() {
   setToken(stored);
   try {
     state.initializing = true;
+    backendUnavailable.value = false;
+    fatalError.value = null;
     state.user = await fetchMe();
     applyUserLocale(state.user);
   } catch (error) {
     console.error('Failed to restore session', error);
-    setToken(null);
-    state.user = null;
-    if (APP_TARGET === 'liff') {
-      await bootstrapLiffAuth(true);
+    if (isNetworkError(error)) {
+      backendUnavailable.value = true;
+      fatalError.value = error instanceof Error ? error : new Error('Network unavailable');
+      return;
+    }
+    if (isBusinessError(error)) {
+      setToken(null);
+      state.user = null;
+      if (shouldAttemptLiffAuth()) {
+        await bootstrapLiffAuth(true);
+      }
+      return;
+    }
+    if (isServerError(error)) {
+      return;
     }
   } finally {
     state.initializing = false;
@@ -458,11 +683,15 @@ export function useAuth() {
     if (!state.accessToken) return;
     const profile = await fetchMe();
     state.user = normalizeUser(profile);
+    authSheets.hideLoginSheet();
     applyUserLocale(state.user);
   };
 
   const setUserProfile = (profile: UserProfile | null) => {
     state.user = normalizeUser(profile);
+    if (state.user) {
+      authSheets.hideLoginSheet();
+    }
     applyUserLocale(state.user);
   };
 
@@ -470,9 +699,12 @@ export function useAuth() {
     setToken(null);
     state.user = null;
     consoleCommunityStore.resetCommunities();
+    manualLogout.value = true;
+    setManualLogoutStored(true);
+    needsLiffOpen.value = false;
   };
 
-  const loginWithLiff = async () => bootstrapLiffAuth(true);
+  const loginWithLiff = async (): Promise<LiffAuthResult> => bootstrapLiffAuth(true);
 
   return {
     user: computed(() => state.user),
@@ -486,6 +718,9 @@ export function useAuth() {
     loginWithLiff,
     loginWithLiffProfile,
     needsLiffOpen: computed(() => needsLiffOpen.value),
+    manualLogout: computed(() => manualLogout.value || isManualLogoutStored()),
+    backendUnavailable: computed(() => backendUnavailable.value),
+    fatalError: computed(() => fatalError.value),
   };
 }
 

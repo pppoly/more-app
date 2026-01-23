@@ -8,7 +8,7 @@
     </button>
   </section>
 
-  <section v-if="APP_TARGET !== 'liff'" class="login-card">
+  <section v-if="showQuickLogin" class="login-card">
     <h2>テスト環境クイックログイン</h2>
     <p>任意の表示名を入力するとフローを体験できます。</p>
     <label>
@@ -27,16 +27,65 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
+import { useToast } from '../../composables/useToast';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
-import { API_BASE_URL, APP_TARGET } from '../../config';
+import { API_BASE_URL, isProduction } from '../../config';
+import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { isLiffClient } from '../../utils/device';
 
 const auth = useAuth();
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 const devName = ref('');
 const loading = ref(false);
 const error = ref('');
+
+const looksLikeNonProdHost = (value: string) => {
+  const input = (value || '').toLowerCase();
+  let host = input;
+  try {
+    host = new URL(input).hostname.toLowerCase();
+  } catch {
+    // ignore
+  }
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === 'test.socialmore.jp' ||
+    host.endsWith('.test.socialmore.jp') ||
+    host.startsWith('test.') ||
+    host.includes('.test.') ||
+    host.includes('-test.') ||
+    host === 'stg.socialmore.jp' ||
+    host.endsWith('.stg.socialmore.jp') ||
+    host.startsWith('stg.') ||
+    host.includes('.stg.') ||
+    host.includes('-stg.') ||
+    host === 'staging.socialmore.jp' ||
+    host.endsWith('.staging.socialmore.jp') ||
+    host.startsWith('staging.') ||
+    host.includes('.staging.') ||
+    host.includes('-staging.') ||
+    host === 'dev.socialmore.jp' ||
+    host.endsWith('.dev.socialmore.jp') ||
+    host.startsWith('dev.') ||
+    host.includes('.dev.') ||
+    host.includes('-dev.') ||
+    host.includes('staging') ||
+    host.endsWith('.vercel.app')
+  );
+};
+
+const showQuickLogin = computed(() => {
+  if (import.meta.env.DEV) return true;
+  if ((import.meta.env.MODE || '').toLowerCase() === 'test') return true;
+  if (!isProduction()) return true;
+  if (looksLikeNonProdHost(API_BASE_URL)) return true;
+  if (typeof window === 'undefined') return false;
+  return looksLikeNonProdHost(window.location.hostname);
+});
 
 const redirectTarget = computed(() => {
   const redirect = route.query.redirect as string | undefined;
@@ -74,13 +123,45 @@ const handleDevLogin = async () => {
 
 const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
-  if (APP_TARGET === 'liff') {
+  const host = window.location.hostname;
+  const isLiffHost = host.includes('miniapp.line.me') || host.includes('liff.line.me');
+  let inClient = isLiffClient();
+  if (!inClient) {
+    try {
+      const liff = await loadLiff();
+      inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+    } catch {
+      inClient = false;
+    }
+  }
+  const shouldUseLiffLogin = inClient || isLiffHost || isLineInAppBrowser();
+  if (shouldUseLiffLogin) {
     loading.value = true;
     error.value = '';
     try {
-      await auth.loginWithLiff();
+      const liffRedirect = redirectTarget.value || '/events';
+      window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, liffRedirect);
+      const result = await auth.loginWithLiff();
+      if (result.ok) {
+        await router.replace(liffRedirect);
+        return;
+      }
+      if (!result.ok && result.reason !== 'login_redirect') {
+        const message =
+          result.reason === 'missing_id'
+            ? 'LINE 設定が未完了です。管理者に連絡してください。'
+            : result.reason === 'init_failed'
+              ? 'LINE ログインの初期化に失敗しました。'
+              : result.reason === 'not_in_client'
+                ? 'LINE アプリ内で開いてください。'
+                : 'LINE ログインに失敗しました。もう一度お試しください。';
+        error.value = message;
+        toast.show(message, 'error');
+      }
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'LINEログインに失敗しました';
+      const message = err instanceof Error ? err.message : 'LINE ログインに失敗しました。もう一度お試しください。';
+      error.value = message;
+      toast.show(message, 'error');
     } finally {
       loading.value = false;
     }

@@ -91,6 +91,7 @@
                 <!-- follow/favorite action temporarily hidden -->
               </div>
             </div>
+            <p v-if="uiMessage" class="event-hero-toast">{{ uiMessage }}</p>
           </div>
         </section>
 
@@ -326,9 +327,10 @@ import Button from '../../components/ui/Button.vue';
 import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
-import { APP_TARGET, LIFF_ID } from '../../config';
-import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
+import { ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
+import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
 import backIcon from '../../assets/icons/arrow-back.svg';
 import shareIcon from '../../assets/share.svg';
@@ -421,14 +423,18 @@ const isFavoriteEvent = computed(() => {
 const hasRegistration = computed(() => Boolean(registrationItem.value));
 const registrationStatus = computed(() => {
   const raw = registrationStatusRaw.value;
+  const amount = registrationItem.value?.amount ?? 0;
+  const paymentStatus = registrationItem.value?.paymentStatus ?? '';
+  const requiresPaymentNow = amount > 0 && paymentStatus !== 'paid';
   switch (raw) {
     case 'pending_payment':
       return 'pending_payment';
     case 'pending':
       return 'pending';
     case 'paid':
-    case 'approved':
       return 'paid';
+    case 'approved':
+      return requiresPaymentNow ? 'pending_payment' : 'paid';
     case 'pending_refund':
       return 'cancel_requested';
     case 'refunded':
@@ -442,6 +448,13 @@ const registrationStatus = computed(() => {
   }
 });
 const legacyRefund = computed(() => !refundRequest.value && ['refunded', 'pending_refund'].includes(registrationStatusRaw.value));
+const isHostRefundedCancellation = computed(() => {
+  if (!registrationItem.value) return false;
+  if (registrationStatusRaw.value !== 'cancelled') return false;
+  if (registrationItem.value.paymentStatus !== 'refunded') return false;
+  const amount = registrationItem.value.amount ?? 0;
+  return amount > 0;
+});
 const refundState = computed(() => {
   const req = refundRequest.value;
   if (req?.status === 'requested') return 'requested';
@@ -516,6 +529,20 @@ const computeCtaState = () => {
         : '主催者の確認をお待ちください。';
     return { label: 'キャンセル申請中', disabled: true, hint };
   }
+  if (legacyRefund.value) {
+    return {
+      label: '参加不可',
+      disabled: true,
+      hint: '主催者によって参加が取り消されました。',
+    };
+  }
+  if (isHostRefundedCancellation.value) {
+    return {
+      label: '参加不可',
+      disabled: true,
+      hint: '主催者によって参加が取り消されました。',
+    };
+  }
   if (registrationStatus.value === 'cancelled') {
     const canReapply = registrationWindow.value === 'open';
     return {
@@ -523,9 +550,6 @@ const computeCtaState = () => {
       disabled: !canReapply,
       hint: canReapply ? '再申込できます。' : '受付は終了しています。',
     };
-  }
-  if (legacyRefund.value) {
-    return { label: '返金処理済み', disabled: true, hint: '旧データによる返金状態です。' };
   }
   if (!isLoggedIn.value) {
     return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false, hint: '' };
@@ -874,7 +898,7 @@ const checkRegistrationStatus = async () => {
   checkingRegistration.value = true;
   try {
     const myEvents = await fetchMyEvents();
-    registrationItem.value = myEvents.find((item) => item.event.id === eventId.value) ?? null;
+    registrationItem.value = myEvents.find((item) => item.event?.id === eventId.value) ?? null;
   } catch {
     registrationItem.value = null;
   } finally {
@@ -901,7 +925,11 @@ const canGoBack = () => {
   return Boolean((historyState && historyState.back) || window.history.length > 1);
 };
 
+let shareNavCleanup: (() => void) | null = null;
+
 const goBack = () => {
+  shareNavCleanup?.();
+  shareNavCleanup = null;
   if (canGoBack()) {
     router.back();
     return;
@@ -911,67 +939,144 @@ const goBack = () => {
 
 const shareEvent = async () => {
   if (!detail.value) return;
-  const liffDeepLink = LIFF_ID
-    ? `https://liff.line.me/${LIFF_ID}?to=/events/${detail.value.id}`
-    : typeof window !== 'undefined'
-      ? `${window.location.origin}/events/${detail.value.id}`
-      : '';
-  const shareUrl = `${liffDeepLink}?from=line_share`;
-  const shareTitle =
-    getLocalizedText(detail.value.title, preferredLangs.value) ||
-    (typeof detail.value.title === 'string' ? detail.value.title : 'イベント');
-
-  if (APP_TARGET === 'liff') {
-    if (!LIFF_ID) {
-      showUiMessage('LINE 設定を確認してください');
-      return;
-    }
+  if (typeof window !== 'undefined') {
     try {
-      const liff = await loadLiff(LIFF_ID);
-      if (liff.shareTargetPicker) {
-        await liff.shareTargetPicker([{ type: 'text', text: `${shareTitle}\n${shareUrl}` }]);
-        showUiMessage('LINE で共有しました');
-        return;
-      }
-      // fallback: copy link
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
-        showUiMessage('リンクをコピーしました');
-        return;
-      }
-    } catch (err) {
-      console.error('Failed to share via LIFF', err);
-      showUiMessage('LINE 共有に失敗しました');
-      return;
-    }
-    return;
-  }
-
-  const payload = { title: shareTitle, url: shareUrl };
-
-  // 1) ネイティブ共有（優先）
-  if (navigator.share) {
-    try {
-      await navigator.share(payload);
-      showUiMessage('共有しました');
-      return;
+      window.sessionStorage.setItem('share:returnTo', route.fullPath);
+      window.sessionStorage.setItem('share:returnAt', String(Date.now()));
     } catch {
-      // ignore and fallback to LINE
+      // ignore
     }
   }
-
-  // 2) LINE 共有ページ（Web）
-  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
-  window.open(lineShareUrl, '_blank');
-  showUiMessage('LINE で開きました');
-
-  // 3) 追加のフォールバックとしてコピー
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(payload.url);
+  shareNavCleanup?.();
+  shareNavCleanup = null;
+  const expectedRoute = route.fullPath;
+  let guardUntil = Date.now() + 60_000;
+  const guardAfterShareMs = 800;
+  const shrinkGuardWindow = () => {
+    guardUntil = Date.now() + guardAfterShareMs;
+  };
+  const isGuardActive = () => Date.now() < guardUntil;
+  const restoreRouteIfNeeded = () => {
+    if (!isGuardActive()) return;
+    const current = router.currentRoute.value.fullPath;
+    if (current !== expectedRoute) {
+      router.replace(expectedRoute).catch(() => undefined);
     }
-  } catch {
-    // ignore
+  };
+  const onPopState = () => {
+    // Some LINE WebViews emit an unexpected back navigation after shareTargetPicker.
+    window.setTimeout(restoreRouteIfNeeded, 0);
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', onPopState);
+  }
+  shareNavCleanup = () => {
+    guardUntil = 0;
+    try {
+      window.removeEventListener('popstate', onPopState);
+    } catch {
+      // ignore
+    }
+    try {
+      window.sessionStorage.removeItem('share:returnTo');
+      window.sessionStorage.removeItem('share:returnAt');
+    } catch {
+      // ignore
+    }
+  };
+  const frontendBase = FRONTEND_BASE_URL;
+  const shareToPath = `/events/${detail.value.id}?from=line_share`;
+  const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
+  const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareUrlWithSource = webShareUrl || fallbackUrl;
+  const inMiniAppHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
+  const isLineBrowserLike =
+    isLiffClient() ||
+    isLineInAppBrowser() ||
+    inMiniAppHost ||
+    (typeof window !== 'undefined' &&
+      (new URLSearchParams(window.location.search).has('liff.state') ||
+        new URLSearchParams(window.location.search).has('liff.referrer') ||
+        document.referrer.includes('line.me')));
+  const shareTitle = detail.value.title || 'イベント';
+  const payload = { title: shareTitle, url: shareUrlWithSource };
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  const shareText = `${shareTitle}\n${shareUrlWithSource}`;
+  const fallbackShare = async (allowSystemShare: boolean, allowExternalOpen: boolean) => {
+    if (allowSystemShare && navigator.share) {
+      try {
+        await navigator.share(payload);
+        showUiMessage('共有しました');
+        return;
+      } catch (error: any) {
+        const name = error?.name || '';
+        if (name === 'AbortError' || name === 'NotAllowedError') {
+          return;
+        }
+      }
+    }
+    if (allowExternalOpen) {
+      window.open(lineShareUrl, '_blank');
+      showUiMessage('LINE で開きました');
+    } else {
+      showUiMessage('リンクをコピーしました');
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload.url);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  try {
+    if (isLineBrowserLike && !LIFF_ID) {
+      showUiMessage('LINE 設定を確認してください');
+      await fallbackShare(false, false);
+      return;
+    }
+    if (isLineBrowserLike && LIFF_ID) {
+      try {
+        showUiMessage('初期化中…');
+        const liff = await loadLiff(LIFF_ID);
+        const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
+        const canShare =
+          typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
+        const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
+        if (canUseSharePicker) {
+          await ensureLiffPermissions(['chat_message.write']);
+          const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+          shrinkGuardWindow();
+          window.setTimeout(restoreRouteIfNeeded, 0);
+          showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
+          return;
+        }
+        showUiMessage('LINE 共有が利用できません。リンクをコピーしました');
+      } catch (err) {
+        console.error('Failed to share via LIFF', err);
+      }
+      await fallbackShare(false, false);
+      return;
+    }
+
+    if (isLineBrowserLike) {
+      await fallbackShare(false, false);
+      return;
+    }
+
+    await fallbackShare(true, true);
+  } finally {
+    // Keep the guard briefly to catch delayed back events when returning from the share UI,
+    // but allow users to go back after that without being forced back here.
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        shareNavCleanup?.();
+        shareNavCleanup = null;
+      }, guardAfterShareMs + 200);
+    }
   }
 };
 
@@ -1029,7 +1134,7 @@ const markCoverBroken = (slide: { id?: string; imageUrl?: string }, index: numbe
 };
 
 const communityIdForFollow = computed(
-  () => event.value?.community?.id || detail.value?.community?.id || (detail.value as any)?.communityId || null,
+  () => event.value?.community?.id || null,
 );
 const isFollowingCommunity = ref(false);
 const followLocked = ref(false);
@@ -1211,7 +1316,12 @@ const closeBookingSheet = () => {
 
 const handleCtaClick = () => {
   if (!detail.value) return;
-  if (legacyRefund.value || registrationStatus.value === 'cancel_requested') return;
+  if (legacyRefund.value || isHostRefundedCancellation.value || registrationStatus.value === 'cancel_requested') return;
+  if (!isLoggedIn.value) {
+    const redirect = `/events/${detail.value.id}/register`;
+    router.push({ name: 'auth-login', query: { redirect } });
+    return;
+  }
   if (registrationStatus.value === 'pending_payment') {
     const registrationId = registrationItem.value?.registrationId;
     if (registrationId) {
@@ -1444,7 +1554,7 @@ const formatScheduleLine = (start?: string, end?: string) => {
   return `${formatLongDate(start)} ${formatTime(start)}〜${endDateText} ${formatTime(end)}`;
 };
 
-const showHeaderActions = computed(() => APP_TARGET !== 'liff');
+const showHeaderActions = computed(() => true);
 const toastOffsetBackup = ref<string | null>(null);
 const TOAST_OFFSET_PX = '84px';
 const eventFooterRef = ref<HTMLElement | null>(null);
@@ -2162,11 +2272,11 @@ watch(
   width: 100%;
 }
 :deep(.event-about__content figure) {
-  margin: 12px -16px;
+  margin: 12px 0;
   padding: 0;
   background: transparent;
-  border-radius: 16px;
-  overflow: hidden;
+  border-radius: 0;
+  overflow: visible;
 }
 :deep(.event-about__content figure img),
 :deep(.event-about__content img) {
@@ -2175,7 +2285,7 @@ watch(
   max-width: 100% !important;
   height: auto !important;
   object-fit: cover !important;
-  border-radius: 16px !important;
+  border-radius: 0 !important;
   padding: 0 !important;
   background: #f4f5f7 !important;
   box-sizing: border-box !important;
@@ -2244,6 +2354,8 @@ watch(
   z-index: 1;
   line-height: 1.2;
   min-height: 32px;
+  min-width: 110px;
+  white-space: nowrap;
 }
 .group-follow__icon {
   position: absolute;

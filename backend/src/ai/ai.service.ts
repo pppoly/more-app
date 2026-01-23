@@ -6150,12 +6150,14 @@ export class AiService {
               properties: {
                 key: { type: 'string' },
                 source: { type: 'string' },
-                translated: {
+              },
+              required: ['key', 'source'],
+              patternProperties: {
+                '^translated$': {
                   type: 'object',
                   additionalProperties: { type: 'string' },
                 },
               },
-              required: ['key', 'source', 'translated'],
             },
           },
         },

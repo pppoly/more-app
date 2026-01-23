@@ -109,7 +109,9 @@
         <article class="ticket-qr-modal">
           <button type="button" class="qr-close" @click="closeTicketQr">X</button>
           <p class="qr-title">QRコードを表示</p>
-          <p class="qr-subtitle">{{ getLocalizedText(qrTicket.event.title) }}</p>
+          <p class="qr-subtitle">
+            {{ qrTicket.event ? getLocalizedText(qrTicket.event.title) : '' }}
+          </p>
           <canvas ref="qrCanvas" class="qr-canvas"></canvas>
           <p class="qr-code">#{{ qrTicket.registrationId.slice(0, 8).toUpperCase() }}</p>
           <p class="qr-hint">スタッフにスキャンしてもらってください</p>
@@ -133,8 +135,6 @@ import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useConfirm } from '../../composables/useConfirm';
 import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../utils/device';
-import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 
 type FilterTabId = 'upcoming' | 'past' | 'refund' | 'all';
 
@@ -142,7 +142,7 @@ const router = useRouter();
 const events = ref<MyEventItem[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const banner = ref<{ type: 'success' | 'error'; message: string } | null>(null);
+const banner = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 const cancelingId = ref<string | null>(null);
 const activeTab = ref<FilterTabId>('upcoming');
 const qrVisible = ref(false);
@@ -156,7 +156,8 @@ const { slotMap } = resourceConfigStore;
 const fallbackCoverImages = computed(() => {
   const list = resourceConfigStore.getListValue('mobile.eventList.cardFallbacks');
   if (list.length) return list;
-  return (slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? [];
+  const fallback = slotMap['mobile.eventList.cardFallbacks'].defaultValue;
+  return typeof fallback === 'string' ? [] : [...fallback];
 });
 
 const loadEvents = async () => {
@@ -215,12 +216,21 @@ const getEndTime = (item: MyEventItem) => {
 
 const isUpcoming = (item: MyEventItem) => !isVoidTicket(item) && getStartTime(item) > new Date();
 const isExpired = (item: MyEventItem) => !item.attended && !isUpcoming(item) && !isVoidTicket(item);
-const isPaidStatus = (item: MyEventItem) => ['paid', 'approved'].includes(item.status);
+const isPaidStatus = (item: MyEventItem) => {
+  const amount = item.amount ?? 0;
+  if (item.status === 'paid') return true;
+  if (item.status !== 'approved') return false;
+  if (amount <= 0) return true;
+  const paidLike = ['paid', 'succeeded', 'captured', 'completed'];
+  return paidLike.includes(item.paymentStatus || '');
+};
 const isRefundingStatus = (item: MyEventItem) => ['cancel_requested', 'pending_refund'].includes(item.status);
 const isRefundedStatus = (item: MyEventItem) => item.status === 'refunded';
 const isCancelledStatus = (item: MyEventItem) => ['cancelled', 'rejected'].includes(item.status);
 const isPendingStatus = (item: MyEventItem) => item.status === 'pending';
 const isPendingPaymentStatus = (item: MyEventItem) => item.status === 'pending_payment';
+const isApprovedAwaitingPayment = (item: MyEventItem) =>
+  item.status === 'approved' && (item.amount ?? 0) > 0 && item.paymentStatus !== 'paid';
 
 const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   maximumFractionDigits: 0,
@@ -244,12 +254,15 @@ const buildCancelPrompt = (item: MyEventItem) => {
   }
   if (percent <= 0) {
     return policyText
-      ? `${base}\n\n返金ルール: ${policyText}\nこのキャンセルは返金対象外です。`
-      : `${base}\n\nこのキャンセルは返金対象外です。`;
+      ? `${base}\n\n【重要】このキャンセルは返金対象外です。\n返金ルール: ${policyText}\n返金は行われません。`
+      : `${base}\n\n【重要】このキャンセルは返金対象外です。\n返金は行われません。`;
   }
   const refundAmount = calculateRefundAmount(amount, percent);
   const refundLine = `返金額の目安: ¥${formatYen(refundAmount)}（${percent}%）`;
-  return policyText ? `${base}\n\n返金ルール: ${policyText}\n${refundLine}` : `${base}\n\n${refundLine}`;
+  const warningLine = percent < 100 ? '【重要】全額返金ではありません。' : '';
+  return policyText
+    ? `${base}\n\n${warningLine}\n返金ルール: ${policyText}\n${refundLine}`
+    : `${base}\n\n${warningLine}\n${refundLine}`;
 };
 
 const sortedEvents = computed(() =>
@@ -262,7 +275,7 @@ const isPaymentCancelledTicket = (item: MyEventItem) =>
 const isEligibleTicket = (item: MyEventItem) => {
   if (item.status === 'rejected') return false;
   if (isPaymentCancelledTicket(item)) return false;
-  if (item.status === 'pending' || item.status === 'pending_payment') return true;
+  if (item.status === 'pending' || item.status === 'pending_payment' || item.status === 'approved') return true;
   const amount = item.amount ?? 0;
   const paymentOk = isPaidStatus(item) || isRefundedStatus(item) || isRefundingStatus(item) || item.status === 'cancelled';
   if (amount > 0) return paymentOk;
@@ -276,14 +289,14 @@ const isRefundOrCancel = (item: MyEventItem) =>
 
 const filterDefinitions: Array<{ id: FilterTabId; label: string; matcher: (item: MyEventItem) => boolean }> = [
   { id: 'upcoming', label: 'これから', matcher: (item) => isUpcoming(item) && !item.attended },
-  { id: 'past', label: '参加済み', matcher: (item) => item.attended && !isRefundOrCancel(item) },
+  { id: 'past', label: '参加済み', matcher: (item) => Boolean(item.attended) && !isRefundOrCancel(item) },
   { id: 'refund', label: 'キャンセル', matcher: (item) => isRefundOrCancel(item) },
   { id: 'all', label: 'すべて', matcher: () => true },
 ];
 
 const filterCounts = computed(() => ({
   upcoming: eligibleEvents.value.filter((item) => isUpcoming(item) && !item.attended).length,
-  past: eligibleEvents.value.filter((item) => item.attended && !isRefundOrCancel(item)).length,
+  past: eligibleEvents.value.filter((item) => Boolean(item.attended) && !isRefundOrCancel(item)).length,
   refund: eligibleEvents.value.filter((item) => isRefundOrCancel(item)).length,
   all: eligibleEvents.value.length,
 }));
@@ -371,13 +384,29 @@ const displayCommunity = (item: MyEventItem) =>
 const displayLocation = (item: MyEventItem) =>
   item.lesson?.class?.locationName || item.event?.locationText || '';
 const displayTitle = (item: MyEventItem) => {
-  if (item.lesson?.class?.title) return getLocalizedText(item.lesson.class.title);
+  if (item.lesson?.class?.title) {
+    const title = item.lesson.class.title;
+    return typeof title === 'string' ? title : getLocalizedText(title);
+  }
   if (item.event) return getLocalizedText(item.event.title);
   return 'クラス';
 };
 
-const titleFor = (event: MyEventItem['event']) => getLocalizedText(event.title);
+const titleFor = (event: MyEventItem['event']) => (event ? getLocalizedText(event.title) : '');
+const refundOutcomeLabel = (item: MyEventItem) => {
+  const total = item.amount ?? 0;
+  if (total <= 0) return null;
+  const refunded = item.refundRequest?.refundedAmount ?? null;
+  if (refunded != null && refunded > 0) {
+    return refunded < total ? '一部返金（ルール）' : '返金済み';
+  }
+  if (item.status === 'refunded') return '返金済み';
+  if (item.status === 'cancelled') return '返金なし（ルール）';
+  return null;
+};
 const statusLabel = (item: MyEventItem) => {
+  const refundLabel = refundOutcomeLabel(item);
+  if (refundLabel && (item.status === 'refunded' || item.status === 'cancelled')) return refundLabel;
   const map: Record<string, string> = {
     pending: '審査待ち',
     pending_payment: '支払い待ち',
@@ -412,10 +441,13 @@ const formatDate = (value: string) =>
     : '';
 
 const paymentLabel = (item: MyEventItem) => {
+  const refundLabel = refundOutcomeLabel(item);
+  if (refundLabel && (item.status === 'refunded' || item.status === 'cancelled')) return refundLabel;
   if (isRefundedStatus(item)) return '返金済み';
   if (isRefundingStatus(item)) return '返金処理中';
   if (isPendingPaymentStatus(item)) return '支払い待ち';
   if (isPendingStatus(item)) return '審査待ち';
+  if (isApprovedAwaitingPayment(item)) return '支払い待ち';
   if (item.status === 'rejected') return '却下';
   if (item.status === 'cancelled') return 'キャンセル';
   if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? '無料' : '支払い済み';
@@ -450,11 +482,16 @@ const phaseLabel = (item: MyEventItem) => {
 const stateSentence = (item: MyEventItem) => {
   if (item.status === 'cancel_requested') return 'キャンセル申請中です。主催者の確認をお待ちください。';
   if (item.status === 'pending_refund') return '返金処理中です';
-  if (item.status === 'refunded') return '返金が完了しています';
-  if (item.status === 'cancelled') return '参加はキャンセルされました';
+  if (item.status === 'refunded') {
+    return refundOutcomeLabel(item) === '一部返金（ルール）'
+      ? '返金が完了しています（返金ルールによる一部返金）'
+      : '返金が完了しています';
+  }
+  if (item.status === 'cancelled') return '参加はキャンセルされました（返金ルールによる返金なし）';
   if (item.status === 'rejected') return '申込が却下されました';
   if (item.status === 'pending_payment') return '支払い待ちです';
   if (item.status === 'pending') return '申込を審査中です';
+  if (isApprovedAwaitingPayment(item)) return '申込が承認されました。支払いを完了してください。';
   if (isPaidStatus(item)) return '参加が確定しています';
   if (item.attended) return '参加済みです';
   if (item.noShow) return '欠席として記録されています';
@@ -464,8 +501,12 @@ const stateSentence = (item: MyEventItem) => {
 const refundNotice = (item: MyEventItem) => {
   if (item.status === 'cancel_requested') return 'キャンセル申請を受け付けました。主催者の確認中です。';
   if (item.status === 'pending_refund') return '返金リクエストを処理しています';
-  if (item.status === 'refunded') return '返金が完了しました';
-  if (item.status === 'cancelled') return 'キャンセル済みです。返金が必要な場合はご確認ください。';
+  if (item.status === 'refunded') {
+    return refundOutcomeLabel(item) === '一部返金（ルール）'
+      ? '返金が完了しました（返金ルールによる一部返金）'
+      : '返金が完了しました';
+  }
+  if (item.status === 'cancelled') return 'キャンセル済みです（返金ルールにより返金なし）。';
   return '';
 };
 
@@ -539,9 +580,14 @@ const closeTicketQr = () => {
 const generateQr = async () => {
   if (!qrVisible.value || !qrTicket.value || !qrCanvas.value) return;
   qrError.value = null;
+  const eventId = qrTicket.value.event?.id;
+  if (!eventId) {
+    qrError.value = 'イベント情報が見つかりません';
+    return;
+  }
   const payload = JSON.stringify({
     registrationId: qrTicket.value.registrationId,
-    eventId: qrTicket.value.event.id,
+    eventId,
   });
   try {
     await QRCode.toCanvas(qrCanvas.value, payload, {
@@ -637,9 +683,7 @@ const hashToIndex = (value: string, length: number) => {
 
 const coverUrlFor = (item: MyEventItem) => {
   if (item.event?.coverImageUrl) return item.event.coverImageUrl;
-  const fallbacks = fallbackCoverImages.value.length
-    ? fallbackCoverImages.value
-    : ((slotMap['mobile.eventList.cardFallbacks'].defaultValue as string[]) ?? []);
+  const fallbacks = fallbackCoverImages.value;
   const hashId = item.event?.id || item.lesson?.id || 'fallback';
   const index = hashToIndex(hashId, fallbacks.length || 1);
   return fallbacks[index];

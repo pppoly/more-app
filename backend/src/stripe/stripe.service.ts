@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
+import { resolveStripeEnv } from './stripe-config';
 
 @Injectable()
 export class StripeService {
@@ -11,27 +12,25 @@ export class StripeService {
   readonly frontendBaseUrl: string;
   readonly publishableKey: string | null;
   readonly enabled: boolean;
+  readonly isLive: boolean;
+  readonly apiVersion: string | null;
 
   constructor() {
-    const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
-    const isLive = ['production', 'prod', 'live'].includes(envLabel);
-    const isUat = envLabel === 'uat' || envLabel === 'staging';
-    // Single .env with both keys; APP_ENV toggles which set to use
-    const secretKey = isLive ? process.env.STRIPE_SECRET_KEY_LIVE : process.env.STRIPE_SECRET_KEY_TEST;
-    this.publishableKey = isLive
-      ? process.env.STRIPE_PUBLISHABLE_KEY_LIVE || null
-      : process.env.STRIPE_PUBLISHABLE_KEY_TEST || null;
-    const webhookSecret = isLive
-      ? process.env.STRIPE_WEBHOOK_SECRET_LIVE || null
-      : process.env.STRIPE_WEBHOOK_SECRET_TEST || null;
-    const frontendBaseUrlRaw = isLive ? process.env.FRONTEND_BASE_URL_LIVE : process.env.FRONTEND_BASE_URL_UAT;
+    const stripeEnv = resolveStripeEnv();
+    const { envLabel, isLive, isUat, secretKey, webhookSecret, frontendBaseUrlRaw, publishableKey, apiVersion } =
+      stripeEnv;
+    this.publishableKey = publishableKey;
+    this.isLive = isLive;
+    this.apiVersion = apiVersion;
 
     if (isLive || isUat) {
       const missing: string[] = [];
-      if (!secretKey) missing.push('STRIPE_SECRET_KEY');
-      if (!this.publishableKey) missing.push('STRIPE_PUBLISHABLE_KEY');
-      if (!webhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
-      if (!frontendBaseUrlRaw) missing.push('FRONTEND_BASE_URL');
+      if (!secretKey) missing.push(isLive ? 'STRIPE_SECRET_KEY_LIVE' : 'STRIPE_SECRET_KEY_TEST');
+      if (!this.publishableKey) missing.push(isLive ? 'STRIPE_PUBLISHABLE_KEY_LIVE' : 'STRIPE_PUBLISHABLE_KEY_TEST');
+      if (!webhookSecret) missing.push(isLive ? 'STRIPE_WEBHOOK_SECRET_LIVE' : 'STRIPE_WEBHOOK_SECRET_TEST');
+      if (!frontendBaseUrlRaw)
+        missing.push(isLive ? 'FRONTEND_BASE_URL_LIVE(or FRONTEND_BASE_URL)' : 'FRONTEND_BASE_URL_UAT(or FRONTEND_BASE_URL)');
+      if (!this.apiVersion) missing.push('STRIPE_API_VERSION');
       if (missing.length) {
         throw new Error(`Missing required Stripe environment variables (${envLabel}): ${missing.join(', ')}`);
       }
@@ -42,9 +41,11 @@ export class StripeService {
       this.stripe = null;
       this.enabled = false;
     } else {
-      this.stripe = new Stripe(secretKey, {
-        apiVersion: '2025-02-24.acacia',
-      });
+      const stripeConfig: Stripe.StripeConfig = {};
+      if (this.apiVersion) {
+        stripeConfig.apiVersion = this.apiVersion as unknown as Stripe.LatestApiVersion;
+      }
+      this.stripe = new Stripe(secretKey, stripeConfig);
       this.enabled = true;
       if (isLive && secretKey.startsWith('sk_test_')) {
         this.logger.warn(`Live environment ${envLabel} is using Stripe test key`);

@@ -57,7 +57,6 @@ import ConsoleTopBar from '../../components/console/ConsoleTopBar.vue';
 import { useToast } from '../../composables/useToast';
 import { isLiffClient } from '../../utils/device';
 import { isLineInAppBrowser } from '../../utils/liff';
-import { APP_TARGET } from '../../config';
 import {
   acceptOrganizerPayoutPolicy,
   fetchOrganizerPayoutPolicyStatus,
@@ -73,7 +72,7 @@ const agreeFlow = ref(false);
 const agreeFee = ref(false);
 const submitting = ref(false);
 const checkingStatus = ref(false);
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const showTopBar = computed(() => !isLiffClientMode.value);
 
 const canContinue = computed(() => agreeFlow.value && agreeFee.value);

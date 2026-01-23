@@ -2,10 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StripeService } from '../stripe/stripe.service';
 import { getPaymentsConfig } from './payments.config';
+import { computeSettlementAmount } from './settlement.utils';
 import Stripe from 'stripe';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { addDays } from 'date-fns';
 
 type SettlementHostStats = {
   hostId: string;
@@ -29,6 +29,8 @@ type SettlementHostStats = {
       disputedNet: number;
       missingEligibilityPayments: number;
       missingEligibilityNet: number;
+      frozenPayments: number;
+      frozenNet: number;
     };
     rules?: {
       settlementDelayDays: number;
@@ -89,6 +91,19 @@ export class SettlementService {
       ].join(','),
     );
     return [header, ...lines].join('\n') + '\n';
+  }
+
+  async hasRealtimeEligiblePayments(cutoff: Date) {
+    const count = await this.prisma.payment.count({
+      where: {
+        payoutMode: 'REALTIME',
+        status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
+        eligibleAt: { lte: cutoff },
+        communityId: { not: null },
+        settlementStatus: { not: 'settled' },
+      },
+    });
+    return count > 0;
   }
 
   private buildBatchItemsCsv(items: Array<{
@@ -180,16 +195,20 @@ export class SettlementService {
     return map;
   }
 
-  private async computeHostStats(params: { periodFrom: Date; periodTo: Date }): Promise<SettlementHostStats[]> {
+  private async computeHostStats(params: { periodFrom: Date; periodTo: Date; payoutMode?: 'BATCH' | 'REALTIME' }): Promise<SettlementHostStats[]> {
     const config = getPaymentsConfig();
 
-    const payments = await this.prisma.payment.findMany({
+    const payments = (await this.prisma.payment.findMany({
       where: {
         method: 'stripe',
         chargeModel: 'platform_charge',
         communityId: { not: null },
         status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
         createdAt: { lt: params.periodTo },
+        settlementStatus: { not: 'settled' },
+        ...(params.payoutMode
+          ? { payoutMode: params.payoutMode }
+          : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
       },
       select: {
         id: true,
@@ -198,12 +217,21 @@ export class SettlementService {
         refundedGrossTotal: true,
         status: true,
         createdAt: true,
-        eventId: true,
-        lessonId: true,
-        event: { select: { endTime: true } },
-        lesson: { select: { startAt: true, endAt: true } },
+        eligibleAt: true,
+        settlementFrozen: true,
+        settlementStatus: true,
       },
-    });
+    })) as Array<{
+      id: string;
+      communityId: string | null;
+      amount: number;
+      refundedGrossTotal: number;
+      status: string;
+      createdAt: Date;
+      eligibleAt: Date | null;
+      settlementFrozen: boolean;
+      settlementStatus?: string | null;
+    }>;
 
     const hostIdsFromPayments = Array.from(
       new Set(payments.map((p) => p.communityId).filter((v): v is string => Boolean(v))),
@@ -241,34 +269,34 @@ export class SettlementService {
     const blockedNotMaturedPaymentIds: string[] = [];
     const blockedDisputePaymentIds: string[] = [];
     const blockedMissingEligibilityPaymentIds: string[] = [];
+    const blockedFrozenPaymentIds: string[] = [];
 
     const categoryByPaymentId = new Map<
       string,
-      'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility'
+      'settleable' | 'not_matured' | 'disputed' | 'missing_eligibility' | 'frozen'
     >();
 
     for (const payment of payments) {
       const hostId = payment.communityId;
       if (!hostId) continue;
-      const delayDays = getEffectiveDelayDays(hostId);
-      const endAt =
-        payment.event?.endTime ??
-        payment.lesson?.endAt ??
-        payment.lesson?.startAt ??
-        null;
-      if (!endAt) {
+      const eligibleAt = payment.eligibleAt ?? null;
+      if (!eligibleAt) {
         blockedMissingEligibilityPaymentIds.push(payment.id);
         categoryByPaymentId.set(payment.id, 'missing_eligibility');
         continue;
       }
 
+      if (payment.settlementFrozen) {
+        blockedFrozenPaymentIds.push(payment.id);
+        categoryByPaymentId.set(payment.id, 'frozen');
+        continue;
+      }
       if (payment.status === 'disputed') {
         blockedDisputePaymentIds.push(payment.id);
         categoryByPaymentId.set(payment.id, 'disputed');
         continue;
       }
 
-      const eligibleAt = addDays(endAt, delayDays);
       if (eligibleAt > params.periodTo) {
         blockedNotMaturedPaymentIds.push(payment.id);
         categoryByPaymentId.set(payment.id, 'not_matured');
@@ -289,6 +317,8 @@ export class SettlementService {
       blockedDisputeReversalByHost,
       blockedMissingPayableByHost,
       blockedMissingReversalByHost,
+      blockedFrozenPayableByHost,
+      blockedFrozenReversalByHost,
     ] = await Promise.all([
       this.prisma.settlementItem.groupBy({
         by: ['hostId'],
@@ -336,6 +366,16 @@ export class SettlementService {
         periodTo: params.periodTo,
         entryType: 'host_payable_reversal',
       }),
+      this.groupLedgerByHost({
+        paymentIds: blockedFrozenPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable',
+      }),
+      this.groupLedgerByHost({
+        paymentIds: blockedFrozenPaymentIds,
+        periodTo: params.periodTo,
+        entryType: 'host_payable_reversal',
+      }),
     ]);
 
     const paidOutByHost = new Map<string, number>();
@@ -368,6 +408,7 @@ export class SettlementService {
     for (const hostId of blockedNotMaturedPayableByHost.keys()) allHostIds.add(hostId);
     for (const hostId of blockedDisputePayableByHost.keys()) allHostIds.add(hostId);
     for (const hostId of blockedMissingPayableByHost.keys()) allHostIds.add(hostId);
+    for (const hostId of blockedFrozenPayableByHost.keys()) allHostIds.add(hostId);
 
     const statsByHost = new Map<string, SettlementHostStats>();
     for (const hostId of allHostIds) {
@@ -384,12 +425,15 @@ export class SettlementService {
         (blockedDisputePayableByHost.get(hostId) ?? 0) - (blockedDisputeReversalByHost.get(hostId) ?? 0);
       const blockedMissingEligibilityNet =
         (blockedMissingPayableByHost.get(hostId) ?? 0) - (blockedMissingReversalByHost.get(hostId) ?? 0);
+      const blockedFrozenNet =
+        (blockedFrozenPayableByHost.get(hostId) ?? 0) - (blockedFrozenReversalByHost.get(hostId) ?? 0);
 
       const blockedReasons: string[] = [];
       const candidate = hostBalance > 0 ? hostBalance : 0;
       const onboarded = communityById.get(hostId)?.stripeAccountOnboarded ?? false;
-      if (candidate > 0 && !onboarded) blockedReasons.push('connected_account_not_onboarded');
+      if (candidate > 0 && !onboarded) blockedReasons.push('account_not_onboarded');
       if (candidate > 0 && minTransfer > 0 && candidate < minTransfer) blockedReasons.push('below_min_transfer_amount');
+      if (blockedFrozenNet > 0) blockedReasons.push('frozen_by_ops');
       if (candidate <= 0 && blockedNotMaturedNet > 0) blockedReasons.push('not_matured');
       if (candidate <= 0 && blockedDisputeNet > 0) blockedReasons.push('dispute_open');
       if (candidate <= 0 && blockedMissingEligibilityNet > 0) blockedReasons.push('missing_eligibility_source');
@@ -427,6 +471,8 @@ export class SettlementService {
             disputedNet: blockedDisputeNet,
             missingEligibilityPayments: 0,
             missingEligibilityNet: blockedMissingEligibilityNet,
+            frozenPayments: 0,
+            frozenNet: blockedFrozenNet,
           },
           rules: {
             settlementDelayDays: delayDays,
@@ -457,6 +503,7 @@ export class SettlementService {
       if (category === 'not_matured') entry.counts.blocked.notMaturedPayments += 1;
       if (category === 'disputed') entry.counts.blocked.disputedPayments += 1;
       if (category === 'missing_eligibility') entry.counts.blocked.missingEligibilityPayments += 1;
+      if (category === 'frozen') entry.counts.blocked.frozenPayments += 1;
     }
 
     const stats = Array.from(statsByHost.values());
@@ -494,10 +541,23 @@ export class SettlementService {
   async runSettlementBatch(params: {
     periodFrom: Date;
     periodTo: Date;
-    trigger?: { type: 'auto' | 'manual'; userId?: string };
+    trigger?: { type: 'auto' | 'manual' | 'realtime'; userId?: string };
+    payoutMode?: 'BATCH' | 'REALTIME';
   }) {
     const config = getPaymentsConfig();
     const settlementEnabled = config.settlementEnabled && this.stripeService.enabled;
+
+    await this.prisma.payment.updateMany({
+      where: {
+        eligibleAt: { lte: params.periodTo },
+        eligibilityStatus: 'PENDING',
+        settlementStatus: { not: 'settled' },
+        ...(params.payoutMode
+          ? { payoutMode: params.payoutMode }
+          : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
+      },
+      data: { eligibilityStatus: 'ELIGIBLE' },
+    });
 
     const existingBatch = await this.prisma.settlementBatch.findFirst({
       where: {
@@ -511,7 +571,11 @@ export class SettlementService {
       return { batchId: existingBatch.id, status: existingBatch.status };
     }
 
-    const stats = await this.computeHostStats({ periodFrom: params.periodFrom, periodTo: params.periodTo });
+    const stats = await this.computeHostStats({
+      periodFrom: params.periodFrom,
+      periodTo: params.periodTo,
+      payoutMode: params.payoutMode,
+    });
     const hostIds = stats.map((s) => s.hostId);
     const communities = hostIds.length
       ? await this.prisma.community.findMany({
@@ -521,6 +585,14 @@ export class SettlementService {
       : [];
     const communityById = new Map(communities.map((c) => [c.id, c]));
 
+    const totalAmount = stats.reduce((sum, s) => sum + (s.settleAmount ?? 0), 0);
+    const blockedCount = stats.filter((s) => s.status === 'blocked').length;
+    const reasonCodeSummary = stats.reduce<Record<string, number>>((acc, s) => {
+      for (const reason of s.blockedReasons ?? []) {
+        acc[reason] = (acc[reason] ?? 0) + 1;
+      }
+      return acc;
+    }, {});
     const batch = await this.prisma.settlementBatch.create({
       data: {
         periodFrom: params.periodFrom,
@@ -528,10 +600,17 @@ export class SettlementService {
         currency: 'jpy',
         status: settlementEnabled ? 'pending' : 'dry_run',
         runAt: new Date(),
+        triggerType: params.trigger?.type ?? 'unknown',
+        cutoffAt: params.periodTo,
+        scheduledAt: new Date(),
+        totalAmount,
+        successCount: 0,
+        failedCount: 0,
+        blockedCount,
+        reasonCodeSummary,
         meta: {
           settlementEnabled,
           settlementReportDir: config.settlementReportDir,
-          triggerType: params.trigger?.type ?? 'unknown',
           triggeredByUserId: params.trigger?.userId ?? null,
           settlementDelayDays: config.settlementDelayDays,
           settlementWindowDays: config.settlementWindowDays,
@@ -636,7 +715,12 @@ export class SettlementService {
           : 'completed';
     await this.prisma.settlementBatch.update({
       where: { id: batch.id },
-      data: { status: finalStatus },
+      data: {
+        status: finalStatus,
+        successCount: transferSucceeded,
+        failedCount: transferFailed,
+        blockedCount: items.filter((i) => i.status === 'blocked').length,
+      },
     });
 
     const csv = this.buildItemsCsv(stats);
@@ -657,7 +741,65 @@ export class SettlementService {
     };
 
     await this.writeReport(batch.id, config.settlementReportDir, summary, csv);
+    if (settlementEnabled) {
+      await this.markPaymentsSettled({
+        periodTo: params.periodTo,
+        payoutMode: params.payoutMode,
+        settledAt: new Date(),
+      });
+    }
     return { batchId: batch.id, status: finalStatus };
+  }
+
+  private async markPaymentsSettled(params: {
+    periodTo: Date;
+    payoutMode?: 'BATCH' | 'REALTIME';
+    settledAt: Date;
+  }) {
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        method: 'stripe',
+        chargeModel: 'platform_charge',
+        communityId: { not: null },
+        status: { in: ['paid', 'partial_refunded', 'refunded'] },
+        eligibleAt: { lte: params.periodTo },
+        settlementStatus: { not: 'settled' },
+        settlementFrozen: false,
+        ...(params.payoutMode
+          ? { payoutMode: params.payoutMode }
+          : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
+      },
+      select: {
+        id: true,
+        amount: true,
+        platformFee: true,
+        stripeFeeAmountActual: true,
+        stripeFeeAmountEstimated: true,
+        refundedGrossTotal: true,
+        refundedPlatformFeeTotal: true,
+      },
+    });
+    if (!payments.length) return;
+    await this.prisma.$transaction(
+      payments.map((payment) => {
+        const stripeFee = payment.stripeFeeAmountActual ?? payment.stripeFeeAmountEstimated ?? 0;
+        const settlementAmount = computeSettlementAmount({
+          gross: payment.amount ?? 0,
+          platformFee: payment.platformFee ?? 0,
+          stripeFee,
+          refundedGross: payment.refundedGrossTotal ?? 0,
+          refundedPlatformFee: payment.refundedPlatformFeeTotal ?? 0,
+        });
+        return this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            settlementStatus: 'settled',
+            settlementAmount,
+            settledAt: params.settledAt,
+          },
+        });
+      }),
+    );
   }
 
   async retrySettlementBatch(batchId: string) {
@@ -776,7 +918,12 @@ export class SettlementService {
 
     await this.prisma.settlementBatch.update({
       where: { id: batch.id },
-      data: { status: finalStatus },
+      data: {
+        status: finalStatus,
+        successCount: completedCount,
+        failedCount,
+        blockedCount: refreshedItems.filter((i) => i.status === 'blocked').length,
+      },
     });
 
     const csv = this.buildBatchItemsCsv(
@@ -836,18 +983,28 @@ export class SettlementService {
         const succeeded = items.filter((i) => ['completed', 'transferred'].includes(i.status)).length;
         const failed = items.filter((i) => i.status === 'failed').length;
         const blocked = items.filter((i) => i.status === 'blocked').length;
-        const pending = items.filter((i) => ['pending', 'processing'].includes(i.status)).length;
-        const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
-        const settlementEnabled = Boolean(meta?.settlementEnabled);
-        return {
-          batchId: batch.id,
-          periodFrom: batch.periodFrom.toISOString(),
-          periodTo: batch.periodTo.toISOString(),
-          currency: batch.currency ?? 'jpy',
+	        const pending = items.filter((i) => ['pending', 'processing'].includes(i.status)).length;
+	        const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+	        const settlementEnabled = Boolean(meta?.settlementEnabled);
+	        const triggerType =
+	          batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
+	        return {
+	          batchId: batch.id,
+	          periodFrom: batch.periodFrom.toISOString(),
+	          periodTo: batch.periodTo.toISOString(),
+	          currency: batch.currency ?? 'jpy',
           status: batch.status,
           settlementEnabled,
           createdAt: batch.createdAt.toISOString(),
           runAt: batch.runAt.toISOString(),
+          triggerType,
+          cutoffAt: batch.cutoffAt?.toISOString() ?? null,
+          scheduledAt: batch.scheduledAt?.toISOString() ?? null,
+          totalAmount: batch.totalAmount ?? null,
+          successCount: batch.successCount ?? null,
+          failedCount: batch.failedCount ?? null,
+          blockedCount: batch.blockedCount ?? null,
+          reasonCodeSummary: batch.reasonCodeSummary ?? null,
           hosts: items.length,
           counts: {
             succeeded,
@@ -855,7 +1012,6 @@ export class SettlementService {
             blocked,
             pending,
           },
-          triggerType: typeof meta?.triggerType === 'string' ? meta.triggerType : null,
         };
       }),
     };
@@ -925,6 +1081,8 @@ export class SettlementService {
     }
 
     const meta = batch.meta && typeof batch.meta === 'object' ? (batch.meta as Record<string, unknown>) : {};
+    const triggerType =
+      batch.triggerType ?? (typeof meta?.triggerType === 'string' ? meta.triggerType : null);
 
     const parseRules = (counts: unknown) => {
       if (!counts || typeof counts !== 'object') return {};
@@ -950,25 +1108,34 @@ export class SettlementService {
       const rules = parseRules(item.counts);
       const blocked = parseBlocked(item.counts);
       const blockedReasonCodes: string[] = [];
+      const skipReasonCodes: string[] = [];
 
       if (item.status === 'blocked') {
         if ((item.hostBalance ?? 0) > 0) {
           if (!host?.stripeAccountId || !host?.stripeAccountOnboarded) {
-            blockedReasonCodes.push('connected_account_not_onboarded');
+            blockedReasonCodes.push('account_not_onboarded');
           }
           const minTransfer = pickNumber(rules, 'settlementMinTransferAmount');
           if (minTransfer !== null && minTransfer > 0 && (item.hostBalance ?? 0) < minTransfer) {
             blockedReasonCodes.push('below_min_transfer_amount');
           }
+          const frozenNet = pickNumber(blocked, 'frozenNet');
+          if (frozenNet !== null && frozenNet > 0) blockedReasonCodes.push('frozen_by_ops');
         } else {
           const notMaturedNet = pickNumber(blocked, 'notMaturedNet');
           const disputedNet = pickNumber(blocked, 'disputedNet');
           const missingEligibilityNet = pickNumber(blocked, 'missingEligibilityNet');
+          const frozenNet = pickNumber(blocked, 'frozenNet');
           if (notMaturedNet !== null && notMaturedNet > 0) blockedReasonCodes.push('not_matured');
           if (disputedNet !== null && disputedNet > 0) blockedReasonCodes.push('dispute_open');
           if (missingEligibilityNet !== null && missingEligibilityNet > 0) blockedReasonCodes.push('missing_eligibility_source');
+          if (frozenNet !== null && frozenNet > 0) blockedReasonCodes.push('frozen_by_ops');
         }
         if (!blockedReasonCodes.length) blockedReasonCodes.push('blocked');
+      }
+      if (item.status === 'skipped') {
+        if ((item.hostBalance ?? 0) <= 0) skipReasonCodes.push('balance_non_positive');
+        if (!skipReasonCodes.length) skipReasonCodes.push('skipped');
       }
 
       return {
@@ -986,6 +1153,7 @@ export class SettlementService {
         nextAttemptAt: item.nextAttemptAt ? item.nextAttemptAt.toISOString() : null,
         counts: item.counts ?? {},
         blockedReasonCodes,
+        skipReasonCodes,
         disputedPayments: disputedByHost.get(item.hostId) ?? [],
         hostStripe: host
           ? {
@@ -1009,7 +1177,14 @@ export class SettlementService {
       currency: batch.currency ?? 'jpy',
       status: batch.status,
       settlementEnabled: Boolean(meta?.settlementEnabled),
-      triggerType: typeof meta?.triggerType === 'string' ? meta.triggerType : null,
+      triggerType,
+      cutoffAt: batch.cutoffAt ? batch.cutoffAt.toISOString() : null,
+      scheduledAt: batch.scheduledAt ? batch.scheduledAt.toISOString() : null,
+      totalAmount: batch.totalAmount ?? null,
+      successCount: batch.successCount ?? null,
+      failedCount: batch.failedCount ?? null,
+      blockedCount: batch.blockedCount ?? null,
+      reasonCodeSummary: batch.reasonCodeSummary ?? null,
       createdAt: batch.createdAt.toISOString(),
       updatedAt: batch.updatedAt.toISOString(),
       runAt: batch.runAt.toISOString(),

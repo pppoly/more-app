@@ -143,6 +143,7 @@ model Event {
   category               String?
   startTime              DateTime
   endTime                DateTime
+  eventEndAt             DateTime?
   regDeadline            DateTime
   regStartTime           DateTime?
   regEndTime             DateTime?
@@ -161,6 +162,7 @@ model Event {
   registrationFormSchema Json?
   config                 Json?
   refundPolicy           Json?
+  refundDeadlineAt       DateTime?
   coverType              String?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
@@ -207,6 +209,8 @@ model Lesson {
   classId        String
   startAt        DateTime
   endAt          DateTime?
+  eventEndAt     DateTime?
+  refundDeadlineAt DateTime?
   capacity       Int?
   status         String              @default("scheduled")
   createdAt      DateTime            @default(now())
@@ -370,23 +374,44 @@ model Payment {
   providerAccountId       String?
   providerBalanceTxId     String?
   idempotencyKey          String?            @unique
+  eligibleAt              DateTime?
+  payoutMode              String?
+  eligibilityStatus       String?
+  payoutStatus            String?
+  reasonCode              String?
+  ruleVersionId           String?
+  settlementStatus        SettlementStatus   @default(unsettled)
+  settlementAmount        Int?
+  settledAt               DateTime?
+  settlementFrozen        Boolean            @default(false)
   community               Community?         @relation(fields: [communityId], references: [id])
   event                   Event?             @relation(fields: [eventId], references: [id])
   lesson                  Lesson?            @relation(fields: [lessonId], references: [id])
   registration            EventRegistration? @relation("RegistrationPayment", fields: [registrationId], references: [id])
   user                    User               @relation(fields: [userId], references: [id])
   refundRequests          RefundRequest[]
+  ruleVersion             SettlementRuleVersion? @relation(fields: [ruleVersionId], references: [id])
 
   @@index([provider, providerObjectId])
   @@index([providerBalanceTxId])
   @@index([stripePaymentIntentId])
   @@index([communityId, createdAt])
   @@index([communityId, status, createdAt])
+  @@index([eligibleAt])
+  @@index([eligibilityStatus, eligibleAt])
+  @@index([payoutStatus])
+  @@index([reasonCode])
+  @@index([settlementStatus])
 }
 
 enum ChargeModel {
   platform_charge
   destination_charge
+}
+
+enum SettlementStatus {
+  unsettled
+  settled
 }
 
 model EventInbox {
@@ -413,6 +438,14 @@ model SettlementBatch {
   currency   String   @default("jpy")
   status     String   @default("pending")
   runAt      DateTime @default(now())
+  triggerType String?
+  cutoffAt   DateTime?
+  scheduledAt DateTime?
+  totalAmount Int?
+  successCount Int?
+  failedCount Int?
+  blockedCount Int?
+  reasonCodeSummary Json?
   meta       Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -423,6 +456,7 @@ model SettlementBatch {
   @@index([periodFrom])
   @@index([periodTo])
   @@index([status])
+  @@index([scheduledAt])
 }
 
 model SettlementItem {
@@ -450,6 +484,36 @@ model SettlementItem {
   @@index([hostId])
   @@index([status])
   @@index([nextAttemptAt])
+}
+
+model SettlementRuleVersion {
+  id         String   @id @default(cuid())
+  name       String?
+  status     String   @default("active")
+  config     Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  payments   Payment[]
+  auditEvents SettlementAuditEvent[]
+
+  @@index([status])
+}
+
+model SettlementAuditEvent {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  operator   String
+  reasonCode String?
+  note       String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+  ruleVersionId String?
+  ruleVersion  SettlementRuleVersion? @relation(fields: [ruleVersionId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([reasonCode])
 }
 
 model RefundRequest {

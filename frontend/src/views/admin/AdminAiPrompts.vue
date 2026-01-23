@@ -19,15 +19,16 @@
         <article v-for="item in items" :key="item.id" class="prompt-card">
           <div class="card-top">
             <div>
-              <p class="eyebrow">{{ item.moduleId }}</p>
-              <h3>{{ item.title || item.name || '無題' }}</h3>
+              <p class="eyebrow">{{ getModuleId(item.id) }}</p>
+              <h3>{{ item.name || item.id }}</h3>
             </div>
-            <span class="pill" :class="item.published ? 'pill-live' : 'pill-pending'">
-              {{ item.published ? 'Published' : 'Draft' }}
+            <span class="pill" :class="isPublished(item) ? 'pill-live' : 'pill-pending'">
+              {{ isPublished(item) ? 'Published' : 'Draft' }}
             </span>
           </div>
-          <p class="meta">更新: {{ formatDate(item.updatedAt) }}</p>
-          <p class="meta">作成: {{ formatDate(item.createdAt) }}</p>
+          <p class="meta">ID: {{ item.id }}</p>
+          <p class="meta">version: {{ item.version || '—' }}</p>
+          <p v-if="item.approvedAt" class="meta">approved: {{ formatDate(item.approvedAt) }}</p>
           <div class="actions">
             <button class="ghost" type="button" @click="openPrompt(item.id)">詳細</button>
           </div>
@@ -50,6 +51,9 @@ const router = useRouter();
 
 const formatDate = (val: string) =>
   new Date(val).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+const getModuleId = (promptId: string) => promptId.split('.')[0] || promptId;
+const isPublished = (prompt: PromptDefinition) => prompt.status === 'published';
 
 const load = async () => {
   loading.value = true;

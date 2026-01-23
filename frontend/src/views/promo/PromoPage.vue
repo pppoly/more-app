@@ -115,7 +115,7 @@ const copy = async () => {
       throw new Error('clipboard not available');
     }
   } catch {
-    toast.show('コピーに失敗しました', { type: 'error' });
+    toast.show('コピーに失敗しました', 'error');
   } finally {
     copying.value = false;
   }

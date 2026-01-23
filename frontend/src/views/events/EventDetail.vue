@@ -159,7 +159,7 @@
                   type="checkbox"
                   :value="option"
                   :checked="Array.isArray(formAnswers[fieldKey(field, index)]) && formAnswers[fieldKey(field, index)].includes(option)"
-                  @change="toggleMulti(field, index, option, $event.target.checked)"
+                  @change="toggleMulti(field, index, option, Boolean(($event.target as HTMLInputElement | null)?.checked))"
                 />
                 {{ option }}
               </label>
@@ -168,7 +168,7 @@
               <input
                 type="checkbox"
                 :checked="Boolean(formAnswers[fieldKey(field, index)])"
-                @change="formAnswers[fieldKey(field, index)] = $event.target.checked"
+                @change="formAnswers[fieldKey(field, index)] = Boolean(($event.target as HTMLInputElement | null)?.checked)"
               />
               {{ field.label }}
             </label>
@@ -567,8 +567,18 @@ const goBack = () => {
 };
 
 const shareEvent = () => {
-  if (navigator.share && event.value) {
-    navigator.share({ title: title.value, url: window.location.href }).catch(() => undefined);
+  if (!event.value) return;
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  if (!shareUrl) return;
+  const payload = { title: title.value, url: shareUrl };
+  if (navigator.share) {
+    navigator.share(payload).catch(() => undefined);
+    return;
+  }
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
+  window.open(lineShareUrl, '_blank');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(payload.url).catch(() => undefined);
   }
 };
 

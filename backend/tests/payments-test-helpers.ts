@@ -122,6 +122,7 @@ export class InMemoryPrisma {
   communities: any[] = [];
   settlementBatches: any[] = [];
   settlementItems: any[] = [];
+  settlementAuditEvents: any[] = [];
 
   private nextId(prefix: string) {
     this.seq += 1;
@@ -535,12 +536,21 @@ export class InMemoryPrisma {
       return Array.from(groups.values());
     },
   };
+
+  settlementAuditEvent = {
+    create: async (args: any) => {
+      const created: any = { id: this.nextId('sua'), createdAt: new Date(), ...args.data };
+      this.settlementAuditEvents.push(created);
+      return created;
+    },
+  };
 }
 
 export class StripeClientStub {
   refundsCreateCalls: Array<{ params: any; opts?: any }> = [];
   transfersCreateCalls: Array<{ params: any; opts?: any }> = [];
   paymentIntents: Record<string, Stripe.PaymentIntent> = {};
+  charges: Record<string, Stripe.Charge> = {};
 
   shouldFailTransfersCreate: boolean = false;
   shouldFailRefundsCreate: boolean = false;
@@ -580,6 +590,14 @@ export class StripeClientStub {
     },
   };
 
+  chargesApi = {
+    retrieve: async (chargeId: string) => {
+      const charge = this.charges[chargeId];
+      if (!charge) throw new Error(`charge_not_found:${chargeId}`);
+      return charge;
+    },
+  };
+
   transfers = {
     create: async (params: any, opts?: any) => {
       this.transfersCreateCalls.push({ params, opts });
@@ -602,6 +620,7 @@ export const buildStripeServiceStub = (client: StripeClientStub) => {
       checkout: client.checkout,
       refunds: client.refunds,
       paymentIntents: { retrieve: client.paymentIntentsApi.retrieve },
+      charges: { retrieve: client.chargesApi.retrieve },
       transfers: client.transfers,
     },
   };
@@ -618,4 +637,8 @@ export class NotificationServiceStub {
   notifyRegistrationSuccess = async () => {};
   notifyRefundByStripeCharge = async () => {};
   notifyRefundByPayment = async () => {};
+}
+
+export class SettlementServiceStub {
+  runSettlementBatch = async () => ({ batchId: 'stub', status: 'skipped' });
 }

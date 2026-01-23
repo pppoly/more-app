@@ -14,5 +14,10 @@
     "subscriptionUnavailable": "Pembayaran tidak tersedia sekarang. Coba lagi atau hubungi dukungan.",
     "stripeLinkFailed": "Gagal membuat tautan. Coba lagi atau hubungi dukungan.",
     "qrScanFailed": "Gagal memindai. Coba lagi atau unggah foto kode."
+  },
+  "maintenance": {
+    "title": "Sedang pemeliharaan",
+    "description": "Layanan sementara tidak tersedia. Coba lagi nanti.",
+    "retry": "Muat ulang"
   }
 }

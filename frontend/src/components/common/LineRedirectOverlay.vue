@@ -4,20 +4,41 @@
     <div class="line-redirect__card">
       <p class="line-redirect__title">創翔モアは LINEアプリ内のミニアプリとしてご利用ください</p>
       <div class="line-redirect__actions">
-        <button type="button" class="primary" @click="openLiff">LINEで開く</button>
-        <button type="button" class="secondary" @click="$emit('continue-web')">このままWebで見る</button>
+        <button type="button" class="primary" @click="openLiff">LINEミニアプリで開く</button>
+        <button
+          v-if="allowWebContinue"
+          type="button"
+          class="secondary"
+          @click="$emit('continue-web')"
+        >
+          このままWebで見る
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-const LIFF_URL = 'https://liff.line.me/2008600730-qxlPrj5Q';
+import { buildLiffUrl } from '../../utils/liff';
+
+const props = withDefaults(
+  defineProps<{
+    allowWebContinue?: boolean;
+  }>(),
+  {
+    allowWebContinue: true,
+  },
+);
 
 function openLiff() {
   if (typeof window === 'undefined') return;
   const current = window.location.pathname + window.location.search;
-  window.location.href = `${LIFF_URL}?to=${encodeURIComponent(current)}`;
+  const url = buildLiffUrl(current);
+  if (!url) {
+    console.error('LIFF_ID is not configured; cannot open in LINE.');
+    return;
+  }
+  window.location.href = url;
 }
 </script>
 

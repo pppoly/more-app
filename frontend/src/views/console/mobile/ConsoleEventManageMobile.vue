@@ -71,6 +71,9 @@
         <div class="progress-bar-wrap">
           <div class="progress-bar-fill" :style="{ width: summaryCard.progressPercent + '%' }"></div>
         </div>
+        <p v-if="pendingRegistrationsCount" class="pending-hint">
+          審査待ち {{ pendingRegistrationsCount }} 件
+        </p>
       </section>
       <section v-else class="section-block inline-empty">
         <p class="eyebrow">申込状況</p>
@@ -199,6 +202,14 @@
             {{ entryActionLoading[activeEntry.id] ? '処理中…' : '拒否する' }}
           </button>
           <button
+            v-if="activeEntry.status === 'pending'"
+            class="sheet-action"
+            :disabled="entryActionLoading[activeEntry.id]"
+            @click="approveEntry"
+          >
+            {{ entryActionLoading[activeEntry.id] ? '処理中…' : '承認する' }}
+          </button>
+          <button
             v-if="canApproveRefundEntry(activeEntry)"
             class="sheet-action danger"
             :disabled="entryActionLoading[activeEntry.id]"
@@ -274,6 +285,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  approveEventRegistration,
   fetchConsoleEvent,
   fetchEventRegistrations,
   fetchEventRegistrationsSummary,
@@ -297,12 +309,11 @@ import moreIcon from '../../../assets/icons/more-horizontal.svg';
 import QRCode from 'qrcode';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { APP_TARGET } from '../../../config';
 import AppAvatar from '../../../components/common/AppAvatar.vue';
 
 const route = useRoute();
 const router = useRouter();
-const isLiffClientMode = computed(() => APP_TARGET === 'liff' || isLineInAppBrowser() || isLiffClient());
+const isLiffClientMode = computed(() => isLineInAppBrowser() || isLiffClient());
 const eventId = computed(() => route.params.eventId as string);
 const communityId = computed(() => eventDetail.value?.communityId);
 
@@ -370,6 +381,10 @@ const memberAvatarFallback = computed(
     (slotMap['mobile.console.memberAvatar'].defaultValue as string),
 );
 
+const pendingRegistrationsCount = computed(() =>
+  registrations.value.filter((reg) => reg.status === 'pending').length,
+);
+
 const summaryCard = computed(() => {
   if (!summary.value) return null;
   const total = summary.value.totalRegistrations;
@@ -399,30 +414,25 @@ const summaryCard = computed(() => {
 });
 const paidRegistrationsCount = computed(() => summary.value?.paidRegistrations ?? 0);
 
-const isSuccessfulRegistration = (reg: ConsoleEventRegistrationItem) => {
-  if (['approved', 'paid', 'attended'].includes(reg.status)) return true;
-  if (reg.paymentStatus === 'paid') return true;
-  return false;
-};
-
 const entries = computed(() => {
   const deduped = new Map<string, ReturnType<typeof mapEntry>>();
-  registrations.value
-    .filter(isSuccessfulRegistration)
-    .forEach((reg) => {
-      const mapped = mapEntry(reg);
-      const key = reg.user.id || mapped.id;
-      const existing = deduped.get(key);
-      if (!existing) {
-        deduped.set(key, mapped);
-        return;
-      }
-      // 最新の申込を採用
-      if (new Date(mapped.createdAtIso) > new Date(existing.createdAtIso)) {
-        deduped.set(key, mapped);
-      }
-    });
-  return Array.from(deduped.values());
+  registrations.value.forEach((reg) => {
+    const mapped = mapEntry(reg);
+    const key = reg.user.id || mapped.id;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, mapped);
+      return;
+    }
+    // 最新の申込を採用
+    if (new Date(mapped.createdAtIso) > new Date(existing.createdAtIso)) {
+      deduped.set(key, mapped);
+    }
+  });
+  const grouped = Array.from(deduped.values());
+  const pending = grouped.filter((entry) => entry.status === 'pending');
+  const others = grouped.filter((entry) => entry.status !== 'pending');
+  return [...pending, ...others];
 });
 
 const activeRegistration = computed(
@@ -834,6 +844,24 @@ const rejectEntry = async () => {
   }
 };
 
+const approveEntry = async () => {
+  if (!activeEntry.value) return;
+  const sure = window.confirm('この申込を承認しますか？');
+  if (!sure) return;
+  entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: true };
+  try {
+    await approveEventRegistration(eventId.value, activeEntry.value.id);
+    registrations.value = registrations.value.map((reg) =>
+      reg.registrationId === activeEntry.value?.id ? { ...reg, status: 'approved' } : reg,
+    );
+    closeEntryAction();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '承認に失敗しました';
+  } finally {
+    entryActionLoading.value = { ...entryActionLoading.value, [activeEntry.value.id]: false };
+  }
+};
+
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);
 
@@ -857,7 +885,7 @@ const canApproveRefundEntry = (entry: ReturnType<typeof mapEntry>) =>
   entry.status === 'cancel_requested' && Boolean(entry.refundRequest?.id);
 
 const canKickEntry = (entry: ReturnType<typeof mapEntry>) =>
-  !['cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
+  !['pending', 'cancelled', 'refunded', 'pending_refund', 'cancel_requested'].includes(entry.status) &&
   !canRefundEntry(entry);
 
 const approveRefundEntry = async () => {
@@ -994,6 +1022,12 @@ const reload = () => loadData();
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .panel-title { margin-top: 4px; font-size: 16px; font-weight: 700; color: #0f172a; }
 .muted { font-size: 12px; color: #94a3b8; }
+.pending-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f97316;
+  font-weight: 600;
+}
 .eyebrow { font-size: 11px; letter-spacing: 0.04em; color: #94a3b8; text-transform: uppercase; }
 .count-text { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
 .pill { padding: 4px 8px; border-radius: 999px; background: #f8fafc; color: #0f172a; font-size: 12px; font-weight: 700; border: 1px solid #e2e8f0; }

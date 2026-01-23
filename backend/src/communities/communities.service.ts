@@ -4,12 +4,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { buildAssetUrl } from '../common/storage/asset-path';
 import { Prisma } from '@prisma/client';
 import { PermissionsService } from '../auth/permissions.service';
+import { normalizeImageUrl } from '../common/utils/normalize-image-url';
 
 @Injectable()
 export class CommunitiesService {
   constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   async findBySlug(slug: string, userId?: string) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const successRegistrationWhere: Prisma.EventRegistrationWhereInput = {
       status: { in: ['paid', 'approved'] },
       OR: [{ paymentStatus: 'paid' }, { amount: 0 }],
@@ -115,8 +117,28 @@ export class CommunitiesService {
 
     const portalConfig = this.extractPortalConfig(community.description);
     const logoImageUrlRaw = this.extractCommunityLogo(community.description);
-    const logoImageUrl = buildAssetUrl(logoImageUrlRaw);
-    const coverImageUrl = buildAssetUrl(community.coverImageUrl);
+    const logoImageUrl = normalizeImageUrl(buildAssetUrl(logoImageUrlRaw), frontendBaseUrl);
+    const coverImageUrl = normalizeImageUrl(buildAssetUrl(community.coverImageUrl), frontendBaseUrl);
+
+    const description =
+      community.description && typeof community.description === 'object'
+        ? { ...(community.description as Record<string, any>) }
+        : community.description;
+    if (description && typeof description === 'object') {
+      if (typeof (description as any).logoImageUrl === 'string') {
+        (description as any).logoImageUrl = normalizeImageUrl((description as any).logoImageUrl, frontendBaseUrl);
+      }
+      if (
+        (description as any)._portalConfig &&
+        typeof (description as any)._portalConfig === 'object' &&
+        typeof (description as any)._portalConfig.logoImageUrl === 'string'
+      ) {
+        (description as any)._portalConfig = {
+          ...(description as any)._portalConfig,
+          logoImageUrl: normalizeImageUrl((description as any)._portalConfig.logoImageUrl, frontendBaseUrl),
+        };
+      }
+    }
 
     const events =
       ((community as any).events || []).map((event: any) => {
@@ -131,7 +153,7 @@ export class CommunitiesService {
         return {
           ...rest,
           config,
-          coverImageUrl: buildAssetUrl(rest.galleries?.[0]?.imageUrl),
+          coverImageUrl: normalizeImageUrl(buildAssetUrl(rest.galleries?.[0]?.imageUrl), frontendBaseUrl),
         };
       }) ?? [];
 
@@ -145,13 +167,14 @@ export class CommunitiesService {
 
     return {
       ...rest,
+      description,
       logoImageUrl,
       coverImageUrl,
       events,
       members: memberList.map((member) => ({
         id: member.user.id,
         name: member.user.name,
-        avatarUrl: buildAssetUrl(member.user.avatarUrl),
+        avatarUrl: normalizeImageUrl(buildAssetUrl(member.user.avatarUrl), frontendBaseUrl),
       })),
       memberCount: _count?.members ?? 0,
       isFollowing,

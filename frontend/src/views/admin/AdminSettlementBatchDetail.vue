@@ -61,6 +61,12 @@
               <li v-for="code in item.blockedReasonCodes" :key="code" class="meta">{{ reasonLabel(code) }}</li>
             </ul>
           </div>
+          <div v-if="item.status === 'skipped' && item.skipReasonCodes.length" class="reason">
+            <p class="meta"><strong>skipped</strong></p>
+            <ul class="reason-list">
+              <li v-for="code in item.skipReasonCodes" :key="code" class="meta">{{ reasonLabel(code) }}</li>
+            </ul>
+          </div>
 
           <div v-if="item.blockedReasonCodes.includes('dispute_open') && item.disputedPayments.length" class="reason">
             <p class="meta"><strong>dispute</strong></p>
@@ -119,12 +125,15 @@ const statusClass = (status: string) => {
 };
 
 const reasonLabel = (code: string) => {
-  if (code === 'connected_account_not_onboarded') return 'Stripe onboarding 未完了のため保留';
+  if (code === 'account_not_onboarded') return 'Stripe onboarding 未完了のため保留';
   if (code === 'below_min_transfer_amount') return '最小振込額未満のため保留';
+  if (code === 'frozen_by_ops') return '運営凍結のため保留';
   if (code === 'not_matured') return '結算待ち（event.endAt + N 日未到達）';
   if (code === 'dispute_open') return 'Dispute 未解決のため保留（該当 payment のみ）';
   if (code === 'missing_eligibility_source') return '紐付け情報不足（event/lesson endAt 不明）';
   if (code === 'blocked') return 'ルールにより保留';
+  if (code === 'balance_non_positive') return '可転送残高が 0 以下のためスキップ';
+  if (code === 'skipped') return '結算対象がないためスキップ';
   return code;
 };
 

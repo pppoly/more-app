@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <div v-if="visible" class="liff-prompt">
-      <div class="liff-prompt__text">LINEアプリで開くと、より便利にご利用いただけます</div>
+      <div class="liff-prompt__text">LINEミニアプリで開くと、より便利にご利用いただけます</div>
       <div class="liff-prompt__actions">
-        <button type="button" class="liff-prompt__open" @click="openInLine">LINEで開く</button>
+        <button type="button" class="liff-prompt__open" @click="openInLine">LINEミニアプリで開く</button>
         <button type="button" class="liff-prompt__close" aria-label="閉じる" @click="dismiss">×</button>
       </div>
     </div>
@@ -11,13 +11,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { isLiffClient, isLineBrowser } from '../../utils/device';
-
-const LIFF_LAUNCH_URL = 'https://liff.line.me/2008600730-qxlPrj5Q';
+import { buildLiffUrl } from '../../utils/liff';
 const STORAGE_KEY = 'liff-open-prompt-dismissed';
 
 const visible = ref(false);
+const liffUrl = computed(() => (hasWindow() ? buildLiffUrl(window.location.pathname + window.location.search) : null));
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
@@ -26,16 +26,21 @@ function hasWindow(): boolean {
 const shouldShow = () => {
   if (!hasWindow()) return false;
   const dismissed = window.localStorage?.getItem(STORAGE_KEY) === '1';
-  const onTargetHost = window.location.hostname === 'test.socialmore.jp';
-  // LINE 内（Line Browser/LIFF）では「LINE で開く」提示を出さない
-  if (isLineBrowser() || isLiffClient()) return false;
-  return onTargetHost && !dismissed;
+  const onTargetHost =
+    window.location.hostname === 'test.socialmore.jp' ||
+    window.location.hostname === 'app.socialmore.jp';
+  // LIFF 内では提示しない
+  if (isLiffClient()) return false;
+  return onTargetHost && !dismissed && Boolean(liffUrl.value);
 };
 
 function openInLine() {
   if (!hasWindow()) return;
-  const current = window.location.pathname + window.location.search;
-  window.location.href = `${LIFF_LAUNCH_URL}?to=${encodeURIComponent(current)}`;
+  if (!liffUrl.value) {
+    console.error('LIFF_ID is not configured; cannot open in LINE.');
+    return;
+  }
+  window.location.href = liffUrl.value;
 }
 
 function dismiss() {

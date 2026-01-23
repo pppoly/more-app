@@ -14,5 +14,10 @@
     "subscriptionUnavailable": "支付暫時不可用，請稍後再試或聯絡客服。",
     "stripeLinkFailed": "開通連結產生失敗，請稍後重試或聯絡客服。",
     "qrScanFailed": "掃碼失敗，請重試或上傳 QR 碼照片。"
+  },
+  "maintenance": {
+    "title": "系統維護中",
+    "description": "服務暫時無法使用，請稍後再試。",
+    "retry": "重新整理"
   }
 }
