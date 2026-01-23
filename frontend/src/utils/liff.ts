@@ -42,7 +42,6 @@ function startInit(resolvedId: string, initConfig?: LiffInitConfig): Promise<voi
   initError = null;
   const config: RawInitConfig = {
     ...(initConfig ?? {}),
-    withLoginOnExternalBrowser: (initConfig as any)?.withLoginOnExternalBrowser ?? true,
     liffId: resolvedId,
   };
   initPromise = liff
@@ -140,7 +139,7 @@ export function normalizeLiffStateToPath(raw: string | null): string | null {
     if (nestedTo && nestedTo.startsWith('/') && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
       return nestedTo;
     }
-    return `${parsed.pathname}${parsed.search}`;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return decoded;
   }
@@ -151,9 +150,14 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   if (!resolvedId) return null;
   const base = `https://miniapp.line.me/${resolvedId}`;
   if (!toPath) return base;
-  const normalizedCandidate = toPath.startsWith('/') ? toPath : `/${toPath}`;
+  const trimmed = toPath.trim();
+  // Prevent accidentally embedding absolute URLs into the Mini App URL.
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return base;
+  const normalizedCandidate = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   const normalized = normalizeLiffStateToPath(normalizedCandidate) || normalizedCandidate;
-  return `${base}?liff.state=${encodeURIComponent(normalized)}`;
+  if (!normalized.startsWith('/') || normalized.startsWith('//')) return base;
+  // Permanent link: https://miniapp.line.me/{liffId} + (page URL - endpoint URL)
+  return `${base}${normalized}`;
 };
 
 export async function getLiffProfile(): Promise<{
@@ -209,7 +213,8 @@ export async function ensureLiffLoggedIn(scopes: string[] = []): Promise<typeof 
   const inClient = typeof (instance as any)?.isInClient === 'function' ? (instance as any).isInClient() : false;
   const loginAvailable = typeof instance.isLoggedIn === 'function';
   const loggedIn = loginAvailable ? instance.isLoggedIn() : false;
-  if (inClient && loginAvailable && !loggedIn && typeof instance.login === 'function') {
+  // liff.login() isn't guaranteed inside the LIFF browser; prefer init-only there.
+  if (!inClient && loginAvailable && !loggedIn && typeof instance.login === 'function') {
     instance.login();
   }
   await ensureLiffPermissions(scopes);

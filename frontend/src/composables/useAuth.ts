@@ -24,7 +24,7 @@ import { trackEvent } from '../utils/analytics';
 import { isLiffClient } from '../utils/device';
 import { useAuthSheets } from './useAuthSheets';
 import { useToast } from './useToast';
-import { LOGIN_REDIRECT_STORAGE_KEY } from '../constants/auth';
+import { LOGIN_REDIRECT_STORAGE_KEY, MANUAL_LOGOUT_STORAGE_KEY } from '../constants/auth';
 
 interface AuthState {
   user: UserProfile | null;
@@ -192,6 +192,28 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function isManualLogoutStored(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(MANUAL_LOGOUT_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setManualLogoutStored(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (enabled) {
+      window.sessionStorage.setItem(MANUAL_LOGOUT_STORAGE_KEY, '1');
+    } else {
+      window.sessionStorage.removeItem(MANUAL_LOGOUT_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function getStoredRedirect(): string | null {
   if (!hasWindow()) return null;
   const raw = window.localStorage.getItem(LOGIN_REDIRECT_STORAGE_KEY);
@@ -225,10 +247,20 @@ function setToken(token: string | null) {
   if (!hasWindow()) return;
   if (token) {
     manualLogout.value = false;
+    setManualLogoutStored(false);
     needsLiffOpen.value = false;
     window.localStorage.setItem(TOKEN_KEY, token);
   } else {
-    window.localStorage.removeItem(TOKEN_KEY);
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      try {
+        // Best-effort: make hasAuthToken() false even if removeItem is blocked.
+        window.localStorage.setItem(TOKEN_KEY, '');
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 
@@ -581,6 +613,13 @@ async function restoreSession() {
   if (initialized) return;
   initialized = true;
   if (!hasWindow()) return;
+  if (isManualLogoutStored()) {
+    manualLogout.value = true;
+    needsLiffOpen.value = false;
+    setToken(null);
+    state.user = null;
+    return;
+  }
   if (manualLogout.value) {
     needsLiffOpen.value = false;
     manualLogout.value = false;
@@ -661,7 +700,15 @@ export function useAuth() {
     state.user = null;
     consoleCommunityStore.resetCommunities();
     manualLogout.value = true;
+    setManualLogoutStored(true);
     needsLiffOpen.value = false;
+    try {
+      void loadLiff(resolveLiffId())
+        .then((liff) => (liff as any)?.logout?.())
+        .catch(() => undefined);
+    } catch {
+      // ignore
+    }
   };
 
   const loginWithLiff = async (): Promise<LiffAuthResult> => bootstrapLiffAuth(true);
@@ -678,6 +725,7 @@ export function useAuth() {
     loginWithLiff,
     loginWithLiffProfile,
     needsLiffOpen: computed(() => needsLiffOpen.value),
+    manualLogout: computed(() => manualLogout.value || isManualLogoutStored()),
     backendUnavailable: computed(() => backendUnavailable.value),
     fatalError: computed(() => fatalError.value),
   };

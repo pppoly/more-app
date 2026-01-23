@@ -30,6 +30,7 @@ import {
   endNavPending,
   syncHistoryPos,
 } from '../composables/useNavStack';
+import { MANUAL_LOGOUT_STORAGE_KEY } from '../constants/auth';
 
 function isMobile() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -46,7 +47,17 @@ const AUTH_TOKEN_KEY = 'moreapp_access_token';
 function hasAuthToken() {
   if (typeof window === 'undefined') return false;
   try {
+    if (window.sessionStorage.getItem(MANUAL_LOGOUT_STORAGE_KEY) === '1') return false;
     return Boolean(window.localStorage.getItem(AUTH_TOKEN_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function isManualLogoutRequested() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(MANUAL_LOGOUT_STORAGE_KEY) === '1';
   } catch {
     return false;
   }
@@ -678,10 +689,6 @@ router.beforeEach(async (to, from, next) => {
     return next({ name: 'home' });
   }
 
-  if (mobile && to.path === '/') {
-    return next({ name: 'events' });
-  }
-
   if (!auth.user.value && auth.accessToken.value) {
     try {
       await auth.fetchCurrentUser();
@@ -691,7 +698,12 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  if (isLiffContext() && !(auth.accessToken.value || hasAuthToken()) && !isLiffPublicRoute(to)) {
+  if (
+    isLiffContext() &&
+    !(auth.accessToken.value || hasAuthToken()) &&
+    !isLiffPublicRoute(to) &&
+    !isManualLogoutRequested()
+  ) {
     try {
       const result = await auth.loginWithLiff();
       if (result.ok) return next();

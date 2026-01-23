@@ -64,7 +64,7 @@ import router from './router';
 import './assets/main.css';
 import { i18n } from './i18n';
 import { LIFF_ID } from './config';
-import { bootstrapLiff, buildLiffUrl, normalizeLiffStateToPath } from './utils/liff';
+import { buildLiffUrl, loadLiff, normalizeLiffStateToPath } from './utils/liff';
 import { isLiffClient, isLineBrowser } from './utils/device';
 
 const ALLOW_WEB_IN_LINE_KEY = 'allowWebInLine';
@@ -72,6 +72,7 @@ const LIFF_ENTRY_SESSION_KEY = 'liffEntry';
 const SHARE_RETURN_TO_KEY = 'share:returnTo';
 const SHARE_RETURN_AT_KEY = 'share:returnAt';
 const SHARE_RETURN_TTL_MS = 60_000;
+const INITIAL_DEEP_LINK_KEY = 'liff:initialDeepLink';
 
 function markLiffEntry() {
   if (typeof window === 'undefined') return;
@@ -88,6 +89,32 @@ function hasLiffEntryFlag(): boolean {
     return window.sessionStorage.getItem(LIFF_ENTRY_SESSION_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+function captureInitialDeepLink(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('to') || params.get('liff.state');
+  const normalized = normalizeLiffStateToPath(raw);
+  if (!normalized) return null;
+  try {
+    window.sessionStorage.setItem(INITIAL_DEEP_LINK_KEY, normalized);
+  } catch {
+    // ignore
+  }
+  return normalized;
+}
+
+function consumeInitialDeepLink(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(INITIAL_DEEP_LINK_KEY) || '';
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null;
+    window.sessionStorage.removeItem(INITIAL_DEEP_LINK_KEY);
+    return raw;
+  } catch {
+    return null;
   }
 }
 
@@ -144,43 +171,65 @@ function shouldAutoOpenMiniApp(): string | null {
   return buildLiffUrl(current);
 }
 
-// Auto-open share links inside LINE in-app browser.
-if (typeof window !== 'undefined') {
-  const liffUrl = shouldAutoOpenMiniApp();
-  if (liffUrl) {
-    window.location.href = liffUrl;
-  } else if (isLineBrowser() && LIFF_ID && hasLiffEntryFlag()) {
-    // Pre-initialize LIFF so shareTargetPicker is ready by the time the user taps share.
-    bootstrapLiff(LIFF_ID, { withLoginOnExternalBrowser: true });
+async function bootstrapApp() {
+  if (typeof window !== 'undefined') {
+    // Capture deep link early because the LIFF SDK may rewrite the URL during init.
+    captureInitialDeepLink();
+    const liffUrl = shouldAutoOpenMiniApp();
+    if (liffUrl) {
+      window.location.href = liffUrl;
+      return;
+    }
   }
-}
 
-// Handle LIFF deep link (?to=/path) for the web build as well.
-if (typeof window !== 'undefined') {
-  void router.isReady().then(() => {
-    const search = new URLSearchParams(window.location.search);
-    const raw = search.get('to') || search.get('liff.state');
-    const normalized = normalizeLiffStateToPath(raw);
-    if (!normalized) return;
-    const target = router.resolve(normalized);
-    if (!target.matched.length) return;
-    if (target.fullPath === router.currentRoute.value.fullPath) return;
-    router.replace(target.fullPath).catch(() => undefined);
-  });
-}
+  // In LINE, the SDK may modify liff.* query params during init.
+  // Per official docs, avoid app-driven URL changes until liff.init() resolves.
+  if (typeof window !== 'undefined' && isLineBrowser() && LIFF_ID) {
+    const params = new URLSearchParams(window.location.search);
+    const hasLiffQuery = Array.from(params.keys()).some((key) => key.startsWith('liff.'));
+    if (hasLiffQuery || hasLiffEntryFlag()) {
+      try {
+        await loadLiff(LIFF_ID);
+      } catch {
+        // Continue as a normal web page.
+      }
+    }
+  }
 
-// Restore the previous route after returning from the LINE share UI (some WebViews reload to root).
-if (typeof window !== 'undefined') {
-  void router.isReady().then(() => {
+  const app = createApp(App);
+  app.use(router);
+  app.use(i18n);
+
+  await router.isReady();
+
+  // Apply initial deep link after LIFF init. This ensures share links land on the intended page.
+  const initialDeepLink = consumeInitialDeepLink();
+  if (initialDeepLink) {
     try {
+      const target = router.resolve(initialDeepLink);
+      if (target.matched.length && target.fullPath !== router.currentRoute.value.fullPath) {
+        await router.replace(target.fullPath);
+      }
+    } catch {
+      // ignore navigation errors
+    }
+  }
+
+  // Restore the previous route after returning from the LINE share UI (some WebViews reload to root).
+  if (typeof window !== 'undefined') {
+    try {
+      // If a deep link was present, never override it with share-return restoration.
+      const hasDeepLinkNow = Boolean(initialDeepLink);
       const returnTo = window.sessionStorage.getItem(SHARE_RETURN_TO_KEY) || '';
       const at = Number(window.sessionStorage.getItem(SHARE_RETURN_AT_KEY) || '0');
-      if (!returnTo || !returnTo.startsWith('/') || returnTo.startsWith('//')) return;
-      if (!Number.isFinite(at) || Date.now() - at > SHARE_RETURN_TTL_MS) return;
-      const resolved = router.resolve(returnTo);
-      if (!resolved.matched.length) return;
-      if (resolved.fullPath === router.currentRoute.value.fullPath) return;
-      router.replace(resolved.fullPath).catch(() => undefined);
+      if (!hasDeepLinkNow && returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+        if (Number.isFinite(at) && Date.now() - at <= SHARE_RETURN_TTL_MS) {
+          const resolved = router.resolve(returnTo);
+          if (resolved.matched.length && resolved.fullPath !== router.currentRoute.value.fullPath) {
+            await router.replace(resolved.fullPath);
+          }
+        }
+      }
     } catch {
       // ignore storage errors
     } finally {
@@ -191,7 +240,9 @@ if (typeof window !== 'undefined') {
         // ignore
       }
     }
-  });
+  }
+
+  app.mount('#app');
 }
 
 // Prevent pinch-zoom / double-tap zoom so mobile layouts stay fixed-scale.
@@ -220,8 +271,4 @@ document.addEventListener(
   false,
 );
 
-const app = createApp(App);
-
-app.use(router);
-app.use(i18n);
-app.mount('#app');
+void bootstrapApp();

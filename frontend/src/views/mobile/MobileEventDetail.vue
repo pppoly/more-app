@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-  import { ensureLiffLoggedIn, isLineInAppBrowser } from '../../utils/liff';
+import { ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -925,7 +925,11 @@ const canGoBack = () => {
   return Boolean((historyState && historyState.back) || window.history.length > 1);
 };
 
+let shareNavCleanup: (() => void) | null = null;
+
 const goBack = () => {
+  shareNavCleanup?.();
+  shareNavCleanup = null;
   if (canGoBack()) {
     router.back();
     return;
@@ -943,10 +947,17 @@ const shareEvent = async () => {
       // ignore
     }
   }
+  shareNavCleanup?.();
+  shareNavCleanup = null;
   const expectedRoute = route.fullPath;
-  let shareNavGuardActive = true;
+  let guardUntil = Date.now() + 60_000;
+  const guardAfterShareMs = 800;
+  const shrinkGuardWindow = () => {
+    guardUntil = Date.now() + guardAfterShareMs;
+  };
+  const isGuardActive = () => Date.now() < guardUntil;
   const restoreRouteIfNeeded = () => {
-    if (!shareNavGuardActive) return;
+    if (!isGuardActive()) return;
     const current = router.currentRoute.value.fullPath;
     if (current !== expectedRoute) {
       router.replace(expectedRoute).catch(() => undefined);
@@ -959,6 +970,20 @@ const shareEvent = async () => {
   if (typeof window !== 'undefined') {
     window.addEventListener('popstate', onPopState);
   }
+  shareNavCleanup = () => {
+    guardUntil = 0;
+    try {
+      window.removeEventListener('popstate', onPopState);
+    } catch {
+      // ignore
+    }
+    try {
+      window.sessionStorage.removeItem('share:returnTo');
+      window.sessionStorage.removeItem('share:returnAt');
+    } catch {
+      // ignore
+    }
+  };
   const frontendBase = FRONTEND_BASE_URL;
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
@@ -1015,13 +1040,16 @@ const shareEvent = async () => {
     }
     if (isLineBrowserLike && LIFF_ID) {
       try {
-        const liff = await ensureLiffLoggedIn();
+        showUiMessage('初期化中…');
+        const liff = await loadLiff(LIFF_ID);
         const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
         const canShare =
           typeof (liff as any).isApiAvailable === 'function' ? (liff as any).isApiAvailable('shareTargetPicker') : true;
         const canUseSharePicker = inClient && canShare && typeof liff.shareTargetPicker === 'function';
         if (canUseSharePicker) {
+          await ensureLiffPermissions(['chat_message.write']);
           const result = await liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+          shrinkGuardWindow();
           window.setTimeout(restoreRouteIfNeeded, 0);
           showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
           return;
@@ -1041,12 +1069,13 @@ const shareEvent = async () => {
 
     await fallbackShare(true, true);
   } finally {
-    // Keep the guard briefly to catch delayed back events when returning from the share UI.
+    // Keep the guard briefly to catch delayed back events when returning from the share UI,
+    // but allow users to go back after that without being forced back here.
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
-        shareNavGuardActive = false;
-        window.removeEventListener('popstate', onPopState);
-      }, 6000);
+        shareNavCleanup?.();
+        shareNavCleanup = null;
+      }, guardAfterShareMs + 200);
     }
   }
 };
