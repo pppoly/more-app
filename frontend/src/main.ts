@@ -128,6 +128,8 @@ function shouldAutoOpenMiniApp(): string | null {
     return null;
   }
   const params = new URLSearchParams(window.location.search);
+  // Never auto-redirect during LIFF login callback; it can break the redirect flow and cause loops.
+  if (params.has('code') || params.has('oauth_verifier')) return null;
   const isLiffEntry =
     params.has('liff.state') ||
     params.has('liff.referrer') ||

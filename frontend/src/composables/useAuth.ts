@@ -702,13 +702,6 @@ export function useAuth() {
     manualLogout.value = true;
     setManualLogoutStored(true);
     needsLiffOpen.value = false;
-    try {
-      void loadLiff(resolveLiffId())
-        .then((liff) => (liff as any)?.logout?.())
-        .catch(() => undefined);
-    } catch {
-      // ignore
-    }
   };
 
   const loginWithLiff = async (): Promise<LiffAuthResult> => bootstrapLiffAuth(true);
