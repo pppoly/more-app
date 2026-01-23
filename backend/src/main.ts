@@ -18,6 +18,8 @@ async function bootstrap() {
   const envLabel = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
   const isDevLike = !envLabel || envLabel === 'development' || envLabel === 'dev' || envLabel === 'local';
   app.useGlobalPipes(
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     new ValidationPipe({
       whitelist: true,
       transform: true,
@@ -37,10 +39,14 @@ async function bootstrap() {
   };
   const stripeRawBodyParser = express.raw({ type: stripeRawType });
   app.use(stripeWebhookPath, (req: express.Request, res: express.Response, next: express.NextFunction) => {
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     if (req.method !== 'POST') return next();
     return stripeRawBodyParser(req, res, next);
   });
   app.use(stripeWebhookPath, (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     if (req.method !== 'POST') return next();
     if (stripeWebhookDebug) {
       const body = req.body as unknown;
@@ -55,11 +61,15 @@ async function bootstrap() {
   });
   const jsonParser = bodyParser.json({ limit: '15mb' });
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     if (isStripeWebhook(req)) return next();
     return jsonParser(req, res, next);
   });
   const urlencodedParser = bodyParser.urlencoded({ limit: '15mb', extended: true });
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     if (isStripeWebhook(req)) return next();
     return urlencodedParser(req, res, next);
   });
@@ -93,15 +103,21 @@ async function bootstrap() {
   });
   const uploadsPrefix = `/${normalizePathSegment(process.env.UPLOADS_HTTP_PREFIX || 'uploads')}`;
   app.use(uploadsPrefix, express.static(UPLOAD_ROOT));
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
   const apiUploadsPrefix = `/${normalizePathSegment(globalPrefix)}/${normalizePathSegment(
     process.env.UPLOADS_HTTP_PREFIX || 'uploads',
   )}`;
   app.use(apiUploadsPrefix, express.static(UPLOAD_ROOT));
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
 
   // Desktop redirect to promo in test environment
   const enableDesktopPromoEnv =
     process.env.DESKTOP_PROMO === '1' || envLabel === 'test' || envLabel === 'testing' || envLabel === 'staging';
   app.use((req: any, res: any, next: any) => {
+import ogRouter from './og.routes';
+app.use('/api/v1/og', ogRouter);
     if (req.method !== 'GET') return next();
     const accept = (req.headers.accept as string | undefined) || '';
     if (!accept.includes('text/html')) return next();
