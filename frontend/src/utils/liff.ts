@@ -124,20 +124,36 @@ function safeDecode(value: string): string {
   }
 }
 
+function looksLikeAbsoluteUrl(value: string): boolean {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
+}
+
 export function normalizeLiffStateToPath(raw: string | null): string | null {
   if (!raw) return null;
-  let decoded = safeDecode(raw);
+  let decoded = safeDecode(raw).trim();
+  if (!decoded) return null;
   if (decoded.startsWith('?')) {
     decoded = `/${decoded}`;
   } else if (!decoded.startsWith('/') && decoded.startsWith('to=')) {
     decoded = `/?${decoded}`;
+  } else if (!decoded.startsWith('/') && !decoded.startsWith('//') && !looksLikeAbsoluteUrl(decoded)) {
+    // Docs show liff.state can be a "raw path" like `path_A/?key=...#fragment` (no leading slash).
+    decoded = `/${decoded}`;
   }
   if (!decoded.startsWith('/') || decoded.startsWith('//')) return null;
   try {
     const parsed = new URL(decoded, 'https://example.local');
     const nestedTo = parsed.searchParams.get('to');
-    if (nestedTo && nestedTo.startsWith('/') && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
-      return nestedTo;
+    if (nestedTo && (parsed.pathname === '/' || parsed.pathname === '/liff')) {
+      const normalizedNested = nestedTo.trim();
+      if (!normalizedNested) return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (looksLikeAbsoluteUrl(normalizedNested) || normalizedNested.startsWith('//')) {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+      const withLeadingSlash = normalizedNested.startsWith('/') ? normalizedNested : `/${normalizedNested}`;
+      if (withLeadingSlash.startsWith('/') && !withLeadingSlash.startsWith('//')) {
+        return withLeadingSlash;
+      }
     }
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
@@ -152,7 +168,7 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   if (!toPath) return base;
   const trimmed = toPath.trim();
   // Prevent accidentally embedding absolute URLs into the Mini App URL.
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return base;
+  if (looksLikeAbsoluteUrl(trimmed)) return base;
   const normalizedCandidate = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   const normalized = normalizeLiffStateToPath(normalizedCandidate) || normalizedCandidate;
   if (!normalized.startsWith('/') || normalized.startsWith('//')) return base;
