@@ -1027,18 +1027,35 @@ const shareEvent = async () => {
         contents: [
           {
             type: 'text',
-            text: shareUrlWithSource,
-            size: 'xs',
-            color: '#6b7280',
+            text: shareTitle,
+            weight: 'bold',
+            size: 'lg',
             wrap: true,
             action: { type: 'uri', uri: shareUrlWithSource },
           },
-          { type: 'text', text: shareTitle, weight: 'bold', size: 'lg', wrap: true },
           ...(shareTimeText
-            ? [{ type: 'text', text: shareTimeText, size: 'sm', color: '#111827', wrap: true }]
+            ? [
+                {
+                  type: 'text',
+                  text: shareTimeText,
+                  size: 'sm',
+                  color: '#111827',
+                  wrap: true,
+                  action: { type: 'uri', uri: shareUrlWithSource },
+                },
+              ]
             : []),
           ...(shareLocationText
-            ? [{ type: 'text', text: shareLocationText, size: 'sm', color: '#111827', wrap: true }]
+            ? [
+                {
+                  type: 'text',
+                  text: shareLocationText,
+                  size: 'sm',
+                  color: '#111827',
+                  wrap: true,
+                  action: { type: 'uri', uri: shareUrlWithSource },
+                },
+              ]
             : []),
         ],
       },
