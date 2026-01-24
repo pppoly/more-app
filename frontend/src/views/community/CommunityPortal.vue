@@ -136,6 +136,7 @@
             <div class="event-card__cover" :style="eventCoverStyle(event)"></div>
             <div class="event-card__body">
               <span class="event-card__status" :class="event.statusClass">{{ event.statusLabel }}</span>
+              <p class="event-card__title">{{ event.title }}</p>
               <p class="event-card__date">{{ event.date }}</p>
               <p class="event-card__meta">{{ event.locationText || '場所未定' }}</p>
             </div>
@@ -349,7 +350,7 @@ const upcomingEvents = computed(() => formattedEvents.value.filter((event) => ev
 const pastEvents = computed(() => formattedEvents.value.filter((event) => event.statusState !== 'open'));
 const featuredEvents = computed(() => {
   const combined = [...upcomingEvents.value, ...pastEvents.value];
-  return combined.slice(0, 3);
+  return combined;
 });
 const memberAvatars = computed(() =>
   (community.value?.members ?? []).map((member) => ({

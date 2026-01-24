@@ -4,7 +4,7 @@
       <div>
         <p class="eyebrow">結算モニター</p>
         <h1>Settlements</h1>
-        <p class="subhead">Settlement Run の履歴と実行結果を確認できます。</p>
+        <p class="subhead">清算バッチの履歴・転送結果（Stripe Transfer）を確認できます。</p>
       </div>
       <button class="ghost" type="button" :disabled="loading" @click="load">
         <span class="i-lucide-refresh-cw"></span> 更新
@@ -22,7 +22,7 @@
           <strong>{{ config.timezone }}</strong>
         </div>
         <div class="config-item">
-          <p>N（遅延日数）</p>
+          <p>N（遅延日数・fallback）</p>
           <strong>{{ config.settlementDelayDays }}日</strong>
         </div>
         <div class="config-item">
@@ -36,11 +36,30 @@
         <div class="config-item">
           <p>自動実行</p>
           <strong>
-            {{ config.settlementAutoRunEnabled ? `${pad2(config.settlementAutoRunHour)}:${pad2(config.settlementAutoRunMinute)}` : '無効' }}
+            {{
+              config.settlementAutoRunEnabled
+                ? `毎日 ${pad2(config.settlementAutoRunHour)}:${pad2(config.settlementAutoRunMinute)}`
+                : '無効'
+            }}
           </strong>
         </div>
       </div>
       <div v-else class="empty muted">設定を取得しています…</div>
+    </section>
+
+    <section class="card guide">
+      <p class="eyebrow">読み方（運用ポイント）</p>
+      <ul class="guide-list">
+        <li>
+          <strong>成熟判定</strong>は <code>Payment.eligibleAt</code>（基本は <code>refundDeadlineAt</code> 優先、未設定時のみ
+          <code>endAt + N</code> fallback）
+        </li>
+        <li>
+          <strong>periodTo</strong> 時点で <code>eligibleAt &lt;= periodTo</code> の未清算分が対象（<strong>periodFrom</strong> は統計表示用 / batch
+          キー用）
+        </li>
+        <li><strong>blocked</strong> はルール上の保留、<strong>failed</strong> は Transfer 失敗（retry 対象）</li>
+      </ul>
     </section>
 
     <section class="filters card">
@@ -67,7 +86,7 @@
         <div>
           <p class="eyebrow">手動実行</p>
           <h2>Settlement Run</h2>
-          <p class="meta muted">期間を指定しない場合、直近 D 日のウィンドウで実行します。</p>
+          <p class="meta muted">期間未指定時: periodTo=現在 / periodFrom=periodTo-D（同一期間は同じ batch 扱い）。</p>
         </div>
         <button class="primary" type="button" :disabled="loading || running" @click="openRunConfirm">
           実行
@@ -85,7 +104,7 @@
         </label>
       </div>
       <p class="meta muted">
-        注意: 手動実行でもルール（event.endAt+N / dispute / onboarding 等）は一切バイパスできません。
+        注意: 手動実行でもルール（eligibleAt / dispute / onboarding / 凍結 / 最小振込額）は一切バイパスできません。
       </p>
     </section>
 
@@ -100,7 +119,9 @@
               <p class="eyebrow">{{ batch.batchId }}</p>
               <h3>{{ formatDate(batch.runAt) }}</h3>
               <p class="meta">期間: {{ formatDate(batch.periodFrom) }} → {{ formatDate(batch.periodTo) }}</p>
-              <p class="meta">転送: {{ batch.settlementEnabled ? '有効' : 'dry-run' }} / hosts: {{ batch.hosts }}</p>
+              <p class="meta">
+                転送: {{ batch.settlementEnabled ? '有効' : 'dry-run' }} / trigger: {{ batch.triggerType || '—' }} / hosts: {{ batch.hosts }}
+              </p>
             </div>
             <span class="pill" :class="statusClass(batch.status)">{{ batch.status }}</span>
           </div>
@@ -157,8 +178,16 @@ const filters = ref<{ status?: string }>({});
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 const formatNumber = (val?: number | null) => new Intl.NumberFormat('ja-JP').format(val ?? 0);
+const resolveTimeZone = () => config.value?.timezone || 'Asia/Tokyo';
 const formatDate = (val: string) =>
-  new Date(val).toLocaleString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(val).toLocaleString('ja-JP', {
+    timeZone: resolveTimeZone(),
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 const statusClass = (status: string) => {
   if (status === 'completed') return 'pill-live';
   if (status === 'pending' || status === 'processing') return 'pill-pending';
@@ -221,7 +250,7 @@ const openRunConfirm = () => {
 
 const runConfirmMessage = computed(() => {
   if (!runPeriodFrom.value && !runPeriodTo.value) {
-    return '直近 D 日のウィンドウで手動実行します。';
+    return 'periodTo=現在 / periodFrom=periodTo-D で手動実行します。';
   }
   return `指定期間で手動実行します。\nperiodFrom=${runPeriodFrom.value}\nperiodTo=${runPeriodTo.value}`;
 });
@@ -306,6 +335,24 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.guide-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #475569;
+  font-size: 13px;
+}
+.guide-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: #0f172a;
 }
 .filter-row {
   display: grid;
@@ -401,4 +448,3 @@ onMounted(load);
   gap: 10px;
 }
 </style>
-

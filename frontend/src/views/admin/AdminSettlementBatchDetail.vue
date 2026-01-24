@@ -5,7 +5,8 @@
         <p class="eyebrow">Settlement Batch</p>
         <h1>{{ batchId }}</h1>
         <p v-if="batch" class="subhead">
-          期間: {{ formatDate(batch.periodFrom) }} → {{ formatDate(batch.periodTo) }} / 転送: {{ batch.settlementEnabled ? '有効' : 'dry-run' }}
+          期間: {{ formatDate(batch.periodFrom) }} → {{ formatDate(batch.periodTo) }}（{{ timezone }}） / 転送:
+          {{ batch.settlementEnabled ? '有効' : 'dry-run' }}
         </p>
       </div>
       <div class="head-actions">
@@ -41,6 +42,16 @@
       </div>
     </section>
 
+    <section v-if="batch && reasonSummaryEntries.length" class="card">
+      <p class="eyebrow">blocked summary</p>
+      <div class="pill-row">
+        <span v-for="[code, count] in reasonSummaryEntries" :key="code" class="pill pill-info">
+          {{ reasonLabel(code) }}: {{ count }}
+        </span>
+      </div>
+      <p class="meta muted">※blocked 理由は Host 単位で集計（payment 単位ではありません）</p>
+    </section>
+
     <section v-if="batch" class="card">
       <div v-if="!batch.items.length" class="empty">結算項目がありません。</div>
       <div v-else class="card-list">
@@ -58,7 +69,10 @@
           <div v-if="item.status === 'blocked' && item.blockedReasonCodes.length" class="reason">
             <p class="meta"><strong>blocked</strong></p>
             <ul class="reason-list">
-              <li v-for="code in item.blockedReasonCodes" :key="code" class="meta">{{ reasonLabel(code) }}</li>
+              <li v-for="code in item.blockedReasonCodes" :key="code" class="meta">
+                {{ reasonLabel(code) }}
+                <span v-if="reasonDetail(code, item)" class="reason-detail">（{{ reasonDetail(code, item) }}）</span>
+              </li>
             </ul>
           </div>
           <div v-if="item.status === 'skipped' && item.skipReasonCodes.length" class="reason">
@@ -84,8 +98,16 @@
           </div>
 
           <p v-if="item.stripeTransferId" class="meta">transfer: {{ item.stripeTransferId }}</p>
-          <p v-if="item.ruleOverrides && (item.ruleOverrides.settlementDelayDaysOverride || item.ruleOverrides.settlementMinTransferAmountOverride)" class="meta">
-            override: delayDays={{ item.ruleOverrides.settlementDelayDaysOverride ?? '—' }} / minTransfer={{ item.ruleOverrides.settlementMinTransferAmountOverride ?? '—' }}
+          <p
+            v-if="
+              item.ruleOverrides &&
+              (item.ruleOverrides.settlementDelayDaysOverride !== null || item.ruleOverrides.settlementMinTransferAmountOverride !== null)
+            "
+            class="meta"
+          >
+            override: delayDays={{ item.ruleOverrides.settlementDelayDaysOverride ?? '—' }}（※eligibleAt には未反映） / minTransfer={{
+              item.ruleOverrides.settlementMinTransferAmountOverride ?? '—'
+            }}
           </p>
         </article>
       </div>
@@ -94,10 +116,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import type { AdminSettlementBatchDetailResponse } from '../../types/api';
-import { adminRetrySettlementBatch, fetchAdminSettlementBatch, fetchAdminSettlementBatchCsv } from '../../api/client';
+import type { AdminSettlementBatchDetailItem, AdminSettlementBatchDetailResponse } from '../../types/api';
+import {
+  adminRetrySettlementBatch,
+  fetchAdminSettlementBatch,
+  fetchAdminSettlementBatchCsv,
+  fetchAdminSettlementConfig,
+} from '../../api/client';
 import { useToast } from '../../composables/useToast';
 
 const toast = useToast();
@@ -105,6 +132,7 @@ const route = useRoute();
 const batchId = String(route.params.batchId || '');
 
 const batch = ref<AdminSettlementBatchDetailResponse | null>(null);
+const timezone = ref('Asia/Tokyo');
 const loading = ref(false);
 const error = ref<string | null>(null);
 const retrying = ref(false);
@@ -112,7 +140,14 @@ const downloading = ref(false);
 
 const formatNumber = (val?: number | null) => new Intl.NumberFormat('ja-JP').format(val ?? 0);
 const formatDate = (val: string) =>
-  new Date(val).toLocaleString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(val).toLocaleString('ja-JP', {
+    timeZone: timezone.value,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
 const statusClass = (status: string) => {
   if (status === 'completed') return 'pill-live';
@@ -124,11 +159,100 @@ const statusClass = (status: string) => {
   return 'pill-info';
 };
 
+const getCountRecord = (item: AdminSettlementBatchDetailItem) => {
+  const value = item.counts as unknown;
+  if (!value || typeof value !== 'object') return {};
+  return value as Record<string, unknown>;
+};
+
+const getRulesRecord = (item: AdminSettlementBatchDetailItem) => {
+  const record = getCountRecord(item);
+  const rules = record.rules;
+  if (!rules || typeof rules !== 'object') return {};
+  return rules as Record<string, unknown>;
+};
+
+const getBlockedRecord = (item: AdminSettlementBatchDetailItem) => {
+  const record = getCountRecord(item);
+  const blocked = record.blocked;
+  if (!blocked || typeof blocked !== 'object') return {};
+  return blocked as Record<string, unknown>;
+};
+
+const pickNumber = (value: unknown) => (typeof value === 'number' ? value : null);
+
+const reasonSummaryEntries = computed(() => {
+  const summary = batch.value?.reasonCodeSummary as unknown;
+  if (!summary || typeof summary !== 'object') return [] as Array<[string, number]>;
+  return Object.entries(summary as Record<string, unknown>)
+    .map(([code, count]) => [code, typeof count === 'number' ? count : 0] as [string, number])
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1]);
+});
+
+const reasonDetail = (code: string, item: AdminSettlementBatchDetailItem) => {
+  const rules = getRulesRecord(item);
+  const blocked = getBlockedRecord(item);
+
+  if (code === 'below_min_transfer_amount') {
+    const minTransfer = pickNumber(rules.settlementMinTransferAmount);
+    if (minTransfer === null) return null;
+    return `min=¥${formatNumber(minTransfer)} / balance=¥${formatNumber(item.hostBalance)}`;
+  }
+
+  if (code === 'account_not_onboarded') {
+    const accountId = item.hostStripe?.stripeAccountId ?? null;
+    const onboarded = item.hostStripe?.stripeAccountOnboarded;
+    const parts: string[] = [];
+    if (accountId) parts.push(`account=${accountId}`);
+    if (typeof onboarded === 'boolean') parts.push(onboarded ? 'onboarded' : 'not_onboarded');
+    return parts.length ? parts.join(' / ') : null;
+  }
+
+  if (code === 'not_matured') {
+    const net = pickNumber(blocked.notMaturedNet);
+    const windowPayments = pickNumber(blocked.notMaturedPayments);
+    const parts: string[] = [];
+    if (net !== null) parts.push(`net=¥${formatNumber(net)}`);
+    if (windowPayments !== null) parts.push(`windowPayments=${windowPayments}`);
+    return parts.length ? parts.join(' / ') : null;
+  }
+
+  if (code === 'dispute_open') {
+    const net = pickNumber(blocked.disputedNet);
+    const windowPayments = pickNumber(blocked.disputedPayments);
+    const parts: string[] = [];
+    if (net !== null) parts.push(`net=¥${formatNumber(net)}`);
+    if (windowPayments !== null) parts.push(`windowPayments=${windowPayments}`);
+    return parts.length ? parts.join(' / ') : null;
+  }
+
+  if (code === 'missing_eligibility_source') {
+    const net = pickNumber(blocked.missingEligibilityNet);
+    const windowPayments = pickNumber(blocked.missingEligibilityPayments);
+    const parts: string[] = [];
+    if (net !== null) parts.push(`net=¥${formatNumber(net)}`);
+    if (windowPayments !== null) parts.push(`windowPayments=${windowPayments}`);
+    return parts.length ? parts.join(' / ') : null;
+  }
+
+  if (code === 'frozen_by_ops') {
+    const net = pickNumber(blocked.frozenNet);
+    const windowPayments = pickNumber(blocked.frozenPayments);
+    const parts: string[] = [];
+    if (net !== null) parts.push(`net=¥${formatNumber(net)}`);
+    if (windowPayments !== null) parts.push(`windowPayments=${windowPayments}`);
+    return parts.length ? parts.join(' / ') : null;
+  }
+
+  return null;
+};
+
 const reasonLabel = (code: string) => {
   if (code === 'account_not_onboarded') return 'Stripe onboarding 未完了のため保留';
   if (code === 'below_min_transfer_amount') return '最小振込額未満のため保留';
   if (code === 'frozen_by_ops') return '運営凍結のため保留';
-  if (code === 'not_matured') return '結算待ち（event.endAt + N 日未到達）';
+  if (code === 'not_matured') return '成熟待ち（Payment.eligibleAt 未到達）';
   if (code === 'dispute_open') return 'Dispute 未解決のため保留（該当 payment のみ）';
   if (code === 'missing_eligibility_source') return '紐付け情報不足（event/lesson endAt 不明）';
   if (code === 'blocked') return 'ルールにより保留';
@@ -142,7 +266,17 @@ const load = async () => {
   loading.value = true;
   error.value = null;
   try {
-    batch.value = await fetchAdminSettlementBatch(batchId);
+    const [cfgResult, batchResult] = await Promise.allSettled([
+      fetchAdminSettlementConfig(),
+      fetchAdminSettlementBatch(batchId),
+    ]);
+    if (cfgResult.status === 'fulfilled' && cfgResult.value?.timezone) {
+      timezone.value = cfgResult.value.timezone;
+    }
+    if (batchResult.status === 'rejected') {
+      throw batchResult.reason;
+    }
+    batch.value = batchResult.value;
   } catch {
     error.value = 'ロードに失敗しました';
     toast.show('読み込みに失敗しました', 'error');
@@ -300,8 +434,17 @@ onMounted(load);
   background: rgba(220, 38, 38, 0.16);
   border-color: rgba(220, 38, 38, 0.35);
 }
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .reason-list {
   margin: 6px 0 0;
   padding-left: 16px;
+}
+.reason-detail {
+  color: #0f172a;
+  opacity: 0.75;
 }
 </style>
