@@ -38,11 +38,22 @@
           <p class="hero-label">Stripe 残高（合計）</p>
           <button class="hero-info" type="button" @click="openInfoSheet">？</button>
         </div>
-        <p class="hero-value">{{ formatYenOrDash(stripeTotalRaw) }}</p>
-        <p class="hero-sub hero-sub--row">
-          <span>利用可能 {{ formatYenOrDash(stripeAvailableRaw) }}</span>
-          <span>保留中 {{ formatYenOrDash(stripePendingRaw) }}</span>
-        </p>
+        <div class="hero-formula">
+          <div class="hero-formula-row hero-formula-row--labels">
+            <span class="hero-formula-term">残高（合計）</span>
+            <span class="hero-formula-op">=</span>
+            <span class="hero-formula-term">利用可能</span>
+            <span class="hero-formula-op">+</span>
+            <span class="hero-formula-term">保留中</span>
+          </div>
+          <div class="hero-formula-row hero-formula-row--values">
+            <span class="hero-formula-term hero-formula-term--total">{{ formatYenOrDash(stripeTotalRaw) }}</span>
+            <span class="hero-formula-op">=</span>
+            <span class="hero-formula-term">{{ formatYenOrDash(stripeAvailableRaw) }}</span>
+            <span class="hero-formula-op">+</span>
+            <span class="hero-formula-term">{{ formatYenOrDash(stripePendingRaw) }}</span>
+          </div>
+        </div>
         <p class="hero-sub">プラットフォーム結算日 {{ formatDateOrDash(platformSettlementDate) }}</p>
         <p class="hero-sub">Stripe 自動振込日 {{ stripePayoutRule || '—' }}</p>
       </div>
@@ -92,39 +103,32 @@
         </div>
       </article>
       <article class="kpi breakdown-card">
-        <p class="kpi-label">お金の状態（受け取り前の内訳）</p>
+        <p class="kpi-label">お金の状態（MORE → Stripe 送金）</p>
         <div class="breakdown-list">
           <div class="breakdown-row">
-            <span>活動終了待ち</span>
-            <strong>{{ formatYenOrDash(breakdownActivityWait) }}</strong>
-          </div>
-          <div class="breakdown-row">
-            <span>審査・申請中</span>
-            <strong>{{ formatYenOrDash(breakdownReviewing) }}</strong>
-          </div>
-          <div class="breakdown-row">
-            <span>振込日待ち</span>
-            <strong>{{ formatYenOrDash(breakdownPayoutWait) }}</strong>
-          </div>
-          <div class="breakdown-row">
-            <span>次回振込予定</span>
-            <strong>{{ formatYenOrDash(breakdownNextPayout) }}</strong>
-          </div>
-          <div class="breakdown-row">
-            <span>振込完了</span>
+            <span>送金済み（MORE → Stripe）</span>
             <strong>{{ formatYenOrDash(breakdownPaidOut) }}</strong>
           </div>
+          <div class="breakdown-row">
+            <span>送金待ち（MORE → Stripe）</span>
+            <strong>{{ formatYenOrDash(breakdownTransferPending) }}</strong>
+          </div>
+          <div class="breakdown-row">
+            <span>相殺予定（返金など）</span>
+            <strong>{{ formatYenOrDash(breakdownOffsetPending) }}</strong>
+          </div>
         </div>
-        <p class="note muted">※ 上記合計 = 見込み収入</p>
+        <p class="note muted">※ 見込み収入 = 送金済み + 送金待ち - 相殺予定</p>
+        <p class="note muted">※ ここでの「送金」は MORE（プラットフォーム）→ Stripe です（銀行への振込は Stripe 側）。</p>
+        <button class="btn primary breakdown-action" type="button" :disabled="!communityId" @click="goPayments">
+          取引履歴を見る
+        </button>
       </article>
     </section>
 
     <details v-if="stripeReady" class="action-detail">
       <summary>受け取り設定とアカウント情報</summary>
       <div class="action-detail__body">
-        <button class="btn primary" type="button" :disabled="!communityId" @click="goPayments">
-          取引履歴を見る
-        </button>
         <button class="btn outline" type="button" :disabled="payoutLoading || !canWithdraw" @click="handleWithdraw">
           {{ payoutLoading ? '移動中…' : withdrawLabel }}
         </button>
@@ -281,13 +285,16 @@ const pendingAmountRaw = computed(() => {
   if (transactionTotalRaw.value == null || balance.value?.grossPaid == null) return null;
   return Math.max(0, transactionTotalRaw.value - balance.value.grossPaid);
 });
-const breakdownActivityWait = computed(() => monthNetRaw.value);
-const breakdownReviewing = computed(() => balance.value?.settlement?.carryReceivable ?? null);
-const breakdownPayoutWait = computed(() => balance.value?.settlement?.hostBalance ?? null);
-const breakdownNextPayout = computed(() => balance.value?.settlement?.settleAmount ?? null);
+const settlementHostBalanceRaw = computed(() => balance.value?.settlement?.hostBalance ?? null);
+const breakdownTransferPending = computed(() => {
+  if (settlementHostBalanceRaw.value == null) return null;
+  return Math.max(0, settlementHostBalanceRaw.value);
+});
+const breakdownOffsetPending = computed(() => {
+  if (settlementHostBalanceRaw.value == null) return null;
+  return Math.max(0, -settlementHostBalanceRaw.value);
+});
 const breakdownPaidOut = computed(() => balance.value?.settlement?.paidOutAll ?? null);
-const nextPayoutDate = computed(() => balance.value?.settlement?.asOf ?? null);
-const nextPayoutAmount = computed(() => balance.value?.settlement?.settleAmount ?? null);
 const platformSettlementDate = computed(() => platformSettlement.value?.nextRunAt ?? null);
 const stripePayoutRule = computed(() => {
   const schedule = stripePayoutSchedule.value;
@@ -318,17 +325,20 @@ const showInfoSheet = ref(false);
 const infoSheetKey = ref<string | null>(null);
 const infoSheetTitle = computed(() => {
   switch (infoSheetKey.value) {
-    case 'rules':
-      return '清算ルール';
+    case 'stripe_balance':
+      return 'Stripe 残高について';
     default:
-      return '清算ルール';
+      return 'Stripe 残高について';
   }
 });
 const infoSheetBody = computed(() => {
-  if (infoSheetKey.value !== 'rules') return '';
-  const percentText = Number.isFinite(STRIPE_FEE_PERCENT) ? `${STRIPE_FEE_PERCENT}%` : '—';
-  const fixedText = STRIPE_FEE_FIXED_JPY > 0 ? ` + ${formatYen(STRIPE_FEE_FIXED_JPY)}` : '';
-  return `カード手数料は返金時に戻らず、Stripe手数料は ${percentText}${fixedText} です。プラットフォーム手数料は実際の受取金額に比例します。`;
+  if (infoSheetKey.value !== 'stripe_balance') return '';
+  return [
+    'Stripe 残高（合計）は「利用可能」と「保留中」の合計です。',
+    '',
+    '利用可能: すでに Stripe で利用可能になっている金額です。次回の自動振込 / 手動出金の対象になります。',
+    '保留中: 決済直後などで、まだ利用可能になっていない金額です。Stripe の資金可用化後に自動で「利用可能」に移ります。',
+  ].join('\n');
 });
 
 const stripeFeeLabel = computed(() => {
@@ -474,7 +484,7 @@ const goPayments = () => {
 };
 
 const openInfoSheet = () => {
-  infoSheetKey.value = 'rules';
+  infoSheetKey.value = 'stripe_balance';
   showInfoSheet.value = true;
 };
 
@@ -612,6 +622,38 @@ onMounted(async () => {
   font-size: 13px;
   opacity: 0.9;
 }
+.hero-formula {
+  margin: 8px 0 10px;
+}
+.hero-formula-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: baseline;
+  gap: 6px;
+}
+.hero-formula-row--labels {
+  font-size: 12px;
+  opacity: 0.9;
+  text-align: center;
+}
+.hero-formula-row--values {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.hero-formula-term {
+  white-space: nowrap;
+}
+.hero-formula-term--total {
+  font-size: 20px;
+  font-weight: 800;
+}
+.hero-formula-op {
+  opacity: 0.9;
+  font-weight: 800;
+}
 .sheet-mask {
   position: fixed;
   inset: 0;
@@ -645,7 +687,9 @@ onMounted(async () => {
   font-size: 13px;
   color: #475569;
   margin: 4px 0 0;
-  text-align: center;
+  text-align: left;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 .sheet-close {
   width: 100%;
@@ -669,9 +713,6 @@ onMounted(async () => {
   padding: 12px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(15, 23, 42, 0.04);
-}
-.kpi-grid .kpi {
-  min-height: 86px;
 }
 .kpi-label {
   margin: 0;
@@ -750,6 +791,9 @@ onMounted(async () => {
   gap: 10px;
   font-size: 13px;
   color: #0f172a;
+}
+.breakdown-action {
+  margin-top: 10px;
 }
 .note {
   margin: 4px 0 0;
