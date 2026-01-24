@@ -35,10 +35,14 @@
           {{ status.type === 'enabled' ? '受取有効' : status.title }}
         </span>
         <div class="hero-title-row">
-          <p class="hero-label">受け取り可能（Stripe 残高）</p>
+          <p class="hero-label">Stripe 残高（合計）</p>
           <button class="hero-info" type="button" @click="openInfoSheet">？</button>
         </div>
-        <p class="hero-value">{{ formatYenOrDash(stripeAvailableRaw) }}</p>
+        <p class="hero-value">{{ formatYenOrDash(stripeTotalRaw) }}</p>
+        <p class="hero-sub hero-sub--row">
+          <span>利用可能 {{ formatYenOrDash(stripeAvailableRaw) }}</span>
+          <span>保留中 {{ formatYenOrDash(stripePendingRaw) }}</span>
+        </p>
         <p class="hero-sub">プラットフォーム結算日 {{ formatDateOrDash(platformSettlementDate) }}</p>
         <p class="hero-sub">Stripe 自動振込日 {{ stripePayoutRule || '—' }}</p>
       </div>
@@ -249,9 +253,9 @@ const stripePendingRaw = computed(
   () => balance.value?.stripeBalance?.pending ?? monthBalance.value?.stripeBalance?.pending ?? null,
 );
 const stripeTotalRaw = computed(() =>
-  stripeAvailableRaw.value == null || stripePendingRaw.value == null
+  stripeAvailableRaw.value == null && stripePendingRaw.value == null
     ? null
-    : stripeAvailableRaw.value + stripePendingRaw.value,
+    : (stripeAvailableRaw.value ?? 0) + (stripePendingRaw.value ?? 0),
 );
 const stripeAvailable = computed(() => stripeAvailableRaw.value ?? 0);
 const stripePending = computed(() => stripePendingRaw.value ?? 0);

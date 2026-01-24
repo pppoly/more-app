@@ -176,60 +176,66 @@ export class MeService {
       },
     });
 
-    return registrations.map((registration) => {
-      const { event, lesson, ...rest } = registration as any;
-      const galleries = event?.galleries ?? [];
-      const coverImageUrl = buildAssetUrl(galleries[0]?.imageUrl);
-      const paymentStatusFromPayment = registration?.payment?.status;
-      const derivedPaymentStatus =
-        rest.status === 'paid'
-          ? 'paid'
-          : (rest.amount ?? 0) === 0
-          ? 'paid'
-          : rest.paymentStatus === 'paid'
+    return registrations
+      .map((registration) => {
+        const { event, lesson, ...rest } = registration as any;
+        const galleries = event?.galleries ?? [];
+        const coverImageUrl = buildAssetUrl(galleries[0]?.imageUrl);
+        const paymentStatusFromPayment = registration?.payment?.status;
+        const derivedPaymentStatus =
+          rest.status === 'paid'
             ? 'paid'
-            : rest.paymentStatus === 'refunded'
-              ? 'refunded'
-              : ['paid', 'succeeded', 'captured'].includes(paymentStatusFromPayment || '')
-                ? 'paid'
-                : paymentStatusFromPayment === 'refunded'
+            : (rest.amount ?? 0) === 0
+            ? 'paid'
+            : rest.paymentStatus === 'paid'
+              ? 'paid'
+              : rest.paymentStatus === 'refunded'
                 ? 'refunded'
-                : rest.paymentStatus || 'unpaid';
-      const derivedStatus =
-        (rest.amount ?? 0) > 0 &&
-        derivedPaymentStatus === 'unpaid' &&
-        ['approved', 'paid'].includes(rest.status)
-          ? 'pending_payment'
-          : rest.status;
-      return {
-        registrationId: rest.id,
-        createdAt: rest.createdAt,
-        status: derivedStatus,
-        paymentStatus: derivedPaymentStatus,
-        amount: rest.amount,
-        attended: rest.attended,
-        noShow: rest.noShow,
-        refundRequest: rest?.refundRequest ?? null,
-        paymentMethod: registration.payment?.method ?? null,
-        paymentCreatedAt: registration.payment?.createdAt ?? null,
-        event: event
-          ? {
-              ...event,
-              coverImageUrl,
-            }
-          : null,
-        lesson: lesson
-          ? {
-              ...lesson,
-              class: lesson.class
-                ? {
-                    ...lesson.class,
-                  }
-                : null,
-            }
-          : null,
-      };
-    });
+                : ['paid', 'succeeded', 'captured'].includes(paymentStatusFromPayment || '')
+                  ? 'paid'
+                  : paymentStatusFromPayment === 'refunded'
+                    ? 'refunded'
+                    : rest.paymentStatus || 'unpaid';
+        const derivedStatus =
+          (rest.amount ?? 0) > 0 &&
+          derivedPaymentStatus === 'unpaid' &&
+          ['approved', 'paid'].includes(rest.status)
+            ? 'pending_payment'
+            : rest.status;
+
+        const shouldHideCancelledPayment = (rest.amount ?? 0) > 0 && derivedPaymentStatus === 'cancelled';
+        if (shouldHideCancelledPayment) return null;
+
+        return {
+          registrationId: rest.id,
+          createdAt: rest.createdAt,
+          status: derivedStatus,
+          paymentStatus: derivedPaymentStatus,
+          amount: rest.amount,
+          attended: rest.attended,
+          noShow: rest.noShow,
+          refundRequest: rest?.refundRequest ?? null,
+          paymentMethod: registration.payment?.method ?? null,
+          paymentCreatedAt: registration.payment?.createdAt ?? null,
+          event: event
+            ? {
+                ...event,
+                coverImageUrl,
+              }
+            : null,
+          lesson: lesson
+            ? {
+                ...lesson,
+                class: lesson.class
+                  ? {
+                      ...lesson.class,
+                    }
+                  : null,
+              }
+            : null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
   }
 
   async getFavoriteEvents(userId: string) {
