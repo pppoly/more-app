@@ -67,21 +67,9 @@
       <div class="kpi-grid">
         <article class="kpi">
           <p class="kpi-label">
-            取引総額（返金後）
+            取引総額
           </p>
           <p class="kpi-value">{{ formatYenOrDash(balanceGrossRaw) }}</p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">
-            支払い待ち
-          </p>
-          <p class="kpi-value">{{ formatYenOrDash(pendingAmountRaw) }}</p>
-        </article>
-        <article class="kpi">
-          <p class="kpi-label">
-            累計 見込み収入
-          </p>
-          <p class="kpi-value">{{ formatYenOrDash(netExpectedRaw) }}</p>
         </article>
         <article class="kpi">
           <p class="kpi-label">
@@ -265,26 +253,14 @@ const stripeAvailable = computed(() => stripeAvailableRaw.value ?? 0);
 const stripePending = computed(() => stripePendingRaw.value ?? 0);
 const balanceGrossRaw = computed(() => {
   if (!balance.value) return null;
-  if (balance.value.grossPaid == null) return null;
-  const refunded = balance.value.refunded ?? 0;
-  return Math.max(0, balance.value.grossPaid - refunded);
+  return balance.value.grossPaid ?? null;
 });
 const balanceRefundedRaw = computed(() => balance.value?.refunded ?? null);
 const platformFeeRaw = computed(() => balance.value?.platformFee ?? null);
 const stripeFeeRaw = computed(() => balance.value?.stripeFee ?? null);
-const netExpectedRaw = computed(() => balance.value?.net ?? null);
 const monthNetRaw = computed(
   () => monthBalance.value?.settlement?.accruedNetPeriod ?? monthBalance.value?.net ?? null,
 );
-const transactionTotalRaw = computed(() => {
-  if (balance.value?.transactionTotal != null) return balance.value.transactionTotal;
-  if (balance.value?.grossPaid != null) return balance.value.grossPaid;
-  return null;
-});
-const pendingAmountRaw = computed(() => {
-  if (transactionTotalRaw.value == null || balance.value?.grossPaid == null) return null;
-  return Math.max(0, transactionTotalRaw.value - balance.value.grossPaid);
-});
 const settlementHostBalanceRaw = computed(() => balance.value?.settlement?.hostBalance ?? null);
 const breakdownTransferPending = computed(() => {
   if (settlementHostBalanceRaw.value == null) return null;
@@ -352,8 +328,6 @@ const stripeFeeLabel = computed(() => {
 });
 
 const communityId = computed(() => store.activeCommunityId.value);
-const hasStripeBalance = computed(() => stripeAvailable.value > 0 || stripePending.value > 0);
-const isEmpty = computed(() => (transactionTotalRaw.value ?? 0) === 0 && !hasStripeBalance.value);
 
 const formatYen = (value?: number | null) =>
   new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(value || 0);

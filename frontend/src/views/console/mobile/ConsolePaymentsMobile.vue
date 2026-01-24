@@ -61,7 +61,7 @@
               <div class="pay-main">
                 <div class="pay-head">
                   <p class="pay-user">{{ item.user.name }}</p>
-                  <span class="pill" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
+                  <span class="pill" :class="statusClass(item.status)">{{ statusLabelWithAmount(item) }}</span>
                 </div>
                 <div class="pay-title-row">
                   <span class="pay-tag" :class="infoTagClass(displayInfo(item).label)">{{ displayInfo(item).label }}</span>
@@ -183,6 +183,14 @@ const statusLabel = (s: string) => {
     default:
       return s;
   }
+};
+const statusLabelWithAmount = (item: ConsolePaymentItem) => {
+  const base = statusLabel(item.status);
+  if (item.status !== 'refunded' && item.status !== 'partial_refunded') return base;
+  const refunded = item.refundedGrossTotal ?? 0;
+  const amount = refunded > 0 ? refunded : item.status === 'refunded' ? item.amount : null;
+  if (amount == null) return base;
+  return `${base} ${formatYen(amount)}`;
 };
 const statusClass = (s: string) => {
   switch (s) {
