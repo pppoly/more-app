@@ -111,7 +111,7 @@ import {
   subscribeCommunityPlan,
 } from '../../api/client';
 import type { ConsoleCommunityDetail, PricingPlan, StripeAccountStatus } from '../../types/api';
-import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../config';
+import { PLATFORM_FEE_WAIVED, STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../config';
 
 const route = useRoute();
 const router = useRouter();
@@ -238,9 +238,6 @@ const stripeFeeRateText = computed(() => {
   const parts: string[] = [percentText];
   if (STRIPE_FEE_FIXED_JPY > 0) {
     parts.push(`+ ${formatYen(STRIPE_FEE_FIXED_JPY)}`);
-  }
-  if (STRIPE_FEE_MIN_JPY > 0) {
-    parts.push(`（最低${formatYen(STRIPE_FEE_MIN_JPY)}）`);
   }
   return parts.join(' ');
 });

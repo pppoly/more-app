@@ -228,7 +228,7 @@ const routes: RouteRecordRaw[] = [
     name: 'MobileEventSuccess',
     component: () => import('../views/mobile/MobileEventSuccess.vue'),
     meta: {
-      title: '参加完了',
+      title: '申込完了',
       layout: 'mobile-user',
       stackKey: 'mobile',
       mobileOnly: true,

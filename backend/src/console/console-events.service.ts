@@ -34,6 +34,18 @@ export class ConsoleEventsService {
     private readonly notifications: NotificationService,
   ) {}
 
+  private assertPaidTicketPricesPublishable(ticketTypes: any[]) {
+    const MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY = 100;
+    const invalid = (ticketTypes ?? []).some((ticket) => {
+      const raw = (ticket as any)?.price ?? 0;
+      const price = typeof raw === 'number' ? raw : Number(raw);
+      return Number.isFinite(price) && price > 0 && price < MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY;
+    });
+    if (invalid) {
+      throw new BadRequestException(`有料チケットの価格は${MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY}円以上に設定してください`);
+    }
+  }
+
   async listCommunityEvents(userId: string, communityId: string) {
     await this.permissions.assertCommunityManager(userId, communityId);
     const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
@@ -101,6 +113,9 @@ export class ConsoleEventsService {
     await this.permissions.assertCommunityManager(userId, communityId);
     const { ticketTypes = [], ...rest } = payload;
     const isDraft = rest?.status === 'draft';
+    if (!isDraft) {
+      this.assertPaidTicketPricesPublishable(ticketTypes);
+    }
     const hasPaidTickets = (ticketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
     if (!isDraft && hasPaidTickets) {
       const stripe = await this.prisma.community.findUnique({
@@ -194,6 +209,9 @@ export class ConsoleEventsService {
     const { ticketTypes = [], ...rest } = data;
     const isDraft = rest?.status === 'draft';
     const nextTicketTypes = ticketTypes && ticketTypes.length ? ticketTypes : existing?.ticketTypes ?? [];
+    if (!isDraft) {
+      this.assertPaidTicketPricesPublishable(nextTicketTypes);
+    }
     const hasPaidTickets = (nextTicketTypes ?? []).some((t: any) => (t?.price ?? 0) > 0);
     if (!isDraft && hasPaidTickets && existing?.communityId) {
       const stripe = await this.prisma.community.findUnique({

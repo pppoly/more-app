@@ -330,16 +330,28 @@ const handlePay = async () => {
         sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
         if ((registration.amount ?? 0) === 0) {
           sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
-          const payload = buildSuccessPayload('free');
-          if (payload) {
-            goToSuccessPage(payload);
+          const base = buildSuccessPayload('free');
+          if (base) {
+            goToSuccessPage({
+              ...base,
+              status: registration.status,
+              paymentRequired: registration.paymentRequired,
+              amount: typeof registration.amount === 'number' ? registration.amount : null,
+            });
           }
           return;
         }
         if (!registration.paymentRequired) {
           sessionStorage.removeItem(MOBILE_EVENT_PENDING_PAYMENT_KEY);
-          if (registration.status === 'pending') {
-            window.alert('申し込みを受け付けました。主催者の承認後にお支払いが必要です。');
+          const base = buildSuccessPayload((registration.amount ?? 0) === 0 ? 'free' : 'paid');
+          if (base) {
+            goToSuccessPage({
+              ...base,
+              status: registration.status,
+              paymentRequired: registration.paymentRequired,
+              amount: typeof registration.amount === 'number' ? registration.amount : null,
+            });
+            return;
           }
           router.replace({ name: 'event-detail', params: { eventId: eventId.value } });
           return;
@@ -383,6 +395,7 @@ const buildSuccessPayload = (status: 'free' | 'paid') => {
     eventId: detail.value.id,
     title: detail.value.title,
     timeText: detail.value.timeText,
+    locationText: event.value?.locationText || '場所未定',
     paymentStatus: status,
   };
 };

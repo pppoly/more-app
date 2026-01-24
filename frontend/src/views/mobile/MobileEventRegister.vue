@@ -321,13 +321,22 @@ type SuccessPayload = {
   ticketName?: string;
   amount?: number | null;
   paymentStatus: 'free' | 'paid';
+  status?: string;
+  paymentRequired?: boolean;
   holdExpiresAt: string;
 };
 
 const HOLD_DURATION_MS = 30 * 60 * 1000;
 
-const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => {
+const buildSuccessPayload = (options: {
+  paymentStatus: 'free' | 'paid';
+  registrationStatus?: string;
+  paymentRequired?: boolean;
+  amount?: number | null;
+}): SuccessPayload | null => {
   if (!detail.value) return null;
+  const resolvedAmount =
+    typeof options.amount === 'number' ? options.amount : (selectedTicket.value?.price ?? null);
   return {
     eventId: detail.value.id,
     title: detail.value.title,
@@ -335,9 +344,14 @@ const buildSuccessPayload = (status: 'free' | 'paid'): SuccessPayload | null => 
     locationText: detail.value.locationText,
     priceText: detail.value.priceText,
     ticketName: selectedTicket.value?.name,
-    amount: selectedTicket.value?.price ?? null,
-    paymentStatus: status,
-    holdExpiresAt: status === 'paid' ? new Date(Date.now() + HOLD_DURATION_MS).toISOString() : new Date().toISOString(),
+    amount: resolvedAmount,
+    paymentStatus: options.paymentStatus,
+    status: options.registrationStatus,
+    paymentRequired: options.paymentRequired,
+    holdExpiresAt:
+      options.paymentStatus === 'paid'
+        ? new Date(Date.now() + HOLD_DURATION_MS).toISOString()
+        : new Date().toISOString(),
   };
 };
 
@@ -456,12 +470,17 @@ const submitFreeRegistration = async () => {
   submittingInline.value = true;
   registrationError.value = null;
   try {
-    await createRegistration(eventId.value, {
+    const registration = await createRegistration(eventId.value, {
       ticketTypeId: defaultTicketId.value ?? undefined,
       formAnswers: { ...formValues },
     });
     sessionStorage.removeItem(MOBILE_EVENT_REGISTRATION_DRAFT_KEY);
-    const payload = buildSuccessPayload('free');
+    const payload = buildSuccessPayload({
+      paymentStatus: 'free',
+      registrationStatus: registration.status,
+      paymentRequired: registration.paymentRequired,
+      amount: typeof registration.amount === 'number' ? registration.amount : null,
+    });
     if (payload) {
       goToSuccessPage(payload);
     }
@@ -494,10 +513,16 @@ const submitApprovalRegistration = async () => {
       });
       return;
     }
-    const message = requiresPayment.value
-      ? '申し込みを受け付けました。主催者の承認後にお支払いが必要です。'
-      : '申し込みを受け付けました。主催者の承認をお待ちください。';
-    window.alert(message);
+    const payload = buildSuccessPayload({
+      paymentStatus: (registration.amount ?? 0) === 0 ? 'free' : 'paid',
+      registrationStatus: registration.status,
+      paymentRequired: registration.paymentRequired,
+      amount: typeof registration.amount === 'number' ? registration.amount : null,
+    });
+    if (payload) {
+      goToSuccessPage(payload);
+      return;
+    }
     router.replace({ name: 'event-detail', params: { eventId: eventId.value } });
   } catch (err) {
     registrationError.value = resolveErrorMessage(err, '申込に失敗しました。時間をおいて再試行してください。');

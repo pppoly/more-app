@@ -557,7 +557,7 @@ const computeCtaState = () => {
     };
   }
   if (!isLoggedIn.value) {
-    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false, hint: '' };
+    return { label: requiresApproval.value ? 'ログインして申請する' : 'ログインして申し込む', disabled: false, hint: '' };
   }
   if (eventLifecycle.value === 'ended') {
     return { label: '終了しました', disabled: true, hint: 'イベントは終了しました。' };
@@ -578,7 +578,7 @@ const computeCtaState = () => {
   }
   const canApply = registrationWindow.value === 'open';
   return {
-    label: canApply ? (requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む') : '受付終了',
+    label: canApply ? (requiresApproval.value ? '今すぐ申請する' : '今すぐ申し込む') : '受付終了',
     disabled: !canApply,
     hint: canApply ? '' : registrationWindowState.value.reason ?? '',
   };

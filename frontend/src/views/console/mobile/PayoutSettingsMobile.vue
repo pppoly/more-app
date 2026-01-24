@@ -170,7 +170,7 @@ import type {
 import ConsoleTopBar from '../../../components/console/ConsoleTopBar.vue';
 import { isLiffClient } from '../../../utils/device';
 import { isLineInAppBrowser } from '../../../utils/liff';
-import { STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../../config';
+import { STRIPE_FEE_FIXED_JPY, STRIPE_FEE_PERCENT } from '../../../config';
 
 const store = useConsoleCommunityStore();
 const router = useRouter();
@@ -324,8 +324,7 @@ const infoSheetBody = computed(() => {
   if (infoSheetKey.value !== 'rules') return '';
   const percentText = Number.isFinite(STRIPE_FEE_PERCENT) ? `${STRIPE_FEE_PERCENT}%` : '—';
   const fixedText = STRIPE_FEE_FIXED_JPY > 0 ? ` + ${formatYen(STRIPE_FEE_FIXED_JPY)}` : '';
-  const minText = STRIPE_FEE_MIN_JPY > 0 ? `（最低${formatYen(STRIPE_FEE_MIN_JPY)}）` : '';
-  return `カード手数料は返金時に戻らず、Stripe手数料は ${percentText}${fixedText}${minText} です。プラットフォーム手数料は実際の受取金額に比例します。`;
+  return `カード手数料は返金時に戻らず、Stripe手数料は ${percentText}${fixedText} です。プラットフォーム手数料は実際の受取金額に比例します。`;
 });
 
 const stripeFeeLabel = computed(() => {
@@ -333,9 +332,6 @@ const stripeFeeLabel = computed(() => {
   const parts: string[] = [percentText];
   if (STRIPE_FEE_FIXED_JPY > 0) {
     parts.push(`+${formatYen(STRIPE_FEE_FIXED_JPY)}`);
-  }
-  if (STRIPE_FEE_MIN_JPY > 0) {
-    parts.push(`最低${formatYen(STRIPE_FEE_MIN_JPY)}`);
   }
   parts.push('推定');
   return `Stripe（${parts.join('・')}）`;

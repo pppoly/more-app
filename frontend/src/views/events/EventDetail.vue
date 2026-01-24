@@ -373,7 +373,7 @@ const ctaState = computed(() => {
   if (pendingApproval.value) return { label: '承認待ち', disabled: true };
   if (hasRegistered.value) return { label: '参加予定です', disabled: true };
   if (!isLoggedIn.value) {
-    return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false };
+    return { label: requiresApproval.value ? 'ログインして申請する' : 'ログインして申し込む', disabled: false };
   }
   if (eventLifecycle.value === 'ended') return { label: '終了しました', disabled: true };
   if (!registrationWindowState.value.open) {
@@ -386,7 +386,7 @@ const ctaState = computed(() => {
     }
     return { label: '満席', disabled: true };
   }
-  return { label: requiresApproval.value ? '今すぐ予約する' : '今すぐ申し込む', disabled: false };
+  return { label: requiresApproval.value ? '今すぐ申請する' : '今すぐ申し込む', disabled: false };
 });
 const ctaLabel = computed(() => ctaState.value.label);
 const ctaDisabled = computed(() => ctaState.value.disabled || isRegistering.value || isRedirecting.value);

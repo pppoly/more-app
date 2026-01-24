@@ -900,10 +900,9 @@ import {
   CONSOLE_EVENT_NOTE_RESULT_KEY,
   CONSOLE_EVENT_NOTE_RETURN_KEY,
   CONSOLE_EVENT_FORM_DRAFT_KEY,
-} from '../../constants/console';
-import { STRIPE_FEE_FIXED_JPY, STRIPE_FEE_MIN_JPY, STRIPE_FEE_PERCENT } from '../../config';
-import { isLineBrowser, isLiffClient } from '../../utils/device';
-import { isLineInAppBrowser } from '../../utils/liff';
+	} from '../../constants/console';
+	import { isLineBrowser, isLiffClient } from '../../utils/device';
+	import { isLineInAppBrowser } from '../../utils/liff';
 
 type FieldKey =
   | 'title'
@@ -3228,26 +3227,15 @@ const goToPublishSuccess = (targetEventId: string, fallback: 'edit' | 'list' = '
 };
 
 const persistEvent = async (status: 'draft' | 'open') => {
-  if (status === 'open' && form.ticketPrice != null && form.ticketPrice > 0) {
-    const percent = STRIPE_FEE_PERCENT;
-    const fixed = STRIPE_FEE_FIXED_JPY;
-    const minFee = STRIPE_FEE_MIN_JPY;
-    if (Number.isFinite(percent) && percent > 0 && Number.isFinite(minFee) && minFee > 0) {
-      const estimated = (form.ticketPrice * percent) / 100 + (Number.isFinite(fixed) ? fixed : 0);
-      if (estimated < minFee) {
-        const formatJPY = (value: number) =>
-          new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(
-            value || 0,
-          );
-        const thresholdBase = Math.max(0, minFee - (Number.isFinite(fixed) ? fixed : 0));
-        const threshold =
-          thresholdBase > 0 ? Math.ceil((thresholdBase * 100) / percent) : Math.ceil((minFee * 100) / percent);
-        const sure = window.confirm(
-          `参加費が${formatJPY(threshold)}未満の場合、Stripe手数料は最低${formatJPY(minFee)}になります。\n現在の参加費: ${formatJPY(form.ticketPrice)}\nこのまま公開しますか？`,
-        );
-        if (!sure) return;
-      }
-    }
+  const MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY = 100;
+  if (
+    status === 'open' &&
+    form.ticketPrice != null &&
+    form.ticketPrice > 0 &&
+    form.ticketPrice < MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY
+  ) {
+    error.value = `参加費は${MIN_PAID_TICKET_PRICE_TO_PUBLISH_JPY}円以上に設定してください`;
+    return;
   }
 
   submitting.value = true;
