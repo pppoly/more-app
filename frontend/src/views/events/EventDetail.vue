@@ -370,7 +370,7 @@ const ctaState = computed(() => {
   if (!event.value) return { label: '読み込み中…', disabled: true };
   if (eventLifecycle.value === 'cancelled') return { label: '中止しました', disabled: true };
   if (pendingPayment.value) return { label: '支払いへ進む', disabled: false };
-  if (pendingApproval.value) return { label: '予約済み', disabled: true };
+  if (pendingApproval.value) return { label: '承認待ち', disabled: true };
   if (hasRegistered.value) return { label: '参加予定です', disabled: true };
   if (!isLoggedIn.value) {
     return { label: requiresApproval.value ? 'ログインして予約する' : 'ログインして申し込む', disabled: false };

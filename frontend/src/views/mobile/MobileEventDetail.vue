@@ -517,7 +517,12 @@ const computeCtaState = () => {
     return { label: '支払いへ進む', disabled: false, hint: 'お支払い待ちです。' };
   }
   if (registrationStatus.value === 'pending') {
-    return { label: '予約済み', disabled: true, hint: '主催者の承認をお待ちください。' };
+    const amount = registrationItem.value?.amount ?? 0;
+    const hint =
+      amount > 0
+        ? '主催者の承認をお待ちください。承認後にお支払いできます。'
+        : '主催者の承認をお待ちください。';
+    return { label: '承認待ち', disabled: true, hint };
   }
   if (registrationStatus.value === 'paid') {
     return { label: '参加チケットを見る', disabled: false, hint: refundHint.value };
@@ -583,7 +588,7 @@ const ctaLabel = computed(() => ctaState.value.label);
 const isCtaDisabled = computed(() => ctaState.value.disabled || checkingRegistration.value);
 const paymentHoldStartedAt = computed(() => {
   if (!registrationItem.value) return null;
-  const raw = registrationItem.value.paymentCreatedAt ?? registrationItem.value.createdAt ?? null;
+  const raw = registrationItem.value.paymentCreatedAt ?? null;
   if (!raw) return null;
   const ms = new Date(raw).getTime();
   return Number.isNaN(ms) ? null : ms;
@@ -619,8 +624,11 @@ const paymentBannerTitle = computed(() => {
 });
 const paymentBannerNote = computed(() => {
   if (!showPaymentBanner.value) return '';
-  if (paymentHoldRemainingMs.value !== null && paymentHoldRemainingMs.value <= 0) {
-    return 'この申込は自動キャンセルされました。再度お申し込みください。';
+  if (paymentHoldRemainingMs.value === null) {
+    return '決済を開始すると15分以内に支払いを完了してください。';
+  }
+  if (paymentHoldRemainingMs.value <= 0) {
+    return 'お支払い期限が過ぎました。もう一度お試しください。';
   }
   return '15分以内に支払わないと自動キャンセルされます。';
 });

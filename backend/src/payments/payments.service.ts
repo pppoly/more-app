@@ -1061,7 +1061,7 @@ export class PaymentsService {
       throw new NotFoundException('Event or lesson not found');
     }
     if (event?.requireApproval && registration.status !== 'approved') {
-      throw new BadRequestException('Registration is pending approval');
+      throw new BadRequestException('承認待ちのため支払いできません');
     }
 
     if (!community.stripeAccountId || !community.stripeAccountOnboarded) {

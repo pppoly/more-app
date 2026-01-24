@@ -366,7 +366,12 @@ const handlePay = async () => {
     storePendingPayment(activePayment);
     window.location.href = checkoutUrl;
   } catch (err) {
-    registrationError.value = '処理に失敗しました';
+    const message =
+      (err as any)?.response?.data?.message ??
+      ((err as any)?.response?.data?.error ?? null) ??
+      (err instanceof Error ? err.message : null);
+    const normalized = Array.isArray(message) ? message[0] : message;
+    registrationError.value = typeof normalized === 'string' && normalized ? normalized : '処理に失敗しました';
   } finally {
     submitting.value = false;
   }
