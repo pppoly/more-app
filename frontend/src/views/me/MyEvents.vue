@@ -407,6 +407,7 @@ const refundOutcomeLabel = (item: MyEventItem) => {
 const statusLabel = (item: MyEventItem) => {
   const refundLabel = refundOutcomeLabel(item);
   if (refundLabel && (item.status === 'refunded' || item.status === 'cancelled')) return refundLabel;
+  if (item.status === 'paid' && (item.amount ?? 0) === 0) return '無料';
   const map: Record<string, string> = {
     pending: '審査待ち',
     pending_payment: '支払い待ち',
@@ -423,7 +424,7 @@ const statusLabel = (item: MyEventItem) => {
 
 const statusClass = (item: MyEventItem) => {
   if (isPendingStatus(item) || isPendingPaymentStatus(item)) return 'badge--pending';
-  if (isPaidStatus(item)) return 'badge--paid';
+  if (isPaidStatus(item)) return (item.amount ?? 0) === 0 ? 'badge--free' : 'badge--paid';
   if (isRefundedStatus(item) || isRefundingStatus(item)) return 'badge--info';
   if (isCancelledStatus(item)) return 'badge--void';
   return 'badge--pending';
