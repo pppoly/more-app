@@ -52,6 +52,7 @@ import type {
   StripeCheckoutResponse,
   SubscriptionResponse,
   UserProfile,
+  EmailContactSummary,
   CommunityTagCategory,
   AnalyticsEventResponse,
 } from '../types/api';
@@ -774,6 +775,31 @@ export async function updateProfile(payload: {
   email?: string;
 }): Promise<UserProfile> {
   const { data } = await apiClient.post<UserProfile>('/me/profile', payload);
+  return data;
+}
+
+export async function fetchEmailContacts(): Promise<EmailContactSummary> {
+  const { data } = await apiClient.get<EmailContactSummary>('/me/email/status');
+  return data;
+}
+
+export async function updateEmailContact(
+  role: 'participant' | 'organizer',
+  email: string,
+): Promise<EmailContactSummary> {
+  const { data } = await apiClient.post<EmailContactSummary>(`/me/email/${role}`, { email });
+  return data;
+}
+
+export async function resendEmailVerification(role: 'participant' | 'organizer'): Promise<EmailContactSummary> {
+  const { data } = await apiClient.post<EmailContactSummary>(`/me/email/${role}/resend`);
+  return data;
+}
+
+export async function verifyEmailToken(token: string): Promise<{ success: boolean; role: string; email: string }> {
+  const { data } = await apiClient.post<{ success: boolean; role: string; email: string }>('/email/verify', {
+    token,
+  });
   return data;
 }
 

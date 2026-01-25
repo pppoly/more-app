@@ -61,6 +61,7 @@ const usageMeta = {
       OPENAI_API_KEY: { module: 'AI', purpose: 'OpenAI API key', prodRequired: 'no' },
       GOOGLE_APPLICATION_CREDENTIALS: { module: 'Google', purpose: 'GCP service account JSON path', prodRequired: 'conditional' },
       BREVO_API_KEY: { module: 'Email', purpose: 'Brevo (Sendinblue) API key', prodRequired: 'conditional' },
+      LINE_NOTIFICATIONS_DISABLED: { module: 'Email', purpose: 'Disable LINE notification delivery', prodRequired: 'no' },
     },
     prefix: [
       { re: /^STRIPE_/, module: 'Stripe' },

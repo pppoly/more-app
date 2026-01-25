@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents */
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Prisma } from '@prisma/client';
@@ -13,6 +13,7 @@ import {
   NotificationData,
   NotificationEmailContent,
   NotificationLocale,
+  NotificationRole,
   NotificationSendResult,
   NotificationTemplate,
   NotificationType,
@@ -45,6 +46,40 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
   ) {}
+
+  async sendTestEmail(params: {
+    toEmail: string;
+    toName?: string;
+    subject?: string;
+    body?: string;
+    dryRun?: boolean;
+  }) {
+    const toEmail = (params.toEmail || '').trim();
+    if (!toEmail) {
+      throw new BadRequestException('toEmail is required');
+    }
+    if (params.dryRun) {
+      if (!this.config.brevoApiKey || !this.config.brevoSenderEmail) {
+        throw new Error('Brevo email configuration is missing');
+      }
+      return { dryRun: true };
+    }
+
+    const recipient: NotificationRecipient = {
+      id: null,
+      name: (params.toName || '').trim() || null,
+      email: toEmail,
+      lineUserId: null,
+      locale: 'ja',
+    };
+    const content: NotificationEmailContent = {
+      subject: (params.subject || '').trim() || '[SocialMore] Brevo test email',
+      body: params.body || 'Brevo email sending test from SocialMore backend.',
+    };
+
+    const messageId = await this.sendEmailMessage(recipient, content);
+    return { messageId };
+  }
 
   async notifyRegistrationSuccess(registrationId: string) {
     const registration = await this.prisma.eventRegistration.findUnique({
@@ -172,6 +207,38 @@ export class NotificationService {
     }
 
     return { sent: results.filter((r) => r.status === 'sent').length, results };
+  }
+
+  async sendVerificationEmail(params: {
+    email: string;
+    name?: string | null;
+    role: 'participant' | 'organizer';
+    verifyUrl: string;
+    locale?: NotificationLocale;
+  }) {
+    if (!this.config.brevoApiKey || !this.config.brevoSenderEmail) {
+      throw new Error('Brevo email configuration is missing');
+    }
+    const roleLabel = params.role === 'organizer' ? '主催者' : '参加者';
+    const subject = `メールアドレスの確認（${roleLabel}）`;
+    const body = [
+      `${roleLabel}のメールアドレス確認のため、以下のリンクを開いてください。`,
+      params.verifyUrl,
+      '',
+      'このリンクは24時間で期限切れになります。',
+    ].join('\n');
+    const recipient: NotificationRecipient = {
+      id: null,
+      name: params.name ?? null,
+      email: params.email,
+      lineUserId: null,
+      locale: params.locale ?? 'ja',
+    };
+    const content: NotificationEmailContent = {
+      subject,
+      body,
+    };
+    return this.sendEmailMessage(recipient, content);
   }
 
   async notifyRegistrationCancelled(registrationId: string, kind: 'free' | 'paid') {
@@ -539,21 +606,22 @@ export class NotificationService {
       return [] as NotificationSendResult[];
     }
 
-    const channels = await this.resolveChannels(recipient, template.category, options.preferences, type);
+    const resolvedRecipient = await this.resolveRecipientEmail(recipient, template.role);
+    const channels = await this.resolveChannels(resolvedRecipient, template.category, options.preferences, type);
     if (!channels.length) {
       return [] as NotificationSendResult[];
     }
 
     const results: NotificationSendResult[] = [];
     for (const channel of channels) {
-      const rendered = this.renderByChannel(template, recipient.locale, data, channel);
+      const rendered = this.renderByChannel(template, resolvedRecipient.locale, data, channel);
       if (!rendered) {
         results.push({ channel, status: 'skipped', errorMessage: 'template_missing' });
         continue;
       }
       results.push(
         await this.deliverChannel({
-          recipient,
+          recipient: resolvedRecipient,
           type,
           category: template.category,
           channel,
@@ -566,14 +634,38 @@ export class NotificationService {
     return results;
   }
 
+  private async resolveRecipientEmail(
+    recipient: NotificationRecipient,
+    role: NotificationRole,
+  ): Promise<NotificationRecipient> {
+    if (role === 'admin') {
+      return {
+        ...recipient,
+        email: this.config.adminEmail || null,
+      };
+    }
+    if (!recipient.id) {
+      return { ...recipient, email: null };
+    }
+    const contactRole = role === 'organizer' ? 'organizer' : 'participant';
+    const contact = await this.prisma.userEmailContact.findUnique({
+      where: { userId_role: { userId: recipient.id, role: contactRole } },
+      select: { email: true, status: true },
+    });
+    const email = contact?.status === 'verified' ? contact.email : null;
+    return { ...recipient, email };
+  }
+
   private async resolveChannels(
     recipient: NotificationRecipient,
     category: NotificationCategory,
     preferences?: ChannelPreferences,
     type?: NotificationType,
   ) {
-    const lineAvailable = Boolean(recipient.lineUserId) && Boolean(this.config.lineAccessToken);
-    const emailAvailable = Boolean(recipient.email) && Boolean(this.config.brevoApiKey) && Boolean(this.config.brevoSenderEmail);
+    const lineAvailable =
+      !this.config.lineNotificationsDisabled && Boolean(recipient.lineUserId) && Boolean(this.config.lineAccessToken);
+    const emailAvailable =
+      Boolean(recipient.email) && Boolean(this.config.brevoApiKey) && Boolean(this.config.brevoSenderEmail);
 
     let lineAllowed = lineAvailable;
     let emailAllowed = emailAvailable;
@@ -584,8 +676,8 @@ export class NotificationService {
       if (prefs.email === false) emailAllowed = false;
     }
 
-    if (lineAllowed) return ['line'] as NotificationChannel[];
     if (emailAllowed) return ['email'] as NotificationChannel[];
+    if (lineAllowed) return ['line'] as NotificationChannel[];
 
     if (type) {
       this.logger.log(`Notification skipped: no channel (${type}) user=${recipient.id ?? 'n/a'}`);
@@ -757,7 +849,7 @@ export class NotificationService {
     return {
       id: user.id,
       name: user.name ?? null,
-      email: user.email ?? null,
+      email: null,
       lineUserId: user.lineUserId ?? null,
       locale: normalizeLocale(user.preferredLocale || user.language),
     };

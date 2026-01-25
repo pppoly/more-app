@@ -57,6 +57,31 @@ export class MeController {
     return this.meService.updateProfile(req.user.id, { name, preferredLocale, email });
   }
 
+  @Get('email/status')
+  getEmailStatus(@Req() req: any) {
+    return this.meService.getEmailContacts(req.user.id);
+  }
+
+  @Post('email/participant')
+  updateParticipantEmail(@Body('email') email: string | undefined, @Req() req: any) {
+    return this.meService.setEmailContact(req.user.id, 'participant', email ?? '');
+  }
+
+  @Post('email/participant/resend')
+  resendParticipantEmail(@Req() req: any) {
+    return this.meService.resendEmailVerification(req.user.id, 'participant');
+  }
+
+  @Post('email/organizer')
+  updateOrganizerEmail(@Body('email') email: string | undefined, @Req() req: any) {
+    return this.meService.setEmailContact(req.user.id, 'organizer', email ?? '');
+  }
+
+  @Post('email/organizer/resend')
+  resendOrganizerEmail(@Req() req: any) {
+    return this.meService.resendEmailVerification(req.user.id, 'organizer');
+  }
+
   @Post('events/:registrationId/cancel')
   cancelMyEvent(@Param('registrationId') registrationId: string, @Req() req: any) {
     if (!registrationId) {

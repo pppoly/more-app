@@ -85,6 +85,7 @@ export class AuthService {
       select: {
         id: true,
         name: true,
+        lineUserId: true,
         email: true,
         phone: true,
         language: true,

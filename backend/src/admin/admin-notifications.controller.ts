@@ -12,6 +12,24 @@ export class AdminNotificationsController {
     private readonly permissions: PermissionsService,
   ) {}
 
+  @Post('test-email')
+  async sendTestEmail(
+    @Req() req: any,
+    @Body()
+    body:
+      | { toEmail?: string; toName?: string; subject?: string; body?: string; dryRun?: boolean }
+      | undefined,
+  ) {
+    await this.permissions.assertAdmin(req.user.id);
+    return this.notifications.sendTestEmail({
+      toEmail: body?.toEmail || '',
+      toName: body?.toName,
+      subject: body?.subject,
+      body: body?.body,
+      dryRun: Boolean(body?.dryRun),
+    });
+  }
+
   @Post('event-reminders')
   async sendEventReminders(
     @Req() req: any,

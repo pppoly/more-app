@@ -6,6 +6,7 @@ export interface LocalizedContent {
 export interface UserProfile {
   id: string;
   name: string;
+  lineUserId?: string | null;
   email?: string | null;
   phone?: string | null;
   language?: string | null;
@@ -19,6 +20,24 @@ export interface UserProfile {
   isOrganizer?: boolean;
   isAdmin?: boolean;
 }
+
+export type EmailContactStatus = {
+  role: 'participant' | 'organizer';
+  email?: string | null;
+  status: 'none' | 'unverified' | 'verified' | 'hard_bounce';
+  verifiedAt?: string | null;
+  pendingEmail?: string | null;
+  pendingExpiresAt?: string | null;
+  lastVerificationSentAt?: string | null;
+  resendAvailableAt?: string | null;
+  bounceReason?: string | null;
+  bouncedAt?: string | null;
+};
+
+export type EmailContactSummary = {
+  participant: EmailContactStatus;
+  organizer: EmailContactStatus;
+};
 
 export interface AnalyticsEventResponse {
   success: boolean;

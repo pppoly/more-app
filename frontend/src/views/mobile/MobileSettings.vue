@@ -132,7 +132,7 @@ const openLanguage = () => {
 };
 
 const openNotification = () => {
-  toast.show(t('mobile.settings.toast.notificationsPending'), 'info');
+  router.push({ name: 'MobileNotificationSettings' });
 };
 
 const logoutUser = () => {

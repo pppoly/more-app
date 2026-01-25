@@ -6,12 +6,19 @@ import type { Express } from 'express';
 import { buildAssetUrl } from '../common/storage/asset-path';
 import { AssetService } from '../asset/asset.service';
 import { NotificationService } from '../notifications/notification.service';
+import { normalizeLocale } from '../notifications/notification.utils';
 import { PaymentsService } from '../payments/payments.service';
+import { createHash, randomBytes } from 'crypto';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
 const DEFAULT_COMMUNITY_AVATAR = FRONTEND_BASE_URL
   ? `${FRONTEND_BASE_URL}/api/v1/og/assets/default-avatar.png`
   : '/api/v1/og/assets/default-avatar.png';
+const EMAIL_ROLES = ['participant', 'organizer'] as const;
+type EmailRole = (typeof EMAIL_ROLES)[number];
+type EmailStatus = 'none' | 'unverified' | 'verified' | 'hard_bounce';
+const EMAIL_VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const EMAIL_VERIFY_RESEND_COOLDOWN_MS = 60 * 1000;
 
 function extractCommunityLogo(description: any): string | null {
   if (!description || typeof description !== 'object') return null;
@@ -290,6 +297,7 @@ export class MeService {
       select: {
         id: true,
         name: true,
+        lineUserId: true,
         email: true,
         phone: true,
         language: true,
@@ -346,6 +354,7 @@ export class MeService {
         select: {
         id: true,
         name: true,
+        lineUserId: true,
         email: true,
         phone: true,
         language: true,
@@ -366,6 +375,267 @@ export class MeService {
       }
       throw error;
     }
+  }
+
+  async getEmailContacts(userId: string) {
+    const contacts = await this.prisma.userEmailContact.findMany({
+      where: { userId, role: { in: [...EMAIL_ROLES] } },
+    });
+    const map = new Map<string, (typeof contacts)[number]>();
+    for (const contact of contacts) {
+      map.set(contact.role, contact);
+    }
+    return {
+      participant: this.formatEmailContact(map.get('participant') ?? null, 'participant'),
+      organizer: this.formatEmailContact(map.get('organizer') ?? null, 'organizer'),
+    };
+  }
+
+  async setEmailContact(userId: string, role: EmailRole, email: string) {
+    if (!EMAIL_ROLES.includes(role)) {
+      throw new BadRequestException('role is invalid');
+    }
+    const normalized = this.normalizeEmail(email);
+    if (!normalized) {
+      throw new BadRequestException('メールアドレスを入力してください');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, preferredLocale: true, language: true },
+    });
+    if (!user) {
+      throw new NotFoundException('ユーザーが見つかりません');
+    }
+
+    const otherRole: EmailRole = role === 'organizer' ? 'participant' : 'organizer';
+    const [currentContact, otherContact] = await Promise.all([
+      this.prisma.userEmailContact.findUnique({
+        where: { userId_role: { userId, role } },
+        select: { email: true, status: true, pendingEmail: true },
+      }),
+      this.prisma.userEmailContact.findUnique({
+        where: { userId_role: { userId, role: otherRole } },
+        select: { email: true, status: true, verifiedAt: true, pendingTokenHash: true, pendingExpiresAt: true, lastVerificationSentAt: true },
+      }),
+    ]);
+    const now = new Date();
+
+    if (currentContact?.status === 'verified' && currentContact.email === normalized) {
+      return this.getEmailContacts(userId);
+    }
+    if (currentContact?.status === 'unverified' && currentContact.pendingEmail === normalized) {
+      return this.resendEmailVerification(userId, role);
+    }
+
+    if (otherContact?.status === 'verified' && otherContact.email === normalized) {
+      await this.prisma.userEmailContact.upsert({
+        where: { userId_role: { userId, role } },
+        update: {
+          email: normalized,
+          status: 'verified',
+          verifiedAt: otherContact.verifiedAt ?? now,
+          pendingEmail: null,
+          pendingTokenHash: null,
+          pendingExpiresAt: null,
+          bounceReason: null,
+          bouncedAt: null,
+        },
+        create: {
+          userId,
+          role,
+          email: normalized,
+          status: 'verified',
+          verifiedAt: otherContact.verifiedAt ?? now,
+        },
+      });
+      return this.getEmailContacts(userId);
+    }
+
+    if (otherContact?.status === 'unverified' && otherContact.email === normalized && otherContact.pendingTokenHash) {
+      await this.prisma.userEmailContact.upsert({
+        where: { userId_role: { userId, role } },
+        update: {
+          email: normalized,
+          status: 'unverified',
+          verifiedAt: null,
+          pendingEmail: normalized,
+          pendingTokenHash: otherContact.pendingTokenHash,
+          pendingExpiresAt: otherContact.pendingExpiresAt,
+          lastVerificationSentAt: otherContact.lastVerificationSentAt,
+          bounceReason: null,
+          bouncedAt: null,
+        },
+        create: {
+          userId,
+          role,
+          email: normalized,
+          status: 'unverified',
+          pendingEmail: normalized,
+          pendingTokenHash: otherContact.pendingTokenHash,
+          pendingExpiresAt: otherContact.pendingExpiresAt,
+          lastVerificationSentAt: otherContact.lastVerificationSentAt,
+        },
+      });
+      return this.getEmailContacts(userId);
+    }
+
+    const token = this.generateEmailToken();
+    const tokenHash = this.hashEmailToken(token);
+    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TOKEN_TTL_MS);
+
+    await this.prisma.userEmailContact.upsert({
+      where: { userId_role: { userId, role } },
+      update: {
+        email: normalized,
+        status: 'unverified',
+        verifiedAt: null,
+        pendingEmail: normalized,
+        pendingTokenHash: tokenHash,
+        pendingExpiresAt: expiresAt,
+        lastVerificationSentAt: now,
+        bounceReason: null,
+        bouncedAt: null,
+      },
+      create: {
+        userId,
+        role,
+        email: normalized,
+        status: 'unverified',
+        pendingEmail: normalized,
+        pendingTokenHash: tokenHash,
+        pendingExpiresAt: expiresAt,
+        lastVerificationSentAt: now,
+      },
+    });
+
+    const verifyUrl = this.buildEmailVerificationUrl(token);
+    await this.notifications.sendVerificationEmail({
+      email: normalized,
+      name: user.name ?? null,
+      role,
+      verifyUrl,
+      locale: normalizeLocale(user.preferredLocale || user.language),
+    });
+
+    return this.getEmailContacts(userId);
+  }
+
+  async resendEmailVerification(userId: string, role: EmailRole) {
+    if (!EMAIL_ROLES.includes(role)) {
+      throw new BadRequestException('role is invalid');
+    }
+    const contact = await this.prisma.userEmailContact.findUnique({
+      where: { userId_role: { userId, role } },
+    });
+    if (!contact || contact.status !== 'unverified' || !contact.pendingEmail) {
+      throw new BadRequestException('再送できるメールがありません');
+    }
+
+    const lastSentAt = contact.lastVerificationSentAt?.getTime() ?? 0;
+    const nowMs = Date.now();
+    if (lastSentAt && nowMs - lastSentAt < EMAIL_VERIFY_RESEND_COOLDOWN_MS) {
+      const waitSeconds = Math.ceil((EMAIL_VERIFY_RESEND_COOLDOWN_MS - (nowMs - lastSentAt)) / 1000);
+      throw new BadRequestException(`再送は${waitSeconds}秒後にお試しください`);
+    }
+
+    const token = this.generateEmailToken();
+    const tokenHash = this.hashEmailToken(token);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TOKEN_TTL_MS);
+
+    await this.prisma.userEmailContact.update({
+      where: { id: contact.id },
+      data: {
+        pendingTokenHash: tokenHash,
+        pendingExpiresAt: expiresAt,
+        lastVerificationSentAt: now,
+        bounceReason: null,
+        bouncedAt: null,
+      },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, preferredLocale: true, language: true },
+    });
+    const verifyUrl = this.buildEmailVerificationUrl(token);
+    await this.notifications.sendVerificationEmail({
+      email: contact.pendingEmail,
+      name: user?.name ?? null,
+      role,
+      verifyUrl,
+      locale: normalizeLocale(user?.preferredLocale || user?.language),
+    });
+
+    return this.getEmailContacts(userId);
+  }
+
+  async verifyEmailToken(token: string) {
+    const trimmed = (token || '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('token is required');
+    }
+    const tokenHash = this.hashEmailToken(trimmed);
+    const contact = await this.prisma.userEmailContact.findFirst({
+      where: { pendingTokenHash: tokenHash },
+    });
+    if (!contact || !contact.pendingEmail) {
+      throw new BadRequestException('無効な確認リンクです');
+    }
+    if (contact.pendingExpiresAt && contact.pendingExpiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('確認リンクの有効期限が切れています');
+    }
+
+    const now = new Date();
+    const verifiedEmail = contact.pendingEmail;
+    await this.prisma.userEmailContact.update({
+      where: { id: contact.id },
+      data: {
+        email: verifiedEmail,
+        status: 'verified',
+        verifiedAt: now,
+        pendingEmail: null,
+        pendingTokenHash: null,
+        pendingExpiresAt: null,
+        bounceReason: null,
+        bouncedAt: null,
+      },
+    });
+
+    const otherRole: EmailRole = contact.role === 'organizer' ? 'participant' : 'organizer';
+    await this.prisma.userEmailContact.updateMany({
+      where: { userId: contact.userId, role: otherRole, email: verifiedEmail },
+      data: {
+        status: 'verified',
+        verifiedAt: now,
+        pendingEmail: null,
+        pendingTokenHash: null,
+        pendingExpiresAt: null,
+        bounceReason: null,
+        bouncedAt: null,
+      },
+    });
+
+    return { success: true, role: contact.role, email: verifiedEmail };
+  }
+
+  async processBrevoWebhook(payload: any) {
+    const events = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.events)
+        ? payload.events
+        : payload
+          ? [payload]
+          : [];
+    let updated = 0;
+    for (const event of events) {
+      const email = this.resolveBrevoEmail(event);
+      const eventType = this.resolveBrevoEventType(event);
+      if (!email || !eventType) continue;
+      if (!this.shouldMarkBrevoBounce(eventType)) continue;
+      updated += await this.markEmailBounced(email, event?.reason || event?.message || null);
+    }
+    return { received: events.length, updated };
   }
 
   async cancelEventRegistration(userId: string, registrationId: string) {
@@ -710,6 +980,93 @@ export class MeService {
       create: { userId, category, channel, enabled },
     });
     return this.getNotificationPreferences(userId);
+  }
+
+  private formatEmailContact(contact: any | null, role: EmailRole) {
+    const status = (contact?.status as EmailStatus) ?? 'none';
+    const lastSentAt = contact?.lastVerificationSentAt ?? null;
+    const resendAvailableAt = lastSentAt
+      ? new Date(lastSentAt.getTime() + EMAIL_VERIFY_RESEND_COOLDOWN_MS)
+      : null;
+    return {
+      role,
+      email: contact?.email ?? null,
+      status,
+      verifiedAt: contact?.verifiedAt ?? null,
+      pendingEmail: contact?.pendingEmail ?? null,
+      pendingExpiresAt: contact?.pendingExpiresAt ?? null,
+      lastVerificationSentAt: lastSentAt,
+      resendAvailableAt,
+      bounceReason: contact?.bounceReason ?? null,
+      bouncedAt: contact?.bouncedAt ?? null,
+    };
+  }
+
+  private normalizeEmail(input: string) {
+    const trimmed = (input || '').trim().toLowerCase();
+    if (!trimmed) return '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      throw new BadRequestException('メールアドレスの形式が正しくありません');
+    }
+    return trimmed;
+  }
+
+  private generateEmailToken() {
+    return randomBytes(32).toString('hex');
+  }
+
+  private hashEmailToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private resolveFrontendBaseUrl() {
+    const raw =
+      (process.env.FRONTEND_BASE_URL || '').trim() ||
+      (process.env.FRONTEND_BASE_URL_LIVE || '').trim() ||
+      (process.env.FRONTEND_BASE_URL_UAT || '').trim() ||
+      'http://localhost:5173';
+    return raw.replace(/\/$/, '');
+  }
+
+  private buildEmailVerificationUrl(token: string) {
+    const base = this.resolveFrontendBaseUrl();
+    return `${base}/verify-email?token=${encodeURIComponent(token)}`;
+  }
+
+  private resolveBrevoEmail(event: any) {
+    if (event && typeof event.email === 'string') return event.email.trim().toLowerCase();
+    if (event && typeof event.recipient === 'string') return event.recipient.trim().toLowerCase();
+    return '';
+  }
+
+  private resolveBrevoEventType(event: any) {
+    if (event && typeof event.event === 'string') return event.event.trim().toLowerCase();
+    if (event && typeof event.eventType === 'string') return event.eventType.trim().toLowerCase();
+    if (event && typeof event.type === 'string') return event.type.trim().toLowerCase();
+    return '';
+  }
+
+  private shouldMarkBrevoBounce(eventType: string) {
+    const normalized = eventType.replace(/\s+/g, '_');
+    return normalized === 'hard_bounce' || normalized === 'complaint' || normalized === 'spam';
+  }
+
+  private async markEmailBounced(email: string, reason?: string | null) {
+    const normalized = (email || '').trim().toLowerCase();
+    if (!normalized) return 0;
+    const now = new Date();
+    const result = await this.prisma.userEmailContact.updateMany({
+      where: { email: normalized },
+      data: {
+        status: 'hard_bounce',
+        bounceReason: reason ?? null,
+        bouncedAt: now,
+        pendingEmail: null,
+        pendingTokenHash: null,
+        pendingExpiresAt: null,
+      },
+    });
+    return result.count ?? 0;
   }
 
   private async ensureZeroLedgerEntry(registrationId: string, idempotencyKey: string) {

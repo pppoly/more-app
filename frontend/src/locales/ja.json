@@ -245,6 +245,55 @@
         "languagePending": "言語設定は近日公開です"
       }
     },
+    "emailSettings": {
+      "title": "メール通知設定",
+      "loading": "読み込み中…",
+      "lineRequired": {
+        "title": "LINEログインが必要です",
+        "body": "LINEログイン後にメール通知を設定できます。",
+        "cta": "LINEでログイン"
+      },
+      "shared": {
+        "label": "参加者と主催者で同じメールを使う",
+        "hint": "同じアドレスを使う場合はこちらを有効にしてください。",
+        "locked": "主催者メールは参加者メールと同じになります。"
+      },
+      "participant": {
+        "label": "参加者メール"
+      },
+      "organizer": {
+        "label": "主催者メール"
+      },
+      "status": {
+        "none": "未登録",
+        "unverified": "未確認",
+        "verified": "確認済み",
+        "hard_bounce": "配信失敗"
+      },
+      "actions": {
+        "save": "保存",
+        "resend": "確認メールを再送"
+      },
+      "hints": {
+        "unverified": "確認メールを送信しました。メール内のリンクを開いてください。",
+        "hardBounce": "メールが届きませんでした。別のアドレスで更新してください。"
+      },
+      "toast": {
+        "saved": "メール設定を更新しました",
+        "resent": "確認メールを再送しました",
+        "failed": "メール設定に失敗しました"
+      },
+      "errors": {
+        "missingEmail": "メールアドレスを入力してください"
+      }
+    },
+    "emailVerify": {
+      "title": "メールアドレスの確認",
+      "loading": "確認中…",
+      "success": "メールアドレスの確認が完了しました。",
+      "error": "確認に失敗しました。リンクを再確認してください。",
+      "back": "ホームへ戻る"
+    },
     "me": {
       "organizer": "主催者",
       "avatar": {
