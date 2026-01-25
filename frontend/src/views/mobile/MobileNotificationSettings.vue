@@ -56,6 +56,26 @@
                 {{ t('mobile.emailSettings.actions.resend') }}
               </button>
             </div>
+            <div v-if="participant?.status === 'unverified'" class="verify-row">
+              <input
+                v-model="participantCode"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="4"
+                placeholder="1234"
+                class="code-input"
+                :disabled="saving"
+              />
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="saving || participantCode.length !== 4"
+                @click="verifyParticipant"
+              >
+                {{ t('mobile.emailSettings.actions.verify') }}
+              </button>
+            </div>
             <p v-if="participant?.status === 'unverified'" class="status-hint">
               {{ t('mobile.emailSettings.hints.unverified') }}
             </p>
@@ -93,6 +113,29 @@
                 {{ t('mobile.emailSettings.actions.resend') }}
               </button>
             </div>
+            <div
+              v-if="organizer?.status === 'unverified' && !useSameEmail"
+              class="verify-row"
+            >
+              <input
+                v-model="organizerCode"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="4"
+                placeholder="1234"
+                class="code-input"
+                :disabled="saving"
+              />
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="saving || organizerCode.length !== 4"
+                @click="verifyOrganizer"
+              >
+                {{ t('mobile.emailSettings.actions.verify') }}
+              </button>
+            </div>
             <p v-if="organizer?.status === 'unverified'" class="status-hint">
               {{ t('mobile.emailSettings.hints.unverified') }}
             </p>
@@ -110,7 +153,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
-import { fetchEmailContacts, resendEmailVerification, updateEmailContact } from '../../api/client';
+import { fetchEmailContacts, resendEmailVerification, updateEmailContact, verifyEmailContact } from '../../api/client';
 import type { EmailContactStatus, EmailContactSummary } from '../../types/api';
 import { useToast } from '../../composables/useToast';
 import { useI18n } from 'vue-i18n';
@@ -132,6 +175,8 @@ const contacts = ref<EmailContactSummary | null>(null);
 const participantDraft = ref('');
 const organizerDraft = ref('');
 const useSameEmail = ref(false);
+const participantCode = ref('');
+const organizerCode = ref('');
 
 const participant = computed(() => contacts.value?.participant ?? null);
 const organizer = computed(() => contacts.value?.organizer ?? null);
@@ -144,6 +189,8 @@ const applyDraftsFromContacts = (summary: EmailContactSummary, keepToggle = fals
   if (!keepToggle) {
     useSameEmail.value = Boolean(participantEmail && organizerEmail && participantEmail === organizerEmail);
   }
+  if (summary.participant.status !== 'unverified') participantCode.value = '';
+  if (summary.organizer.status !== 'unverified') organizerCode.value = '';
 };
 
 const loadContacts = async () => {
@@ -181,6 +228,19 @@ watch(participantDraft, (value) => {
 
 watch(useSameEmail, (value) => {
   if (value) organizerDraft.value = participantDraft.value;
+  if (value) organizerCode.value = '';
+});
+
+const sanitizeCode = (value: string) => value.replace(/\D/g, '').slice(0, 4);
+
+watch(participantCode, (value) => {
+  const sanitized = sanitizeCode(value);
+  if (sanitized !== value) participantCode.value = sanitized;
+});
+
+watch(organizerCode, (value) => {
+  const sanitized = sanitizeCode(value);
+  if (sanitized !== value) organizerCode.value = sanitized;
 });
 
 const canResend = (contact: EmailContactStatus | null) => {
@@ -212,6 +272,8 @@ const saveParticipant = async () => {
     }
     contacts.value = summary;
     applyDraftsFromContacts(summary, true);
+    participantCode.value = '';
+    if (useSameEmail.value) organizerCode.value = '';
     toast.show(t('mobile.emailSettings.toast.saved'), 'success');
   } catch (error) {
     console.error('Failed to update participant email', error);
@@ -231,6 +293,7 @@ const saveOrganizer = async () => {
     const summary = await updateEmailContact('organizer', organizerDraft.value.trim());
     contacts.value = summary;
     applyDraftsFromContacts(summary, true);
+    organizerCode.value = '';
     toast.show(t('mobile.emailSettings.toast.saved'), 'success');
   } catch (error) {
     console.error('Failed to update organizer email', error);
@@ -249,6 +312,8 @@ const resendParticipant = async () => {
     }
     contacts.value = summary;
     applyDraftsFromContacts(summary, true);
+    participantCode.value = '';
+    if (useSameEmail.value) organizerCode.value = '';
     toast.show(t('mobile.emailSettings.toast.resent'), 'success');
   } catch (error) {
     console.error('Failed to resend participant verification', error);
@@ -264,6 +329,7 @@ const resendOrganizer = async () => {
     const summary = await resendEmailVerification('organizer');
     contacts.value = summary;
     applyDraftsFromContacts(summary, true);
+    organizerCode.value = '';
     toast.show(t('mobile.emailSettings.toast.resent'), 'success');
   } catch (error) {
     console.error('Failed to resend organizer verification', error);
@@ -275,6 +341,47 @@ const resendOrganizer = async () => {
 
 const goLineLogin = () => {
   router.push({ name: 'auth-login', query: { redirect: '/settings/notifications' } });
+};
+
+const verifyParticipant = async () => {
+  if (participantCode.value.length !== 4) {
+    toast.show(t('mobile.emailSettings.errors.invalidCode'), 'warning');
+    return;
+  }
+  saving.value = true;
+  try {
+    const summary = await verifyEmailContact('participant', participantCode.value);
+    contacts.value = summary;
+    applyDraftsFromContacts(summary, true);
+    participantCode.value = '';
+    if (useSameEmail.value) organizerCode.value = '';
+    toast.show(t('mobile.emailSettings.toast.verified'), 'success');
+  } catch (error) {
+    console.error('Failed to verify participant email', error);
+    toast.show(t('mobile.emailSettings.toast.verifyFailed'), 'error');
+  } finally {
+    saving.value = false;
+  }
+};
+
+const verifyOrganizer = async () => {
+  if (organizerCode.value.length !== 4) {
+    toast.show(t('mobile.emailSettings.errors.invalidCode'), 'warning');
+    return;
+  }
+  saving.value = true;
+  try {
+    const summary = await verifyEmailContact('organizer', organizerCode.value);
+    contacts.value = summary;
+    applyDraftsFromContacts(summary, true);
+    organizerCode.value = '';
+    toast.show(t('mobile.emailSettings.toast.verified'), 'success');
+  } catch (error) {
+    console.error('Failed to verify organizer email', error);
+    toast.show(t('mobile.emailSettings.toast.verifyFailed'), 'error');
+  } finally {
+    saving.value = false;
+  }
 };
 
 const goBack = () => {
@@ -313,7 +420,8 @@ const goBack = () => {
 .settings-stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .settings-card,
@@ -323,7 +431,7 @@ const goBack = () => {
   background: #fff;
   border-radius: 18px;
   padding: 16px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
 }
 
 .notice-title {
@@ -369,10 +477,22 @@ const goBack = () => {
 
 .email-input {
   width: 100%;
-  border: 1px solid #d7dce5;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 14px;
+  background: #f8fafc;
+}
+
+.code-input {
+  flex: 1;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  text-align: center;
+  background: #f8fafc;
 }
 
 .email-card--disabled {
@@ -385,17 +505,24 @@ const goBack = () => {
   margin-top: 12px;
 }
 
+.verify-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .primary-btn,
 .ghost-btn {
   flex: 1;
-  border-radius: 12px;
+  border-radius: 999px;
   padding: 10px 12px;
   font-size: 14px;
+  font-weight: 600;
   border: none;
 }
 
 .primary-btn {
-  background: #1c7dfc;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
   color: #fff;
 }
 
@@ -405,8 +532,9 @@ const goBack = () => {
 }
 
 .ghost-btn {
-  background: #eef2f9;
-  color: #2b3340;
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.12);
 }
 
 .status-chip {

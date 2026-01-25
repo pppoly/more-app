@@ -1582,6 +1582,10 @@ export class PaymentsService {
   private notifyStripeWebhookSideEffects(event: Stripe.Event) {
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
+      const paymentStatus = session.payment_status;
+      if (!paymentStatus || !['paid', 'no_payment_required'].includes(paymentStatus)) {
+        return;
+      }
       const registrationId = session.metadata?.registrationId;
       if (registrationId) {
         void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
@@ -1590,6 +1594,62 @@ export class PaymentsService {
           );
         });
       }
+      return;
+    }
+
+    if (event.type === 'checkout.session.async_payment_failed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const paymentId = session.metadata?.paymentId ?? null;
+      const registrationId = session.metadata?.registrationId ?? null;
+      void this.notifications
+        .notifyPaymentFailed({
+          paymentId,
+          registrationId,
+          paymentDueAt: session.expires_at ? new Date(session.expires_at * 1000) : null,
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Failed to notify Stripe payment failure: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return;
+    }
+
+    if (event.type === 'checkout.session.expired') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const paymentId = session.metadata?.paymentId ?? null;
+      const registrationId = session.metadata?.registrationId ?? null;
+      void this.notifications
+        .notifyPaymentExpired({
+          paymentId,
+          registrationId,
+          paymentDueAt: session.expires_at ? new Date(session.expires_at * 1000) : null,
+          cancelledAt: new Date(),
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Failed to notify Stripe payment expiry: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return;
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const intent = event.data.object as Stripe.PaymentIntent;
+      const paymentId = (intent.metadata && (intent.metadata as any).paymentId) as string | undefined;
+      const registrationId = (intent.metadata && (intent.metadata as any).registrationId) as string | undefined;
+      const failureReason = intent.last_payment_error?.message ?? null;
+      void this.notifications
+        .notifyPaymentFailed({
+          paymentId: paymentId ?? null,
+          registrationId: registrationId ?? null,
+          failureReason,
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Failed to notify Stripe payment failure: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
       return;
     }
 
@@ -2861,6 +2921,18 @@ export class PaymentsService {
       }
       this.logger.log(`Payment ${payment.id} dispute closed (${won ? 'won' : 'lost'})`);
     }
+
+    void this.notifications
+      .notifyOrganizerDisputeUpdated({
+        paymentId: payment.id,
+        disputeId: dispute.id,
+        disputeStatus: dispute.status,
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `Failed to notify organizer dispute update: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 
   private async handlePaymentIntentFailed(intent: Stripe.PaymentIntent, tx: Prisma.TransactionClient = this.prisma) {

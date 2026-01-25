@@ -1131,14 +1131,19 @@ export interface AdminSettlementBatchDetailResponse {
   items: AdminSettlementBatchDetailItem[];
 }
 
-export interface AdminStatsSummary {
-  registeredUsers: number;
-  organizers: number;
-  communities: number;
-  subscriptions: number;
-  events: number;
-  gmv: number;
-  refunds: number;
+export interface AdminNotificationTemplate {
+  type: string;
+  label: string;
+  description?: string | null;
+  role: string;
+  category: string;
+  defaultEnabled: boolean;
+  enabled: boolean;
+  overridden: boolean;
+  channels: {
+    line: boolean;
+    email: boolean;
+  };
 }
 
 export interface AdminStatsSummary {

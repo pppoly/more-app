@@ -44,6 +44,7 @@ import type {
   AdminSettlementBatchDetailResponse,
   AdminSettlementBatchListResponse,
   AdminSettlementConfig,
+  AdminNotificationTemplate,
   ConsolePaymentItem,
   SupportedLanguagesResponse,
   RenderPromptRequest,
@@ -796,10 +797,11 @@ export async function resendEmailVerification(role: 'participant' | 'organizer')
   return data;
 }
 
-export async function verifyEmailToken(token: string): Promise<{ success: boolean; role: string; email: string }> {
-  const { data } = await apiClient.post<{ success: boolean; role: string; email: string }>('/email/verify', {
-    token,
-  });
+export async function verifyEmailContact(
+  role: 'participant' | 'organizer',
+  code: string,
+): Promise<EmailContactSummary> {
+  const { data } = await apiClient.post<EmailContactSummary>('/me/email/verify', { role, code });
   return data;
 }
 
@@ -919,6 +921,19 @@ export async function fetchAdminEventReviews(): Promise<AdminEventReviewItem[]> 
 
 export async function fetchAdminStats(): Promise<AdminStatsSummary> {
   const { data } = await apiClient.get<AdminStatsSummary>('/admin/stats');
+  return data;
+}
+
+export async function fetchAdminNotificationTemplates(): Promise<AdminNotificationTemplate[]> {
+  const { data } = await apiClient.get<AdminNotificationTemplate[]>('/admin/notifications/templates');
+  return data;
+}
+
+export async function updateAdminNotificationTemplate(
+  type: string,
+  enabled: boolean,
+): Promise<AdminNotificationTemplate> {
+  const { data } = await apiClient.put<AdminNotificationTemplate>(`/admin/notifications/templates/${type}`, { enabled });
   return data;
 }
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StripeService } from '../stripe/stripe.service';
+import { NotificationService } from '../notifications/notification.service';
 import { getPaymentsConfig } from './payments.config';
 import { computeSettlementAmount } from './settlement.utils';
 import Stripe from 'stripe';
@@ -47,6 +48,7 @@ export class SettlementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stripeService: StripeService,
+    private readonly notifications: NotificationService,
   ) {}
 
   private async writeReport(batchId: string, reportDir: string, summary: unknown, csv: string) {
@@ -640,6 +642,26 @@ export class SettlementService {
       return created;
     });
 
+    if (settlementEnabled) {
+      for (const item of items) {
+        if (item.settleAmount <= 0) continue;
+        void this.notifications
+          .notifyOrganizerSettlementEligible({
+            hostId: item.hostId,
+            itemId: item.id,
+            batchId: batch.id,
+            settleAmount: item.settleAmount,
+            periodFrom: params.periodFrom,
+            periodTo: params.periodTo,
+          })
+          .catch((error) => {
+            this.logger.warn(
+              `Failed to notify settlement eligible: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
+      }
+    }
+
     let transferSucceeded = 0;
     let transferFailed = 0;
     const settledHostIds = new Set<string>();
@@ -658,6 +680,18 @@ export class SettlementService {
               nextAttemptAt: null,
             },
           });
+          void this.notifications
+            .notifyOrganizerPayoutFailed({
+              hostId: item.hostId,
+              itemId: item.id,
+              payoutStatus: 'blocked',
+              errorMessage: 'connected_account_missing_or_not_onboarded',
+            })
+            .catch((error) => {
+              this.logger.warn(
+                `Failed to notify payout blocked: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
           continue;
         }
         const claimed = await this.prisma.settlementItem.updateMany({
@@ -687,6 +721,20 @@ export class SettlementService {
             where: { id: item.id },
             data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
           });
+          void this.notifications
+            .notifyOrganizerPayoutSucceeded({
+              hostId: item.hostId,
+              itemId: item.id,
+              payoutAmount: item.settleAmount,
+              payoutStatus: 'completed',
+              payoutAt: new Date(),
+              transferId: transfer.id,
+            })
+            .catch((error) => {
+              this.logger.warn(
+                `Failed to notify payout success: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
         } catch (err) {
           transferFailed += 1;
           const message = err instanceof Error ? err.message : String(err);
@@ -700,6 +748,18 @@ export class SettlementService {
               nextAttemptAt,
             },
           });
+          void this.notifications
+            .notifyOrganizerPayoutFailed({
+              hostId: item.hostId,
+              itemId: item.id,
+              payoutStatus: 'failed',
+              errorMessage: message,
+            })
+            .catch((error) => {
+              this.logger.warn(
+                `Failed to notify payout failure: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
         }
       }
     }
@@ -872,6 +932,18 @@ export class SettlementService {
             nextAttemptAt: null,
           },
         });
+        void this.notifications
+          .notifyOrganizerPayoutFailed({
+            hostId: item.hostId,
+            itemId: item.id,
+            payoutStatus: 'blocked',
+            errorMessage: 'connected_account_missing_or_not_onboarded',
+          })
+          .catch((error) => {
+            this.logger.warn(
+              `Failed to notify payout blocked (retry): ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
         continue;
       }
 
@@ -892,6 +964,20 @@ export class SettlementService {
           where: { id: item.id },
           data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
         });
+        void this.notifications
+          .notifyOrganizerPayoutSucceeded({
+            hostId: item.hostId,
+            itemId: item.id,
+            payoutAmount: item.settleAmount,
+            payoutStatus: 'completed',
+            payoutAt: new Date(),
+            transferId: transfer.id,
+          })
+          .catch((error) => {
+            this.logger.warn(
+              `Failed to notify payout success (retry): ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
       } catch (err) {
         transferFailed += 1;
         const message = err instanceof Error ? err.message : String(err);
@@ -901,6 +987,18 @@ export class SettlementService {
           where: { id: item.id },
           data: { status: 'failed', errorMessage: message, nextAttemptAt },
         });
+        void this.notifications
+          .notifyOrganizerPayoutFailed({
+            hostId: item.hostId,
+            itemId: item.id,
+            payoutStatus: 'failed',
+            errorMessage: message,
+          })
+          .catch((error) => {
+            this.logger.warn(
+              `Failed to notify payout failure (retry): ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
       }
     }
 

@@ -367,6 +367,8 @@ export class EventsService {
         };
       }
 
+      const notifyCreated = !existing || ['cancelled', 'rejected', 'refunded'].includes(existing.status);
+
       const now = new Date();
       if (event.regStartTime && now < event.regStartTime) {
         throw new BadRequestException('Registration has not started');
@@ -507,17 +509,30 @@ export class EventsService {
             slug: '',
           },
         },
+        notifyCreated,
       };
     });
 
-    if (result.status === 'paid' && (result.paymentStatus === 'paid' || result.amount === 0)) {
-      void this.notifications.notifyRegistrationSuccess(result.registrationId).catch((error) => {
+    const { notifyCreated, ...response } = result as typeof result & { notifyCreated?: boolean };
+    if (notifyCreated) {
+      void this.notifications.notifyRegistrationCreated(response.registrationId).catch((error) => {
+        this.logger.warn(`Failed to send registration created notification: ${error instanceof Error ? error.message : String(error)}`);
+      });
+      if (response.status === 'pending') {
+        void this.notifications.notifyOrganizerRegistrationPending(response.registrationId).catch((error) => {
+          this.logger.warn(`Failed to send organizer pending notification: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+    }
+
+    if (response.status === 'paid' && (response.paymentStatus === 'paid' || response.amount === 0)) {
+      void this.notifications.notifyRegistrationSuccess(response.registrationId).catch((error) => {
         // best-effort; do not block registration
         this.logger.warn(`Failed to send registration notification: ${error instanceof Error ? error.message : String(error)}`);
       });
     }
 
-    return result;
+    return response;
   }
 
   private successfulRegistrationWhere(): Prisma.EventRegistrationWhereInput {

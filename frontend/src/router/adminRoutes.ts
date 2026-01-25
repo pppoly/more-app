@@ -90,6 +90,18 @@ export const adminRoutes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, hideShellHeader: true, flushContent: true, devPageName: '決済モニター' },
   },
   {
+    path: '/admin/notifications',
+    name: 'admin-notifications',
+    component: () => import('../views/admin/AdminNotificationTemplates.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      hideShellHeader: true,
+      flushContent: true,
+      devPageName: '通知テンプレート',
+    },
+  },
+  {
     path: '/admin/settlements',
     name: 'admin-settlements',
     component: () => import('../views/admin/AdminSettlements.vue'),

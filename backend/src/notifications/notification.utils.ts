@@ -11,11 +11,17 @@ export const normalizeLocale = (value?: string | null): NotificationLocale => {
   return 'ja';
 };
 
-export const renderTemplate = (template: string, data: NotificationData) =>
-  template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+export const renderTemplate = (template: string, data: NotificationData) => {
+  const withSections = template.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, key: string, content: string) => {
+    const raw = data[key];
+    if (raw === null || raw === undefined || raw === '') return '';
+    return content;
+  });
+  return withSections.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     const raw = data[key];
     return raw === null || raw === undefined ? '' : String(raw);
   });
+};
 
 export const formatJstDateTime = (date: Date | string | null | undefined) => {
   if (!date) {

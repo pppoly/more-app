@@ -101,6 +101,7 @@ const sections = [
       { id: 'users', title: 'ユーザー管理', desc: '停止 / 有効化 / 役割', route: { name: 'admin-users' } },
       { id: 'communities', title: 'コミュニティ管理', desc: 'ステータス / 価格 / 無効化', route: { name: 'admin-communities' } },
       { id: 'events', title: 'イベント管理', desc: 'ライフサイクル管理', route: { name: 'admin-events' } },
+      { id: 'notifications', title: '通知テンプレート', desc: '必須メールの有効/無効', route: { name: 'admin-notifications' } },
     ],
   },
   {

@@ -8,7 +8,7 @@ import { AssetService } from '../asset/asset.service';
 import { NotificationService } from '../notifications/notification.service';
 import { normalizeLocale } from '../notifications/notification.utils';
 import { PaymentsService } from '../payments/payments.service';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 const DEFAULT_SUPPORTED_LANGS = ['ja', 'en', 'zh', 'vi', 'ko', 'tl', 'pt-br', 'ne', 'id', 'th', 'zh-tw', 'my'];
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
 const DEFAULT_COMMUNITY_AVATAR = FRONTEND_BASE_URL
@@ -17,7 +17,7 @@ const DEFAULT_COMMUNITY_AVATAR = FRONTEND_BASE_URL
 const EMAIL_ROLES = ['participant', 'organizer'] as const;
 type EmailRole = (typeof EMAIL_ROLES)[number];
 type EmailStatus = 'none' | 'unverified' | 'verified' | 'hard_bounce';
-const EMAIL_VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const EMAIL_VERIFY_CODE_TTL_MS = 24 * 60 * 60 * 1000;
 const EMAIL_VERIFY_RESEND_COOLDOWN_MS = 60 * 1000;
 
 function extractCommunityLogo(description: any): string | null {
@@ -479,9 +479,9 @@ export class MeService {
       return this.getEmailContacts(userId);
     }
 
-    const token = this.generateEmailToken();
-    const tokenHash = this.hashEmailToken(token);
-    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TOKEN_TTL_MS);
+    const code = this.generateEmailVerificationCode();
+    const codeHash = this.hashEmailVerificationCode(code);
+    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_CODE_TTL_MS);
 
     await this.prisma.userEmailContact.upsert({
       where: { userId_role: { userId, role } },
@@ -490,7 +490,7 @@ export class MeService {
         status: 'unverified',
         verifiedAt: null,
         pendingEmail: normalized,
-        pendingTokenHash: tokenHash,
+        pendingTokenHash: codeHash,
         pendingExpiresAt: expiresAt,
         lastVerificationSentAt: now,
         bounceReason: null,
@@ -502,18 +502,18 @@ export class MeService {
         email: normalized,
         status: 'unverified',
         pendingEmail: normalized,
-        pendingTokenHash: tokenHash,
+        pendingTokenHash: codeHash,
         pendingExpiresAt: expiresAt,
         lastVerificationSentAt: now,
       },
     });
 
-    const verifyUrl = this.buildEmailVerificationUrl(token);
     await this.notifications.sendVerificationEmail({
       email: normalized,
       name: user.name ?? null,
       role,
-      verifyUrl,
+      verifyCode: code,
+      expiresAt,
       locale: normalizeLocale(user.preferredLocale || user.language),
     });
 
@@ -538,15 +538,15 @@ export class MeService {
       throw new BadRequestException(`再送は${waitSeconds}秒後にお試しください`);
     }
 
-    const token = this.generateEmailToken();
-    const tokenHash = this.hashEmailToken(token);
+    const code = this.generateEmailVerificationCode();
+    const codeHash = this.hashEmailVerificationCode(code);
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TOKEN_TTL_MS);
+    const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_CODE_TTL_MS);
 
     await this.prisma.userEmailContact.update({
       where: { id: contact.id },
       data: {
-        pendingTokenHash: tokenHash,
+        pendingTokenHash: codeHash,
         pendingExpiresAt: expiresAt,
         lastVerificationSentAt: now,
         bounceReason: null,
@@ -558,32 +558,38 @@ export class MeService {
       where: { id: userId },
       select: { name: true, preferredLocale: true, language: true },
     });
-    const verifyUrl = this.buildEmailVerificationUrl(token);
     await this.notifications.sendVerificationEmail({
       email: contact.pendingEmail,
       name: user?.name ?? null,
       role,
-      verifyUrl,
+      verifyCode: code,
+      expiresAt,
       locale: normalizeLocale(user?.preferredLocale || user?.language),
     });
 
     return this.getEmailContacts(userId);
   }
 
-  async verifyEmailToken(token: string) {
-    const trimmed = (token || '').trim();
-    if (!trimmed) {
-      throw new BadRequestException('token is required');
+  async verifyEmailCode(userId: string, role: EmailRole, code: string) {
+    if (!EMAIL_ROLES.includes(role)) {
+      throw new BadRequestException('role is invalid');
     }
-    const tokenHash = this.hashEmailToken(trimmed);
-    const contact = await this.prisma.userEmailContact.findFirst({
-      where: { pendingTokenHash: tokenHash },
+    const normalizedCode = this.normalizeEmailVerificationCode(code);
+    const contact = await this.prisma.userEmailContact.findUnique({
+      where: { userId_role: { userId, role } },
     });
-    if (!contact || !contact.pendingEmail) {
-      throw new BadRequestException('無効な確認リンクです');
+    if (!contact || contact.status !== 'unverified' || !contact.pendingEmail) {
+      throw new BadRequestException('確認コードが見つかりません');
+    }
+    if (!contact.pendingTokenHash) {
+      throw new BadRequestException('確認コードが無効です');
     }
     if (contact.pendingExpiresAt && contact.pendingExpiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('確認リンクの有効期限が切れています');
+      throw new BadRequestException('確認コードの有効期限が切れています');
+    }
+    const codeHash = this.hashEmailVerificationCode(normalizedCode);
+    if (codeHash !== contact.pendingTokenHash) {
+      throw new BadRequestException('確認コードが一致しません');
     }
 
     const now = new Date();
@@ -602,9 +608,9 @@ export class MeService {
       },
     });
 
-    const otherRole: EmailRole = contact.role === 'organizer' ? 'participant' : 'organizer';
+    const otherRole: EmailRole = role === 'organizer' ? 'participant' : 'organizer';
     await this.prisma.userEmailContact.updateMany({
-      where: { userId: contact.userId, role: otherRole, email: verifiedEmail },
+      where: { userId, role: otherRole, email: verifiedEmail },
       data: {
         status: 'verified',
         verifiedAt: now,
@@ -616,7 +622,7 @@ export class MeService {
       },
     });
 
-    return { success: true, role: contact.role, email: verifiedEmail };
+    return this.getEmailContacts(userId);
   }
 
   async processBrevoWebhook(payload: any) {
@@ -771,6 +777,13 @@ export class MeService {
           where: { id: registrationId },
           data: { status: 'pending_refund' },
         });
+        void this.notifications
+          .notifyRefundFailed({
+            registrationId,
+            refundStatus: 'processing',
+            actionUrl: `${this.resolveFrontendBaseUrl()}/me/events`,
+          })
+          .catch(() => null);
         void this.notifications.notifyRegistrationCancelled(registrationId, 'paid').catch(() => null);
         return { registrationId, status: 'pending_refund' };
       }
@@ -1011,12 +1024,12 @@ export class MeService {
     return trimmed;
   }
 
-  private generateEmailToken() {
-    return randomBytes(32).toString('hex');
+  private generateEmailVerificationCode() {
+    return String(randomInt(0, 10000)).padStart(4, '0');
   }
 
-  private hashEmailToken(token: string) {
-    return createHash('sha256').update(token).digest('hex');
+  private hashEmailVerificationCode(code: string) {
+    return createHash('sha256').update(code).digest('hex');
   }
 
   private resolveFrontendBaseUrl() {
@@ -1028,9 +1041,12 @@ export class MeService {
     return raw.replace(/\/$/, '');
   }
 
-  private buildEmailVerificationUrl(token: string) {
-    const base = this.resolveFrontendBaseUrl();
-    return `${base}/verify-email?token=${encodeURIComponent(token)}`;
+  private normalizeEmailVerificationCode(code: string) {
+    const trimmed = (code || '').trim();
+    if (!/^\d{4}$/.test(trimmed)) {
+      throw new BadRequestException('確認コードは4桁の数字です');
+    }
+    return trimmed;
   }
 
   private resolveBrevoEmail(event: any) {

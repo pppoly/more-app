@@ -82,6 +82,12 @@ export class MeController {
     return this.meService.resendEmailVerification(req.user.id, 'organizer');
   }
 
+  @Post('email/verify')
+  verifyEmail(@Body('role') role: string | undefined, @Body('code') code: string | undefined, @Req() req: any) {
+    const normalizedRole = role === 'participant' || role === 'organizer' ? role : '';
+    return this.meService.verifyEmailCode(req.user.id, normalizedRole as 'participant' | 'organizer', code ?? '');
+  }
+
   @Post('events/:registrationId/cancel')
   cancelMyEvent(@Param('registrationId') registrationId: string, @Req() req: any) {
     if (!registrationId) {

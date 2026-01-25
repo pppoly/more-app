@@ -5,9 +5,10 @@ import { ClassesService } from './classes.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AssetModule } from '../asset/asset.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
-  imports: [PrismaModule, PaymentsModule, AssetModule],
+  imports: [PrismaModule, PaymentsModule, AssetModule, NotificationModule],
   controllers: [ClassesController, ClassesConsoleController],
   providers: [ClassesService],
   exports: [ClassesService],

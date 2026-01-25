@@ -285,21 +285,6 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/verify-email',
-    name: 'verify-email',
-    component: () => import('../views/auth/VerifyEmail.vue'),
-    meta: {
-      title: 'メールアドレスの確認',
-      layout: 'mobile-user',
-      stackKey: 'mobile',
-      mobileOnly: true,
-      hideShellHeader: true,
-      hideTabbar: true,
-      flushContent: true,
-      devPageName: 'メール確認',
-    },
-  },
-  {
     path: '/staff',
     name: 'MobileStaff',
     component: () => import('../views/mobile/MobileStaff.vue'),

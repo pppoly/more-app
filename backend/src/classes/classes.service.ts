@@ -12,6 +12,7 @@ import { BatchCreateLessonsDto } from './dto/create-lessons.dto';
 import { CreateClassRegistrationDto } from './dto/create-registration.dto';
 import { PaymentsService } from '../payments/payments.service';
 import { AssetService } from '../asset/asset.service';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class ClassesService {
@@ -19,6 +20,7 @@ export class ClassesService {
     private readonly prisma: PrismaService,
     private readonly paymentsService: PaymentsService,
     private readonly assetService: AssetService,
+    private readonly notifications: NotificationService,
   ) {}
 
   private getLocalizedText(content: Prisma.JsonValue | string | null | undefined) {
@@ -164,7 +166,7 @@ export class ClassesService {
           amount: true,
         },
       });
-      return {
+      const result = {
         registrationId: registration.id,
         status: registration.status,
         paymentStatus: registration.paymentStatus,
@@ -172,6 +174,11 @@ export class ClassesService {
         amount: registration.amount,
         lessonId: lesson.id,
       };
+      void this.notifications.notifyRegistrationCreated(registration.id).catch(() => null);
+      if (registration.status === 'paid' && (registration.paymentStatus === 'paid' || registration.amount === 0)) {
+        void this.notifications.notifyRegistrationSuccess(registration.id).catch(() => null);
+      }
+      return result;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new BadRequestException('既にこの回に申込済みです');

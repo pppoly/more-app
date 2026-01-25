@@ -180,6 +180,9 @@ export class ConsoleEventsService {
       void this.notifications.notifyEventPublished(created.id).catch((error) => {
         this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
       });
+      void this.notifications.notifyOrganizerEventSubmitted(created.id).catch((error) => {
+        this.logger.warn(`Failed to notify organizer submission: ${error instanceof Error ? error.message : String(error)}`);
+      });
     }
     return this.prisma.event.findUnique({ where: { id: created.id }, include: { ticketTypes: true } });
   }
@@ -203,7 +206,17 @@ export class ConsoleEventsService {
     await this.permissions.assertEventManager(userId, eventId);
     const existing = await this.prisma.event.findUnique({
       where: { id: eventId },
-      select: { status: true, config: true, reviewStatus: true, communityId: true, ticketTypes: { select: { price: true } } },
+      select: {
+        status: true,
+        config: true,
+        reviewStatus: true,
+        communityId: true,
+        title: true,
+        startTime: true,
+        endTime: true,
+        locationText: true,
+        ticketTypes: { select: { price: true, name: true, type: true } },
+      },
     });
     const wasDraft = existing?.status === 'draft';
     const { ticketTypes = [], ...rest } = data;
@@ -223,6 +236,25 @@ export class ConsoleEventsService {
       }
     }
     const eventData = this.prepareEventData(rest, true) as Prisma.EventUpdateInput;
+    const beforeSnapshot = {
+      title: this.getLocalizedText(existing?.title ?? null),
+      startTime: existing?.startTime ?? null,
+      endTime: existing?.endTime ?? null,
+      locationText: existing?.locationText ?? '',
+    };
+    const nextStartTime = (eventData as any).startTime ? new Date((eventData as any).startTime) : existing?.startTime ?? null;
+    const nextEndTime = (eventData as any).endTime ? new Date((eventData as any).endTime) : existing?.endTime ?? null;
+    const afterSnapshot = {
+      title: this.getLocalizedText((eventData as any).title ?? existing?.title ?? null),
+      startTime: nextStartTime,
+      endTime: nextEndTime,
+      locationText: ((eventData as any).locationText ?? existing?.locationText ?? '') as string,
+    };
+    const hasMajorChange =
+      (beforeSnapshot.startTime?.getTime?.() ?? 0) !== (afterSnapshot.startTime?.getTime?.() ?? 0) ||
+      (beforeSnapshot.endTime?.getTime?.() ?? 0) !== (afterSnapshot.endTime?.getTime?.() ?? 0) ||
+      (beforeSnapshot.locationText ?? '') !== (afterSnapshot.locationText ?? '') ||
+      (beforeSnapshot.title ?? '') !== (afterSnapshot.title ?? '');
     const updateRefundDeadlineAt = eventData.refundDeadlineAt ? new Date(eventData.refundDeadlineAt as any) : null;
     const updateEndTime = eventData.endTime ? new Date(eventData.endTime as any) : null;
     if (updateRefundDeadlineAt && updateEndTime && updateRefundDeadlineAt > updateEndTime) {
@@ -233,6 +265,12 @@ export class ConsoleEventsService {
       this.applyModerationToEventData(eventData, moderation, true);
     }
     const baseConfig = eventData.config ?? existing?.config ?? null;
+    const baseConfigObj = typeof baseConfig === 'object' && baseConfig !== null ? { ...(baseConfig as Record<string, any>) } : {};
+    const previousChangeVersion = Number.isFinite(Number(baseConfigObj.changeVersion))
+      ? Number(baseConfigObj.changeVersion)
+      : 0;
+    const shouldNotifyChange = hasMajorChange && !isDraft;
+    const changeVersion = shouldNotifyChange ? previousChangeVersion + 1 : previousChangeVersion;
     const reviewStatus = isDraft ? 'draft' : 'approved';
     eventData.config = this.mergeReviewConfig(baseConfig as any, {
       status: reviewStatus,
@@ -240,6 +278,27 @@ export class ConsoleEventsService {
       reason: (eventData as any).reviewReason ?? null,
       reviewedAt: isDraft ? null : new Date(),
     });
+    if (shouldNotifyChange) {
+      const nextConfig =
+        typeof eventData.config === 'object' && eventData.config !== null
+          ? { ...(eventData.config as Record<string, any>) }
+          : {};
+      nextConfig.changeVersion = changeVersion;
+      nextConfig.lastMajorChangeAt = new Date();
+      nextConfig.lastMajorChangeSummary = {
+        before: {
+          ...beforeSnapshot,
+          startTime: beforeSnapshot.startTime ? beforeSnapshot.startTime.toISOString() : null,
+          endTime: beforeSnapshot.endTime ? beforeSnapshot.endTime.toISOString() : null,
+        },
+        after: {
+          ...afterSnapshot,
+          startTime: afterSnapshot.startTime ? afterSnapshot.startTime.toISOString() : null,
+          endTime: afterSnapshot.endTime ? afterSnapshot.endTime.toISOString() : null,
+        },
+      };
+      eventData.config = nextConfig as Prisma.InputJsonValue;
+    }
     eventData.reviewStatus = reviewStatus;
     eventData.reviewReason = null;
     eventData.status = isDraft ? 'draft' : 'open';
@@ -282,6 +341,21 @@ export class ConsoleEventsService {
         void this.notifications.notifyEventPublished(eventId).catch((error) => {
           this.logger.warn(`Failed to notify event publish: ${error instanceof Error ? error.message : String(error)}`);
         });
+        void this.notifications.notifyOrganizerEventSubmitted(eventId).catch((error) => {
+          this.logger.warn(`Failed to notify organizer submission: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+      if (shouldNotifyChange) {
+        void this.notifications
+          .notifyEventChanged({
+            eventId,
+            changeVersion,
+            before: beforeSnapshot,
+            after: afterSnapshot,
+          })
+          .catch((error) => {
+            this.logger.warn(`Failed to notify event change: ${error instanceof Error ? error.message : String(error)}`);
+          });
       }
     }
 
@@ -363,6 +437,9 @@ export class ConsoleEventsService {
       where: { id: registrationId },
       data: { status: 'approved', paymentStatus: registration.paymentStatus ?? 'unpaid' },
     });
+    void this.notifications.notifyRegistrationApproved(registrationId).catch((error) => {
+      this.logger.warn(`Failed to notify registration approval: ${error instanceof Error ? error.message : String(error)}`);
+    });
     if ((registration.amount ?? 0) === 0 || registration.paymentStatus === 'paid') {
       void this.notifications.notifyRegistrationSuccess(registrationId).catch((error) => {
         this.logger.warn(`Failed to notify approved registration: ${error instanceof Error ? error.message : String(error)}`);
@@ -383,6 +460,9 @@ export class ConsoleEventsService {
     await this.prisma.eventRegistration.update({
       where: { id: registrationId },
       data: { status: 'rejected', paymentStatus: registration.paymentStatus ?? 'unpaid' },
+    });
+    void this.notifications.notifyRegistrationRejected(registrationId).catch((error) => {
+      this.logger.warn(`Failed to notify registration rejection: ${error instanceof Error ? error.message : String(error)}`);
     });
     return { registrationId, status: 'rejected' };
   }
@@ -532,8 +612,22 @@ export class ConsoleEventsService {
 
     let refundId: string | null = null;
     if (payment.method === 'stripe') {
-      const result = await this.paymentsService.refundStripePaymentInternal(userId, payment.id, approvedAmount, payload.reason);
-      refundId = (result as any)?.refundId ?? null;
+      try {
+        const result = await this.paymentsService.refundStripePaymentInternal(userId, payment.id, approvedAmount, payload.reason);
+        refundId = (result as any)?.refundId ?? null;
+      } catch (error) {
+        await this.prisma.refundRequest.update({
+          where: { id: requestId },
+          data: { status: 'processing', reason: payload.reason ?? (error instanceof Error ? error.message : 'Refund failed') },
+        });
+        void this.notifications
+          .notifyRefundFailed({
+            registrationId: registration.id,
+            refundStatus: 'processing',
+          })
+          .catch(() => null);
+        throw error;
+      }
     } else {
       await this.prisma.payment.update({
         where: { id: payment.id },
@@ -888,6 +982,7 @@ export class ConsoleEventsService {
 
   async cancelEvent(eventId: string, userId: string, options: { reason?: string; notify?: boolean }) {
     await this.permissions.assertEventManager(userId, eventId);
+    const isAdmin = await this.permissions.isAdmin(userId);
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: {
@@ -963,6 +1058,15 @@ export class ConsoleEventsService {
       },
     });
 
+    void this.notifications.notifyEventCancelled(eventId).catch((error) => {
+      this.logger.warn(`Failed to notify event cancellation: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    if (isAdmin) {
+      void this.notifications.notifyOrganizerEventSystemCancelled(eventId, options?.reason ?? null).catch((error) => {
+        this.logger.warn(`Failed to notify organizer system cancel: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+
     const failed = refundResults.filter((r) => r.status === 'refund_failed');
     return {
       eventId,
@@ -992,6 +1096,9 @@ export class ConsoleEventsService {
         }),
       },
     });
+    void this.notifications.notifyOrganizerEventReviewApproved(eventId).catch((error) => {
+      this.logger.warn(`Failed to notify organizer review approved: ${error instanceof Error ? error.message : String(error)}`);
+    });
     return { eventId: updated.id, status: updated.status };
   }
 
@@ -1013,6 +1120,9 @@ export class ConsoleEventsService {
           reason: reason ?? '内容未通过审核',
         }),
       },
+    });
+    void this.notifications.notifyOrganizerEventReviewRejected(eventId, reason ?? null).catch((error) => {
+      this.logger.warn(`Failed to notify organizer review rejected: ${error instanceof Error ? error.message : String(error)}`);
     });
     return { eventId: updated.id, status: updated.status, reason: reason ?? null };
   }

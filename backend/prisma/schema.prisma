@@ -321,6 +321,14 @@ model NotificationDelivery {
   @@index([type])
 }
 
+model NotificationTemplateSetting {
+  id        String   @id @default(cuid())
+  type      String   @unique
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model EventCheckin {
   id             String            @id @default(cuid())
   eventId        String?

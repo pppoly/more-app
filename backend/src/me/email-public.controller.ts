@@ -6,11 +6,6 @@ import { MeService } from './me.service';
 export class EmailPublicController {
   constructor(private readonly meService: MeService) {}
 
-  @Post('email/verify')
-  verifyEmail(@Body('token') token: string | undefined) {
-    return this.meService.verifyEmailToken(token ?? '');
-  }
-
   @Post('notifications/brevo/webhook')
   handleBrevoWebhook(@Body() body: any) {
     return this.meService.processBrevoWebhook(body);
