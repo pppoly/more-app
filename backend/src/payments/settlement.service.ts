@@ -100,7 +100,6 @@ export class SettlementService {
         status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
         eligibleAt: { lte: cutoff },
         communityId: { not: null },
-        settlementStatus: { not: 'settled' },
       },
     });
     return count > 0;
@@ -205,7 +204,6 @@ export class SettlementService {
         communityId: { not: null },
         status: { in: ['paid', 'partial_refunded', 'refunded', 'disputed'] },
         createdAt: { lt: params.periodTo },
-        settlementStatus: { not: 'settled' },
         ...(params.payoutMode
           ? { payoutMode: params.payoutMode }
           : { OR: [{ payoutMode: null }, { payoutMode: 'BATCH' }] }),
@@ -612,6 +610,7 @@ export class SettlementService {
           settlementEnabled,
           settlementReportDir: config.settlementReportDir,
           triggeredByUserId: params.trigger?.userId ?? null,
+          payoutMode: params.payoutMode ?? null,
           settlementDelayDays: config.settlementDelayDays,
           settlementWindowDays: config.settlementWindowDays,
           settlementMinTransferAmount: config.settlementMinTransferAmount,
@@ -643,6 +642,7 @@ export class SettlementService {
 
     let transferSucceeded = 0;
     let transferFailed = 0;
+    const settledHostIds = new Set<string>();
     if (settlementEnabled) {
       for (const item of items) {
         if (item.settleAmount <= 0) continue;
@@ -682,6 +682,7 @@ export class SettlementService {
             periodTo: params.periodTo,
           });
           transferSucceeded += 1;
+          settledHostIds.add(item.hostId);
           await this.prisma.settlementItem.update({
             where: { id: item.id },
             data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
@@ -743,6 +744,7 @@ export class SettlementService {
     await this.writeReport(batch.id, config.settlementReportDir, summary, csv);
     if (settlementEnabled) {
       await this.markPaymentsSettled({
+        hostIds: Array.from(settledHostIds),
         periodTo: params.periodTo,
         payoutMode: params.payoutMode,
         settledAt: new Date(),
@@ -752,15 +754,18 @@ export class SettlementService {
   }
 
   private async markPaymentsSettled(params: {
+    hostIds?: string[];
     periodTo: Date;
     payoutMode?: 'BATCH' | 'REALTIME';
     settledAt: Date;
   }) {
+    const hostIds = (params.hostIds ?? []).filter((id) => typeof id === 'string' && id.trim().length > 0);
+    if (params.hostIds && hostIds.length === 0) return;
     const payments = await this.prisma.payment.findMany({
       where: {
         method: 'stripe',
         chargeModel: 'platform_charge',
-        communityId: { not: null },
+        communityId: hostIds.length ? { in: hostIds } : { not: null },
         status: { in: ['paid', 'partial_refunded', 'refunded'] },
         eligibleAt: { lte: params.periodTo },
         settlementStatus: { not: 'settled' },
@@ -827,6 +832,7 @@ export class SettlementService {
 
     let transferSucceeded = 0;
     let transferFailed = 0;
+    const settledHostIds = new Set<string>();
     const now = new Date();
     const processingStaleBefore = new Date(now.getTime() - config.settlementItemProcessingTimeoutMs);
 
@@ -881,6 +887,7 @@ export class SettlementService {
           periodTo: batch.periodTo,
         });
         transferSucceeded += 1;
+        settledHostIds.add(item.hostId);
         await this.prisma.settlementItem.update({
           where: { id: item.id },
           data: { status: 'completed', stripeTransferId: transfer.id, errorMessage: null, nextAttemptAt: null },
@@ -954,6 +961,24 @@ export class SettlementService {
     };
 
     await this.writeReport(batch.id, config.settlementReportDir, summary, csv);
+    if (settlementEnabled) {
+      const payoutMode =
+        batch.meta && typeof batch.meta === 'object' && 'payoutMode' in batch.meta
+          ? ((batch.meta as any).payoutMode as 'BATCH' | 'REALTIME' | null)
+          : null;
+      const fallbackMode = batch.triggerType === 'realtime' ? 'REALTIME' : null;
+      await this.markPaymentsSettled({
+        hostIds: Array.from(settledHostIds),
+        periodTo: batch.periodTo,
+        payoutMode:
+          payoutMode === 'REALTIME' || payoutMode === 'BATCH'
+            ? payoutMode
+            : fallbackMode === 'REALTIME'
+              ? 'REALTIME'
+              : undefined,
+        settledAt: new Date(),
+      });
+    }
     return { batchId: batch.id, status: finalStatus };
   }
 
