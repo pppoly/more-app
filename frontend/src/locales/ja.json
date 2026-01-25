@@ -273,6 +273,7 @@
       "actions": {
         "save": "保存",
         "resend": "確認コードを再送",
+        "update": "変更",
         "verify": "コードを確認"
       },
       "hints": {

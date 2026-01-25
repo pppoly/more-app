@@ -44,7 +44,7 @@
             />
             <div class="action-row">
               <button type="button" class="primary-btn" :disabled="saving" @click="saveParticipant">
-                {{ t('mobile.emailSettings.actions.save') }}
+                {{ participantActionLabel }}
               </button>
               <button
                 v-if="participant?.status === 'unverified'"
@@ -101,7 +101,7 @@
             <p v-if="useSameEmail" class="settings-hint">{{ t('mobile.emailSettings.shared.locked') }}</p>
             <div v-else class="action-row">
               <button type="button" class="primary-btn" :disabled="saving" @click="saveOrganizer">
-                {{ t('mobile.emailSettings.actions.save') }}
+                {{ organizerActionLabel }}
               </button>
               <button
                 v-if="organizer?.status === 'unverified'"
@@ -180,6 +180,14 @@ const organizerCode = ref('');
 
 const participant = computed(() => contacts.value?.participant ?? null);
 const organizer = computed(() => contacts.value?.organizer ?? null);
+const participantActionLabel = computed(() => {
+  const hasEmail = Boolean(participant.value?.email || participant.value?.pendingEmail);
+  return hasEmail ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
+});
+const organizerActionLabel = computed(() => {
+  const hasEmail = Boolean(organizer.value?.email || organizer.value?.pendingEmail);
+  return hasEmail ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
+});
 
 const applyDraftsFromContacts = (summary: EmailContactSummary, keepToggle = false) => {
   const participantEmail = summary.participant.pendingEmail || summary.participant.email || '';
@@ -482,6 +490,7 @@ const goBack = () => {
   padding: 10px 12px;
   font-size: 14px;
   background: #f8fafc;
+  box-sizing: border-box;
 }
 
 .code-input {
@@ -493,6 +502,7 @@ const goBack = () => {
   letter-spacing: 0.2em;
   text-align: center;
   background: #f8fafc;
+  box-sizing: border-box;
 }
 
 .email-card--disabled {
