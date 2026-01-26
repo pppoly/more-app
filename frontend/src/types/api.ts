@@ -39,6 +39,13 @@ export type EmailContactSummary = {
   organizer: EmailContactStatus;
 };
 
+export type NotificationPreferences = {
+  marketing: {
+    line: boolean;
+    email: boolean;
+  };
+};
+
 export interface AnalyticsEventResponse {
   success: boolean;
   stored: number;

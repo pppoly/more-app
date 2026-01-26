@@ -246,12 +246,28 @@
       }
     },
     "emailSettings": {
-      "title": "メール通知設定",
+      "title": "通知設定",
       "loading": "読み込み中…",
       "lineRequired": {
         "title": "LINEログインが必要です",
-        "body": "LINEログイン後にメール通知を設定できます。",
+        "body": "LINEログイン後にメール通知の登録・確認ができます。",
         "cta": "LINEでログイン"
+      },
+      "preferences": {
+        "title": "通知の受け取り",
+        "marketingEmail": {
+          "title": "メール通知",
+          "desc": "キャンペーン・お知らせ"
+        },
+        "marketingLine": {
+          "title": "LINE通知",
+          "desc": "キャンペーン・お知らせ（準備中）"
+        },
+        "mandatory": "重要な取引通知（申込・決済・変更など）は常に配信されます。"
+      },
+      "contacts": {
+        "title": "メールアドレス",
+        "hint": "取引通知を受け取るため、メールアドレスを登録してください。"
       },
       "shared": {
         "label": "参加者と主催者で同じメールを使う",
@@ -285,7 +301,9 @@
         "resent": "確認コードを再送しました",
         "failed": "メール設定に失敗しました",
         "verified": "メールアドレスの確認が完了しました",
-        "verifyFailed": "確認コードの認証に失敗しました"
+        "verifyFailed": "確認コードの認証に失敗しました",
+        "preferencesSaved": "通知設定を更新しました",
+        "preferencesFailed": "通知設定の更新に失敗しました"
       },
       "errors": {
         "missingEmail": "メールアドレスを入力してください",

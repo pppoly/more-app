@@ -54,6 +54,7 @@ import type {
   SubscriptionResponse,
   UserProfile,
   EmailContactSummary,
+  NotificationPreferences,
   CommunityTagCategory,
   AnalyticsEventResponse,
 } from '../types/api';
@@ -781,6 +782,20 @@ export async function updateProfile(payload: {
 
 export async function fetchEmailContacts(): Promise<EmailContactSummary> {
   const { data } = await apiClient.get<EmailContactSummary>('/me/email/status');
+  return data;
+}
+
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await apiClient.get<NotificationPreferences>('/me/notifications/preferences');
+  return data;
+}
+
+export async function updateNotificationPreference(payload: {
+  channel: 'line' | 'email';
+  enabled: boolean;
+  category?: 'marketing';
+}): Promise<NotificationPreferences> {
+  const { data } = await apiClient.post<NotificationPreferences>('/me/notifications/preferences', payload);
   return data;
 }
 
