@@ -30,7 +30,7 @@ export class EventsService {
         visibility: 'public',
         status: 'open',
         reviewStatus: 'approved',
-        OR: [{ endTime: null }, { endTime: { gte: now } }],
+        endTime: { gte: now },
       },
       orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
       select: this.publicEventSelect(successRegistrationWhere),
@@ -48,7 +48,7 @@ export class EventsService {
       visibility: 'public',
       status: 'open',
       reviewStatus: 'approved',
-      OR: [{ endTime: null }, { endTime: { gte: now } }],
+      endTime: { gte: now },
     };
 
     let cursor: { id: string } | undefined;
