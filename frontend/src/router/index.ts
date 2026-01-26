@@ -96,6 +96,14 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     redirect: (to) => {
+      const isLiffCallback =
+        typeof to.query.code === 'string' ||
+        typeof to.query.oauth_verifier === 'string' ||
+        Array.isArray(to.query.code) ||
+        Array.isArray(to.query.oauth_verifier);
+      if (isLiffCallback) {
+        return { path: '/liff', query: to.query };
+      }
       const raw = Array.isArray(to.query.to) ? to.query.to[0] : to.query.to;
       if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
         return raw;

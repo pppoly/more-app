@@ -625,6 +625,16 @@ async function restoreSession() {
   if (initialized) return;
   initialized = true;
   if (!hasWindow()) return;
+  const hasLiffCallback =
+    typeof window !== 'undefined' &&
+    (() => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        return params.has('code') || params.has('oauth_verifier');
+      } catch {
+        return false;
+      }
+    })();
   if (isManualLogoutStored()) {
     manualLogout.value = true;
     needsLiffOpen.value = false;
@@ -639,6 +649,10 @@ async function restoreSession() {
   }
   const stored = window.localStorage.getItem(TOKEN_KEY);
   if (!stored) {
+    if (hasLiffCallback) {
+      await bootstrapLiffAuth(true);
+      return;
+    }
     if (shouldAttemptLiffAuth()) {
       await bootstrapLiffAuth();
     }
