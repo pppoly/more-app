@@ -1,7 +1,7 @@
 import liff from '@line/liff';
 import { ref } from 'vue';
 import { trackEvent } from './analytics';
-import { LIFF_ID, requireLiffId } from '../config';
+import { FRONTEND_BASE_URL, LIFF_ID, requireLiffId } from '../config';
 const LIFF_INIT_TIMEOUT_MS = 30_000;
 const LIFF_READY_TIMEOUT_MS = 30_000;
 
@@ -176,6 +176,39 @@ export const buildLiffUrl = (toPath?: string, liffId?: string) => {
   //   https://miniapp.line.me/{liffId} + (page URL - endpoint URL)
   // When the endpoint URL is `https://{host}` (no path), it becomes:
   //   https://miniapp.line.me/{liffId}{pathname}{search}{hash}
+  return `${base}${normalized}`;
+};
+
+export const buildMiniAppPermanentLink = (
+  pageUrl: string,
+  liffId?: string,
+  endpointUrl: string = FRONTEND_BASE_URL,
+) => {
+  const resolvedId = resolveLiffId(liffId);
+  if (!resolvedId) return null;
+  const base = `https://miniapp.line.me/${resolvedId}`;
+  const trimmed = (pageUrl || '').trim();
+  if (!trimmed) return base;
+  let resolvedPath = '';
+  try {
+    const endpoint = endpointUrl ? new URL(endpointUrl) : null;
+    const target = looksLikeAbsoluteUrl(trimmed)
+      ? new URL(trimmed)
+      : endpoint
+        ? new URL(trimmed, endpoint)
+        : new URL(trimmed, 'https://example.local');
+    resolvedPath = `${target.pathname}${target.search}${target.hash}`;
+    if (endpoint) {
+      const endpointPath = endpoint.pathname.replace(/\/$/, '');
+      if (endpointPath && endpointPath !== '/' && resolvedPath.startsWith(endpointPath)) {
+        resolvedPath = resolvedPath.slice(endpointPath.length) || '/';
+      }
+    }
+  } catch {
+    resolvedPath = trimmed;
+  }
+  const normalized = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
+  if (normalized.startsWith('//')) return base;
   return `${base}${normalized}`;
 };
 

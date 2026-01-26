@@ -284,7 +284,7 @@ function redirectToLineOauth() {
 
 async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
   if (!hasWindow()) return { ok: false, reason: 'not_in_client' };
-  if (!shouldAttemptLiffAuth()) return { ok: false, reason: 'not_in_client' };
+  if (!shouldAttemptLiffAuth() && !force) return { ok: false, reason: 'not_in_client' };
   if (state.accessToken && !force) return { ok: true };
   const resolvedLiffId = resolveLiffId();
   if (!resolvedLiffId) {
@@ -404,7 +404,11 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         return { ok: true };
       }
 
-      const liff = await loadLiff(resolvedLiffId);
+      const initConfig =
+        force && !isLineInAppBrowser() && !isLiffClient()
+          ? { withLoginOnExternalBrowser: true }
+          : undefined;
+      const liff = await loadLiff(resolvedLiffId, initConfig);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
         return fail('init_failed', 'LINE ログインの初期化に失敗しました。');
@@ -423,11 +427,6 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
       const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
       const loggedIn = typeof liff.isLoggedIn === 'function' ? liff.isLoggedIn() : false;
       logDevAuth('bootstrap', { inClient, loggedIn, apiBase: API_BASE_URL });
-      if (!inClient) {
-        logDevAuth('not in liff client; skip login');
-        needsLiffOpen.value = true;
-        return fail('not_in_client', 'LINE アプリ内で開いてください。');
-      }
       const path = window.location.pathname.startsWith('/liff') ? window.location.pathname : '/liff';
       const storedRedirect = getStoredRedirect();
       const toPath = window.location.pathname.startsWith('/liff')
@@ -436,6 +435,19 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
       const toQuery = window.location.search || '';
       const toValue = storedRedirect || `${toPath}${toQuery}`;
       const cleanRedirect = `${window.location.origin}${path}?to=${encodeURIComponent(toValue)}`;
+      if (!inClient) {
+        logDevAuth('not in liff client; allow external browser');
+        needsLiffOpen.value = false;
+        if (!loggedIn) {
+          logDevAuth('not logged in outside liff client');
+          if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {
+            markLiffLoginInflight();
+            liff.login({ redirectUri: cleanRedirect });
+            return fail('login_redirect');
+          }
+          return fail('not_in_client');
+        }
+      }
       if (!loggedIn) {
         logDevAuth('not logged in inside LIFF client');
         if (force && !isLiffLoginInflight() && typeof liff.login === 'function') {

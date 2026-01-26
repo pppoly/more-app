@@ -225,10 +225,9 @@ const retryLoadMore = async () => {
 const resolveScrollRoot = () => {
   if (loadMoreTrigger.value) {
     const root = loadMoreTrigger.value.closest('[data-scroll="main"]') as HTMLElement | null;
-    if (root) return root;
+    if (root && root.scrollHeight > root.clientHeight + 2) return root;
   }
-  if (typeof document === 'undefined') return null;
-  return document.querySelector('[data-scroll="main"]') as HTMLElement | null;
+  return null;
 };
 
 const detachLoadMoreObserver = () => {

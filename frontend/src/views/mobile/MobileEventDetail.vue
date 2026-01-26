@@ -328,7 +328,7 @@ import { useFavorites } from '../../composables/useFavorites';
 import { useResourceConfig } from '../../composables/useResourceConfig';
 import { useLocale } from '../../composables/useLocale';
 import { FRONTEND_BASE_URL, LIFF_ID } from '../../config';
-import { buildLiffUrl, ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
+import { buildLiffUrl, buildMiniAppPermanentLink, ensureLiffPermissions, isLineInAppBrowser, loadLiff } from '../../utils/liff';
 import { trackEvent } from '../../utils/analytics';
 import { isLiffClient } from '../../utils/device';
 import { MOBILE_EVENT_PENDING_PAYMENT_KEY } from '../../constants/mobile';
@@ -996,9 +996,7 @@ const shareEvent = async () => {
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareUrlWithSource = webShareUrl || fallbackUrl;
   const miniAppOpenUrl = buildLiffUrl(shareToPath) || '';
-  const shareOpenUrl = miniAppOpenUrl || shareUrlWithSource;
   const inMiniAppHost =
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('miniapp.line.me') || window.location.hostname.includes('liff.line.me'));
@@ -1010,6 +1008,11 @@ const shareEvent = async () => {
       (new URLSearchParams(window.location.search).has('liff.state') ||
         new URLSearchParams(window.location.search).has('liff.referrer') ||
         document.referrer.includes('line.me')));
+  const miniAppPermanentLink = buildMiniAppPermanentLink(webShareUrl || shareToPath) || '';
+  const shareUrlWithSource = isLineBrowserLike
+    ? miniAppPermanentLink || webShareUrl || fallbackUrl
+    : webShareUrl || fallbackUrl;
+  const shareOpenUrl = miniAppPermanentLink || miniAppOpenUrl || shareUrlWithSource;
   const shareTitle = detail.value.title || 'イベント';
   const payload = { title: shareTitle, url: shareUrlWithSource };
   const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(payload.url)}`;
