@@ -30,9 +30,7 @@ import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
 import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
-import { API_BASE_URL, isProduction } from '../../config';
-import { isLineInAppBrowser, loadLiff } from '../../utils/liff';
-import { isLiffClient } from '../../utils/device';
+import { API_BASE_URL, LIFF_ID, isProduction } from '../../config';
 
 const auth = useAuth();
 const route = useRoute();
@@ -123,18 +121,7 @@ const handleDevLogin = async () => {
 
 const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
-  const host = window.location.hostname;
-  const isLiffHost = host.includes('miniapp.line.me') || host.includes('liff.line.me');
-  let inClient = isLiffClient();
-  if (!inClient) {
-    try {
-      const liff = await loadLiff();
-      inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
-    } catch {
-      inClient = false;
-    }
-  }
-  const shouldUseLiffLogin = inClient || isLiffHost || isLineInAppBrowser();
+  const shouldUseLiffLogin = Boolean(LIFF_ID);
   if (shouldUseLiffLogin) {
     loading.value = true;
     error.value = '';
