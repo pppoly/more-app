@@ -123,40 +123,17 @@ const handleLineLogin = async () => {
   if (typeof window === 'undefined') return;
   const shouldUseLiffLogin = Boolean(LIFF_ID);
   if (shouldUseLiffLogin) {
+    const liffRedirect = redirectTarget.value || '/events';
+    window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, liffRedirect);
+    try {
+      window.sessionStorage.setItem(LOGIN_REDIRECT_SESSION_KEY, liffRedirect);
+    } catch {
+      // ignore
+    }
     loading.value = true;
     error.value = '';
-    try {
-      const liffRedirect = redirectTarget.value || '/events';
-      window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, liffRedirect);
-      try {
-        window.sessionStorage.setItem(LOGIN_REDIRECT_SESSION_KEY, liffRedirect);
-      } catch {
-        // ignore
-      }
-      const result = await auth.loginWithLiff();
-      if (result.ok) {
-        await router.replace(liffRedirect);
-        return;
-      }
-      if (!result.ok && result.reason !== 'login_redirect') {
-        const message =
-          result.reason === 'missing_id'
-            ? 'LINE 設定が未完了です。管理者に連絡してください。'
-            : result.reason === 'init_failed'
-              ? 'LINE ログインの初期化に失敗しました。'
-              : result.reason === 'not_in_client'
-                ? 'LINE アプリ内で開いてください。'
-                : 'LINE ログインに失敗しました。もう一度お試しください。';
-        error.value = message;
-        toast.show(message, 'error');
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'LINE ログインに失敗しました。もう一度お試しください。';
-      error.value = message;
-      toast.show(message, 'error');
-    } finally {
-      loading.value = false;
-    }
+    await router.push({ name: 'liff-entry', query: { to: liffRedirect } });
+    loading.value = false;
     return;
   }
   window.localStorage.setItem(LOGIN_FLOW_STORAGE_KEY, 'line');

@@ -24,11 +24,13 @@ export class EventsService {
   async listPublicOpenEvents() {
     const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const successRegistrationWhere = this.successfulRegistrationWhere();
+    const now = new Date();
     const events = await this.prisma.event.findMany({
       where: {
         visibility: 'public',
         status: 'open',
         reviewStatus: 'approved',
+        OR: [{ endTime: null }, { endTime: { gte: now } }],
       },
       orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
       select: this.publicEventSelect(successRegistrationWhere),
@@ -41,11 +43,13 @@ export class EventsService {
     const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
     const successRegistrationWhere = this.successfulRegistrationWhere();
     const limit = this.normalizeEventListLimit(params.limit);
-    const where = {
+    const now = new Date();
+    const where: Prisma.EventWhereInput = {
       visibility: 'public',
       status: 'open',
       reviewStatus: 'approved',
-    } as const;
+      OR: [{ endTime: null }, { endTime: { gte: now } }],
+    };
 
     let cursor: { id: string } | undefined;
     if (params.cursor) {
