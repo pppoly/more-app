@@ -55,7 +55,6 @@
           <p v-if="eventCard.locationText" class="info-meta">
             <span class="i-lucide-map-pin mr-1"></span>{{ eventCard.locationText }}
           </p>
-          <p class="info-id">ID: {{ eventCard.id }}</p>
         </div>
       </section>
 
@@ -64,7 +63,8 @@
           <div>
             <p class="eyebrow">参加状況</p>
             <h2 class="panel-title">
-              {{ summaryCard.totalConfirmed }}/{{ summaryCard.capacity }} 人（支払い済み {{ summaryCard.paidCount }} 人）
+              {{ summaryCard.totalConfirmed }}/{{ summaryCard.capacity }} 人
+              <span v-if="hasPaidTickets">（支払い済み {{ summaryCard.paidCount }} 人）</span>
             </h2>
           </div>
         </div>
@@ -128,7 +128,13 @@
           <button class="sheet-action" type="button" @click="handleEditEvent">
             内容を編集
           </button>
-          <button class="sheet-action" type="button" :disabled="!communityId" @click="handlePayments">
+          <button
+            v-if="hasPaidTickets"
+            class="sheet-action"
+            type="button"
+            :disabled="!communityId"
+            @click="handlePayments"
+          >
             支払い・取引
           </button>
           <button class="sheet-action" type="button" :disabled="exportingCsv" @click="exportRegistrationsCsv">
@@ -337,6 +343,9 @@ const showCancelSheet = ref(false);
 const entryActionLoading = ref<Record<string, boolean>>({});
 const exportingCsv = ref(false);
 const isEventCancelled = computed(() => eventDetail.value?.status === 'cancelled');
+const hasPaidTickets = computed(() =>
+  (eventDetail.value?.ticketTypes ?? []).some((ticket) => (ticket?.price ?? 0) > 0),
+);
 
 const eventCard = computed(() => {
   if (!eventDetail.value) return null;
@@ -575,14 +584,41 @@ const exportRegistrationsCsv = async () => {
   exportingCsv.value = true;
   try {
     const blob = await exportEventRegistrationsCsv(eventId.value);
+    const filename = `event-${eventId.value}-registrations.csv`;
+    const canShareFiles =
+      typeof File === 'function' &&
+      typeof navigator !== 'undefined' &&
+      typeof navigator.share === 'function' &&
+      typeof navigator.canShare === 'function';
+    if (canShareFiles) {
+      try {
+        const file = new File([blob], filename, { type: 'text/csv' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: filename });
+          return;
+        }
+      } catch {
+        // fall back to download
+      }
+    }
     const url = URL.createObjectURL(blob);
+    const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
+    if (isMobileView || isLiffClientMode.value) {
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        window.location.href = url;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      return;
+    }
     const link = document.createElement('a');
     link.href = url;
-    link.download = `event-${eventId.value}-registrations.csv`;
+    link.download = filename;
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (err) {
     window.alert('CSVのエクスポートに失敗しました');
   } finally {

@@ -162,9 +162,11 @@ const displayTitle = (title: any) => {
 
 <style scoped>
 .classes-admin {
-  padding: 32px 16px 20px;
-  margin: 0 auto;
-  max-width: 520px;
+  padding: 16px;
+  margin: 0;
+  max-width: none;
+  width: 100%;
+  background: #f8fafc;
   box-sizing: border-box;
 }
 .ghost {
@@ -217,18 +219,18 @@ const displayTitle = (title: any) => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 24px 0 32px;
+  padding: 16px 0 24px;
   width: 100%;
   box-sizing: border-box;
 }
 .empty-card {
   width: 100%;
-  max-width: 380px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
   padding: 16px 16px 20px;
   display: flex;
   flex-direction: column;
