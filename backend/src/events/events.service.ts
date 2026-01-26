@@ -30,76 +30,128 @@ export class EventsService {
         status: 'open',
         reviewStatus: 'approved',
       },
-      orderBy: {
-        startTime: 'asc',
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      select: this.publicEventSelect(successRegistrationWhere),
+    });
+
+    return this.mapPublicEvents(events, frontendBaseUrl);
+  }
+
+  async listPublicOpenEventsPage(params: { limit?: number; cursor?: string }) {
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL;
+    const successRegistrationWhere = this.successfulRegistrationWhere();
+    const limit = this.normalizeEventListLimit(params.limit);
+    const where = {
+      visibility: 'public',
+      status: 'open',
+      reviewStatus: 'approved',
+    } as const;
+
+    let cursor: { id: string } | undefined;
+    if (params.cursor) {
+      const cursorEvent = await this.prisma.event.findFirst({
+        where: { id: params.cursor, ...where },
+        select: { id: true },
+      });
+      if (cursorEvent) {
+        cursor = { id: cursorEvent.id };
+      }
+    }
+
+    const events = await this.prisma.event.findMany({
+      where,
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      take: limit + 1,
+      ...(cursor ? { cursor, skip: 1 } : {}),
+      select: this.publicEventSelect(successRegistrationWhere),
+    });
+
+    const sliced = events.slice(0, limit);
+    const nextCursor = events.length > limit ? sliced[sliced.length - 1]?.id ?? null : null;
+
+    return {
+      items: this.mapPublicEvents(sliced, frontendBaseUrl),
+      nextCursor,
+    };
+  }
+
+  private normalizeEventListLimit(raw?: number) {
+    if (!Number.isFinite(raw)) return 20;
+    return Math.min(Math.max(Math.floor(raw ?? 20), 1), 50);
+  }
+
+  private publicEventSelect(
+    successRegistrationWhere: Prisma.EventRegistrationWhereInput,
+  ): Prisma.EventSelect {
+    return {
+      id: true,
+      status: true,
+      startTime: true,
+      endTime: true,
+      regStartTime: true,
+      regEndTime: true,
+      regDeadline: true,
+      locationText: true,
+      locationLat: true,
+      locationLng: true,
+      title: true,
+      description: true,
+      descriptionHtml: true,
+      category: true,
+      maxParticipants: true,
+      config: true,
+      community: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          coverImageUrl: true,
+          description: true,
+        },
       },
-      select: {
-        id: true,
-        status: true,
-        startTime: true,
-        endTime: true,
-        regStartTime: true,
-        regEndTime: true,
-        regDeadline: true,
-        locationText: true,
-        locationLat: true,
-        locationLng: true,
-        title: true,
-        description: true,
-        descriptionHtml: true,
-        category: true,
-        maxParticipants: true,
-        config: true,
-        community: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            coverImageUrl: true,
-            description: true,
-          },
+      ticketTypes: {
+        select: {
+          price: true,
         },
-        ticketTypes: {
-          select: {
-            price: true,
-          },
-        },
-        registrations: {
-          where: successRegistrationWhere,
-          orderBy: { createdAt: 'desc' },
-          take: 6,
-          select: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                avatarUrl: true,
-              },
+      },
+      registrations: {
+        where: successRegistrationWhere,
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+        select: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatarUrl: true,
             },
           },
         },
-        _count: {
-          select: {
-            registrations: { where: successRegistrationWhere },
-          },
-        },
-        galleries: {
-          orderBy: { order: 'asc' },
-          take: 1,
-          select: { imageUrl: true },
+      },
+      _count: {
+        select: {
+          registrations: { where: successRegistrationWhere },
         },
       },
-    });
+      galleries: {
+        orderBy: { order: 'asc' },
+        take: 1,
+        select: { imageUrl: true },
+      },
+    };
+  }
 
+  private mapPublicEvents(events: any[], frontendBaseUrl?: string) {
     const DEFAULT_AVATAR =
-      normalizeImageUrl('/api/v1/og/assets/default-avatar.png', frontendBaseUrl) || '/api/v1/og/assets/default-avatar.png';
+      normalizeImageUrl('/api/v1/og/assets/default-avatar.png', frontendBaseUrl) ||
+      '/api/v1/og/assets/default-avatar.png';
 
     return events.map((event) => {
-      const prices = event.ticketTypes.map((tt) => tt.price ?? 0);
+      const prices = event.ticketTypes.map((tt: { price?: number | null }) => tt.price ?? 0);
       const min = prices.length ? Math.min(...prices) : 0;
       const max = prices.length ? Math.max(...prices) : 0;
       const attendeeAvatars = event.registrations.map(
-        (registration) =>
+        (registration: any) =>
           normalizeImageUrl(registration.user?.avatarUrl, frontendBaseUrl) ?? DEFAULT_AVATAR,
       );
       const communityLogo = normalizeImageUrl(

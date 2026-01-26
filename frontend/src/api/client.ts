@@ -27,6 +27,7 @@ import type {
   EventRegistrationSummary,
   EventRegistrationsSummary,
   EventSummary,
+  EventListPage,
   GeneratedEventContent,
   GenerateEventCopyInput,
   ManagedCommunity,
@@ -226,6 +227,18 @@ apiClient.interceptors.response.use(
 
 export async function fetchEvents(): Promise<EventSummary[]> {
   const { data } = await apiClient.get<EventSummary[]>('/events');
+  return data;
+}
+
+export async function fetchEventsPage(params: { limit?: number; cursor?: string } = {}): Promise<EventListPage> {
+  const query: Record<string, string | number> = {};
+  if (typeof params.limit === 'number') {
+    query.limit = params.limit;
+  }
+  if (params.cursor) {
+    query.cursor = params.cursor;
+  }
+  const { data } = await apiClient.get<EventListPage>('/events', { params: query });
   return data;
 }
 

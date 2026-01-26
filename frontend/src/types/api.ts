@@ -110,6 +110,11 @@ export interface EventSummary {
   config?: Record<string, any> | null;
 }
 
+export interface EventListPage {
+  items: EventSummary[];
+  nextCursor: string | null;
+}
+
 export interface RegistrationFormField {
   id?: string;
   label: string;

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unused-vars, @typescript-eslint/no-floating-promises, @typescript-eslint/unbound-method */
-import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Prisma } from '@prisma/client';
@@ -14,8 +14,16 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Get()
-  getPublicEvents() {
-    return this.eventsService.listPublicOpenEvents();
+  getPublicEvents(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
+    const trimmedCursor = (cursor || '').trim();
+    const limitValue = limit ? Number(limit) : NaN;
+    if (!trimmedCursor && !Number.isFinite(limitValue)) {
+      return this.eventsService.listPublicOpenEvents();
+    }
+    return this.eventsService.listPublicOpenEventsPage({
+      limit: Number.isFinite(limitValue) ? limitValue : undefined,
+      cursor: trimmedCursor || undefined,
+    });
   }
 
   @Get(':id')

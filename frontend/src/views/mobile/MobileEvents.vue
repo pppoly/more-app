@@ -95,15 +95,24 @@
           </div>
         </div>
       </section>
+
+      <div v-if="!loading && !error && (loadingMore || loadMoreError)" class="load-more">
+        <p v-if="loadingMore" class="load-more-text">読み込み中…</p>
+        <div v-else class="load-more-error">
+          <p class="load-more-text">{{ loadMoreError }}</p>
+          <button type="button" class="ghost-btn" @click="retryLoadMore">再試行</button>
+        </div>
+      </div>
+      <div v-if="!loading && !error && (hasMore || loadingMore)" ref="loadMoreTrigger" class="load-more-trigger"></div>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'MobileEvents' });
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchEvents } from '../../api/client';
+import { fetchEventsPage } from '../../api/client';
 import type { EventSummary } from '../../types/api';
 import { getLocalizedText } from '../../utils/i18nContent';
 import { getEventStatus } from '../../utils/eventStatus';
@@ -122,8 +131,14 @@ const events = ref<EventSummary[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const retrying = ref(false);
+const loadingMore = ref(false);
+const loadMoreError = ref<string | null>(null);
+const nextCursor = ref<string | null>(null);
+const hasMore = ref(true);
+const loadMoreTrigger = ref<HTMLElement | null>(null);
 const lastFetchedAt = ref(0);
 const STALE_MS = 60_000;
+const PAGE_SIZE = 20;
 const activeCategoryId = ref('all');
 const { preferredLangs } = useLocale();
 const logoImage = logo1;
@@ -139,6 +154,7 @@ const fallbackCoverImages = computed(() => {
   return typeof fallback === 'string' ? [] : [...fallback];
 });
 
+let loadMoreObserver: IntersectionObserver | null = null;
 
 const defaultAvatarImage = computed(
   () =>
@@ -146,15 +162,26 @@ const defaultAvatarImage = computed(
     (slotMap['global.defaultAvatar'].defaultValue as string),
 );
 
-const loadEvents = async () => {
+const resetPaging = () => {
+  nextCursor.value = null;
+  hasMore.value = true;
+  loadMoreError.value = null;
+};
+
+const loadFirstPage = async () => {
   loading.value = true;
   error.value = null;
+  loadingMore.value = false;
+  resetPaging();
   try {
-    events.value = await fetchEvents();
-    trackEvent('view_events_list', { count: events.value.length });
+    const page = await fetchEventsPage({ limit: PAGE_SIZE });
+    events.value = page.items;
+    nextCursor.value = page.nextCursor;
+    hasMore.value = Boolean(page.nextCursor);
+    trackEvent('view_events_list', { count: page.items.length });
     lastFetchedAt.value = Date.now();
   } catch (err) {
-    console.warn('fetchEvents failed', err);
+    console.warn('fetchEventsPage failed', err);
     events.value = [];
     error.value = 'ネットワーク環境を確認して再試行してください。';
   } finally {
@@ -162,11 +189,76 @@ const loadEvents = async () => {
   }
 };
 
+const loadNextPage = async () => {
+  if (loading.value || loadingMore.value || error.value || !hasMore.value) return;
+  if (!nextCursor.value) {
+    hasMore.value = false;
+    return;
+  }
+  loadingMore.value = true;
+  loadMoreError.value = null;
+  try {
+    const page = await fetchEventsPage({ limit: PAGE_SIZE, cursor: nextCursor.value });
+    if (page.items.length) {
+      events.value = events.value.concat(page.items);
+    }
+    nextCursor.value = page.nextCursor;
+    hasMore.value = Boolean(page.nextCursor);
+  } catch (err) {
+    console.warn('fetchEventsPage failed', err);
+    loadMoreError.value = '追加の読み込みに失敗しました。';
+  } finally {
+    loadingMore.value = false;
+  }
+};
+
 const retryLoading = async () => {
   retrying.value = true;
-  await loadEvents();
+  await loadFirstPage();
   retrying.value = false;
 };
+
+const retryLoadMore = async () => {
+  await loadNextPage();
+};
+
+const resolveScrollRoot = () => {
+  if (loadMoreTrigger.value) {
+    const root = loadMoreTrigger.value.closest('[data-scroll="main"]') as HTMLElement | null;
+    if (root) return root;
+  }
+  if (typeof document === 'undefined') return null;
+  return document.querySelector('[data-scroll="main"]') as HTMLElement | null;
+};
+
+const detachLoadMoreObserver = () => {
+  if (loadMoreObserver) {
+    loadMoreObserver.disconnect();
+    loadMoreObserver = null;
+  }
+};
+
+const attachLoadMoreObserver = () => {
+  if (typeof IntersectionObserver === 'undefined') return;
+  if (!loadMoreTrigger.value) return;
+  detachLoadMoreObserver();
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries[0]?.isIntersecting) return;
+      void loadNextPage();
+    },
+    { root: resolveScrollRoot(), rootMargin: '200px 0px' },
+  );
+  loadMoreObserver.observe(loadMoreTrigger.value);
+};
+
+watch(loadMoreTrigger, (value) => {
+  if (value) {
+    attachLoadMoreObserver();
+  } else {
+    detachLoadMoreObserver();
+  }
+});
 
 const hashToIndex = (value: string, length: number) => {
   let hash = 0;
@@ -351,13 +443,20 @@ const attendeeAvatars = (event: EventSummary) => {
   return { attendees: visible, attendeesMore: extra };
 };
 
-onMounted(loadEvents);
+onMounted(() => {
+  attachLoadMoreObserver();
+  void loadFirstPage();
+});
 
 onActivated(() => {
+  attachLoadMoreObserver();
   if (!lastFetchedAt.value || loading.value) return;
   if (Date.now() - lastFetchedAt.value < STALE_MS) return;
-  void loadEvents();
+  void loadFirstPage();
 });
+
+onDeactivated(detachLoadMoreObserver);
+onBeforeUnmount(detachLoadMoreObserver);
 </script>
 
 <style scoped>
@@ -632,6 +731,37 @@ onActivated(() => {
   text-align: center;
   color: #6b7280;
   padding: 32px 0;
+}
+.load-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 4px;
+  color: #6b7280;
+  font-size: 12px;
+}
+.load-more-text {
+  margin: 0;
+}
+.load-more-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.ghost-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.load-more-trigger {
+  width: 100%;
+  height: 1px;
 }
 
 @keyframes shimmer {
