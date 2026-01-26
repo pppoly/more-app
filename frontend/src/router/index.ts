@@ -114,18 +114,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/liff',
     name: 'liff-entry',
-    redirect: (to) => {
-      const raw = Array.isArray(to.query.to) ? to.query.to[0] : to.query.to;
-      if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
-        return raw;
-      }
-      const liffStateRaw = Array.isArray(to.query['liff.state']) ? to.query['liff.state'][0] : to.query['liff.state'];
-      if (typeof liffStateRaw === 'string') {
-        const liffPath = normalizeLiffStateToPath(liffStateRaw);
-        if (liffPath) return liffPath;
-      }
-      return { name: 'events' };
-    },
+    component: () => import('../views/auth/LiffEntry.vue'),
     meta: { devPageName: 'LIFFエントリー' },
   },
   {

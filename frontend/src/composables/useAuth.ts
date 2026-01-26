@@ -316,12 +316,16 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
       const params = new URLSearchParams(search);
       const isCallback = params.has('code') || params.has('oauth_verifier');
       const liffStateParam = params.get('liff.state');
+      const initConfig =
+        force && !isLineInAppBrowser() && !isLiffClient()
+          ? { withLoginOnExternalBrowser: true }
+          : undefined;
 
       // 回调阶段：禁止再次触发 login，直接做 token exchange
       if (isCallback) {
         emitLiffDebug('callback_enter');
         markLiffLoginInflight();
-        const liff = await loadLiff(resolvedLiffId);
+        const liff = await loadLiff(resolvedLiffId, initConfig);
         // ready を待機（最大 8 秒）。タイムアウトは失敗扱いだが login は再実行しない
         try {
           emitLiffDebug('callback_wait_ready');
@@ -404,10 +408,6 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         return { ok: true };
       }
 
-      const initConfig =
-        force && !isLineInAppBrowser() && !isLiffClient()
-          ? { withLoginOnExternalBrowser: true }
-          : undefined;
       const liff = await loadLiff(resolvedLiffId, initConfig);
       if (!isLiffReady.value) {
         logDevAuth('liff not ready');
