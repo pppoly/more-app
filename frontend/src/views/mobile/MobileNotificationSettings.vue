@@ -65,7 +65,7 @@
             <input
               v-model="participantDraft"
               type="email"
-              :disabled="saving"
+              :disabled="saving || participantLocked"
               placeholder="example@domain.com"
               class="email-input"
             />
@@ -129,7 +129,7 @@
             <input
               v-model="organizerDraft"
               type="email"
-              :disabled="saving || useSameEmail"
+              :disabled="saving || useSameEmail || organizerLocked"
               placeholder="example@domain.com"
               class="email-input"
             />
@@ -227,13 +227,19 @@ const preferenceSaving = ref(false);
 
 const participant = computed(() => contacts.value?.participant ?? null);
 const organizer = computed(() => contacts.value?.organizer ?? null);
+const participantEditing = ref(false);
+const organizerEditing = ref(false);
+const participantLocked = computed(() =>
+  Boolean((participant.value?.email || participant.value?.pendingEmail) && !participantEditing.value),
+);
+const organizerLocked = computed(() =>
+  Boolean((organizer.value?.email || organizer.value?.pendingEmail) && !organizerEditing.value),
+);
 const participantActionLabel = computed(() => {
-  const hasEmail = Boolean(participant.value?.email || participant.value?.pendingEmail);
-  return hasEmail ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
+  return participantLocked.value ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
 });
 const organizerActionLabel = computed(() => {
-  const hasEmail = Boolean(organizer.value?.email || organizer.value?.pendingEmail);
-  return hasEmail ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
+  return organizerLocked.value ? t('mobile.emailSettings.actions.update') : t('mobile.emailSettings.actions.save');
 });
 
 const applyPreferences = (prefs: NotificationPreferences) => {
@@ -246,6 +252,8 @@ const applyDraftsFromContacts = (summary: EmailContactSummary, keepToggle = fals
   const organizerEmail = summary.organizer.pendingEmail || summary.organizer.email || '';
   participantDraft.value = participantEmail;
   organizerDraft.value = organizerEmail;
+  participantEditing.value = false;
+  organizerEditing.value = false;
   if (!keepToggle) {
     useSameEmail.value =
       showOrganizerSettings.value && Boolean(participantEmail && organizerEmail && participantEmail === organizerEmail);
@@ -304,12 +312,14 @@ watch(participantDraft, (value) => {
 watch(useSameEmail, (value) => {
   if (showOrganizerSettings.value && value) organizerDraft.value = participantDraft.value;
   if (showOrganizerSettings.value && value) organizerCode.value = '';
+  if (showOrganizerSettings.value && value) organizerEditing.value = false;
 });
 
 watch(showOrganizerSettings, (enabled) => {
   if (!enabled) {
     useSameEmail.value = false;
     organizerCode.value = '';
+    organizerEditing.value = false;
   }
 });
 
@@ -364,6 +374,10 @@ const statusClass = (status?: string | null) => {
 };
 
 const saveParticipant = async () => {
+  if (participantLocked.value) {
+    participantEditing.value = true;
+    return;
+  }
   if (!participantDraft.value.trim()) {
     toast.show(t('mobile.emailSettings.errors.missingEmail'), 'warning');
     return;
@@ -388,6 +402,10 @@ const saveParticipant = async () => {
 };
 
 const saveOrganizer = async () => {
+  if (organizerLocked.value) {
+    organizerEditing.value = true;
+    return;
+  }
   if (!organizerDraft.value.trim()) {
     toast.show(t('mobile.emailSettings.errors.missingEmail'), 'warning');
     return;
