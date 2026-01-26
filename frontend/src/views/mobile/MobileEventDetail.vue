@@ -300,6 +300,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import {
   createMockPayment,
   createRegistration,
@@ -342,6 +343,7 @@ const router = useRouter();
 const { user } = useAuth();
 const favoritesStore = useFavorites();
 const { preferredLangs } = useLocale();
+const { t } = useI18n();
 const currencyFormatter = new Intl.NumberFormat('ja-JP', {
   style: 'currency',
   currency: 'JPY',
@@ -993,6 +995,16 @@ const shareEvent = async () => {
     }
   };
   const frontendBase = FRONTEND_BASE_URL;
+  const shareIconBase = frontendBase || (typeof window !== 'undefined' ? window.location.origin : '');
+  const resolveShareIconUrl = (value: string) => {
+    if (!value) return '';
+    if (/^data:/i.test(value) || /^https?:\/\//i.test(value)) return value;
+    const normalized = value.startsWith('/') ? value : `/${value}`;
+    if (normalized.startsWith('/assets/')) {
+      return shareIconBase ? `${shareIconBase}${normalized}` : normalized;
+    }
+    return resolveAssetUrl(value);
+  };
   const shareToPath = `/events/${detail.value.id}?from=line_share`;
   const webShareUrl = frontendBase ? `${frontendBase}${shareToPath}` : '';
   const fallbackUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -1020,66 +1032,174 @@ const shareEvent = async () => {
   const shareImageUrl = frontendBase ? `${frontendBase}/api/v1/og/events/${detail.value.id}/image.jpg` : '';
   const shareTimeText = detail.value.timeFullText || '';
   const shareLocationText = detail.value.locationText || '';
+  const shareDetailUrl = miniAppPermanentLink || miniAppOpenUrl || shareUrlWithSource;
+  const miniAppTopUrl = buildLiffUrl() || shareDetailUrl;
+  const brandLogoRaw = resourceConfig.getStringValue('brand.logo') || '';
+  const miniAppIconUrl =
+    resolveShareIconUrl(brandLogoRaw) ||
+    resolveShareIconUrl(defaultAvatarImage.value) ||
+    (shareIconBase ? `${shareIconBase}/assets/default-avatar.png` : '');
+  const miniAppName = t('header.default');
+  const detailItems: Array<{ label: string; value: string }> = [];
+  if (shareTimeText) {
+    detailItems.push({ label: t('mobile.eventShare.timeLabel'), value: shareTimeText });
+  }
+  if (shareLocationText) {
+    detailItems.push({ label: t('mobile.eventShare.locationLabel'), value: shareLocationText });
+  }
+  const subtitleText = detailItems.length ? '' : detail.value.hostName || '';
+  const titleBlock = {
+    type: 'box',
+    layout: 'vertical',
+    contents: [
+      {
+        type: 'text',
+        text: shareTitle,
+        size: 'lg',
+        color: '#000000',
+        weight: 'bold',
+        wrap: true,
+      },
+    ],
+    spacing: 'none',
+  };
+  const subtitleBlock = subtitleText
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: subtitleText,
+            size: 'sm',
+            color: '#999999',
+            wrap: true,
+          },
+        ],
+        spacing: 'none',
+      }
+    : null;
+  const detailBlock = detailItems.length
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        contents: detailItems.map((item) => ({
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            {
+              type: 'text',
+              text: item.label,
+              size: 'sm',
+              color: '#555555',
+              wrap: false,
+              flex: 2,
+            },
+            {
+              type: 'text',
+              text: item.value,
+              size: 'sm',
+              color: '#111111',
+              wrap: true,
+              flex: 5,
+            },
+          ],
+          flex: 1,
+          spacing: 'sm',
+        })),
+        spacing: 'sm',
+        margin: 'lg',
+        flex: 1,
+      }
+    : null;
+  const buttonBlock = {
+    type: 'box',
+    layout: 'vertical',
+    contents: [
+      {
+        type: 'button',
+        action: { type: 'uri', label: t('mobile.eventShare.openLabel'), uri: shareDetailUrl },
+        style: 'primary',
+        height: 'md',
+        color: '#17c950',
+      },
+    ],
+    spacing: 'xs',
+    margin: 'lg',
+  };
+  const bodyContents = [titleBlock];
+  if (subtitleBlock) bodyContents.push(subtitleBlock);
+  if (detailBlock) bodyContents.push(detailBlock);
+  bodyContents.push(buttonBlock);
   const shareFlexMessage = {
     type: 'flex',
     altText: shareTitle,
     contents: {
       type: 'bubble',
-      hero: {
-        type: 'image',
-        url: shareImageUrl || shareUrlWithSource,
-        size: 'full',
-        aspectRatio: '16:9',
-        aspectMode: 'cover',
-        action: { type: 'uri', uri: shareOpenUrl },
-      },
+      ...(shareImageUrl
+        ? {
+            hero: {
+              type: 'image',
+              url: shareImageUrl,
+              size: 'full',
+              aspectRatio: '16:9',
+              aspectMode: 'cover',
+            },
+          }
+        : {}),
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          {
-            type: 'text',
-            text: shareTitle,
-            weight: 'bold',
-            size: 'lg',
-            wrap: true,
-            action: { type: 'uri', uri: shareOpenUrl },
-          },
-          ...(shareTimeText
-            ? [
-                {
-                  type: 'text',
-                  text: shareTimeText,
-                  size: 'sm',
-                  color: '#111827',
-                  wrap: true,
-                  action: { type: 'uri', uri: shareOpenUrl },
-                },
-              ]
-            : []),
-          ...(shareLocationText
-            ? [
-                {
-                  type: 'text',
-                  text: shareLocationText,
-                  size: 'sm',
-                  color: '#111827',
-                  wrap: true,
-                  action: { type: 'uri', uri: shareOpenUrl },
-                },
-              ]
-            : []),
-        ],
+        contents: bodyContents,
+        spacing: 'md',
       },
       footer: {
         type: 'box',
         layout: 'vertical',
         contents: [
           {
-            type: 'button',
-            style: 'primary',
-            action: { type: 'uri', label: 'イベントを開く', uri: shareOpenUrl },
+            type: 'separator',
+            color: '#f0f0f0',
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              {
+                type: 'image',
+                url: miniAppIconUrl,
+                flex: 1,
+                gravity: 'center',
+                size: 'xxs',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+              },
+              {
+                type: 'text',
+                text: miniAppName,
+                flex: 19,
+                size: 'xs',
+                color: '#999999',
+                weight: 'bold',
+                gravity: 'center',
+                wrap: false,
+              },
+              {
+                type: 'image',
+                url: 'https://vos.line-scdn.net/service-notifier/footer_go_btn.png',
+                flex: 1,
+                gravity: 'center',
+                size: 'xxs',
+                action: {
+                  type: 'uri',
+                  label: t('mobile.eventShare.openLabel'),
+                  uri: miniAppTopUrl,
+                },
+              },
+            ],
+            flex: 1,
+            spacing: 'md',
+            margin: 'md',
           },
         ],
       },
@@ -1089,7 +1209,7 @@ const shareEvent = async () => {
     if (allowSystemShare && navigator.share) {
       try {
         await navigator.share(payload);
-        showUiMessage('共有しました');
+        showUiMessage(t('mobile.eventShare.shared'));
         return;
       } catch (error: any) {
         const name = error?.name || '';
@@ -1100,9 +1220,9 @@ const shareEvent = async () => {
     }
     if (allowExternalOpen) {
       window.open(lineShareUrl, '_blank');
-      showUiMessage('LINE で開きました');
+      showUiMessage(t('mobile.eventShare.openedLine'));
     } else {
-      showUiMessage('リンクをコピーしました');
+      showUiMessage(t('mobile.eventShare.copied'));
     }
     try {
       if (navigator.clipboard?.writeText) {
@@ -1115,13 +1235,13 @@ const shareEvent = async () => {
 
   try {
     if (isLineBrowserLike && !LIFF_ID) {
-      showUiMessage('LINE 設定を確認してください');
+      showUiMessage(t('mobile.eventShare.missingConfig'));
       await fallbackShare(false, false);
       return;
     }
     if (isLineBrowserLike && LIFF_ID) {
       try {
-        showUiMessage('初期化中…');
+        showUiMessage(t('mobile.eventShare.init'));
         const liff = await loadLiff(LIFF_ID);
         const inClient = typeof liff.isInClient === 'function' ? liff.isInClient() : false;
         const canShare =
@@ -1132,10 +1252,10 @@ const shareEvent = async () => {
           const result = await liff.shareTargetPicker([shareFlexMessage as any]);
           shrinkGuardWindow();
           window.setTimeout(restoreRouteIfNeeded, 0);
-          showUiMessage(result ? '共有しました' : '共有をキャンセルしました');
+          showUiMessage(result ? t('mobile.eventShare.shared') : t('mobile.eventShare.canceled'));
           return;
         }
-        showUiMessage('LINE 共有が利用できません。リンクをコピーしました');
+        showUiMessage(t('mobile.eventShare.unavailable'));
       } catch (err) {
         console.error('Failed to share via LIFF', err);
       }

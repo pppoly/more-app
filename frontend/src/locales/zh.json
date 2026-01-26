@@ -129,6 +129,18 @@
     }
   },
   "mobile": {
+    "eventShare": {
+      "timeLabel": "时间",
+      "locationLabel": "地点",
+      "openLabel": "打开活动",
+      "shared": "已分享",
+      "canceled": "已取消分享",
+      "init": "初始化中…",
+      "missingConfig": "请检查 LINE 设置。",
+      "unavailable": "LINE 分享不可用，已复制链接。",
+      "openedLine": "已在 LINE 中打开",
+      "copied": "已复制链接"
+    },
     "settings": {
       "title": "通用设置",
       "language": {

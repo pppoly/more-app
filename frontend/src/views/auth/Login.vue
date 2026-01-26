@@ -28,7 +28,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
-import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
+import { LOGIN_FLOW_STORAGE_KEY, LOGIN_REDIRECT_SESSION_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { needsProfileSetup } from '../../utils/profileSetup';
 import { API_BASE_URL, LIFF_ID, isProduction } from '../../config';
 
@@ -128,6 +128,11 @@ const handleLineLogin = async () => {
     try {
       const liffRedirect = redirectTarget.value || '/events';
       window.localStorage.setItem(LOGIN_REDIRECT_STORAGE_KEY, liffRedirect);
+      try {
+        window.sessionStorage.setItem(LOGIN_REDIRECT_SESSION_KEY, liffRedirect);
+      } catch {
+        // ignore
+      }
       const result = await auth.loginWithLiff();
       if (result.ok) {
         await router.replace(liffRedirect);

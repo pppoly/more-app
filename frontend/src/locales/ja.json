@@ -207,6 +207,18 @@
     "eventCheckout": {
       "title": "支払い内容の確認"
     },
+    "eventShare": {
+      "timeLabel": "日時",
+      "locationLabel": "場所",
+      "openLabel": "イベントを開く",
+      "shared": "共有しました",
+      "canceled": "共有をキャンセルしました",
+      "init": "初期化中…",
+      "missingConfig": "LINE 設定を確認してください",
+      "unavailable": "LINE 共有が利用できません。リンクをコピーしました",
+      "openedLine": "LINE で開きました",
+      "copied": "リンクをコピーしました"
+    },
     "settings": {
       "title": "一般設定",
       "language": {

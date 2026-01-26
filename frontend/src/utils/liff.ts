@@ -220,6 +220,13 @@ export async function getLiffProfile(): Promise<{
   if (!isLiffReady.value) return null;
   try {
     if (!liffInstance?.isInClient || !liffInstance.isInClient()) return null;
+    const permissionApi = (liffInstance as any)?.permission;
+    if (permissionApi && typeof permissionApi.query === 'function') {
+      const status = await permissionApi.query('profile').catch(() => null);
+      if (!status || status.state !== 'granted') return null;
+    } else {
+      return null;
+    }
     const profile = await liffInstance.getProfile();
     if (!profile) return null;
     return {

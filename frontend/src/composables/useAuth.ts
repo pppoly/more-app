@@ -282,6 +282,30 @@ function redirectToLineOauth() {
   window.location.href = url;
 }
 
+async function getLiffProfileIfGranted(liff: any) {
+  if (!liff || typeof liff.getProfile !== 'function') return null;
+  const permission = liff.permission;
+  if (!permission || typeof permission.query !== 'function') {
+    logDevAuth('profile scope query unavailable; skip profile fetch');
+    return null;
+  }
+  try {
+    const status = await permission.query('profile');
+    if (status?.state !== 'granted') {
+      logDevAuth('profile scope not granted; skip profile fetch', status?.state);
+      return null;
+    }
+  } catch (error) {
+    logDevAuth('profile scope query failed', error);
+    return null;
+  }
+  try {
+    return await liff.getProfile();
+  } catch {
+    return null;
+  }
+}
+
 async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
   if (!hasWindow()) return { ok: false, reason: 'not_in_client' };
   if (!shouldAttemptLiffAuth() && !force) return { ok: false, reason: 'not_in_client' };
@@ -345,7 +369,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
         const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
         await emitLiffDebug('callback_tokens', { hasIdToken: !!idToken, hasAccessToken: !!accessToken });
-        const profile = await liff.getProfile().catch(() => null);
+        const profile = await getLiffProfileIfGranted(liff);
         let exchangeEndpoint:
           | '/api/v1/auth/line/liff-login'
           | '/api/v1/auth/line/liff'
@@ -458,12 +482,7 @@ async function bootstrapLiffAuth(force = false): Promise<LiffAuthResult> {
         return fail('login_redirect');
       }
       clearLiffLoginInflight();
-      let profile: any = null;
-      try {
-        profile = await liff.getProfile();
-      } catch {
-        profile = null;
-      }
+      const profile = await getLiffProfileIfGranted(liff);
       const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : undefined;
       const accessToken = typeof liff.getAccessToken === 'function' ? liff.getAccessToken() : undefined;
       logDevAuth('idToken exists', !!idToken, idToken ? String(idToken).slice(0, 20) : '');
@@ -556,7 +575,7 @@ async function loginWithLiffProfile(isLiffEntry: boolean) {
       if (!liff.isInClient || !liff.isInClient()) {
         return;
       }
-      const profile = await liff.getProfile().catch(() => null);
+      const profile = await getLiffProfileIfGranted(liff);
       if (!profile?.userId) {
         return;
       }

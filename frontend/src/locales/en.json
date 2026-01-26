@@ -177,6 +177,18 @@
     }
   },
   "mobile": {
+    "eventShare": {
+      "timeLabel": "Date & time",
+      "locationLabel": "Location",
+      "openLabel": "Open event",
+      "shared": "Shared",
+      "canceled": "Share canceled",
+      "init": "Initializing…",
+      "missingConfig": "Check LINE settings.",
+      "unavailable": "LINE share unavailable. Link copied.",
+      "openedLine": "Opened in LINE",
+      "copied": "Link copied"
+    },
     "settings": {
       "title": "General settings",
       "language": {

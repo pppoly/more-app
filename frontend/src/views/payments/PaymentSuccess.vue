@@ -1,11 +1,62 @@
 <template>
-  <section class="payment-status">
-    <div class="card">
-      <h1>{{ title }}</h1>
-      <p>{{ description }}</p>
-      <p v-if="status === 'checking'" class="hint">通常 1 分ほどで反映されます。</p>
+  <div class="payment-page">
+    <div class="content">
+      <div class="hero">
+        <div class="hero-icon" aria-hidden="true">
+          <svg v-if="status === 'success'" viewBox="0 0 64 64" role="img">
+            <defs>
+              <linearGradient id="success-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0ea5e9" />
+                <stop offset="100%" stop-color="#22c55e" />
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="30" fill="url(#success-grad)" />
+            <path
+              d="M22 32.5 29.5 40 42 24"
+              fill="none"
+              stroke="#ffffff"
+              stroke-width="5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg v-else-if="status === 'timeout'" viewBox="0 0 64 64" role="img">
+            <circle cx="32" cy="32" r="30" fill="#f59e0b" />
+            <path
+              d="M32 18v18"
+              fill="none"
+              stroke="#ffffff"
+              stroke-width="5"
+              stroke-linecap="round"
+            />
+            <circle cx="32" cy="46" r="3" fill="#ffffff" />
+          </svg>
+          <svg v-else-if="status === 'error'" viewBox="0 0 64 64" role="img">
+            <circle cx="32" cy="32" r="30" fill="#ef4444" />
+            <path
+              d="M24 24l16 16M40 24 24 40"
+              fill="none"
+              stroke="#ffffff"
+              stroke-width="5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div v-else class="spinner"></div>
+        </div>
+        <div class="hero-text">
+          <h1>{{ title }}</h1>
+          <p>{{ description }}</p>
+          <p v-if="status === 'checking'" class="hint">通常 1 分ほどで反映されます。</p>
+        </div>
+      </div>
+
       <div class="actions">
-        <button v-if="status === 'timeout' || status === 'error'" class="btn primary" type="button" @click="retryCheck">
+        <button
+          v-if="status === 'timeout' || status === 'error'"
+          class="btn primary"
+          type="button"
+          @click="retryCheck"
+        >
           もう一度確認する
         </button>
         <RouterLink
@@ -15,11 +66,10 @@
         >
           マイチケットを見る
         </RouterLink>
-        <RouterLink v-if="status !== 'checking'" to="/events" class="btn secondary">イベント一覧へ戻る</RouterLink>
-        <RouterLink v-else to="/events" class="btn secondary">イベント一覧へ戻る</RouterLink>
+        <RouterLink to="/events" class="btn secondary">イベント一覧へ戻る</RouterLink>
       </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -194,63 +244,116 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.payment-status {
-  min-height: 100vh;
-  background: var(--color-bg, #f7f7f7);
+.payment-page {
   display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #f8fafc;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.content {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.hero-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-}
-
-.card {
-  background: #fff;
-  border-radius: 18px;
-  padding: 2rem;
-  max-width: 480px;
-  width: 100%;
-  text-align: center;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
-}
-
-h1 {
-  margin-top: 0;
-  font-size: 1.4rem;
-}
-
-p {
-  color: #555;
-  margin-bottom: 1.5rem;
 }
 
 .hint {
-  margin: -0.75rem 0 1.5rem;
+  margin: 10px 0 0;
   color: #94a3b8;
-  font-size: 0.85rem;
+  font-size: 12px;
+}
+
+.hero-icon svg {
+  width: 88px;
+  height: 88px;
+  display: block;
+}
+
+.spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 4px solid rgba(15, 23, 42, 0.14);
+  border-top-color: #0ea5e9;
+  animation: spin 1s linear infinite;
+}
+
+.hero-text h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.hero-text p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.6;
 }
 
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 10px;
 }
 
 .btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
   display: inline-flex;
-  justify-content: center;
   align-items: center;
-  padding: 0.75rem 1rem;
-  border-radius: 999px;
-  font-weight: 600;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+  border: 1px solid transparent;
 }
 
 .btn.primary {
-  background: var(--color-primary, #ff6b6b);
+  border: none;
+  background: linear-gradient(135deg, #0ea5e9, #22c55e);
   color: #fff;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.2);
 }
 
 .btn.secondary {
-  border: 1px solid var(--color-border, #e0e0e0);
-  color: #333;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fff;
+  color: #0f172a;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

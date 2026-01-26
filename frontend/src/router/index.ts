@@ -573,6 +573,11 @@ const routes: RouteRecordRaw[] = [
     meta: {
       devPageName: '決済成功',
       title: '申込完了',
+      layout: 'mobile-user',
+      stackKey: 'mobile',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
     },
   },
   {
@@ -582,6 +587,11 @@ const routes: RouteRecordRaw[] = [
     meta: {
       devPageName: '決済キャンセル',
       title: '申込未完了',
+      layout: 'mobile-user',
+      stackKey: 'mobile',
+      hideShellHeader: true,
+      hideTabbar: true,
+      flushContent: true,
     },
   },
   {

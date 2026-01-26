@@ -14,7 +14,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
-import { LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
+import { LOGIN_REDIRECT_SESSION_KEY, LOGIN_REDIRECT_STORAGE_KEY } from '../../constants/auth';
 import { normalizeLiffStateToPath } from '../../utils/liff';
 
 const route = useRoute();
@@ -35,6 +35,10 @@ const resolveRedirectTarget = (): string => {
   }
   if (typeof window !== 'undefined') {
     try {
+      const sessionRedirect = window.sessionStorage.getItem(LOGIN_REDIRECT_SESSION_KEY) || '';
+      if (sessionRedirect && sessionRedirect.startsWith('/') && !sessionRedirect.startsWith('//')) {
+        return sessionRedirect;
+      }
       const stored = window.localStorage.getItem(LOGIN_REDIRECT_STORAGE_KEY) || '';
       if (stored && stored.startsWith('/') && !stored.startsWith('//')) {
         return stored;
@@ -50,6 +54,7 @@ const clearStoredRedirect = () => {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(LOGIN_REDIRECT_STORAGE_KEY);
+    window.sessionStorage.removeItem(LOGIN_REDIRECT_SESSION_KEY);
   } catch {
     // ignore
   }
