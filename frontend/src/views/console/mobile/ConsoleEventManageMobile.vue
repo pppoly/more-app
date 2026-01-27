@@ -594,7 +594,7 @@ const exportRegistrationsCsv = async () => {
       try {
         const file = new File([blob], filename, { type: 'text/csv' });
         if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: filename });
+          await navigator.share({ files: [file] });
           return;
         }
       } catch {
