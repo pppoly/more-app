@@ -49,7 +49,7 @@ const goToEvents = async () => {
 };
 
 onMounted(() => {
-  document.title = 'テスト体験 | MORE';
+  document.title = 'テスト体験 | SOCIALMORE';
   trackEvent('experience_entry_open');
 });
 </script>

@@ -51,7 +51,7 @@
 
       <article class="card">
         <header>
-          <h3>MORE 受け取りプラン</h3>
+          <h3>SOCIALMORE 受け取りプラン</h3>
           <span class="status info">
             {{
               activePlan

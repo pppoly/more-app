@@ -2,10 +2,10 @@
 <div class="mobile-shell" :class="{ 'mobile-shell--fixed': isFixedPage, 'mobile-shell--liff': isLiffMode }">
   <header v-if="routeReady && showHeader" class="mobile-shell__header" :style="headerSafeAreaStyle">
     <div :class="['brand-chip', { 'brand-chip--image': Boolean(brandLogo) }]">
-      <img v-if="brandLogo" :src="brandLogo" alt="MORE brand logo" />
+      <img v-if="brandLogo" :src="brandLogo" alt="SOCIALMORE brand logo" />
       <span v-else>創</span>
     </div>
-      <div class="header-title">MORE</div>
+      <div class="header-title">SOCIALMORE</div>
       <div v-if="showHeaderActions" class="header-actions">
         <button class="lang-entry" @click="openLocaleSheet">
           <span class="i-lucide-globe-2 text-lg"></span>

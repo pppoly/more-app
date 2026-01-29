@@ -3,7 +3,7 @@
     <div class="brand-topbar__safe" />
     <div class="brand-topbar__bar">
       <div class="brand-topbar__left">
-        <img :src="logoSrc" alt="MORE" class="brand-topbar__logo" />
+        <img :src="logoSrc" alt="SOCIALMORE" class="brand-topbar__logo" />
       </div>
       <div class="brand-topbar__center"></div>
       <div class="brand-topbar__right">

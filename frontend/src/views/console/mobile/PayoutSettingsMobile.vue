@@ -91,14 +91,14 @@
         </div>
       </article>
       <article class="kpi breakdown-card">
-        <p class="kpi-label">お金の状態（MORE → Stripe 送金）</p>
+        <p class="kpi-label">お金の状態（SOCIALMORE → Stripe 送金）</p>
         <div class="breakdown-list">
           <div class="breakdown-row">
-            <span>送金済み（MORE → Stripe）</span>
+            <span>送金済み（SOCIALMORE → Stripe）</span>
             <strong>{{ formatYenOrDash(breakdownPaidOut) }}</strong>
           </div>
           <div class="breakdown-row">
-            <span>送金待ち（MORE → Stripe）</span>
+            <span>送金待ち（SOCIALMORE → Stripe）</span>
             <strong>{{ formatYenOrDash(breakdownTransferPending) }}</strong>
           </div>
           <div class="breakdown-row">
@@ -107,7 +107,7 @@
           </div>
         </div>
         <p class="note muted">※ 見込み収入 = 送金済み + 送金待ち - 相殺予定</p>
-        <p class="note muted">※ ここでの「送金」は MORE（プラットフォーム）→ Stripe です（銀行への振込は Stripe 側）。</p>
+        <p class="note muted">※ ここでの「送金」は SOCIALMORE（プラットフォーム）→ Stripe です（銀行への振込は Stripe 側）。</p>
         <button class="btn primary breakdown-action" type="button" :disabled="!communityId" @click="goPayments">
           取引履歴を見る
         </button>

@@ -33,7 +33,7 @@
   "header": {
     "createEvent": "创建活动",
     "console": "控制台",
-    "default": "MORE"
+    "default": "SOCIALMORE"
   },
   "localeSheet": {
     "title": "选择界面语言",
@@ -155,7 +155,7 @@
     "title": "法律与合规",
     "terms": {
       "label": "服务条款",
-      "meta": "MORE 的使用条款"
+      "meta": "SOCIALMORE 的使用条款"
     },
     "privacy": {
       "label": "隐私政策",
@@ -220,7 +220,7 @@
   },
   "console": {
     "access": {
-      "logo": "MORE Console",
+      "logo": "SOCIALMORE Console",
       "managing": "管理中的社群",
       "roleOwner": "主理人",
       "roleAdmin": "管理员",
@@ -238,7 +238,7 @@
   },
   "console": {
     "access": {
-      "logo": "MORE Console",
+      "logo": "SOCIALMORE Console",
       "managing": "管理中的社群",
       "roleOwner": "主理人",
       "roleAdmin": "管理员",
@@ -294,7 +294,7 @@
         "title": "收款与出金的流程",
         "items": [
           "参与者通过信用卡支付（Stripe）",
-          "资金由 MORE 通过 Stripe 收款，并按结算周期向主理人出金",
+          "资金由 SOCIALMORE 通过 Stripe 收款，并按结算周期向主理人出金",
           "出金不是实时，可能因审核/结算周期而前后"
         ]
       },
@@ -303,14 +303,14 @@
         "items": [
           "全额退款时，参与者将获得全额退款",
           "退款时信用卡手续费可能不返还（行业通行规则）",
-          "v1 阶段该手续费由 MORE 承担（不从主理人出金中扣除）"
+          "v1 阶段该手续费由 SOCIALMORE 承担（不从主理人出金中扣除）"
         ]
       },
       "negative": {
         "title": "余额为负的情况",
         "items": [
           "若在结算前发生退款或争议",
-          "MORE 内的结算余额可能暂时为负",
+          "SOCIALMORE 内的结算余额可能暂时为负",
           "负余额将从后续收入中自动抵扣（Stripe 可用余额不会为负）"
         ]
       },
@@ -318,7 +318,7 @@
         "title": "责任边界",
         "items": [
           "活动履约与退款条款的设定由主理人负责",
-          "MORE 负责收款、退款与结算（退款/争议可能导致出金延迟或调整）",
+          "SOCIALMORE 负责收款、退款与结算（退款/争议可能导致出金延迟或调整）",
           "该设计用于防止不正当行为，保护认真经营的主理人"
         ]
       },
@@ -333,7 +333,7 @@
     },
     "example": {
       "title": "例",
-      "body": "例：¥1,000 的全额退款 → 参与者返还 ¥1,000；信用卡手续费可能不返还，v1 阶段由 MORE 承担（不从主理人出金中扣除）"
+      "body": "例：¥1,000 的全额退款 → 参与者返还 ¥1,000；信用卡手续费可能不返还，v1 阶段由 SOCIALMORE 承担（不从主理人出金中扣除）"
     },
     "accept": {
       "title": "确认与同意",

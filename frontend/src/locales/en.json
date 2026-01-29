@@ -25,7 +25,7 @@
   },
   "console": {
     "access": {
-      "logo": "MORE Console",
+      "logo": "SOCIALMORE Console",
       "managing": "Communities you manage",
       "roleOwner": "Owner",
       "roleAdmin": "Admin",
@@ -132,7 +132,7 @@
   },
   "console": {
     "access": {
-      "logo": "MORE Console",
+      "logo": "SOCIALMORE Console",
       "managing": "Communities you manage",
       "roleOwner": "Owner",
       "roleAdmin": "Admin",
@@ -203,7 +203,7 @@
     "title": "Legal & compliance",
     "terms": {
       "label": "Terms of Service",
-      "meta": "Conditions for using MORE"
+      "meta": "Conditions for using SOCIALMORE"
     },
     "privacy": {
       "label": "Privacy Policy",
@@ -276,7 +276,7 @@
   "header": {
     "createEvent": "Create event",
     "console": "Console",
-    "default": "MORE"
+    "default": "SOCIALMORE"
   },
   "localeSheet": {
     "title": "Choose display language",
@@ -294,7 +294,7 @@
         "title": "Payment & payout flow",
         "items": [
           "Participants pay by credit card (Stripe)",
-          "MORE receives payments via Stripe and settles payouts on a settlement cycle",
+          "SOCIALMORE receives payments via Stripe and settles payouts on a settlement cycle",
           "Payouts are not instant and may vary due to review and payout schedules"
         ]
       },
@@ -303,14 +303,14 @@
         "items": [
           "For a full refund, participants receive the full amount back",
           "Card processing fees may not be returned on refunds (industry standard)",
-          "In v1, MORE absorbs those fees (not deducted from your payout)"
+          "In v1, SOCIALMORE absorbs those fees (not deducted from your payout)"
         ]
       },
       "negative": {
         "title": "When balance can go negative",
         "items": [
           "If refunds or disputes happen before settlement",
-          "Your settlement balance in MORE may temporarily go negative",
+          "Your settlement balance in SOCIALMORE may temporarily go negative",
           "Negative amounts are offset against future revenue (your Stripe available balance should not go negative)"
         ]
       },
@@ -318,7 +318,7 @@
         "title": "Responsibility boundaries",
         "items": [
           "Organizers are responsible for event fulfillment and setting refund terms",
-          "MORE receives payments, processes refunds, and settles payouts (payouts may be adjusted/paused due to refunds or disputes)",
+          "SOCIALMORE receives payments, processes refunds, and settles payouts (payouts may be adjusted/paused due to refunds or disputes)",
           "This prevents abuse and protects serious organizers"
         ]
       },
@@ -333,7 +333,7 @@
     },
     "example": {
       "title": "Example",
-      "body": "Full refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned; in v1, MORE absorbs those fees (not deducted from your payout)."
+      "body": "Full refund ¥1,000 → participant receives ¥1,000 back. Card fees may not be returned; in v1, SOCIALMORE absorbs those fees (not deducted from your payout)."
     },
     "accept": {
       "title": "Confirmation",

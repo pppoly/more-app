@@ -13,7 +13,7 @@
     <p>任意の表示名を入力するとフローを体験できます。</p>
     <label>
       表示名
-      <input v-model="devName" type="text" placeholder="例：MORE Test User" />
+      <input v-model="devName" type="text" placeholder="例：SOCIALMORE Test User" />
     </label>
     <button type="button" class="primary" :disabled="loading" @click="handleDevLogin">
       {{ loading ? 'ログイン中...' : 'ワンクリック体験' }}

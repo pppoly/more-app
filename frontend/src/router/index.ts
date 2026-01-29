@@ -139,7 +139,7 @@ const routes: RouteRecordRaw[] = [
     name: 'experience-entry',
     component: () => import('../views/mobile/ExperienceEntryMobile.vue'),
     meta: {
-      title: 'テスト体験 | MORE',
+      title: 'テスト体験 | SOCIALMORE',
       layout: 'mobile-user',
       stackKey: 'mobile',
       hideShellHeader: true,

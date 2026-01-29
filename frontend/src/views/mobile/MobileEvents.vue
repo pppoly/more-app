@@ -3,9 +3,9 @@
     <!-- App Bar -->
     <header v-if="!showBrandBar" class="app-bar">
       <div class="app-bar__left">
-        <img :src="logoImage" alt="MORE logo" class="logo-img" />
+        <img :src="logoImage" alt="SOCIALMORE logo" class="logo-img" />
       </div>
-      <div class="app-bar__title">MORE</div>
+      <div class="app-bar__title">SOCIALMORE</div>
       <div class="app-bar__actions"></div>
     </header>
 
@@ -62,7 +62,7 @@
                   class="cover"
                   loading="lazy"
                 />
-                <div v-else class="cover cover-fallback">MORE</div>
+                <div v-else class="cover cover-fallback">SOCIALMORE</div>
                 <div class="cover-gradient"></div>
               </div>
               <div class="card-body">
