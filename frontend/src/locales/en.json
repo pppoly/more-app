@@ -208,6 +208,10 @@
     "privacy": {
       "label": "Privacy Policy",
       "meta": "How we handle your data"
+    },
+    "tokusho": {
+      "label": "Specified Commercial Transactions Act",
+      "meta": "Seller and payment information"
     }
   },
   "about": {

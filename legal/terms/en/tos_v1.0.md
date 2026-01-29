@@ -1,4 +1,4 @@
-# SOCIALMORE Terms of Service v1.0 (2025-11-30)
+# 株式会社創翔モア Terms of Service v1.0 (2025-11-30)
 1. Definitions: Platform is an intermediary for events/communities; no custody of funds.  
 2. Scope: Applies to all users; governed by Japanese law; Japanese version prevails.  
 3. Account & KYC/KYB: Accurate info; organizers must complete Stripe KYC/KYB or payouts/events may be suspended.  

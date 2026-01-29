@@ -60,7 +60,9 @@ Thumbs.db
 ############################
 # Generated / Derived Frontend Files
 ############################
-frontend/public/legal/
+frontend/public/legal/*
+!frontend/public/legal/tokusho/
+!frontend/public/legal/tokusho/index.html
 frontend/dist*
 frontend/.vite/
 frontend/src/**/*.js

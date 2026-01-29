@@ -38,6 +38,13 @@
           </div>
           <span class="i-lucide-external-link"></span>
         </a>
+        <a class="settings-item" href="/legal/tokusho" target="_blank" rel="noopener">
+          <div>
+            <p class="settings-item__label">{{ t('mobile.settings.legal.tokusho.label') }}</p>
+            <p class="settings-item__meta">{{ t('mobile.settings.legal.tokusho.meta') }}</p>
+          </div>
+          <span class="i-lucide-external-link"></span>
+        </a>
       </div>
     </section>
 
